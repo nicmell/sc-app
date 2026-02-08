@@ -42,6 +42,15 @@ export function createFreeNodeMessage(nodeId: number) {
   return new OSC.Message('/n_free', nodeId);
 }
 
+export function createNodeSetMessage(nodeId: number, params: Record<string, number>) {
+  const msg = new OSC.Message('/n_set', nodeId);
+  for (const [key, value] of Object.entries(params)) {
+    msg.add(key);
+    msg.add(value);
+  }
+  return msg;
+}
+
 export async function createDefRecvMessage() {
   const resp = await fetch(sineSynthDefUrl);
   const bytes = new Uint8Array(await resp.arrayBuffer());

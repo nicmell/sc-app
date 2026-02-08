@@ -35,7 +35,6 @@ export function OscProvider({children}: { children: ReactNode }) {
   const osc = useRef(createOSC()).current;
   const [connected, setConnected] = useState(false);
   const [log, setLog] = useState<string[]>([]);
-
   const connecting = osc.status() === OSC.STATUS.IS_CONNECTING;
 
   const appendLog = useCallback((msg: string) => {
