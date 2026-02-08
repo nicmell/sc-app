@@ -1,7 +1,7 @@
 import {createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode} from "react";
 import OSC from "osc-js";
 import {TauriUdpPlugin} from "../osc/TauriUdpPlugin";
-import {createDefRecvMessage, createNotifyMessage, formatOscReply, type OscReply} from "../osc/oscService";
+import {createNotifyMessage, formatOscReply, type OscReply} from "../osc/oscService";
 
 function createOSC() {
   return new OSC({plugin: new TauriUdpPlugin()});
@@ -54,11 +54,13 @@ export function OscProvider({children}: { children: ReactNode }) {
 
   const handleOpen = useCallback(() => {
     setConnected(true);
+    osc.send(createNotifyMessage(1));
     appendLog("Connected.");
   }, [appendLog]);
 
   const handleClose = useCallback(() => {
     setConnected(false);
+    osc.send(createNotifyMessage(0));
     appendLog("Disconnected.");
   }, [appendLog]);
 
@@ -79,16 +81,6 @@ export function OscProvider({children}: { children: ReactNode }) {
       osc.off("error", onErrorId);
     };
   }, [handleMessage, handleOpen, handleClose, handleError]);
-
-  useEffect(() => {
-    if (osc.status() !== OSC.STATUS.IS_OPEN) return;
-    (async () => {
-      if (connected) {
-        osc.send(createNotifyMessage(1));
-        osc.send(await createDefRecvMessage());
-      }
-    })();
-  }, [connected]);
 
   const connect = useCallback(async (address: string) => {
     await osc.open(parseAddress(address));

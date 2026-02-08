@@ -1,4 +1,4 @@
-import {useState} from "react";
+import {useEffect, useState} from "react";
 import {useOsc} from "./OscProvider";
 import {
   createDumpOscMessage,
@@ -6,12 +6,17 @@ import {
   createQuitMessage,
   createStatusMessage,
   createSynthMessage,
+  createDefRecvMessage,
   createVersionMessage,
 } from "../osc/oscService";
 
 export function LogPanel({address}: { address: string }) {
   const {osc, disconnect, appendLog, log, clearLog} = useOsc();
   const [nextNodeId, setNextNodeId] = useState(1000);
+
+  useEffect(() => {
+    createDefRecvMessage().then((msg) => osc.send(msg));
+  }, []);
 
   const handleSendStatus = () => {
     try {
