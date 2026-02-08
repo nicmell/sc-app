@@ -10,11 +10,15 @@ import {
   createDefRecvMessage,
   createSynthMessage,
   createFreeNodeMessage,
+  formatOscReply,
   parseOscResponse,
-  formatStatusReply,
-  formatVersionReply,
 } from "./osc/oscService";
 import "./App.css";
+
+function parseAddress(addr: string): { host: string; port: number } {
+  const [host, portStr] = addr.split(":");
+  return { host, port: parseInt(portStr, 10) };
+}
 
 function App() {
   const [address, setAddress] = useState("127.0.0.1:57110");
@@ -24,7 +28,6 @@ function App() {
   const [log, setLog] = useState<string[]>([]);
   const [nextNodeId, setNextNodeId] = useState(1000);
   const oscRef = useRef<InstanceType<typeof OSC> | null>(null);
-  const pluginRef = useRef<TauriUdpPlugin | null>(null);
 
   const appendLog = useCallback((msg: string) => {
     setLog((prev) => [
@@ -32,16 +35,6 @@ function App() {
       `[${new Date().toLocaleTimeString()}] ${msg}`,
     ]);
   }, []);
-
-  /** Send a message and wait for the reply, returning the parsed response. */
-  const sendAndReceive = async (
-    msg: InstanceType<typeof OSC.Message>,
-    timeoutMs = 2000
-  ) => {
-    oscRef.current!.send(msg);
-    const data = await pluginRef.current!.recv(timeoutMs);
-    return parseOscResponse(data);
-  };
 
   const handleConnect = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,9 +44,15 @@ function App() {
       if (oscRef.current) {
         await oscRef.current.close();
       }
-      const plugin = new TauriUdpPlugin({ targetAddress: address });
+
+      const { host, port } = parseAddress(address);
+      const plugin = new TauriUdpPlugin({ send: { host, port } });
       const osc = new OSC({ plugin });
 
+      osc.on("*", (msg: InstanceType<typeof OSC.Message>) => {
+        const reply = { address: msg.address, args: msg.args as unknown[] };
+        appendLog(formatOscReply(reply));
+      });
       osc.on("close", () => {
         setConnected(false);
         appendLog("Disconnected.");
@@ -66,25 +65,23 @@ function App() {
 
       // Register with scsynth via /notify and wait for /done reply
       osc.send(createNotifyMessage(1));
-      let notifyBytes: Uint8Array;
+      let notifyData: Uint8Array;
       try {
-        notifyBytes = await plugin.recv(2000);
+        notifyData = await plugin.waitForReply(2000);
       } catch {
         await osc.close();
         throw new Error("scsynth is not responding — is the server running?");
       }
 
       oscRef.current = osc;
-      pluginRef.current = plugin;
       setConnected(true);
 
-      const notifyReply = parseOscResponse(notifyBytes);
+      const notifyReply = parseOscResponse(notifyData);
       const clientId = notifyReply.args[1];
       appendLog(`Connected to ${address} (clientID: ${clientId})`);
 
       // Fetch initial server status
-      const statusReply = await sendAndReceive(createStatusMessage());
-      appendLog(formatStatusReply(statusReply.args));
+      osc.send(createStatusMessage());
 
       // Auto-load SynthDef
       const msg = await createDefRecvMessage();
@@ -104,15 +101,13 @@ function App() {
       } catch { /* server may already be gone */ }
       await oscRef.current.close();
       oscRef.current = null;
-      pluginRef.current = null;
     }
   };
 
-  const handleSendStatus = async () => {
+  const handleSendStatus = () => {
     if (!oscRef.current) return;
     try {
-      const reply = await sendAndReceive(createStatusMessage());
-      appendLog(formatStatusReply(reply.args));
+      oscRef.current.send(createStatusMessage());
     } catch (e) {
       appendLog(`/status failed: ${e}`);
     }
@@ -128,11 +123,10 @@ function App() {
     }
   };
 
-  const handleVersion = async () => {
+  const handleVersion = () => {
     if (!oscRef.current) return;
     try {
-      const reply = await sendAndReceive(createVersionMessage());
-      appendLog(formatVersionReply(reply.args));
+      oscRef.current.send(createVersionMessage());
     } catch (e) {
       appendLog(`/version failed: ${e}`);
     }

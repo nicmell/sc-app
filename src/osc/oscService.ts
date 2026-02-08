@@ -76,3 +76,15 @@ export function formatVersionReply(args: unknown[]): string {
   const [name, major, minor, patch, branch, hash] = args as (string | number)[];
   return `${name} ${major}.${minor}.${patch} (${branch} ${hash})`;
 }
+
+/** Format any OSC reply for display in the log. */
+export function formatOscReply(reply: OscReply): string {
+  switch (reply.address) {
+    case '/status.reply':
+      return formatStatusReply(reply.args);
+    case '/version.reply':
+      return formatVersionReply(reply.args);
+    default:
+      return `${reply.address} ${reply.args.join(' ')}`;
+  }
+}
