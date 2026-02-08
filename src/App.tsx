@@ -1,19 +1,22 @@
-import { useState, useRef, useCallback } from "react";
+import {useCallback, useEffect, useRef, useState} from "react";
 import OSC from "osc-js";
-import { TauriUdpPlugin } from "./osc/TauriUdpPlugin";
+import {TauriUdpPlugin} from "./osc/TauriUdpPlugin";
 import {
-  createStatusMessage,
-  createDumpOscMessage,
-  createNotifyMessage,
-  createQuitMessage,
-  createVersionMessage,
   createDefRecvMessage,
+  createDumpOscMessage,
+  createFreeNodeMessage, createNotifyMessage,
+  createQuitMessage,
+  createStatusMessage,
   createSynthMessage,
-  createFreeNodeMessage,
+  createVersionMessage,
   formatOscReply,
-  parseOscResponse,
 } from "./osc/oscService";
 import "./App.css";
+
+
+function createOSC() {
+  return new OSC({plugin: new TauriUdpPlugin()});
+}
 
 function parseAddress(addr: string): { host: string; port: number } {
   const [host, portStr] = addr.split(":");
@@ -23,11 +26,11 @@ function parseAddress(addr: string): { host: string; port: number } {
 function App() {
   const [address, setAddress] = useState("127.0.0.1:57110");
   const [connected, setConnected] = useState(false);
-  const [connecting, setConnecting] = useState(false);
-  const [connectError, setConnectError] = useState<string | null>(null);
   const [log, setLog] = useState<string[]>([]);
   const [nextNodeId, setNextNodeId] = useState(1000);
-  const oscRef = useRef<InstanceType<typeof OSC> | null>(null);
+  const osc = useRef(createOSC()).current;
+
+  const connecting = osc.status() === OSC.STATUS.IS_CONNECTING;
 
   const appendLog = useCallback((msg: string) => {
     setLog((prev) => [
@@ -36,87 +39,62 @@ function App() {
     ]);
   }, []);
 
+  useEffect(() => {
+    const onMessageId = osc.on("*", (msg: InstanceType<typeof OSC.Message>) => {
+      const reply = {address: msg.address, args: msg.args as unknown[]};
+      appendLog(formatOscReply(reply));
+    });
+    const onOpenId = osc.on("open", () => {
+      setConnected(true);
+      appendLog("Connected.");
+    });
+    const onCloseId = osc.on("close", () => {
+      setConnected(false);
+      appendLog("Disconnected.");
+    });
+    const onErrorId = osc.on("error", (err: unknown) => {
+      appendLog(`Error: ${err}`);
+    });
+
+    return () => {
+      osc.off("*", onMessageId);
+      osc.off("open", onOpenId);
+      osc.off("close", onCloseId);
+      osc.off("error", onErrorId);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (osc.status() !== OSC.STATUS.IS_OPEN) return;
+    (async () => {
+      if (connected) {
+        osc.send(createNotifyMessage(1));
+        osc.send(await createDefRecvMessage());
+      }
+    })();
+  }, [connected]);
+
+
   const handleConnect = async (e: React.FormEvent) => {
     e.preventDefault();
-    setConnectError(null);
-    setConnecting(true);
-    try {
-      if (oscRef.current) {
-        await oscRef.current.close();
-      }
-
-      const { host, port } = parseAddress(address);
-      const plugin = new TauriUdpPlugin({ send: { host, port } });
-      const osc = new OSC({ plugin });
-
-      osc.on("*", (msg: InstanceType<typeof OSC.Message>) => {
-        const reply = { address: msg.address, args: msg.args as unknown[] };
-        appendLog(formatOscReply(reply));
-      });
-      osc.on("close", () => {
-        setConnected(false);
-        appendLog("Disconnected.");
-      });
-      osc.on("error", (err: unknown) => {
-        appendLog(`Error: ${err}`);
-      });
-
-      await osc.open();
-
-      // Register with scsynth via /notify and wait for /done reply
-      osc.send(createNotifyMessage(1));
-      let notifyData: Uint8Array;
-      try {
-        notifyData = await plugin.waitForReply(2000);
-      } catch {
-        await osc.close();
-        throw new Error("scsynth is not responding — is the server running?");
-      }
-
-      oscRef.current = osc;
-      setConnected(true);
-
-      const notifyReply = parseOscResponse(notifyData);
-      const clientId = notifyReply.args[1];
-      appendLog(`Connected to ${address} (clientID: ${clientId})`);
-
-      // Fetch initial server status
-      osc.send(createStatusMessage());
-
-      // Auto-load SynthDef
-      const msg = await createDefRecvMessage();
-      osc.send(msg);
-      appendLog('Sent /d_recv (SynthDef "sine": freq, amp)');
-    } catch (e) {
-      setConnectError(e instanceof Error ? e.message : `${e}`);
-    } finally {
-      setConnecting(false);
-    }
+    await osc.open(parseAddress(address));
   };
 
   const handleDisconnect = async () => {
-    if (oscRef.current) {
-      try {
-        oscRef.current.send(createNotifyMessage(0));
-      } catch { /* server may already be gone */ }
-      await oscRef.current.close();
-      oscRef.current = null;
-    }
+    await osc.close();
   };
 
   const handleSendStatus = () => {
-    if (!oscRef.current) return;
     try {
-      oscRef.current.send(createStatusMessage());
+      osc.send(createStatusMessage());
     } catch (e) {
       appendLog(`/status failed: ${e}`);
     }
   };
 
   const handleDumpOsc = () => {
-    if (!oscRef.current) return;
     try {
-      oscRef.current.send(createDumpOscMessage(1));
+      osc.send(createDumpOscMessage(1));
       appendLog("Sent /dumpOSC 1");
     } catch (e) {
       appendLog(`Send failed: ${e}`);
@@ -124,18 +102,16 @@ function App() {
   };
 
   const handleVersion = () => {
-    if (!oscRef.current) return;
     try {
-      oscRef.current.send(createVersionMessage());
+      osc.send(createVersionMessage());
     } catch (e) {
       appendLog(`/version failed: ${e}`);
     }
   };
 
   const handleQuit = () => {
-    if (!oscRef.current) return;
     try {
-      oscRef.current.send(createQuitMessage());
+      osc.send(createQuitMessage());
       appendLog("Sent /quit — server shutting down");
     } catch (e) {
       appendLog(`Send failed: ${e}`);
@@ -143,14 +119,13 @@ function App() {
   };
 
   const handlePlayNote = () => {
-    if (!oscRef.current) return;
     try {
       const nodeId = nextNodeId;
       const msg = createSynthMessage("sine", nodeId, 0, 0, {
         freq: 440,
         amp: 0.2,
       });
-      oscRef.current.send(msg);
+      osc.send(msg);
       setNextNodeId((prev) => prev + 1);
       appendLog(`Sent /s_new "sine" nodeId=${nodeId} freq=440 amp=0.2`);
     } catch (e) {
@@ -159,11 +134,11 @@ function App() {
   };
 
   const handleFreeNode = () => {
-    if (!oscRef.current) return;
+
     try {
       const nodeId = nextNodeId - 1;
       if (nodeId < 1000) return appendLog("No nodes to free.");
-      oscRef.current.send(createFreeNodeMessage(nodeId));
+      osc.send(createFreeNodeMessage(nodeId));
       appendLog(`Sent /n_free nodeId=${nodeId}`);
     } catch (e) {
       appendLog(`Send failed: ${e}`);
@@ -186,7 +161,6 @@ function App() {
           <button type="submit" disabled={connecting}>
             {connecting ? "Connecting..." : "Connect"}
           </button>
-          {connectError && <p className="error">{connectError}</p>}
         </form>
       </main>
     );

@@ -59,11 +59,13 @@ export class TauriUdpPlugin extends OSC.Plugin {
   }
 
   open(customOptions?: { host?: string; port?: number }): void {
-    const options = { ...this.options.open, ...customOptions };
+    if (customOptions) {
+      this.options = { ...this.options, send: { ...this.options.send, ...customOptions } };
+    }
     this.socketStatus = OSC.STATUS.IS_CONNECTING;
 
     this.socket.bind(
-      { address: options.host, port: options.port },
+      { address: this.options.open.host, port: this.options.open.port },
       () => {
         this.socketStatus = OSC.STATUS.IS_OPEN;
         this.notify('open');
@@ -83,21 +85,5 @@ export class TauriUdpPlugin extends OSC.Plugin {
   send(binary: Uint8Array, customOptions?: { host?: string; port?: number }): void {
     const options = { ...this.options.send, ...customOptions };
     this.socket.send(binary, 0, binary.byteLength, options.port, options.host);
-  }
-
-  /** Wait for the next incoming message (for connection handshake). */
-  waitForReply(timeoutMs: number = 2000): Promise<Uint8Array> {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        const idx = this.pendingResolvers.indexOf(resolve);
-        if (idx !== -1) this.pendingResolvers.splice(idx, 1);
-        reject(new Error('waitForReply timed out'));
-      }, timeoutMs);
-
-      this.pendingResolvers.push((data) => {
-        clearTimeout(timer);
-        resolve(data);
-      });
-    });
   }
 }
