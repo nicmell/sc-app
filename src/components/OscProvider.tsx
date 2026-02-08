@@ -47,22 +47,30 @@ export function OscProvider({children}: { children: ReactNode }) {
 
   const clearLog = useCallback(() => setLog([]), []);
 
+  const handleMessage = useCallback((msg: InstanceType<typeof OSC.Message>) => {
+    const reply: OscReply = {address: msg.address, args: msg.args as unknown[]};
+    appendLog(formatOscReply(reply));
+  }, [appendLog]);
+
+  const handleOpen = useCallback(() => {
+    setConnected(true);
+    appendLog("Connected.");
+  }, [appendLog]);
+
+  const handleClose = useCallback(() => {
+    setConnected(false);
+    appendLog("Disconnected.");
+  }, [appendLog]);
+
+  const handleError = useCallback((err: unknown) => {
+    appendLog(`Error: ${err}`);
+  }, [appendLog]);
+
   useEffect(() => {
-    const onMessageId = osc.on("*", (msg: InstanceType<typeof OSC.Message>) => {
-      const reply: OscReply = {address: msg.address, args: msg.args as unknown[]};
-      appendLog(formatOscReply(reply));
-    });
-    const onOpenId = osc.on("open", () => {
-      setConnected(true);
-      appendLog("Connected.");
-    });
-    const onCloseId = osc.on("close", () => {
-      setConnected(false);
-      appendLog("Disconnected.");
-    });
-    const onErrorId = osc.on("error", (err: unknown) => {
-      appendLog(`Error: ${err}`);
-    });
+    const onMessageId = osc.on("*", handleMessage);
+    const onOpenId = osc.on("open", handleOpen);
+    const onCloseId = osc.on("close", handleClose);
+    const onErrorId = osc.on("error", handleError);
 
     return () => {
       osc.off("*", onMessageId);
@@ -70,7 +78,7 @@ export function OscProvider({children}: { children: ReactNode }) {
       osc.off("close", onCloseId);
       osc.off("error", onErrorId);
     };
-  }, []);
+  }, [handleMessage, handleOpen, handleClose, handleError]);
 
   useEffect(() => {
     if (osc.status() !== OSC.STATUS.IS_OPEN) return;
