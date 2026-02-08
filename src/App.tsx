@@ -3,6 +3,7 @@ import OSC from "osc-js";
 import { TauriUdpPlugin } from "./osc/TauriUdpPlugin";
 import {
   createStatusMessage,
+  createDefRecvMessage,
   createSynthMessage,
   createFreeNodeMessage,
 } from "./osc/oscService";
@@ -74,17 +75,27 @@ function App() {
     }
   };
 
+  const handleDefineSynth = () => {
+    if (!oscRef.current) return appendLog("Not connected.");
+    try {
+      oscRef.current.send(createDefRecvMessage());
+      appendLog('Sent /d_recv (SynthDef "sine": freq, amp)');
+    } catch (e) {
+      appendLog(`Send failed: ${e}`);
+    }
+  };
+
   const handlePlayNote = () => {
     if (!oscRef.current) return appendLog("Not connected.");
     try {
       const nodeId = nextNodeId;
-      const msg = createSynthMessage("default", nodeId, 0, 0, {
+      const msg = createSynthMessage("sine", nodeId, 0, 0, {
         freq: 440,
         amp: 0.2,
       });
       oscRef.current.send(msg);
       setNextNodeId((prev) => prev + 1);
-      appendLog(`Sent /s_new "default" nodeId=${nodeId} freq=440 amp=0.2`);
+      appendLog(`Sent /s_new "sine" nodeId=${nodeId} freq=440 amp=0.2`);
     } catch (e) {
       appendLog(`Send failed: ${e}`);
     }
@@ -134,6 +145,9 @@ function App() {
         <div className="controls">
           <button onClick={handleSendStatus} disabled={!isOpen}>
             Send /status
+          </button>
+          <button onClick={handleDefineSynth} disabled={!isOpen}>
+            Define Synth
           </button>
           <button onClick={handlePlayNote} disabled={!isOpen}>
             Play Note

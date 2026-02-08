@@ -1,12 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-
-const STATUS = {
-  IS_NOT_INITIALIZED: -1,
-  IS_CONNECTING: 0,
-  IS_OPEN: 1,
-  IS_CLOSING: 2,
-  IS_CLOSED: 3,
-} as const;
+import OSC from 'osc-js';
 
 type NotifyFn = (...args: unknown[]) => void;
 
@@ -14,14 +7,15 @@ export interface TauriUdpPluginOptions {
   targetAddress?: string;
 }
 
-export class TauriUdpPlugin {
+export class TauriUdpPlugin extends OSC.Plugin {
   private targetAddress: string;
   private socketStatus: number;
   private notify: NotifyFn;
 
   constructor(options?: TauriUdpPluginOptions) {
+    super();
     this.targetAddress = options?.targetAddress ?? '127.0.0.1:57110';
-    this.socketStatus = STATUS.IS_NOT_INITIALIZED;
+    this.socketStatus = OSC.STATUS.IS_NOT_INITIALIZED;
     this.notify = () => {};
   }
 
@@ -34,7 +28,7 @@ export class TauriUdpPlugin {
   }
 
   async open(customOptions?: TauriUdpPluginOptions): Promise<void> {
-    this.socketStatus = STATUS.IS_CONNECTING;
+    this.socketStatus = OSC.STATUS.IS_CONNECTING;
 
     if (customOptions?.targetAddress) {
       this.targetAddress = customOptions.targetAddress;
@@ -42,22 +36,22 @@ export class TauriUdpPlugin {
 
     try {
       await invoke('udp_bind', { localAddr: '0.0.0.0:0' });
-      this.socketStatus = STATUS.IS_OPEN;
+      this.socketStatus = OSC.STATUS.IS_OPEN;
       this.notify('open');
     } catch (error) {
-      this.socketStatus = STATUS.IS_CLOSED;
+      this.socketStatus = OSC.STATUS.IS_CLOSED;
       this.notify('error', error);
       throw error;
     }
   }
 
   async close(): Promise<void> {
-    if (this.socketStatus !== STATUS.IS_OPEN) return;
+    if (this.socketStatus !== OSC.STATUS.IS_OPEN) return;
 
-    this.socketStatus = STATUS.IS_CLOSING;
+    this.socketStatus = OSC.STATUS.IS_CLOSING;
     try {
       await invoke('udp_close');
-      this.socketStatus = STATUS.IS_CLOSED;
+      this.socketStatus = OSC.STATUS.IS_CLOSED;
       this.notify('close');
     } catch (error) {
       this.notify('error', error);
