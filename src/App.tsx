@@ -3,26 +3,28 @@ import OSC from "osc-js";
 import { TauriUdpPlugin } from "./osc/TauriUdpPlugin";
 import {
   createStatusMessage,
+  createDumpOscMessage,
+  createNotifyMessage,
+  createQuitMessage,
+  createVersionMessage,
   createDefRecvMessage,
   createSynthMessage,
   createFreeNodeMessage,
+  parseOscResponse,
+  formatStatusReply,
+  formatVersionReply,
 } from "./osc/oscService";
 import "./App.css";
 
-const STATUS_LABELS: Record<number, string> = {
-  [-1]: "Not Initialized",
-  0: "Connecting",
-  1: "Open",
-  2: "Closing",
-  3: "Closed",
-};
-
 function App() {
   const [address, setAddress] = useState("127.0.0.1:57110");
-  const [connectionStatus, setConnectionStatus] = useState(-1);
+  const [connected, setConnected] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
   const [log, setLog] = useState<string[]>([]);
   const [nextNodeId, setNextNodeId] = useState(1000);
   const oscRef = useRef<InstanceType<typeof OSC> | null>(null);
+  const pluginRef = useRef<TauriUdpPlugin | null>(null);
 
   const appendLog = useCallback((msg: string) => {
     setLog((prev) => [
@@ -31,7 +33,20 @@ function App() {
     ]);
   }, []);
 
-  const handleConnect = async () => {
+  /** Send a message and wait for the reply, returning the parsed response. */
+  const sendAndReceive = async (
+    msg: InstanceType<typeof OSC.Message>,
+    timeoutMs = 2000
+  ) => {
+    oscRef.current!.send(msg);
+    const data = await pluginRef.current!.recv(timeoutMs);
+    return parseOscResponse(data);
+  };
+
+  const handleConnect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setConnectError(null);
+    setConnecting(true);
     try {
       if (oscRef.current) {
         await oscRef.current.close();
@@ -39,12 +54,8 @@ function App() {
       const plugin = new TauriUdpPlugin({ targetAddress: address });
       const osc = new OSC({ plugin });
 
-      osc.on("open", () => {
-        setConnectionStatus(1);
-        appendLog(`Socket bound, target: ${address}`);
-      });
       osc.on("close", () => {
-        setConnectionStatus(3);
+        setConnected(false);
         appendLog("Disconnected.");
       });
       osc.on("error", (err: unknown) => {
@@ -52,41 +63,93 @@ function App() {
       });
 
       await osc.open();
+
+      // Register with scsynth via /notify and wait for /done reply
+      osc.send(createNotifyMessage(1));
+      let notifyBytes: Uint8Array;
+      try {
+        notifyBytes = await plugin.recv(2000);
+      } catch {
+        await osc.close();
+        throw new Error("scsynth is not responding — is the server running?");
+      }
+
       oscRef.current = osc;
+      pluginRef.current = plugin;
+      setConnected(true);
+
+      const notifyReply = parseOscResponse(notifyBytes);
+      const clientId = notifyReply.args[1];
+      appendLog(`Connected to ${address} (clientID: ${clientId})`);
+
+      // Fetch initial server status
+      const statusReply = await sendAndReceive(createStatusMessage());
+      appendLog(formatStatusReply(statusReply.args));
+
+      // Auto-load SynthDef
+      const msg = await createDefRecvMessage();
+      osc.send(msg);
+      appendLog('Sent /d_recv (SynthDef "sine": freq, amp)');
     } catch (e) {
-      appendLog(`Connection failed: ${e}`);
+      setConnectError(e instanceof Error ? e.message : `${e}`);
+    } finally {
+      setConnecting(false);
     }
   };
 
   const handleDisconnect = async () => {
     if (oscRef.current) {
+      try {
+        oscRef.current.send(createNotifyMessage(0));
+      } catch { /* server may already be gone */ }
       await oscRef.current.close();
       oscRef.current = null;
+      pluginRef.current = null;
     }
   };
 
-  const handleSendStatus = () => {
-    if (!oscRef.current) return appendLog("Not connected.");
+  const handleSendStatus = async () => {
+    if (!oscRef.current) return;
     try {
-      oscRef.current.send(createStatusMessage());
-      appendLog("Sent /status");
+      const reply = await sendAndReceive(createStatusMessage());
+      appendLog(formatStatusReply(reply.args));
+    } catch (e) {
+      appendLog(`/status failed: ${e}`);
+    }
+  };
+
+  const handleDumpOsc = () => {
+    if (!oscRef.current) return;
+    try {
+      oscRef.current.send(createDumpOscMessage(1));
+      appendLog("Sent /dumpOSC 1");
     } catch (e) {
       appendLog(`Send failed: ${e}`);
     }
   };
 
-  const handleDefineSynth = () => {
-    if (!oscRef.current) return appendLog("Not connected.");
+  const handleVersion = async () => {
+    if (!oscRef.current) return;
     try {
-      oscRef.current.send(createDefRecvMessage());
-      appendLog('Sent /d_recv (SynthDef "sine": freq, amp)');
+      const reply = await sendAndReceive(createVersionMessage());
+      appendLog(formatVersionReply(reply.args));
+    } catch (e) {
+      appendLog(`/version failed: ${e}`);
+    }
+  };
+
+  const handleQuit = () => {
+    if (!oscRef.current) return;
+    try {
+      oscRef.current.send(createQuitMessage());
+      appendLog("Sent /quit — server shutting down");
     } catch (e) {
       appendLog(`Send failed: ${e}`);
     }
   };
 
   const handlePlayNote = () => {
-    if (!oscRef.current) return appendLog("Not connected.");
+    if (!oscRef.current) return;
     try {
       const nodeId = nextNodeId;
       const msg = createSynthMessage("sine", nodeId, 0, 0, {
@@ -102,7 +165,7 @@ function App() {
   };
 
   const handleFreeNode = () => {
-    if (!oscRef.current) return appendLog("Not connected.");
+    if (!oscRef.current) return;
     try {
       const nodeId = nextNodeId - 1;
       if (nodeId < 1000) return appendLog("No nodes to free.");
@@ -113,53 +176,59 @@ function App() {
     }
   };
 
-  const isOpen = connectionStatus === 1;
-
-  return (
-    <main className="container">
-      <h1>SC-App</h1>
-
-      <section>
-        <label htmlFor="sc-address">scsynth address:</label>
-        <div className="row">
+  if (!connected) {
+    return (
+      <main className="container connect-screen">
+        <h1>SC-App</h1>
+        <form onSubmit={handleConnect}>
+          <label htmlFor="sc-address">scsynth address</label>
           <input
             id="sc-address"
             value={address}
             onChange={(e) => setAddress(e.currentTarget.value)}
             placeholder="127.0.0.1:57110"
+            disabled={connecting}
           />
-          <button onClick={handleConnect} disabled={isOpen}>
-            Connect
+          <button type="submit" disabled={connecting}>
+            {connecting ? "Connecting..." : "Connect"}
           </button>
-          <button onClick={handleDisconnect} disabled={!isOpen}>
-            Disconnect
-          </button>
-        </div>
-        <p className="status">
-          Status: <strong>{STATUS_LABELS[connectionStatus] ?? "Unknown"}</strong>
-        </p>
-      </section>
+          {connectError && <p className="error">{connectError}</p>}
+        </form>
+      </main>
+    );
+  }
+
+  return (
+    <main className="container">
+      <header className="top-bar">
+        <h1>SC-App</h1>
+        <span className="connected-address">{address}</span>
+        <button onClick={handleDisconnect}>Disconnect</button>
+      </header>
 
       <section>
-        <h2>Controls</h2>
+        <h2>Server</h2>
         <div className="controls">
-          <button onClick={handleSendStatus} disabled={!isOpen}>
-            Send /status
-          </button>
-          <button onClick={handleDefineSynth} disabled={!isOpen}>
-            Define Synth
-          </button>
-          <button onClick={handlePlayNote} disabled={!isOpen}>
-            Play Note
-          </button>
-          <button onClick={handleFreeNode} disabled={!isOpen}>
-            Free Last Node
-          </button>
+          <button onClick={handleSendStatus}>/status</button>
+          <button onClick={handleVersion}>/version</button>
+          <button onClick={handleDumpOsc}>/dumpOSC</button>
+          <button onClick={handleQuit}>/quit</button>
         </div>
       </section>
 
       <section>
-        <h2>Log</h2>
+        <h2>Synth</h2>
+        <div className="controls">
+          <button onClick={handlePlayNote}>Play Note</button>
+          <button onClick={handleFreeNode}>Free Last Node</button>
+        </div>
+      </section>
+
+      <section>
+        <div className="log-header">
+          <h2>Log</h2>
+          <button onClick={() => setLog([])}>Clear</button>
+        </div>
         <div className="log-output">
           {log.map((entry, i) => (
             <div key={i} className="log-entry">

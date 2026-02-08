@@ -70,4 +70,9 @@ export class TauriUdpPlugin extends OSC.Plugin {
       throw error;
     }
   }
+
+  async recv(timeoutMs: number): Promise<Uint8Array> {
+    const data = await invoke<number[]>('udp_recv', { timeoutMs });
+    return new Uint8Array(data);
+  }
 }

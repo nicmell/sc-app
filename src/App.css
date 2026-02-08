@@ -84,6 +84,16 @@ button:disabled {
   flex-wrap: wrap;
 }
 
+.log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.log-header h2 {
+  margin: 1.5rem 0 0.5rem;
+}
+
 .log-output {
   background: #1a1a1a;
   color: #00ff00;
@@ -99,6 +109,51 @@ button:disabled {
   padding: 1px 0;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+.connect-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+.connect-screen form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 360px;
+}
+
+.connect-screen form button {
+  align-self: stretch;
+}
+
+.error {
+  color: #e53e3e;
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.top-bar h1 {
+  margin: 0;
+  text-align: left;
+}
+
+.connected-address {
+  flex: 1;
+  font-size: 0.85rem;
+  opacity: 0.6;
+  font-family: monospace;
 }
 
 @media (prefers-color-scheme: dark) {
