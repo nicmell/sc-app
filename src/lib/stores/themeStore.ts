@@ -12,7 +12,7 @@ export interface ThemeState {
   setPrimaryColor: (color: string) => void;
 }
 
-export const createThemeSlice: StateCreator<ThemeState> = (set) => ({
+export const themeSlice: StateCreator<ThemeState> = (set) => ({
   mode: getSystemMode(),
   primaryColor: "#396cd8",
   setMode: (mode) => set({mode}),

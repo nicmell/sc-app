@@ -2,10 +2,10 @@ import {createStore} from "zustand/vanilla";
 import {useStore} from "zustand";
 import {persist} from "zustand/middleware";
 import {tauriStorage} from "@/lib/storage/tauriStorage";
-import {combineSlice} from "./utils";
-import {createThemeSlice, type ThemeState} from "./themeStore";
-import {createLayoutSlice, type LayoutState} from "./layoutStore";
-import {createScsynthSlice, type ScsynthState} from "./scsynthStore";
+import {createSlice} from "./utils";
+import {themeSlice, type ThemeState} from "./themeStore";
+import {layoutSlice, type LayoutState} from "./layoutStore";
+import {scsynthSlice, type ScsynthState} from "./scsynthStore";
 
 export type {ScsynthOptions, ScsynthStatus} from "./scsynthStore";
 
@@ -18,9 +18,9 @@ interface AppState {
 export const appStore = createStore<AppState>()(
   persist(
     (_set, _get, api) => ({
-      ...combineSlice(createThemeSlice, api, "theme"),
-      ...combineSlice(createLayoutSlice, api, "layout"),
-      ...combineSlice(createScsynthSlice, api, "scsynth"),
+      ...createSlice(api, "theme")(themeSlice),
+      ...createSlice(api, "layout")(layoutSlice),
+      ...createSlice(api, "scsynth")(scsynthSlice),
     }),
     {
       name: "settings",

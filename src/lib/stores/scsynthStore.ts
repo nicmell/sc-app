@@ -52,7 +52,7 @@ export interface ScsynthState {
   clearClient: () => void;
 }
 
-export const createScsynthSlice: StateCreator<ScsynthState> = (set) => ({
+export const scsynthSlice: StateCreator<ScsynthState> = (set) => ({
   clientId: DEFAULT_CLIENT_ID,
   options: DEFAULT_OPTIONS,
   connectionStatus: ConnectionStatus.DISCONNECTED,

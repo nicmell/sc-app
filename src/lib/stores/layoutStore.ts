@@ -13,7 +13,7 @@ export interface LayoutState {
   resetLayout: () => void;
 }
 
-export const createLayoutSlice: StateCreator<LayoutState> = (set) => ({
+export const layoutSlice: StateCreator<LayoutState> = (set) => ({
   layout: DEFAULT_LAYOUT,
   setLayout: (layout) => set({layout}),
   resetLayout: () => set({layout: DEFAULT_LAYOUT}),
