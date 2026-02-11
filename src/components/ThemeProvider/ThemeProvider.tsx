@@ -1,21 +1,5 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-
-type Mode = "dark" | "light";
-
-interface ThemeContextValue {
-  mode: Mode;
-  primaryColor: string;
-  setMode: (mode: Mode) => void;
-  setPrimaryColor: (color: string) => void;
-}
-
-const ThemeContext = createContext<ThemeContextValue | null>(null);
-
-export function useTheme(): ThemeContextValue {
-  const ctx = useContext(ThemeContext);
-  if (!ctx) throw new Error("useTheme must be used within <ThemeProvider>");
-  return ctx;
-}
+import { useEffect, type ReactNode } from "react";
+import { useThemeStore } from "@/lib/stores/themeStore";
 
 const darkPalette = {
   "--color-bg": "#2f2f2f",
@@ -40,8 +24,8 @@ const lightPalette = {
 };
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [mode, setMode] = useState<Mode>("dark");
-  const [primaryColor, setPrimaryColor] = useState("#396cd8");
+  const mode = useThemeStore((s) => s.mode);
+  const primaryColor = useThemeStore((s) => s.primaryColor);
 
   useEffect(() => {
     const palette = mode === "dark" ? darkPalette : lightPalette;
@@ -53,9 +37,5 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   }, [mode, primaryColor]);
 
-  return (
-    <ThemeContext.Provider value={{ mode, primaryColor, setMode, setPrimaryColor }}>
-      {children}
-    </ThemeContext.Provider>
-  );
+  return <>{children}</>;
 }

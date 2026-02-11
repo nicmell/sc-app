@@ -1,3 +1,6 @@
+$header-height: 75px;
+$footer-height: 42px;
+
 .react-grid-item {
   transition: none;
 }
@@ -15,7 +18,9 @@
   gap: 0.75rem;
   padding: 1rem;
   flex-shrink: 0;
-  height: 75px;
+  height: $header-height;
+  background: var(--color-panel-header);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .header h1 {
@@ -25,7 +30,7 @@
 }
 
 .dashboard-grid-wrapper {
-  height: calc(100% - 42px - 75px);
+  height: calc(100% - $footer-height - $header-height);
   overflow: scroll;
   padding: 0 1rem 1rem;
 }
@@ -36,7 +41,8 @@
   padding: 0.5rem 1rem;
   flex-shrink: 0;
   border-top: 1px solid var(--color-border);
-  height: 42px;
+  height: $footer-height;
+  background: var(--color-panel-header);
 }
 
 .connected-address {
