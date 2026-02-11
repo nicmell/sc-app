@@ -1,5 +1,6 @@
 import {useEffect, useRef, useState} from "react";
 import {useOsc} from "./OscProvider";
+import {oscService} from "../osc";
 import {
   createDumpOscMessage,
   createFreeNodeMessage,
@@ -8,13 +9,13 @@ import {
   createStatusMessage,
   createVersionMessage,
   createSynthMessage,
-} from "../osc/oscService";
+} from "../osc/messages";
 import {NodeValueRange} from "./NodeValueRange";
 
 const NODE_ID = 1000;
 
 export function LogPanel({address}: { address: string }) {
-  const {osc, disconnect, appendLog, log, clearLog} = useOsc();
+  const {disconnect, appendLog, log, clearLog} = useOsc();
   const [playing, setPlaying] = useState(false);
   const playingRef = useRef(false);
   const mountedRef = useRef(false);
@@ -22,22 +23,22 @@ export function LogPanel({address}: { address: string }) {
   useEffect(() => {
     if (!mountedRef.current) {
       mountedRef.current = true;
-      osc.send(createSynthMessage("sine", NODE_ID));
-      osc.send(createNodeRunMessage(NODE_ID, 0));
+      oscService.send(createSynthMessage("sine", NODE_ID));
+      oscService.send(createNodeRunMessage(NODE_ID, 0));
       appendLog(`Created synth "sine" nodeId=${NODE_ID}`);
     }
     mountedRef.current = true;
     return () => {
       if (mountedRef.current) {
         mountedRef.current = false;
-        osc.send(createFreeNodeMessage(NODE_ID));
+        oscService.send(createFreeNodeMessage(NODE_ID));
       }
     };
   }, []);
 
   const handleSendStatus = () => {
     try {
-      osc.send(createStatusMessage());
+      oscService.send(createStatusMessage());
     } catch (e) {
       appendLog(`/status failed: ${e}`);
     }
@@ -45,7 +46,7 @@ export function LogPanel({address}: { address: string }) {
 
   const handleDumpOsc = () => {
     try {
-      osc.send(createDumpOscMessage(1));
+      oscService.send(createDumpOscMessage(1));
       appendLog("Sent /dumpOSC 1");
     } catch (e) {
       appendLog(`Send failed: ${e}`);
@@ -54,7 +55,7 @@ export function LogPanel({address}: { address: string }) {
 
   const handleVersion = () => {
     try {
-      osc.send(createVersionMessage());
+      oscService.send(createVersionMessage());
     } catch (e) {
       appendLog(`/version failed: ${e}`);
     }
@@ -62,7 +63,7 @@ export function LogPanel({address}: { address: string }) {
 
   const handleQuit = () => {
     try {
-      osc.send(createQuitMessage());
+      oscService.send(createQuitMessage());
       appendLog("Sent /quit — server shutting down");
     } catch (e) {
       appendLog(`Send failed: ${e}`);
@@ -72,12 +73,12 @@ export function LogPanel({address}: { address: string }) {
   const handleTogglePlay = () => {
     try {
       if (playingRef.current) {
-        osc.send(createNodeRunMessage(NODE_ID, 0));
+        oscService.send(createNodeRunMessage(NODE_ID, 0));
         appendLog(`Sent /n_run nodeId=${NODE_ID} 0`);
         playingRef.current = false;
         setPlaying(false);
       } else {
-        osc.send(createNodeRunMessage(NODE_ID, 1));
+        oscService.send(createNodeRunMessage(NODE_ID, 1));
         appendLog(`Sent /n_run nodeId=${NODE_ID} 1`);
         playingRef.current = true;
         setPlaying(true);

@@ -1,19 +1,39 @@
-import {createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode} from "react";
+import {createContext, useCallback, useContext, useEffect, useState, type ReactNode} from "react";
 import OSC from "osc-js";
-import {TauriUdpPlugin} from "../osc/TauriUdpPlugin";
-import {createNotifyMessage, formatOscReply, type OscReply} from "../osc/oscService";
+import {oscService} from "../osc";
+import {createNotifyMessage} from "../osc/messages";
 
-function createOSC() {
-  return new OSC({plugin: new TauriUdpPlugin()});
+interface OscReply {
+  address: string;
+  args: unknown[];
 }
 
-function parseAddress(addr: string): { host: string; port: number } {
-  const [host, portStr] = addr.split(":");
-  return {host, port: parseInt(portStr, 10)};
+function formatStatusReply(args: unknown[]): string {
+  const [, ugens, synths, groups, defs, avgCpu, peakCpu, , actSR] = args as number[];
+  return (
+    `UGens: ${ugens} | Synths: ${synths} | Groups: ${groups} | Defs: ${defs} | ` +
+    `CPU: ${avgCpu.toFixed(1)}% avg / ${peakCpu.toFixed(1)}% peak | ` +
+    `SR: ${actSR.toFixed(0)} Hz`
+  );
+}
+
+function formatVersionReply(args: unknown[]): string {
+  const [name, major, minor, patch, branch, hash] = args as (string | number)[];
+  return `${name} ${major}.${minor}.${patch} (${branch} ${hash})`;
+}
+
+function formatOscReply(reply: OscReply): string {
+  switch (reply.address) {
+    case '/status.reply':
+      return formatStatusReply(reply.args);
+    case '/version.reply':
+      return formatVersionReply(reply.args);
+    default:
+      return `${reply.address} ${reply.args.join(' ')}`;
+  }
 }
 
 interface OscContextValue {
-  osc: InstanceType<typeof OSC>;
   connected: boolean;
   connecting: boolean;
   log: string[];
@@ -32,10 +52,9 @@ export function useOsc(): OscContextValue {
 }
 
 export function OscProvider({children}: { children: ReactNode }) {
-  const osc = useRef(createOSC()).current;
   const [connected, setConnected] = useState(false);
   const [log, setLog] = useState<string[]>([]);
-  const connecting = osc.status() === OSC.STATUS.IS_CONNECTING;
+  const connecting = oscService.status === OSC.STATUS.IS_CONNECTING;
 
   const appendLog = useCallback((msg: string) => {
     setLog((prev) => [
@@ -46,20 +65,20 @@ export function OscProvider({children}: { children: ReactNode }) {
 
   const clearLog = useCallback(() => setLog([]), []);
 
-  const handleMessage = useCallback((msg: InstanceType<typeof OSC.Message>) => {
+  const handleMessage = useCallback((...args: unknown[]) => {
+    const msg = args[0] as InstanceType<typeof OSC.Message>;
     const reply: OscReply = {address: msg.address, args: msg.args as unknown[]};
     appendLog(formatOscReply(reply));
   }, [appendLog]);
 
   const handleOpen = useCallback(() => {
     setConnected(true);
-    osc.send(createNotifyMessage(1));
+    oscService.send(createNotifyMessage(1));
     appendLog("Connected.");
   }, [appendLog]);
 
   const handleClose = useCallback(() => {
     setConnected(false);
-    osc.send(createNotifyMessage(0));
     appendLog("Disconnected.");
   }, [appendLog]);
 
@@ -68,29 +87,31 @@ export function OscProvider({children}: { children: ReactNode }) {
   }, [appendLog]);
 
   useEffect(() => {
-    const onMessageId = osc.on("*", handleMessage);
-    const onOpenId = osc.on("open", handleOpen);
-    const onCloseId = osc.on("close", handleClose);
-    const onErrorId = osc.on("error", handleError);
+    const onMessageId = oscService.on("*", handleMessage);
+    const onOpenId = oscService.on("open", handleOpen);
+    const onCloseId = oscService.on("close", handleClose);
+    const onErrorId = oscService.on("error", handleError);
 
     return () => {
-      osc.off("*", onMessageId);
-      osc.off("open", onOpenId);
-      osc.off("close", onCloseId);
-      osc.off("error", onErrorId);
+      oscService.off("*", onMessageId);
+      oscService.off("open", onOpenId);
+      oscService.off("close", onCloseId);
+      oscService.off("error", onErrorId);
     };
   }, [handleMessage, handleOpen, handleClose, handleError]);
 
   const connect = useCallback(async (address: string) => {
-    await osc.open(parseAddress(address));
+    await oscService.open(address);
+    oscService.send(createNotifyMessage(0));
   }, []);
 
   const disconnect = useCallback(async () => {
-    await osc.close();
+    oscService.send(createNotifyMessage(1));
+    await oscService.close();
   }, []);
 
   return (
-    <OscContext.Provider value={{osc, connected, connecting, log, connect, disconnect, appendLog, clearLog}}>
+    <OscContext.Provider value={{connected, connecting, log, connect, disconnect, appendLog, clearLog}}>
       {children}
     </OscContext.Provider>
   );

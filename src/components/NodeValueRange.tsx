@@ -1,6 +1,6 @@
 import {useState} from "react";
-import {useOsc} from "./OscProvider";
-import {createNodeSetMessage} from "../osc/oscService";
+import {oscService} from "../osc";
+import {createNodeSetMessage} from "../osc/messages";
 
 interface NodeValueRangeProps {
   nodeId: number;
@@ -26,12 +26,11 @@ function formatValue(template: string, value: number): string {
 }
 
 export function NodeValueRange({nodeId, paramKey, label, min, max, step, defaultValue, format}: NodeValueRangeProps) {
-  const {osc} = useOsc();
   const [value, setValue] = useState(defaultValue);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value);
-    osc.send(createNodeSetMessage(nodeId, {[paramKey]: val}));
+    oscService.send(createNodeSetMessage(nodeId, {[paramKey]: val}));
     setValue(val);
   };
 
