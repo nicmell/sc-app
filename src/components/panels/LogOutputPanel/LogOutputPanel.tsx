@@ -1,4 +1,4 @@
-import {useOsc} from "../../OscProvider";
+import {useOsc} from "@/components/OscProvider";
 import "./LogOutputPanel.scss";
 
 export function LogOutputPanel() {

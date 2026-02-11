@@ -1,8 +1,8 @@
 import {useState} from "react";
-import {OscProvider, useOsc} from "./components/OscProvider";
-import {ThemeProvider} from "./components/ThemeProvider";
-import {Dashboard} from "./components/Dashboard";
-import {ConnectScreen} from "./components/ConnectScreen";
+import {OscProvider, useOsc} from "@/components/OscProvider";
+import {ThemeProvider} from "@/components/ThemeProvider";
+import {Dashboard} from "@/components/Dashboard";
+import {ConnectScreen} from "@/components/ConnectScreen";
 
 function AppContent() {
   const [address, setAddress] = useState("");

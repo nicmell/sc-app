@@ -1,5 +1,5 @@
 import {useState} from "react";
-import {useOsc} from "../OscProvider";
+import {useOsc} from "@/components/OscProvider";
 import "./ConnectScreen.scss";
 
 interface ConnectScreenProps {

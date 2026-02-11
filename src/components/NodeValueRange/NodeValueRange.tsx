@@ -1,6 +1,6 @@
 import {useState} from "react";
-import {oscService} from "../../lib/osc";
-import {createNodeSetMessage} from "../../lib/osc/messages";
+import {oscService} from "@/lib/osc";
+import {createNodeSetMessage} from "@/lib/osc/messages";
 import "./NodeValueRange.scss";
 
 interface NodeValueRangeProps {

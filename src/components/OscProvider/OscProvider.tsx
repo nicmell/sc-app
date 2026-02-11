@@ -1,7 +1,7 @@
 import {createContext, useCallback, useContext, useEffect, useState, type ReactNode} from "react";
 import OSC from "osc-js";
-import {oscService} from "../../lib/osc";
-import {createNotifyMessage} from "../../lib/osc/messages";
+import {oscService} from "@/lib/osc";
+import {createNotifyMessage} from "@/lib/osc/messages";
 
 interface OscReply {
   address: string;

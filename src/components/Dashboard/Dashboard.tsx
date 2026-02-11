@@ -2,12 +2,12 @@ import {ResponsiveGridLayout, useContainerWidth} from "react-grid-layout";
 import type {Layout} from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
-import {useOsc} from "../OscProvider";
-import {useLayoutStore} from "../../lib/stores/layoutStore";
-import {DashboardPanel} from "../panels/DashboardPanel";
-import {ServerControlsPanel} from "../panels/ServerControlsPanel";
-import {SynthControlsPanel} from "../panels/SynthControlsPanel";
-import {LogOutputPanel} from "../panels/LogOutputPanel";
+import {useOsc} from "@/components/OscProvider";
+import {useLayoutStore} from "@/lib/stores/layoutStore";
+import {DashboardPanel} from "@/components/panels/DashboardPanel";
+import {ServerControlsPanel} from "@/components/panels/ServerControlsPanel";
+import {SynthControlsPanel} from "@/components/panels/SynthControlsPanel";
+import {LogOutputPanel} from "@/components/panels/LogOutputPanel";
 import "./Dashboard.scss";
 
 const PANEL_MAP: Record<string, {title: string; component: React.FC}> = {
