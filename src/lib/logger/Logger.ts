@@ -1,4 +1,5 @@
 import {create, type StoreApi, type UseBoundStore} from "zustand";
+import {appendLogLine} from "@/lib/storage/logWriter";
 
 interface LogState {
   entries: string[];
@@ -14,12 +15,11 @@ export class Logger {
   }
 
   log(msg: string): void {
+    const line = `[${new Date().toLocaleTimeString()}] ${msg}`;
     this.useStore.setState((state) => ({
-      entries: [
-        ...state.entries.slice(-(MAX_ENTRIES - 1)),
-        `[${new Date().toLocaleTimeString()}] ${msg}`,
-      ],
+      entries: [...state.entries.slice(-(MAX_ENTRIES - 1)), line],
     }));
+    appendLogLine(line);
   }
 
   clear(): void {

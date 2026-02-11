@@ -1,5 +1,7 @@
 import {create} from "zustand";
+import {persist, createJSONStorage} from "zustand/middleware";
 import {ConnectionStatus, DEFAULT_NODE_ID, DEFAULT_POLL_STATUS_MS} from "@/lib/constants";
+import {tauriStorage} from "@/lib/storage/tauriStorage";
 
 export interface ScsynthOptions {
   host: string;
@@ -53,21 +55,30 @@ interface ScsynthState {
   clearClient: () => void;
 }
 
-export const useScsynthStore = create<ScsynthState>((set) => ({
-  clientId: DEFAULT_CLIENT_ID,
-  options: DEFAULT_OPTIONS,
-  connectionStatus: ConnectionStatus.DISCONNECTED,
-  status: DEFAULT_STATUS,
-  version: DEFAULT_VERSION,
-  setClient: (clientId) => set({clientId, connectionStatus: ConnectionStatus.CONNECTED}),
-  setOptions: (opts) => set((state) => ({options: {...state.options, ...opts}})),
-  setConnectionStatus: (connectionStatus) => set({connectionStatus}),
-  setStatus: (status) => set({status}),
-  setVersion: (version) => set({version}),
-  clearClient: () => set({
-    clientId: DEFAULT_CLIENT_ID,
-    connectionStatus: ConnectionStatus.DISCONNECTED,
-    status: DEFAULT_STATUS,
-    version: DEFAULT_VERSION
-  }),
-}));
+export const useScsynthStore = create<ScsynthState>()(
+  persist(
+    (set) => ({
+      clientId: DEFAULT_CLIENT_ID,
+      options: DEFAULT_OPTIONS,
+      connectionStatus: ConnectionStatus.DISCONNECTED,
+      status: DEFAULT_STATUS,
+      version: DEFAULT_VERSION,
+      setClient: (clientId) => set({clientId, connectionStatus: ConnectionStatus.CONNECTED}),
+      setOptions: (opts) => set((state) => ({options: {...state.options, ...opts}})),
+      setConnectionStatus: (connectionStatus) => set({connectionStatus}),
+      setStatus: (status) => set({status}),
+      setVersion: (version) => set({version}),
+      clearClient: () => set({
+        clientId: DEFAULT_CLIENT_ID,
+        connectionStatus: ConnectionStatus.DISCONNECTED,
+        status: DEFAULT_STATUS,
+        version: DEFAULT_VERSION
+      }),
+    }),
+    {
+      name: "scsynth-options",
+      storage: createJSONStorage(() => tauriStorage),
+      partialize: ({options}) => ({options}),
+    },
+  ),
+);

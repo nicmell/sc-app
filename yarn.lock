@@ -943,6 +943,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@tauri-apps/plugin-fs@npm:^2.4.5":
+  version: 2.4.5
+  resolution: "@tauri-apps/plugin-fs@npm:2.4.5"
+  dependencies:
+    "@tauri-apps/api": "npm:^2.8.0"
+  checksum: 10c0/238d1864bfa505f6e1eb3dfcba0867678fb386b590f33d4754d7f7edd9bf17a9bc2b28a9e1a2b5a4490a379d79f176448919ce317803d502d2589b7aa0a75c47
+  languageName: node
+  linkType: hard
+
 "@tauri-apps/plugin-opener@npm:^2":
   version: 2.5.3
   resolution: "@tauri-apps/plugin-opener@npm:2.5.3"
@@ -2219,6 +2228,7 @@ __metadata:
   dependencies:
     "@tauri-apps/api": "npm:^2"
     "@tauri-apps/cli": "npm:^2"
+    "@tauri-apps/plugin-fs": "npm:^2.4.5"
     "@tauri-apps/plugin-opener": "npm:^2"
     "@types/node": "npm:^25.2.3"
     "@types/react": "npm:^18.3.1"

@@ -74,6 +74,7 @@ async fn udp_close(state: State<'_, UdpState>) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_fs::init())
         .manage(UdpState(RwLock::new(None)))
         .invoke_handler(tauri::generate_handler![udp_bind, udp_send, udp_close])
         .run(tauri::generate_context!())
