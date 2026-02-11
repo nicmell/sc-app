@@ -7,11 +7,11 @@ import {
   createSynthMessage,
 } from "@/lib/osc/messages";
 import {NodeValueRange} from "@/components/NodeValueRange";
-import {useScsynthStore} from "@/lib/stores/scsynthStore";
+import {useAppStore} from "@/lib/stores/appStore";
 import "./SynthControlsPanel.scss";
 
 export function SynthControlsPanel() {
-  const nodeId = useScsynthStore((s) => s.options.initialNodeId);
+  const nodeId = useAppStore((s) => s.scsynth.options.initialNodeId);
   const [playing, setPlaying] = useState(false);
   const playingRef = useRef(false);
   const mountedRef = useRef(false);

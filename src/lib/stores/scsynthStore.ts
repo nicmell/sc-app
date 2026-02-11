@@ -1,7 +1,5 @@
-import {create} from "zustand";
-import {persist, createJSONStorage} from "zustand/middleware";
+import type {StateCreator} from "zustand";
 import {ConnectionStatus, DEFAULT_NODE_ID, DEFAULT_POLL_STATUS_MS} from "@/lib/constants";
-import {tauriStorage} from "@/lib/storage/tauriStorage";
 
 export interface ScsynthOptions {
   host: string;
@@ -21,7 +19,6 @@ export interface ScsynthStatus {
 }
 
 const DEFAULT_CLIENT_ID = 0;
-
 const DEFAULT_VERSION = "";
 
 const DEFAULT_STATUS: ScsynthStatus = {
@@ -41,7 +38,7 @@ const DEFAULT_OPTIONS: ScsynthOptions = {
   pollStatusMs: DEFAULT_POLL_STATUS_MS,
 };
 
-interface ScsynthState {
+export interface ScsynthState {
   clientId: number;
   options: ScsynthOptions;
   connectionStatus: ConnectionStatus;
@@ -55,30 +52,21 @@ interface ScsynthState {
   clearClient: () => void;
 }
 
-export const useScsynthStore = create<ScsynthState>()(
-  persist(
-    (set) => ({
-      clientId: DEFAULT_CLIENT_ID,
-      options: DEFAULT_OPTIONS,
-      connectionStatus: ConnectionStatus.DISCONNECTED,
-      status: DEFAULT_STATUS,
-      version: DEFAULT_VERSION,
-      setClient: (clientId) => set({clientId, connectionStatus: ConnectionStatus.CONNECTED}),
-      setOptions: (opts) => set((state) => ({options: {...state.options, ...opts}})),
-      setConnectionStatus: (connectionStatus) => set({connectionStatus}),
-      setStatus: (status) => set({status}),
-      setVersion: (version) => set({version}),
-      clearClient: () => set({
-        clientId: DEFAULT_CLIENT_ID,
-        connectionStatus: ConnectionStatus.DISCONNECTED,
-        status: DEFAULT_STATUS,
-        version: DEFAULT_VERSION
-      }),
-    }),
-    {
-      name: "scsynth-options",
-      storage: createJSONStorage(() => tauriStorage),
-      partialize: ({options}) => ({options}),
-    },
-  ),
-);
+export const createScsynthSlice: StateCreator<ScsynthState> = (set) => ({
+  clientId: DEFAULT_CLIENT_ID,
+  options: DEFAULT_OPTIONS,
+  connectionStatus: ConnectionStatus.DISCONNECTED,
+  status: DEFAULT_STATUS,
+  version: DEFAULT_VERSION,
+  setClient: (clientId) => set({clientId, connectionStatus: ConnectionStatus.CONNECTED}),
+  setOptions: (opts) => set((state) => ({options: {...state.options, ...opts}})),
+  setConnectionStatus: (connectionStatus) => set({connectionStatus}),
+  setStatus: (status) => set({status}),
+  setVersion: (version) => set({version}),
+  clearClient: () => set({
+    clientId: DEFAULT_CLIENT_ID,
+    connectionStatus: ConnectionStatus.DISCONNECTED,
+    status: DEFAULT_STATUS,
+    version: DEFAULT_VERSION,
+  }),
+});

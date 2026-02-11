@@ -1,44 +1,32 @@
 import {
   readTextFile,
   writeTextFile,
-  mkdir,
   remove,
-  exists,
 } from "@tauri-apps/plugin-fs";
 import {BaseDirectory} from "@tauri-apps/api/path";
-import type {StateStorage} from "zustand/middleware";
+import type {PersistStorage, StorageValue} from "zustand/middleware";
 
-const DIR = "settings";
+const FILE = "settings.json";
 const baseDir = BaseDirectory.AppData;
 
-let dirCreated = false;
-
-async function ensureDir() {
-  if (dirCreated) return;
-  const dirExists = await exists(DIR, {baseDir});
-  if (!dirExists) {
-    await mkdir(DIR, {baseDir, recursive: true});
-  }
-  dirCreated = true;
-}
-
-export const tauriStorage: StateStorage = {
-  async getItem(name: string): Promise<string | null> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const tauriStorage: PersistStorage<any> = {
+  async getItem() {
     try {
-      return await readTextFile(`${DIR}/${name}.json`, {baseDir});
+      const text = await readTextFile(FILE, {baseDir});
+      return {state: JSON.parse(text), version: 0};
     } catch {
       return null;
     }
   },
 
-  async setItem(name: string, value: string): Promise<void> {
-    await ensureDir();
-    await writeTextFile(`${DIR}/${name}.json`, value, {baseDir});
+  async setItem(_name: string, {state}: StorageValue<unknown>) {
+    await writeTextFile(FILE, JSON.stringify(state, null, 2), {baseDir});
   },
 
-  async removeItem(name: string): Promise<void> {
+  async removeItem() {
     try {
-      await remove(`${DIR}/${name}.json`, {baseDir});
+      await remove(FILE, {baseDir});
     } catch {
       // ignore
     }

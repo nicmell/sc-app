@@ -3,8 +3,7 @@ import type {Layout} from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import {oscService} from "@/lib/osc";
-import {useScsynthStore, type ScsynthStatus} from "@/lib/stores/scsynthStore";
-import {useLayoutStore} from "@/lib/stores/layoutStore";
+import {useAppStore, type ScsynthStatus} from "@/lib/stores/appStore";
 import {DashboardPanel} from "@/components/panels/DashboardPanel";
 import {ServerControlsPanel} from "@/components/panels/ServerControlsPanel";
 import {SynthControlsPanel} from "@/components/panels/SynthControlsPanel";
@@ -26,9 +25,11 @@ const PANEL_MAP: Record<string, {title: string; component: React.FC}> = {
 };
 
 export function Dashboard() {
-  const address = useScsynthStore((s) => `${s.options.host}:${s.options.port}`);
-  const statusText = useScsynthStore((s) => formatStatus(s.status));
-  const {layout, setLayout, resetLayout} = useLayoutStore();
+  const address = useAppStore((s) => `${s.scsynth.options.host}:${s.scsynth.options.port}`);
+  const statusText = useAppStore((s) => formatStatus(s.scsynth.status));
+  const layout = useAppStore((s) => s.layout.layout);
+  const setLayout = useAppStore((s) => s.layout.setLayout);
+  const resetLayout = useAppStore((s) => s.layout.resetLayout);
   const {width, containerRef, mounted} = useContainerWidth({measureBeforeMount: true});
 
   return (

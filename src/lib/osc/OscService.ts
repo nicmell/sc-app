@@ -1,7 +1,7 @@
 import OSC from 'osc-js';
 import {TauriUdpPlugin} from './TauriUdpPlugin';
 import {createNotifyMessage, createStatusMessage} from './messages';
-import {useScsynthStore, type ScsynthOptions, type ScsynthStatus} from '@/lib/stores/scsynthStore';
+import {appStore, type ScsynthOptions, type ScsynthStatus} from '@/lib/stores/appStore';
 import {logger} from '@/lib/logger';
 
 import {ConnectionStatus} from '@/lib/constants';
@@ -40,17 +40,17 @@ export class OscService {
     switch (msg.address) {
       case '/status.reply': {
         const status = parseStatusReply(msg.args as unknown[]);
-        useScsynthStore.getState().setStatus(status);
+        appStore.getState().scsynth.setStatus(status);
         break;
       }
       case '/version.reply': {
         const version = parseVersionReply(msg.args as unknown[]);
-        useScsynthStore.getState().setVersion(version);
+        appStore.getState().scsynth.setVersion(version);
         break;
       }
       case '/done': {
         if (msg.args[0] === '/notify') {
-          useScsynthStore.getState().setClient(msg.args[1] as number);
+          appStore.getState().scsynth.setClient(msg.args[1] as number);
         }
         break
       }
@@ -58,11 +58,11 @@ export class OscService {
   }
 
   getOptions(): ScsynthOptions {
-    return useScsynthStore.getState().options;
+    return appStore.getState().scsynth.options;
   }
 
   setOptions(opts: Partial<ScsynthOptions>): void {
-    useScsynthStore.getState().setOptions(opts);
+    appStore.getState().scsynth.setOptions(opts);
   }
 
   get status(): number {
@@ -70,15 +70,15 @@ export class OscService {
   }
 
   async connect(): Promise<void> {
-    const store = useScsynthStore.getState();
-    store.setConnectionStatus(ConnectionStatus.CONNECTING);
+    const {scsynth} = appStore.getState();
+    scsynth.setConnectionStatus(ConnectionStatus.CONNECTING);
     try {
       const {host, port} = this.getOptions();
       await this.osc.open({host, port});
       this.startPolling();
-      this.osc.send(createNotifyMessage(1, store.clientId));
+      this.osc.send(createNotifyMessage(1, scsynth.clientId));
     } catch (e) {
-      useScsynthStore.getState().clearClient();
+      appStore.getState().scsynth.clearClient();
       throw e;
     }
   }
@@ -101,7 +101,7 @@ export class OscService {
   async disconnect(): Promise<void> {
     this.stopPolling();
     this.osc.send(createNotifyMessage(0));
-    useScsynthStore.getState().clearClient();
+    appStore.getState().scsynth.clearClient();
     await this.osc.close();
   }
 
