@@ -1,6 +1,6 @@
 import {useEffect, useRef, useState} from "react";
-import {useOsc} from "@/components/OscProvider";
 import {oscService} from "@/lib/osc";
+import {logger} from "@/lib/logger";
 import {
   createFreeNodeMessage,
   createNodeRunMessage,
@@ -12,7 +12,6 @@ import "./SynthControlsPanel.scss";
 const NODE_ID = 1000;
 
 export function SynthControlsPanel() {
-  const {appendLog} = useOsc();
   const [playing, setPlaying] = useState(false);
   const playingRef = useRef(false);
   const mountedRef = useRef(false);
@@ -22,7 +21,7 @@ export function SynthControlsPanel() {
       mountedRef.current = true;
       oscService.send(createSynthMessage("sine", NODE_ID));
       oscService.send(createNodeRunMessage(NODE_ID, 0));
-      appendLog(`Created synth "sine" nodeId=${NODE_ID}`);
+      logger.log(`Created synth "sine" nodeId=${NODE_ID}`);
     }
     mountedRef.current = true;
     return () => {
@@ -37,17 +36,17 @@ export function SynthControlsPanel() {
     try {
       if (playingRef.current) {
         oscService.send(createNodeRunMessage(NODE_ID, 0));
-        appendLog(`Sent /n_run nodeId=${NODE_ID} 0`);
+        logger.log(`Sent /n_run nodeId=${NODE_ID} 0`);
         playingRef.current = false;
         setPlaying(false);
       } else {
         oscService.send(createNodeRunMessage(NODE_ID, 1));
-        appendLog(`Sent /n_run nodeId=${NODE_ID} 1`);
+        logger.log(`Sent /n_run nodeId=${NODE_ID} 1`);
         playingRef.current = true;
         setPlaying(true);
       }
     } catch (e) {
-      appendLog(`Send failed: ${e}`);
+      logger.log(`Send failed: ${e}`);
     }
   };
 
