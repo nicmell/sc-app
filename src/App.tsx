@@ -1,6 +1,6 @@
 import {useState} from "react";
 import {OscProvider, useOsc} from "./components/OscProvider";
-import {LogPanel} from "./components/LogPanel";
+import {Dashboard} from "./components/Dashboard";
 import "./App.css";
 
 function AppContent() {
@@ -28,7 +28,7 @@ function AppContent() {
     );
   }
 
-  return <LogPanel address={address} />;
+  return <Dashboard address={address} />;
 }
 
 function App() {

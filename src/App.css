@@ -17,7 +17,6 @@
 .container {
   margin: 0 auto;
   padding: 2rem;
-  max-width: 640px;
 }
 
 h1 {
@@ -139,6 +138,7 @@ button:disabled {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
+  max-width: 640px;
 }
 
 .connect-screen form {
@@ -178,6 +178,44 @@ button:disabled {
   font-family: monospace;
 }
 
+/* Dashboard */
+
+.dashboard {
+  padding: 1rem;
+}
+
+.dashboard-panel {
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.dashboard-panel-header {
+  padding: 0.4rem 0.75rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  background: #e8e8e8;
+  cursor: grab;
+  user-select: none;
+}
+
+.dashboard-panel-body {
+  padding: 0.75rem;
+  flex: 1;
+  overflow: auto;
+}
+
+.dashboard-panel .log-output {
+  max-height: none;
+  flex: 1;
+}
+
+.dashboard-panel .log-header {
+  margin-bottom: 0.5rem;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     color: #f6f6f6;
@@ -192,5 +230,13 @@ button:disabled {
 
   button:active {
     background-color: #0f0f0f69;
+  }
+
+  .dashboard-panel {
+    border-color: #555;
+  }
+
+  .dashboard-panel-header {
+    background: #3a3a3a;
   }
 }
