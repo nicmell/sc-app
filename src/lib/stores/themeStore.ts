@@ -9,8 +9,11 @@ interface ThemeState {
   setPrimaryColor: (color: string) => void;
 }
 
+const getSystemMode = (): Mode =>
+  window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+
 export const useThemeStore = create<ThemeState>((set) => ({
-  mode: "dark",
+  mode: getSystemMode(),
   primaryColor: "#396cd8",
   setMode: (mode) => set({mode}),
   setPrimaryColor: (primaryColor) => set({primaryColor}),

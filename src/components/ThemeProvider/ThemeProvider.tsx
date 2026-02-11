@@ -26,6 +26,14 @@ const lightPalette = {
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const mode = useThemeStore((s) => s.mode);
   const primaryColor = useThemeStore((s) => s.primaryColor);
+  const setMode = useThemeStore((s) => s.setMode);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = (e: MediaQueryListEvent) => setMode(e.matches ? "dark" : "light");
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, [setMode]);
 
   useEffect(() => {
     const palette = mode === "dark" ? darkPalette : lightPalette;
