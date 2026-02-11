@@ -1,0 +1,22 @@
+.dashboard-panel {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.dashboard-panel-header {
+  padding: 0.4rem 0.75rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  background: var(--color-panel-header);
+  cursor: grab;
+  user-select: none;
+}
+
+.dashboard-panel-body {
+  padding: 0.75rem;
+  flex: 1;
+  overflow: auto;
+}

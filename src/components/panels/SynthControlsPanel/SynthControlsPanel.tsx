@@ -1,12 +1,13 @@
 import {useEffect, useRef, useState} from "react";
-import {useOsc} from "../OscProvider";
-import {oscService} from "../../osc";
+import {useOsc} from "../../OscProvider";
+import {oscService} from "../../../lib/osc";
 import {
   createFreeNodeMessage,
   createNodeRunMessage,
   createSynthMessage,
-} from "../../osc/messages";
-import {NodeValueRange} from "../NodeValueRange";
+} from "../../../lib/osc/messages";
+import {NodeValueRange} from "../../NodeValueRange";
+import "./SynthControlsPanel.scss";
 
 const NODE_ID = 1000;
 

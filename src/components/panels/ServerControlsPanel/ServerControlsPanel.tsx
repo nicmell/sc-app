@@ -1,11 +1,12 @@
-import {useOsc} from "../OscProvider";
-import {oscService} from "../../osc";
+import {useOsc} from "../../OscProvider";
+import {oscService} from "../../../lib/osc";
 import {
   createDumpOscMessage,
   createQuitMessage,
   createStatusMessage,
   createVersionMessage,
-} from "../../osc/messages";
+} from "../../../lib/osc/messages";
+import "./ServerControlsPanel.scss";
 
 export function ServerControlsPanel() {
   const {appendLog} = useOsc();

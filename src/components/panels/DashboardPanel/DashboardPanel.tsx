@@ -1,4 +1,5 @@
 import {forwardRef, type ReactNode} from "react";
+import "./DashboardPanel.scss";
 
 interface DashboardPanelProps {
   title: string;

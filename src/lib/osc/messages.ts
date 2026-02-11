@@ -1,5 +1,5 @@
 import OSC from 'osc-js';
-import sineSynthDefUrl from '../assets/synthdefs/sine.scsyndef?url';
+import sineSynthDefUrl from '../../assets/synthdefs/sine.scsyndef?url';
 
 export function createStatusMessage() {
   return new OSC.Message('/status');
