@@ -7,11 +7,11 @@ import {
   createSynthMessage,
 } from "@/lib/osc/messages";
 import {NodeValueRange} from "@/components/NodeValueRange";
+import {useScsynthStore} from "@/lib/stores/scsynthStore";
 import "./SynthControlsPanel.scss";
 
-const NODE_ID = 1000;
-
 export function SynthControlsPanel() {
+  const nodeId = useScsynthStore((s) => s.options.initialNodeId);
   const [playing, setPlaying] = useState(false);
   const playingRef = useRef(false);
   const mountedRef = useRef(false);
@@ -19,29 +19,29 @@ export function SynthControlsPanel() {
   useEffect(() => {
     if (!mountedRef.current) {
       mountedRef.current = true;
-      oscService.send(createSynthMessage("sine", NODE_ID));
-      oscService.send(createNodeRunMessage(NODE_ID, 0));
-      logger.log(`Created synth "sine" nodeId=${NODE_ID}`);
+      oscService.send(createSynthMessage("sine", nodeId));
+      oscService.send(createNodeRunMessage(nodeId, 0));
+      logger.log(`Created synth "sine" nodeId=${nodeId}`);
     }
     mountedRef.current = true;
     return () => {
       if (mountedRef.current) {
         mountedRef.current = false;
-        oscService.send(createFreeNodeMessage(NODE_ID));
+        oscService.send(createFreeNodeMessage(nodeId));
       }
     };
-  }, []);
+  }, [nodeId]);
 
   const handleTogglePlay = () => {
     try {
       if (playingRef.current) {
-        oscService.send(createNodeRunMessage(NODE_ID, 0));
-        logger.log(`Sent /n_run nodeId=${NODE_ID} 0`);
+        oscService.send(createNodeRunMessage(nodeId, 0));
+        logger.log(`Sent /n_run nodeId=${nodeId} 0`);
         playingRef.current = false;
         setPlaying(false);
       } else {
-        oscService.send(createNodeRunMessage(NODE_ID, 1));
-        logger.log(`Sent /n_run nodeId=${NODE_ID} 1`);
+        oscService.send(createNodeRunMessage(nodeId, 1));
+        logger.log(`Sent /n_run nodeId=${nodeId} 1`);
         playingRef.current = true;
         setPlaying(true);
       }
@@ -55,8 +55,8 @@ export function SynthControlsPanel() {
       <div className="controls">
         <button onClick={handleTogglePlay}>{playing ? "Stop" : "Play"}</button>
       </div>
-      <NodeValueRange nodeId={NODE_ID} paramKey="freq" label="Freq" min={20} max={2000} step={1} defaultValue={440} format="%d Hz" />
-      <NodeValueRange nodeId={NODE_ID} paramKey="amp" label="Amp" min={0} max={1} step={0.01} defaultValue={0.2} format="%.2f" />
+      <NodeValueRange nodeId={nodeId} paramKey="freq" label="Freq" min={20} max={2000} step={1} defaultValue={440} format="%d Hz" />
+      <NodeValueRange nodeId={nodeId} paramKey="amp" label="Amp" min={0} max={1} step={0.01} defaultValue={0.2} format="%.2f" />
     </>
   );
 }

@@ -1,19 +1,26 @@
 import {useState} from "react";
-import {useOsc} from "@/components/OscProvider";
+import {oscService} from "@/lib/osc";
+import {useScsynthStore} from "@/lib/stores/scsynthStore";
+import {ConnectionStatus, ADDRESS_REGEXP} from "@/lib/constants";
 import "./ConnectScreen.scss";
 
-interface ConnectScreenProps {
-  onConnected: (address: string) => void;
+function parseAddress(addr: string): { host: string; port: number } {
+  const match = ADDRESS_REGEXP.exec(addr);
+  if (!match) throw new Error(`Invalid address: ${addr}`);
+  return { host: match[1], port: parseInt(match[2], 10) };
 }
 
-export function ConnectScreen({onConnected}: ConnectScreenProps) {
-  const [address, setAddress] = useState("127.0.0.1:57110");
-  const {connecting, connect} = useOsc();
+export function ConnectScreen() {
+  const options = useScsynthStore((s) => s.options);
+  const connecting = useScsynthStore((s) => s.connectionStatus === ConnectionStatus.CONNECTING);
+  const [address, setAddress] = useState(`${options.host}:${options.port}`);
+
+  const valid = ADDRESS_REGEXP.test(address);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await connect(address);
-    onConnected(address);
+    oscService.setOptions(parseAddress(address));
+    await oscService.connect();
   };
 
   return (
@@ -28,7 +35,7 @@ export function ConnectScreen({onConnected}: ConnectScreenProps) {
           placeholder="127.0.0.1:57110"
           disabled={connecting}
         />
-        <button type="submit" disabled={connecting}>
+        <button type="submit" disabled={!valid || connecting}>
           {connecting ? "Connecting..." : "Connect"}
         </button>
       </form>

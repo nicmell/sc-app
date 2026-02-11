@@ -1,31 +1,18 @@
-import {useState} from "react";
-import {OscProvider, useOsc} from "@/components/OscProvider";
 import {ThemeProvider} from "@/components/ThemeProvider";
 import {Dashboard} from "@/components/Dashboard";
 import {ConnectScreen} from "@/components/ConnectScreen";
-
-function AppContent() {
-  const [address, setAddress] = useState("");
-  const {connected} = useOsc();
-
-  return (
-    <main>
-      {connected ? (
-        <Dashboard address={address} />
-      ) : (
-        <ConnectScreen onConnected={setAddress} />
-      )}
-    </main>
-  );
-}
+import {useScsynthStore} from "@/lib/stores/scsynthStore";
+import {ConnectionStatus} from "@/lib/constants";
 
 function App() {
+  const connected = useScsynthStore((s) => s.connectionStatus === ConnectionStatus.CONNECTED);
+
   return (
-    <OscProvider>
-      <ThemeProvider>
-        <AppContent />
-      </ThemeProvider>
-    </OscProvider>
+    <ThemeProvider>
+      <main>
+        {connected ? <Dashboard /> : <ConnectScreen />}
+      </main>
+    </ThemeProvider>
   );
 }
 

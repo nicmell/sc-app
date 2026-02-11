@@ -2,7 +2,8 @@ import {ResponsiveGridLayout, useContainerWidth} from "react-grid-layout";
 import type {Layout} from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
-import {useOsc} from "@/components/OscProvider";
+import {oscService} from "@/lib/osc";
+import {useScsynthStore, type ScsynthStatus} from "@/lib/stores/scsynthStore";
 import {useLayoutStore} from "@/lib/stores/layoutStore";
 import {DashboardPanel} from "@/components/panels/DashboardPanel";
 import {ServerControlsPanel} from "@/components/panels/ServerControlsPanel";
@@ -10,14 +11,23 @@ import {SynthControlsPanel} from "@/components/panels/SynthControlsPanel";
 import {LogOutputPanel} from "@/components/panels/LogOutputPanel";
 import "./Dashboard.scss";
 
+function formatStatus(s: ScsynthStatus): string {
+  return (
+    //`UGens: ${s.ugens} | Synths: ${s.synths} | Groups: ${s.groups} | Defs: ${s.defs} | ` +
+    `CPU: ${s.avgCpu.toFixed(1)}% / ${s.peakCpu.toFixed(1)}% | ` +
+    `SR: ${s.sampleRate.toFixed(0)} Hz`
+  );
+}
+
 const PANEL_MAP: Record<string, {title: string; component: React.FC}> = {
   server: {title: "Server", component: ServerControlsPanel},
   synth: {title: "Synth", component: SynthControlsPanel},
   log: {title: "Log", component: LogOutputPanel},
 };
 
-export function Dashboard({address}: {address: string}) {
-  const {disconnect} = useOsc();
+export function Dashboard() {
+  const address = useScsynthStore((s) => `${s.options.host}:${s.options.port}`);
+  const statusText = useScsynthStore((s) => formatStatus(s.status));
   const {layout, setLayout, resetLayout} = useLayoutStore();
   const {width, containerRef, mounted} = useContainerWidth({measureBeforeMount: true});
 
@@ -26,7 +36,7 @@ export function Dashboard({address}: {address: string}) {
       <header className="header">
         <h1>SC-App</h1>
         <button onClick={resetLayout}>Reset Layout</button>
-        <button onClick={disconnect}>Disconnect</button>
+        <button onClick={() => oscService.disconnect()}>Disconnect</button>
       </header>
 
       <div className="dashboard-grid-wrapper" ref={containerRef as React.RefObject<HTMLDivElement>}>
@@ -57,6 +67,7 @@ export function Dashboard({address}: {address: string}) {
 
       <footer className="footer">
         <span className="connected-address">{address}</span>
+        <span className="server-status">{statusText}</span>
       </footer>
     </div>
   );
