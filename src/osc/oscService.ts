@@ -42,6 +42,22 @@ export function createFreeNodeMessage(nodeId: number) {
   return new OSC.Message('/n_free', nodeId);
 }
 
+export function createNodeRunMessage(nodeId: number, flag: number) {
+  return new OSC.Message('/n_run', nodeId, flag);
+}
+
+export function createSynthBundle(
+  synthName: string,
+  nodeId: number,
+  addAction: number,
+  targetId: number,
+  params: Record<string, number>,
+) {
+  const synthMsg = createSynthMessage(synthName, nodeId, addAction, targetId, params);
+  const runMsg = createNodeRunMessage(nodeId, 0);
+  return new OSC.Bundle([synthMsg, runMsg]);
+}
+
 export function createNodeSetMessage(nodeId: number, params: Record<string, number>) {
   const msg = new OSC.Message('/n_set', nodeId);
   for (const [key, value] of Object.entries(params)) {

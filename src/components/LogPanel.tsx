@@ -3,25 +3,36 @@ import {useOsc} from "./OscProvider";
 import {
   createDumpOscMessage,
   createFreeNodeMessage,
-  createNodeSetMessage,
+  createNodeRunMessage,
   createQuitMessage,
   createStatusMessage,
-  createSynthMessage,
-  createDefRecvMessage,
   createVersionMessage,
+  createSynthMessage,
 } from "../osc/oscService";
+import {NodeValueRange} from "./NodeValueRange";
 
 const NODE_ID = 1000;
 
 export function LogPanel({address}: { address: string }) {
   const {osc, disconnect, appendLog, log, clearLog} = useOsc();
   const [playing, setPlaying] = useState(false);
-  const [freq, setFreq] = useState(440);
-  const [amp, setAmp] = useState(0.2);
   const playingRef = useRef(false);
+  const mountedRef = useRef(false);
 
   useEffect(() => {
-    createDefRecvMessage().then((msg) => osc.send(msg));
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      osc.send(createSynthMessage("sine", NODE_ID));
+      osc.send(createNodeRunMessage(NODE_ID, 0));
+      appendLog(`Created synth "sine" nodeId=${NODE_ID}`);
+    }
+    mountedRef.current = true;
+    return () => {
+      if (mountedRef.current) {
+        mountedRef.current = false;
+        osc.send(createFreeNodeMessage(NODE_ID));
+      }
+    };
   }, []);
 
   const handleSendStatus = () => {
@@ -61,13 +72,13 @@ export function LogPanel({address}: { address: string }) {
   const handleTogglePlay = () => {
     try {
       if (playingRef.current) {
-        osc.send(createFreeNodeMessage(NODE_ID));
-        appendLog(`Sent /n_free nodeId=${NODE_ID}`);
+        osc.send(createNodeRunMessage(NODE_ID, 0));
+        appendLog(`Sent /n_run nodeId=${NODE_ID} 0`);
         playingRef.current = false;
         setPlaying(false);
       } else {
-        osc.send(createSynthMessage("sine", NODE_ID, 0, 0, {freq, amp}));
-        appendLog(`Sent /s_new "sine" nodeId=${NODE_ID} freq=${freq} amp=${amp}`);
+        osc.send(createNodeRunMessage(NODE_ID, 1));
+        appendLog(`Sent /n_run nodeId=${NODE_ID} 1`);
         playingRef.current = true;
         setPlaying(true);
       }
@@ -76,21 +87,6 @@ export function LogPanel({address}: { address: string }) {
     }
   };
 
-  const handleFreqChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseFloat(e.target.value);
-    setFreq(val);
-    if (playingRef.current) {
-      osc.send(createNodeSetMessage(NODE_ID, {freq: val}));
-    }
-  };
-
-  const handleAmpChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseFloat(e.target.value);
-    setAmp(val);
-    if (playingRef.current) {
-      osc.send(createNodeSetMessage(NODE_ID, {amp: val}));
-    }
-  };
 
   return (
     <main className="container">
@@ -115,18 +111,8 @@ export function LogPanel({address}: { address: string }) {
         <div className="controls">
           <button onClick={handleTogglePlay}>{playing ? "Stop" : "Play"}</button>
         </div>
-        <div className="range-control">
-          <label>
-            <span>Freq: {freq} Hz</span>
-            <input type="range" min={20} max={2000} step={1} value={freq} onChange={handleFreqChange} />
-          </label>
-        </div>
-        <div className="range-control">
-          <label>
-            <span>Amp: {amp.toFixed(2)}</span>
-            <input type="range" min={0} max={1} step={0.01} value={amp} onChange={handleAmpChange} />
-          </label>
-        </div>
+        <NodeValueRange nodeId={NODE_ID} paramKey="freq" label="Freq" min={20} max={2000} step={1} defaultValue={440} format="%d Hz"/>
+        <NodeValueRange nodeId={NODE_ID} paramKey="amp" label="Amp" min={0} max={1} step={0.01} defaultValue={0.2} format="%.2f"/>
       </section>
 
       <section>
