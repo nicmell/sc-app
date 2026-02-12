@@ -9,7 +9,7 @@ import {scsynthSlice, type ScsynthState} from "./scsynthStore";
 
 export type {ScsynthOptions, ScsynthStatus} from "./scsynthStore";
 
-interface AppState {
+export interface AppState {
   theme: ThemeState;
   layout: LayoutState;
   scsynth: ScsynthState;
