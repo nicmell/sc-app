@@ -3,10 +3,10 @@ export type Action<T extends string = string, P = void> =
 
 export type ActionCreator<T extends string = string, P = void> =
   [P] extends [void]
-    ? { (): Action<T>; type: T }
-    : { (payload: P): Action<T, P>; type: T };
+    ? { (): Action<T>; type: T; match: (action: Action) => action is Action<T> }
+    : { (payload: P): Action<T, P>; type: T; match: (action: Action) => action is Action<T, P> };
 
-export type CaseReducer<S, A extends Action = Action> = (state: S, action: A) => void;
+export type CaseReducer<S, A extends Action = Action> = (state: S, action: A) => void | S;
 
 export type ReducerWithInitialState<S> = CaseReducer<S> & {
   getInitialState: () => S;
@@ -39,7 +39,7 @@ export function createAction<T extends string, Args extends unknown[], R>(
 export function createAction(type: string, prepare?: (...args: any[]) => any) {
   return Object.assign(
     (...args: any[]) => prepare ? {type, payload: prepare(...args)} : {type},
-    {type},
+    {type, match: (action: Action): action is any => action.type === type},
   );
 }
 
