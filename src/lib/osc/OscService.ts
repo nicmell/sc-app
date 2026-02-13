@@ -35,14 +35,18 @@ export class OscService {
     this.osc.on('error', (err: unknown) => logger.log(`Error: ${err}`));
     this.osc.on('*', (...args: unknown[]) => {
       const msg = args[0] as InstanceType<typeof OSC.Message>;
-      if (msg.address !== '/status.reply') {
-        logger.log(`${msg.address} ${(msg.args as unknown[]).join(' ')}`);
-      }
       this.handleMessage(msg);
     });
   }
 
+  private logMessage(msg: InstanceType<typeof OSC.Message>) {
+    if (msg.address !== '/status.reply') {
+      logger.log(`${msg.address} ${(msg.args as unknown[]).join(' ')}`);
+    }
+  }
+
   private handleMessage(msg: InstanceType<typeof OSC.Message>): void {
+    this.logMessage(msg);
     switch (msg.address) {
       case '/status.reply': {
         const status = parseStatusReply(msg.args as unknown[]);
@@ -82,13 +86,22 @@ export class OscService {
     return this.osc.status();
   }
 
-  async connect(): Promise<void> {
+  connect(): void {
     const {scsynth} = appStore.getState();
-    scsynth.setConnectionStatus(ConnectionStatus.CONNECTING);
     const {host, port} = this.getOptions();
+    scsynth.setConnectionStatus(ConnectionStatus.CONNECTING);
     this.startPolling()
-    await this.osc.open({host, port});
+    this.osc.open({host, port});
   }
+
+  disconnect(): void {
+    this.stopPolling();
+    this.osc.send(createNotifyMessage(0));
+    //appStore.getState().scsynth.clearClient();
+    appStore.getState().scsynth.setConnectionStatus(ConnectionStatus.DISCONNECTED);
+    this.osc.close();
+  }
+
 
   private startPolling(): void {
     this.stopPolling();
@@ -97,6 +110,14 @@ export class OscService {
       this.osc.send(createStatusMessage());
     }, pollStatusMs);
     this.resetTimeout();
+  }
+
+  private stopPolling(): void {
+    if (this.pollingId !== null) {
+      clearInterval(this.pollingId);
+      this.pollingId = null;
+    }
+    this.clearTimeout();
   }
 
   private resetTimeout(): void {
@@ -112,22 +133,6 @@ export class OscService {
       globalThis.clearTimeout(this.timeoutId);
       this.timeoutId = null;
     }
-  }
-
-  private stopPolling(): void {
-    if (this.pollingId !== null) {
-      clearInterval(this.pollingId);
-      this.pollingId = null;
-    }
-    this.clearTimeout();
-  }
-
-  async disconnect(): Promise<void> {
-    this.stopPolling();
-    this.osc.send(createNotifyMessage(0));
-    //appStore.getState().scsynth.clearClient();
-    appStore.getState().scsynth.setConnectionStatus(ConnectionStatus.DISCONNECTED);
-    await this.osc.close();
   }
 
   send(msg:  OSC.Packet | OSC.Bundle | OSC.Message | OSC.TypedMessage): void {
