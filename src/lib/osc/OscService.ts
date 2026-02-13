@@ -1,21 +1,10 @@
 import OSC from 'osc-js';
 import {TauriUdpPlugin} from './TauriUdpPlugin';
-import {createNotifyMessage, createStatusMessage} from './messages';
-import {appStore, type ScsynthOptions, type ScsynthStatus} from '@/lib/stores/appStore';
+import {createNotifyMessage, createStatusMessage, createVersionMessage} from './messages';
+import {appStore, type ScsynthOptions} from '@/lib/stores/appStore';
 import {logger} from '@/lib/logger';
 
 import {ConnectionStatus} from '@/lib/constants';
-
-function parseStatusReply(args: unknown[]): ScsynthStatus {
-  const [, ugens, synths, groups, defs, avgCpu, peakCpu, , sampleRate] = args as number[];
-  return {ugens, synths, groups, defs, avgCpu, peakCpu, sampleRate};
-}
-
-
-function parseVersionReply(args: unknown[]): string {
-  const [name, major, minor, patch, branch, hash] = args as (string | number)[];
-  return `${name} ${major}.${minor}.${patch} (${branch} ${hash})`;
-}
 
 export class OscService {
   private osc: InstanceType<typeof OSC>;
@@ -27,12 +16,19 @@ export class OscService {
     this.osc = new OSC({ plugin: new TauriUdpPlugin() });
 
     this.osc.on('open', () => {
+      this.resetTimeout();
+      this.startPolling()
       this.osc.send(createNotifyMessage(1, appStore.getState().scsynth.clientId));
     });
     this.osc.on('close', () => {
+      this.clearTimeout();
+      this.stopPolling();
+      appStore.getState().scsynth.setConnectionStatus(ConnectionStatus.DISCONNECTED);
       logger.log('Disconnected.')
     });
-    this.osc.on('error', (err: unknown) => logger.log(`Error: ${err}`));
+    this.osc.on('error', (err: unknown) => {
+      logger.log(`Error: ${err}`)
+    });
     this.osc.on('*', (...args: unknown[]) => {
       const msg = args[0] as InstanceType<typeof OSC.Message>;
       this.handleMessage(msg);
@@ -46,32 +42,44 @@ export class OscService {
   }
 
   private handleMessage(msg: InstanceType<typeof OSC.Message>): void {
-    this.logMessage(msg);
     switch (msg.address) {
       case '/status.reply': {
-        const status = parseStatusReply(msg.args as unknown[]);
-        appStore.getState().scsynth.setStatus(status);
         this.resetTimeout();
-        break;
+        const [, ugens, synths, groups, defs, avgCpu, peakCpu, , sampleRate] = msg.args as number[];
+        appStore.getState().scsynth.setStatus({ugens, synths, groups, defs, avgCpu, peakCpu, sampleRate});
+        break
       }
+
       case '/version.reply': {
-        const version = parseVersionReply(msg.args as unknown[]);
-        appStore.getState().scsynth.setVersion(version);
-        break;
+        const [name, major, minor, patch, branch, hash] = msg.args as (string | number)[];
+        appStore.getState().scsynth.setVersion(`${name} ${major}.${minor}.${patch} (${branch} ${hash})`);
+        break
       }
       case '/done': {
         if (msg.args[0] === '/notify') {
-          appStore.getState().scsynth.setClient(msg.args[1] as number);
-          this.startPolling();
-          appStore.getState().scsynth.setConnectionStatus(ConnectionStatus.CONNECTED);
-          logger.log('Connected.')
+          const clientId = msg.args[1] as number;
+           return this.init(clientId);
         }
         break
       }
     }
-    if (msg.address !== '/status.reply') {
-      logger.log(`${msg.address} ${(msg.args as unknown[]).join(' ')}`);
+    if (this.status() === ConnectionStatus.CONNECTING && this.isReady()) {
+      appStore.getState().scsynth.setConnectionStatus(ConnectionStatus.CONNECTED);
+      logger.log('Connected.');
     }
+    this.logMessage(msg);
+  }
+
+  private status() {
+    return appStore.getState().scsynth.connectionStatus
+  }
+
+  private init(clientId: number) {
+    appStore.getState().scsynth.setClient(clientId);
+    this.send(
+        createStatusMessage(),
+        createVersionMessage(),
+    )
   }
 
   getOptions(): ScsynthOptions {
@@ -82,23 +90,24 @@ export class OscService {
     appStore.getState().scsynth.setOptions(opts);
   }
 
-  get status(): number {
-    return this.osc.status();
+  private isReady(): boolean {
+    const {scsynth} = appStore.getState();
+    return (
+        scsynth.clientId !== 0 && scsynth.status.sampleRate !== 0 && scsynth.version !== ''
+    );
   }
 
   connect(): void {
     const {scsynth} = appStore.getState();
-    const {host, port} = this.getOptions();
+    const {host, port} = scsynth.options;
     scsynth.setConnectionStatus(ConnectionStatus.CONNECTING);
-    this.startPolling()
     this.osc.open({host, port});
   }
 
   disconnect(): void {
-    this.stopPolling();
-    this.osc.send(createNotifyMessage(0));
-    //appStore.getState().scsynth.clearClient();
-    appStore.getState().scsynth.setConnectionStatus(ConnectionStatus.DISCONNECTED);
+    if (this.osc.status() === OSC.STATUS.IS_OPEN) {
+      this.osc.send(createNotifyMessage(0));
+    }
     this.osc.close();
   }
 
@@ -107,9 +116,10 @@ export class OscService {
     this.stopPolling();
     const {pollStatusMs} = this.getOptions();
     this.pollingId = setInterval(() => {
-      this.osc.send(createStatusMessage());
+      if (this.osc.status() === OSC.STATUS.IS_OPEN) {
+        this.osc.send(createStatusMessage());
+      }
     }, pollStatusMs);
-    this.resetTimeout();
   }
 
   private stopPolling(): void {
@@ -117,14 +127,15 @@ export class OscService {
       clearInterval(this.pollingId);
       this.pollingId = null;
     }
-    this.clearTimeout();
   }
 
   private resetTimeout(): void {
     this.clearTimeout();
     this.timeoutId = setTimeout(() => {
-      logger.log('No status.reply received for 3 seconds, disconnecting.');
-      void this.disconnect();
+      if (this.osc.status() === OSC.STATUS.IS_OPEN) {
+        logger.log('No status.reply received for 3 seconds, disconnecting.');
+        void this.disconnect();
+      }
     }, OscService.REPLY_TIMEOUT_MS);
   }
 
@@ -135,8 +146,17 @@ export class OscService {
     }
   }
 
-  send(msg:  OSC.Packet | OSC.Bundle | OSC.Message | OSC.TypedMessage): void {
-    this.osc.send(msg);
+  send(...msg: InstanceType<typeof OSC.Message>[]): void {
+    if (msg.length === 1) {
+      return this.osc.send(msg[0]);
+
+    } else if (msg.length > 1) {
+
+      const latency = 200
+      const bundle = new OSC.Bundle(msg, Date.now() + latency);
+
+      return this.osc.send(bundle);
+    }
   }
 
   on(event: string, handler: (...args: unknown[]) => void): number {

@@ -9,7 +9,6 @@ import {
 import {NodeValueRange} from "@/components/NodeValueRange";
 import {useAppStore} from "@/lib/stores/appStore";
 import "./SynthControlsPanel.scss";
-import OSC from "osc-js";
 
 export function SynthControlsPanel() {
   const nodeId = useAppStore((s) => s.scsynth.options.initialNodeId);
@@ -20,10 +19,10 @@ export function SynthControlsPanel() {
   useEffect(() => {
     if (!mountedRef.current) {
       mountedRef.current = true;
-      oscService.send(new OSC.Bundle(
+      oscService.send(
           createSynthMessage("sine", nodeId),
           createNodeRunMessage(-1, 0)
-      ));
+      );
       logger.log(`Created synth "sine" nodeId=${nodeId}`);
     }
 /*    mountedRef.current = true;

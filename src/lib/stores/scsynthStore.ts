@@ -58,15 +58,10 @@ export const scsynthSlice: StateCreator<ScsynthState> = (set) => ({
   connectionStatus: ConnectionStatus.DISCONNECTED,
   status: DEFAULT_STATUS,
   version: DEFAULT_VERSION,
-  setClient: (clientId) => set({clientId, connectionStatus: ConnectionStatus.CONNECTED}),
+  setClient: (clientId) => set({clientId}),
   setOptions: (opts) => set((state) => ({options: {...state.options, ...opts}})),
   setConnectionStatus: (connectionStatus) => set({connectionStatus}),
   setStatus: (status) => set({status}),
   setVersion: (version) => set({version}),
-  clearClient: () => set({
-    clientId: DEFAULT_CLIENT_ID,
-    connectionStatus: ConnectionStatus.DISCONNECTED,
-    status: DEFAULT_STATUS,
-    version: DEFAULT_VERSION,
-  }),
+  clearClient: () => set({clientId: DEFAULT_CLIENT_ID }),
 });
