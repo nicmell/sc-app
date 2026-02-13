@@ -1,105 +1,85 @@
-import type {StateCreator, StoreApi} from "zustand";
+export type Action<T extends string = string, P = void> =
+  [P] extends [void] ? { type: T } : { type: T; payload: P };
 
-type SliceCreator<TSlice> = StateCreator<
-  TSlice,
-  [],
-  [],
-  TSlice
->;
+export type ActionCreator<T extends string = string, P = void> =
+  [P] extends [void]
+    ? { (): Action<T>; type: T }
+    : { (payload: P): Action<T, P>; type: T };
 
-type SliceFactory<TRoot extends object, TKey extends keyof TRoot> = (
-  creator: SliceCreator<TRoot[TKey]>
-) => Pick<TRoot, TKey>;
+type SliceReducer<S> = (state: S, action: Action) => void;
 
-/**
- * Creates a slice factory for a nested portion of a Zustand store.
- *
- * This allows you to define slices independently while maintaining a single root store,
- * enabling better code organization and type safety.
- *
- * @param api - The root store API
- * @param key - The key in the root state where this slice will be stored
- * @returns A function that takes a slice creator and returns the slice
- */
-export function createSlice<TRoot extends object, TKey extends keyof TRoot>(
-  api: StoreApi<TRoot>,
-  key: TKey
-): SliceFactory<TRoot, TKey> {
-  return (creator: SliceCreator<TRoot[TKey]>): Pick<TRoot, TKey> => {
-    type TSlice = TRoot[TKey];
+type CaseReducers<S> = Record<string, (state: S, ...args: any[]) => void>;
 
-    const getSliceState: StoreApi<TSlice>["getState"] = () => api.getState()[key];
+type InferActionCreators<Name extends string, R> = {
+  [K in keyof R & string]: R[K] extends (...args: infer A) => any
+    ? A extends [any, { payload: infer P }]
+      ? ActionCreator<`${Name}/${K}`, P>
+      : ActionCreator<`${Name}/${K}`>
+    : never;
+};
 
-    const setSliceState: StoreApi<TSlice>["setState"] = (partial, replace) => {
-      const currentSlice = getSliceState();
-      const nextSlice =
-        typeof partial === "function"
-          ? (partial as (state: TSlice) => TSlice | Partial<TSlice>)(currentSlice)
-          : partial;
-      const updatedSlice: TSlice = replace
-        ? (nextSlice as TSlice)
-        : ({...currentSlice, ...(nextSlice as Partial<TSlice>)} as TSlice);
+export type InferAction<T extends { actions: Record<string, (...args: any[]) => any> }> =
+  ReturnType<T["actions"][keyof T["actions"]]>;
 
-      api.setState({...api.getState(), [key]: updatedSlice} as Partial<TRoot>);
-    };
+export function createAction<T extends string>(
+  type: T,
+): ActionCreator<T>;
+export function createAction<T extends string, Args extends unknown[], R>(
+  type: T,
+  prepare: (...args: Args) => R,
+): { (...args: Args): Action<T, R>; type: T };
 
-    const subscribeToSlice: StoreApi<TSlice>["subscribe"] = (listener) =>
-      api.subscribe((state, prevState) => {
-        const currentSlice = state[key];
-        const previousSlice = prevState[key];
-        if (currentSlice !== previousSlice) {
-          listener(currentSlice, previousSlice);
-        }
-      });
-
-    const sliceApi: StoreApi<TSlice> = {
-      setState: setSliceState,
-      getState: getSliceState,
-      subscribe: subscribeToSlice,
-      getInitialState: () => api.getInitialState()[key],
-    };
-
-    const sliceState = creator(
-      sliceApi.setState,
-      sliceApi.getState,
-      sliceApi
-    );
-
-    return {[key]: sliceState} as Pick<TRoot, TKey>;
-  };
+export function createAction(type: string, prepare?: (...args: any[]) => any) {
+  return Object.assign(
+    (...args: any[]) => prepare ? {type, payload: prepare(...args)} : {type},
+    {type},
+  );
 }
-;
 
-/**
- * Combines multiple slice creators into a complete root state.
- *
- * Takes the store API and an object of slice creators, processes each slice
- * with proper scoping, and merges them into a single root state object.
- *
- * @param api - The root store API
- * @param factories - An object where each key maps to a StateCreator for that slice
- * @returns The combined root state with all slices merged
- *
- * @example
- * ```ts
- * const rootState = combineSlices(api, {
- *   user: (set, get) => ({ name: 'John', setName: (name) => set({ name }) }),
- *   settings: (set, get) => ({ theme: 'dark', setTheme: (theme) => set({ theme }) })
- * });
- * ```
- */
-export function combineSlices<TRoot extends object>(
-  api: StoreApi<TRoot>,
-  factories: {[TKey in keyof TRoot]: SliceCreator<TRoot[TKey]>}
-): TRoot {
-  const slices = Object.keys(factories).reduce((accumulator, keyString) => {
-    const key = keyString as keyof TRoot;
-    const factory = factories[key];
-    const sliceFactory = createSlice(api, key);
-    const slice = sliceFactory(factory);
+export function createReducer<S, A extends Action>(
+  initialState: S,
+  handlers: { [T in A["type"]]?: (state: S, action: Extract<A, { type: T }>) => void },
+) {
+  const reducer: SliceReducer<S> = (state, action) => {
+    const handler = handlers[action.type as A["type"]];
+    if (handler) {
+      (handler as SliceReducer<S>)(state, action);
+    }
+  };
+  return {initialState, reducer};
+}
 
-    return { ...accumulator, ...slice };
-  }, {} as Partial<TRoot>);
+export function createSlice<S, Name extends string, R extends CaseReducers<S>>(config: {
+  name: Name;
+  initialState: S;
+  reducers: R;
+}): {
+  initialState: S;
+  reducer: SliceReducer<S>;
+  actions: InferActionCreators<Name, R>;
+} {
+  const {name, initialState, reducers} = config;
+  const actions = {} as Record<string, any>;
+  const handlerMap = {} as Record<string, (state: S, action: Action) => void>;
 
-  return slices as TRoot;
+  for (const key of Object.keys(reducers)) {
+    const type = `${name}/${key}`;
+    actions[key] = createAction(type, (payload: any) => payload);
+    handlerMap[type] = reducers[key] as (state: S, action: Action) => void;
+  }
+
+  const {reducer} = createReducer<S, Action>(initialState, handlerMap);
+
+  return {initialState, reducer, actions: actions as any};
+}
+
+export function combineReducers<S extends object>(
+  reducers: { [K in keyof S]: SliceReducer<S[K]> },
+): SliceReducer<S> {
+  const keys = Object.keys(reducers) as (keyof S)[];
+  return (state, action) => {
+    for (const key of keys) {
+      reducers[key](state[key], action);
+    }
+  };
 }

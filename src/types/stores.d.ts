@@ -27,25 +27,15 @@ export interface ScsynthState {
   connectionStatus: ConnectionStatus;
   status: ScsynthStatus;
   version: string;
-  setClient: (clientId: number) => void;
-  setOptions: (options: Partial<ScsynthOptions>) => void;
-  setConnectionStatus: (connectionStatus: ConnectionStatus) => void;
-  setStatus: (status: ScsynthStatus) => void;
-  setVersion: (version: string) => void;
-  clearClient: () => void;
 }
 
 export interface LayoutState {
   layout: LayoutItem[];
-  setLayout: (layout: LayoutItem[]) => void;
-  resetLayout: () => void;
 }
 
 export interface ThemeState {
   mode: Mode;
   primaryColor: string;
-  setMode: (mode: Mode) => void;
-  setPrimaryColor: (color: string) => void;
 }
 
 export interface RootState {

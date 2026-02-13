@@ -1,22 +1,39 @@
 import {createStore} from "zustand/vanilla";
 import {useStore} from "zustand";
 import {persist} from "zustand/middleware";
+import {immer} from "zustand/middleware/immer";
+import {redux} from "zustand/middleware";
 import {tauriStorage} from "@/lib/storage/tauriStorage";
-import {combineSlices} from "./utils";
-import {themeSlice} from "./theme";
-import {layoutSlice} from "./layout";
-import {scsynthSlice} from "./scsynth";
+import {scsynthInitialState, scsynthReducer} from "./scsynth/scsynthStore";
+import {layoutInitialState, layoutReducer} from "./layout/layoutStore";
+import {themeInitialState, themeReducer} from "./theme/themeStore";
+import {combineReducers} from "./utils";
 import type {RootState} from "@/types/stores";
+import type {RootAction} from "./actions";
 
+export type {RootAction} from "./actions";
 export type {RootState, ScsynthOptions, ScsynthStatus} from "@/types/stores";
 
-export const rootStore = createStore<RootState>()(
+const rootInitialState: RootState = {
+  scsynth: scsynthInitialState,
+  layout: layoutInitialState,
+  theme: themeInitialState,
+};
+
+const rootReducerImpl = combineReducers<RootState>({
+  scsynth: scsynthReducer,
+  layout: layoutReducer,
+  theme: themeReducer,
+});
+
+function rootReducer(state: RootState, action: RootAction): RootState {
+  rootReducerImpl(state, action);
+  return state;
+}
+
+export const rootStore = createStore(
   persist(
-    (_set, _get, api) => combineSlices(api, {
-      theme: themeSlice,
-      layout: layoutSlice,
-      scsynth: scsynthSlice
-    }),
+    immer(redux(rootReducer, rootInitialState)),
     {
       name: "settings",
       storage: tauriStorage,
@@ -38,5 +55,11 @@ export const rootStore = createStore<RootState>()(
   ),
 );
 
-export const useRootStore = <T>(selector: (state: RootState) => T) =>
-  useStore(rootStore, selector);
+export const dispatch = (action: RootAction) =>
+  rootStore.getState().dispatch(action);
+
+export const useDispatch = () =>
+  useStore(rootStore, (s) => s.dispatch);
+
+export const useRootStore = <T>(selector: (state: RootState) => T): T =>
+  useStore(rootStore, (state) => selector(state));
