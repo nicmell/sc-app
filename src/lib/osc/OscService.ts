@@ -20,12 +20,18 @@ function parseVersionReply(args: unknown[]): string {
 export class OscService {
   private osc: InstanceType<typeof OSC>;
   private pollingId: ReturnType<typeof setInterval> | null = null;
+  private timeoutId: ReturnType<typeof setTimeout> | null = null;
+  private static readonly REPLY_TIMEOUT_MS = 3000;
 
   constructor() {
     this.osc = new OSC({ plugin: new TauriUdpPlugin() });
 
-    this.osc.on('open', () => logger.log('Connected.'));
-    this.osc.on('close', () => logger.log('Disconnected.'));
+    this.osc.on('open', () => {
+      this.osc.send(createNotifyMessage(1, appStore.getState().scsynth.clientId));
+    });
+    this.osc.on('close', () => {
+      logger.log('Disconnected.')
+    });
     this.osc.on('error', (err: unknown) => logger.log(`Error: ${err}`));
     this.osc.on('*', (...args: unknown[]) => {
       const msg = args[0] as InstanceType<typeof OSC.Message>;
@@ -41,6 +47,7 @@ export class OscService {
       case '/status.reply': {
         const status = parseStatusReply(msg.args as unknown[]);
         appStore.getState().scsynth.setStatus(status);
+        this.resetTimeout();
         break;
       }
       case '/version.reply': {
@@ -51,9 +58,15 @@ export class OscService {
       case '/done': {
         if (msg.args[0] === '/notify') {
           appStore.getState().scsynth.setClient(msg.args[1] as number);
+          this.startPolling();
+          appStore.getState().scsynth.setConnectionStatus(ConnectionStatus.CONNECTED);
+          logger.log('Connected.')
         }
         break
       }
+    }
+    if (msg.address !== '/status.reply') {
+      logger.log(`${msg.address} ${(msg.args as unknown[]).join(' ')}`);
     }
   }
 
@@ -72,15 +85,9 @@ export class OscService {
   async connect(): Promise<void> {
     const {scsynth} = appStore.getState();
     scsynth.setConnectionStatus(ConnectionStatus.CONNECTING);
-    try {
-      const {host, port} = this.getOptions();
-      await this.osc.open({host, port});
-      this.startPolling();
-      this.osc.send(createNotifyMessage(1, scsynth.clientId));
-    } catch (e) {
-      appStore.getState().scsynth.clearClient();
-      throw e;
-    }
+    const {host, port} = this.getOptions();
+    this.startPolling()
+    await this.osc.open({host, port});
   }
 
   private startPolling(): void {
@@ -89,6 +96,22 @@ export class OscService {
     this.pollingId = setInterval(() => {
       this.osc.send(createStatusMessage());
     }, pollStatusMs);
+    this.resetTimeout();
+  }
+
+  private resetTimeout(): void {
+    this.clearTimeout();
+    this.timeoutId = setTimeout(() => {
+      logger.log('No status.reply received for 3 seconds, disconnecting.');
+      void this.disconnect();
+    }, OscService.REPLY_TIMEOUT_MS);
+  }
+
+  private clearTimeout(): void {
+    if (this.timeoutId !== null) {
+      globalThis.clearTimeout(this.timeoutId);
+      this.timeoutId = null;
+    }
   }
 
   private stopPolling(): void {
@@ -96,16 +119,18 @@ export class OscService {
       clearInterval(this.pollingId);
       this.pollingId = null;
     }
+    this.clearTimeout();
   }
 
   async disconnect(): Promise<void> {
     this.stopPolling();
     this.osc.send(createNotifyMessage(0));
-    appStore.getState().scsynth.clearClient();
+    //appStore.getState().scsynth.clearClient();
+    appStore.getState().scsynth.setConnectionStatus(ConnectionStatus.DISCONNECTED);
     await this.osc.close();
   }
 
-  send(msg: InstanceType<typeof OSC.Message>): void {
+  send(msg:  OSC.Packet | OSC.Bundle | OSC.Message | OSC.TypedMessage): void {
     this.osc.send(msg);
   }
 

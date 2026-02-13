@@ -20,7 +20,7 @@ export function ConnectScreen() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     oscService.setOptions(parseAddress(address));
-    await oscService.connect();
+    oscService.connect();
   };
 
   return (

@@ -2,7 +2,7 @@ import {createStore} from "zustand/vanilla";
 import {useStore} from "zustand";
 import {persist} from "zustand/middleware";
 import {tauriStorage} from "@/lib/storage/tauriStorage";
-import {createSlice} from "./utils";
+import {combineSlices} from "./utils";
 import {themeSlice, type ThemeState} from "./themeStore";
 import {layoutSlice, type LayoutState} from "./layoutStore";
 import {scsynthSlice, type ScsynthState} from "./scsynthStore";
@@ -17,10 +17,10 @@ export interface AppState {
 
 export const appStore = createStore<AppState>()(
   persist(
-    (_set, _get, api) => ({
-      ...createSlice(api, "theme")(themeSlice),
-      ...createSlice(api, "layout")(layoutSlice),
-      ...createSlice(api, "scsynth")(scsynthSlice),
+    (_set, _get, api) => combineSlices(api, {
+      theme: themeSlice,
+      layout: layoutSlice,
+      scsynth: scsynthSlice
     }),
     {
       name: "settings",

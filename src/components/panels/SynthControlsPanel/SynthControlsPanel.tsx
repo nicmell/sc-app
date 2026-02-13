@@ -9,6 +9,7 @@ import {
 import {NodeValueRange} from "@/components/NodeValueRange";
 import {useAppStore} from "@/lib/stores/appStore";
 import "./SynthControlsPanel.scss";
+import OSC from "osc-js";
 
 export function SynthControlsPanel() {
   const nodeId = useAppStore((s) => s.scsynth.options.initialNodeId);
@@ -19,17 +20,19 @@ export function SynthControlsPanel() {
   useEffect(() => {
     if (!mountedRef.current) {
       mountedRef.current = true;
-      oscService.send(createSynthMessage("sine", nodeId));
-      oscService.send(createNodeRunMessage(nodeId, 0));
+      oscService.send(new OSC.Bundle(
+          createSynthMessage("sine", nodeId),
+          createNodeRunMessage(-1, 0)
+      ));
       logger.log(`Created synth "sine" nodeId=${nodeId}`);
     }
-    mountedRef.current = true;
+/*    mountedRef.current = true;
     return () => {
       if (mountedRef.current) {
         mountedRef.current = false;
         oscService.send(createFreeNodeMessage(nodeId));
       }
-    };
+    };*/
   }, [nodeId]);
 
   const handleTogglePlay = () => {
