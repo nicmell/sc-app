@@ -18,7 +18,7 @@ export interface ScsynthStatus {
   sampleRate: number;
 }
 
-const DEFAULT_CLIENT_ID = 0;
+const DEFAULT_CLIENT_ID = -1;
 const DEFAULT_VERSION = "";
 
 const DEFAULT_STATUS: ScsynthStatus = {
@@ -63,5 +63,5 @@ export const scsynthSlice: StateCreator<ScsynthState> = (set) => ({
   setConnectionStatus: (connectionStatus) => set({connectionStatus}),
   setStatus: (status) => set({status}),
   setVersion: (version) => set({version}),
-  clearClient: () => set({clientId: DEFAULT_CLIENT_ID }),
+  clearClient: () => set({status: DEFAULT_STATUS, version: DEFAULT_VERSION }),
 });

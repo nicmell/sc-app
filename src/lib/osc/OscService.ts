@@ -23,11 +23,15 @@ export class OscService {
     this.osc.on('close', () => {
       this.clearTimeout();
       this.stopPolling();
+      appStore.getState().scsynth.clearClient()
       appStore.getState().scsynth.setConnectionStatus(ConnectionStatus.DISCONNECTED);
       logger.log('Disconnected.')
     });
     this.osc.on('error', (err: unknown) => {
-      logger.log(`Error: ${err}`)
+      logger.log(`Error: ${err}`);
+      if (this.status() === ConnectionStatus.CONNECTING) {
+        this.disconnect();
+      }
     });
     this.osc.on('*', (...args: unknown[]) => {
       const msg = args[0] as InstanceType<typeof OSC.Message>;
@@ -93,7 +97,7 @@ export class OscService {
   private isReady(): boolean {
     const {scsynth} = appStore.getState();
     return (
-        scsynth.clientId !== 0 && scsynth.status.sampleRate !== 0 && scsynth.version !== ''
+        scsynth.clientId >= 0 && scsynth.status.sampleRate > 0 && scsynth.version.length > 0
     );
   }
 
@@ -105,8 +109,8 @@ export class OscService {
   }
 
   disconnect(): void {
-    if (this.osc.status() === OSC.STATUS.IS_OPEN) {
-      this.osc.send(createNotifyMessage(0));
+    if (this.osc.status() === OSC.STATUS.IS_OPEN && appStore.getState().scsynth.clientId >= 0) {
+      this.send(createNotifyMessage(0));
     }
     this.osc.close();
   }
@@ -116,8 +120,8 @@ export class OscService {
     this.stopPolling();
     const {pollStatusMs} = this.getOptions();
     this.pollingId = setInterval(() => {
-      if (this.osc.status() === OSC.STATUS.IS_OPEN) {
-        this.osc.send(createStatusMessage());
+      if (this.isReady()) {
+        this.send(createStatusMessage());
       }
     }, pollStatusMs);
   }
@@ -134,8 +138,8 @@ export class OscService {
     this.timeoutId = setTimeout(() => {
       if (this.osc.status() === OSC.STATUS.IS_OPEN) {
         logger.log('No status.reply received for 3 seconds, disconnecting.');
-        void this.disconnect();
       }
+      void this.disconnect();
     }, OscService.REPLY_TIMEOUT_MS);
   }
 

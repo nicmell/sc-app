@@ -9,9 +9,9 @@ export function createDumpOscMessage(level: number = 1) {
   return new OSC.Message('/dumpOSC', level);
 }
 
-export function createNotifyMessage(flag: number = 1, clientId: number = 0) {
+export function createNotifyMessage(flag: number = 1, clientId: number = -1) {
   const msg = new OSC.Message('/notify', flag);
-  if (clientId > 0) {
+  if (clientId >= 0) {
     msg.add(clientId);
   }
   return msg;
