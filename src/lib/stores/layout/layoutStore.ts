@@ -8,7 +8,7 @@ const initialState: LayoutState = {
   layout: DEFAULT_LAYOUT,
 };
 
-const slice = createSlice({
+export const layoutSlice = createSlice({
   name: SliceName.LAYOUT,
   initialState,
   reducers: {
@@ -21,9 +21,7 @@ const slice = createSlice({
   },
 });
 
-export const layoutInitialState = slice.initialState;
-export const layoutReducer = slice.reducer;
-export const {setLayout, resetLayout} = slice.actions;
+export const {setLayout, resetLayout} = layoutSlice.actions;
 export type LayoutAction = ReturnType<
     | typeof setLayout
     | typeof resetLayout

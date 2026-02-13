@@ -10,7 +10,7 @@ const initialState: ThemeState = {
   primaryColor: "#396cd8",
 };
 
-const slice = createSlice({
+export const themeSlice = createSlice({
   name: SliceName.THEME,
   initialState,
   reducers: {
@@ -23,9 +23,7 @@ const slice = createSlice({
   },
 });
 
-export const themeInitialState = slice.initialState;
-export const themeReducer = slice.reducer;
-export const {setMode, setPrimaryColor} = slice.actions;
+export const {setMode, setPrimaryColor} = themeSlice.actions;
 export type ThemeAction = ReturnType<
     | typeof setMode
     | typeof setPrimaryColor

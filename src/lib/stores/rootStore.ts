@@ -4,26 +4,28 @@ import {persist} from "zustand/middleware";
 import {immer} from "zustand/middleware/immer";
 import {redux} from "zustand/middleware";
 import {tauriStorage} from "@/lib/storage/tauriStorage";
-import {scsynthInitialState, scsynthReducer} from "./scsynth/scsynthStore";
-import {layoutInitialState, layoutReducer} from "./layout/layoutStore";
-import {themeInitialState, themeReducer} from "./theme/themeStore";
+import {scsynthSlice} from "./scsynth/scsynthStore";
+import {layoutSlice} from "./layout/layoutStore";
+import {themeSlice} from "./theme/themeStore";
 import {combineReducers} from "./utils";
 import type {RootState} from "@/types/stores";
-import type {RootAction} from "./actions";
+import type {ScsynthAction} from "./scsynth";
+import type {LayoutAction} from "./layout";
+import type {ThemeAction} from "./theme";
 
-export type {RootAction} from "./actions";
+export type RootAction = ScsynthAction | LayoutAction | ThemeAction;
 export type {RootState, ScsynthOptions, ScsynthStatus} from "@/types/stores";
 
 const rootInitialState: RootState = {
-  scsynth: scsynthInitialState,
-  layout: layoutInitialState,
-  theme: themeInitialState,
+  scsynth: scsynthSlice.getInitialState(),
+  layout: layoutSlice.getInitialState(),
+  theme: themeSlice.getInitialState(),
 };
 
 const rootReducerImpl = combineReducers<RootState>({
-  scsynth: scsynthReducer,
-  layout: layoutReducer,
-  theme: themeReducer,
+  scsynth: scsynthSlice.reducer,
+  layout: layoutSlice.reducer,
+  theme: themeSlice.reducer,
 });
 
 function rootReducer(state: RootState, action: RootAction): RootState {

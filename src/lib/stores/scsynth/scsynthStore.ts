@@ -12,7 +12,7 @@ const initialState: ScsynthState = {
   version: DEFAULT_VERSION,
 };
 
-const slice = createSlice({
+export const scsynthSlice = createSlice({
   name: SliceName.SCSYNTH,
   initialState,
   reducers: {
@@ -38,9 +38,7 @@ const slice = createSlice({
   },
 });
 
-export const scsynthInitialState = slice.initialState;
-export const scsynthReducer = slice.reducer;
-export const {setClient, setOptions, setConnectionStatus, setStatus, setVersion, clearClient} = slice.actions;
+export const {setClient, setOptions, setConnectionStatus, setStatus, setVersion, clearClient} = scsynthSlice.actions;
 export type ScsynthAction = ReturnType<
     | typeof setClient
     | typeof setOptions

@@ -8,13 +8,17 @@ export type ActionCreator<T extends string = string, P = void> =
 
 export type CaseReducer<S, A extends Action = Action> = (state: S, action: A) => void;
 
+export type ReducerWithInitialState<S> = CaseReducer<S> & {
+  getInitialState: () => S;
+};
+
 export type CaseReducers<S, A = Record<string, any>> = {
   [K in keyof A]: CaseReducer<S, A[K] & Action>
 };
 
 export type Slice<S, Name extends string, R extends CaseReducers<S>> = {
-  initialState: S;
-  reducer: CaseReducer<S>;
+  getInitialState: () => S;
+  reducer: ReducerWithInitialState<S>;
   actions: {
     [K in keyof R & string]: R[K] extends (...args: infer A) => any
       ? A extends [any, { payload: infer P }]
@@ -40,21 +44,27 @@ export function createAction(type: string, prepare?: (...args: any[]) => any) {
 }
 
 export function createReducer<S, R extends CaseReducers<S>>(
-  initialState: S,
+  initialState: S | (() => S),
   reducers: R,
-) {
-  const reducer: CaseReducer<S> = (state, action) => {
-    const handler = reducers[action.type];
-    if (handler) {
-      handler(state, action);
-    }
-  };
-  return {initialState, reducer};
+): ReducerWithInitialState<S> {
+  const getInitialState = typeof initialState === "function"
+    ? initialState as () => S
+    : () => initialState;
+
+  return Object.assign(
+    ((state: S, action: Action) => {
+      const handler = reducers[action.type];
+      if (handler) {
+        handler(state, action);
+      }
+    }) as CaseReducer<S>,
+    {getInitialState},
+  );
 }
 
 export function createSlice<S, Name extends string, R extends CaseReducers<S>>(config: {
   name: Name;
-  initialState: S;
+  initialState: S | (() => S);
   reducers: R;
 }): Slice<S, Name, R> {
   const {name, initialState, reducers} = config;
@@ -67,9 +77,9 @@ export function createSlice<S, Name extends string, R extends CaseReducers<S>>(c
     handlerMap[type] = reducers[key];
   }
 
-  const {reducer} = createReducer(initialState, handlerMap);
+  const reducer = createReducer(initialState, handlerMap);
 
-  return {initialState, reducer, actions: actions as any};
+  return {getInitialState: reducer.getInitialState, reducer, actions: actions as any};
 }
 
 export function combineReducers<S extends object>(
