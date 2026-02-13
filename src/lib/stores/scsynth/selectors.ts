@@ -1,5 +1,5 @@
 import type {RootState, ScsynthStatus} from "@/types/stores";
-import {ConnectionStatus} from "@/constants/store";
+import {ConnectionStatus} from "@/constants/osc";
 
 export const selectIsConnected = (s: RootState) =>
   s.scsynth.connectionStatus === ConnectionStatus.CONNECTED;

@@ -6,7 +6,7 @@ import type {ScsynthOptions} from '@/lib/stores/scsynth';
 import {setClient, setOptions, setConnectionStatus, setStatus, setVersion, clearClient} from '@/lib/stores/scsynth';
 import {logger} from '@/lib/logger';
 
-import {ConnectionStatus} from '@/constants/store';
+import {ConnectionStatus} from '@/constants/osc';
 
 export class OscService {
   private osc: InstanceType<typeof OSC>;

@@ -2,7 +2,7 @@ import {useState} from "react";
 import {oscService} from "@/lib/osc";
 import {useRootStore} from "@/lib/stores/rootStore.ts";
 import {selectScsynthOptions, selectIsConnecting} from "@/lib/stores/scsynth";
-import {ADDRESS_REGEXP} from "@/constants/store";
+import {ADDRESS_REGEXP} from "@/constants/osc";
 import "./ConnectScreen.scss";
 
 function parseAddress(addr: string): { host: string; port: number } {
