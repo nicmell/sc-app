@@ -1,20 +1,21 @@
 import type {LayoutState} from "@/types/stores";
 import type {LayoutItem} from "react-grid-layout";
-import {DEFAULT_LAYOUT} from "@/constants/store";
-import {createSlice, type InferAction} from "@/lib/stores/utils";
+import {DEFAULT_LAYOUT} from "@/constants/osc";
+import {createSlice} from "@/lib/stores/utils";
+import {SliceName, LayoutAction} from "@/constants/store";
 
 const initialState: LayoutState = {
   layout: DEFAULT_LAYOUT,
 };
 
 const slice = createSlice({
-  name: "layout",
+  name: SliceName.LAYOUT,
   initialState,
   reducers: {
-    setLayout: (state, action: { payload: LayoutItem[] }) => {
+    [LayoutAction.SET_LAYOUT]: (state, action: { payload: LayoutItem[] }) => {
       state.layout = action.payload;
     },
-    resetLayout: (state) => {
+    [LayoutAction.RESET_LAYOUT]: (state) => {
       state.layout = DEFAULT_LAYOUT;
     },
   },
@@ -23,4 +24,7 @@ const slice = createSlice({
 export const layoutInitialState = slice.initialState;
 export const layoutReducer = slice.reducer;
 export const {setLayout, resetLayout} = slice.actions;
-export type LayoutAction = InferAction<typeof slice>;
+export type LayoutAction = ReturnType<
+    | typeof setLayout
+    | typeof resetLayout
+>;

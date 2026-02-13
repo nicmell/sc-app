@@ -1,5 +1,6 @@
 import type {Mode, ThemeState} from "@/types/stores";
-import {createSlice, type InferAction} from "@/lib/stores/utils";
+import {createSlice} from "@/lib/stores/utils";
+import {SliceName, ThemeAction} from "@/constants/store";
 
 const getSystemMode = (): Mode =>
   window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
@@ -10,13 +11,13 @@ const initialState: ThemeState = {
 };
 
 const slice = createSlice({
-  name: "theme",
+  name: SliceName.THEME,
   initialState,
   reducers: {
-    setMode: (state, action: { payload: Mode }) => {
+    [ThemeAction.SET_MODE]: (state, action: { payload: Mode }) => {
       state.mode = action.payload;
     },
-    setPrimaryColor: (state, action: { payload: string }) => {
+    [ThemeAction.SET_PRIMARY_COLOR]: (state, action: { payload: string }) => {
       state.primaryColor = action.payload;
     },
   },
@@ -25,4 +26,7 @@ const slice = createSlice({
 export const themeInitialState = slice.initialState;
 export const themeReducer = slice.reducer;
 export const {setMode, setPrimaryColor} = slice.actions;
-export type ThemeAction = InferAction<typeof slice>;
+export type ThemeAction = ReturnType<
+    | typeof setMode
+    | typeof setPrimaryColor
+>;

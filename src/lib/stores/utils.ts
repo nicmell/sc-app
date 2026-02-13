@@ -1,8 +1,6 @@
 export type Action<T extends string = string, P = void> =
   [P] extends [void] ? { type: T } : { type: T; payload: P };
 
-export type Actions<T extends keyof any = string> = Record<T, Action>;
-
 export type ActionCreator<T extends string = string, P = void> =
   [P] extends [void]
     ? { (): Action<T>; type: T }
@@ -14,15 +12,16 @@ export type CaseReducers<S, A = Record<string, any>> = {
   [K in keyof A]: CaseReducer<S, A[K] & Action>
 };
 
-export type InferAction<T extends { actions: Record<string, (...args: any[]) => any> }> =
-  ReturnType<T["actions"][keyof T["actions"]]>;
-
-type InferActionCreators<Name extends string, R> = {
-  [K in keyof R & string]: R[K] extends (...args: infer A) => any
-    ? A extends [any, { payload: infer P }]
-      ? ActionCreator<`${Name}/${K}`, P>
-      : ActionCreator<`${Name}/${K}`>
-    : never;
+export type Slice<S, Name extends string, R extends CaseReducers<S>> = {
+  initialState: S;
+  reducer: CaseReducer<S>;
+  actions: {
+    [K in keyof R & string]: R[K] extends (...args: infer A) => any
+      ? A extends [any, { payload: infer P }]
+        ? ActionCreator<`${Name}/${K}`, P>
+        : ActionCreator<`${Name}/${K}`>
+      : never;
+  };
 };
 
 export function createAction<T extends string>(
@@ -57,11 +56,7 @@ export function createSlice<S, Name extends string, R extends CaseReducers<S>>(c
   name: Name;
   initialState: S;
   reducers: R;
-}): {
-  initialState: S;
-  reducer: CaseReducer<S>;
-  actions: InferActionCreators<Name, R>;
-} {
+}): Slice<S, Name, R> {
   const {name, initialState, reducers} = config;
   const actions = {} as Record<string, any>;
   const handlerMap = {} as CaseReducers<S>;
@@ -69,7 +64,7 @@ export function createSlice<S, Name extends string, R extends CaseReducers<S>>(c
   for (const key of Object.keys(reducers)) {
     const type = `${name}/${key}`;
     actions[key] = createAction(type, (payload: any) => payload);
-    handlerMap[type] = reducers[key] as CaseReducer<S>;
+    handlerMap[type] = reducers[key];
   }
 
   const {reducer} = createReducer(initialState, handlerMap);
