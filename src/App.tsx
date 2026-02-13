@@ -1,11 +1,11 @@
 import {ThemeProvider} from "@/components/ThemeProvider";
 import {Dashboard} from "@/components/Dashboard";
 import {ConnectScreen} from "@/components/ConnectScreen";
-import {useAppStore} from "@/lib/stores/appStore";
-import {ConnectionStatus} from "@/lib/constants";
+import {useRootStore} from "@/lib/stores/rootStore.ts";
+import {selectIsConnected} from "@/lib/stores/scsynth";
 
 function App() {
-  const connected = useAppStore((s) => s.scsynth.connectionStatus === ConnectionStatus.CONNECTED);
+  const connected = useRootStore(selectIsConnected);
 
   return (
     <ThemeProvider>

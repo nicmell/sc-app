@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from "react";
-import { useAppStore } from "@/lib/stores/appStore";
+import { useRootStore } from "@/lib/stores/rootStore.ts";
+import { selectThemeMode, selectPrimaryColor, selectSetMode } from "@/lib/stores/theme";
 
 const darkPalette = {
   "--color-bg": "#2f2f2f",
@@ -24,9 +25,9 @@ const lightPalette = {
 };
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const mode = useAppStore((s) => s.theme.mode);
-  const primaryColor = useAppStore((s) => s.theme.primaryColor);
-  const setMode = useAppStore((s) => s.theme.setMode);
+  const mode = useRootStore(selectThemeMode);
+  const primaryColor = useRootStore(selectPrimaryColor);
+  const setMode = useRootStore(selectSetMode);
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");

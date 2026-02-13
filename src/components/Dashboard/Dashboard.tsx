@@ -3,20 +3,14 @@ import type {Layout} from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import {oscService} from "@/lib/osc";
-import {useAppStore, type ScsynthStatus} from "@/lib/stores/appStore";
+import {useRootStore} from "@/lib/stores/rootStore.ts";
+import {selectAddress, selectStatusText} from "@/lib/stores/scsynth";
+import {selectLayout, selectSetLayout, selectResetLayout} from "@/lib/stores/layout";
 import {DashboardPanel} from "@/components/panels/DashboardPanel";
 import {ServerControlsPanel} from "@/components/panels/ServerControlsPanel";
 import {SynthControlsPanel} from "@/components/panels/SynthControlsPanel";
 import {LogOutputPanel} from "@/components/panels/LogOutputPanel";
 import "./Dashboard.scss";
-
-function formatStatus(s: ScsynthStatus): string {
-  return (
-    //`UGens: ${s.ugens} | Synths: ${s.synths} | Groups: ${s.groups} | Defs: ${s.defs} | ` +
-    `CPU: ${s.avgCpu.toFixed(1)}% / ${s.peakCpu.toFixed(1)}% | ` +
-    `SR: ${s.sampleRate.toFixed(0)} Hz`
-  );
-}
 
 const PANEL_MAP: Record<string, {title: string; component: React.FC}> = {
   server: {title: "Server", component: ServerControlsPanel},
@@ -25,11 +19,11 @@ const PANEL_MAP: Record<string, {title: string; component: React.FC}> = {
 };
 
 export function Dashboard() {
-  const address = useAppStore((s) => `${s.scsynth.options.host}:${s.scsynth.options.port}`);
-  const statusText = useAppStore((s) => formatStatus(s.scsynth.status));
-  const layout = useAppStore((s) => s.layout.layout);
-  const setLayout = useAppStore((s) => s.layout.setLayout);
-  const resetLayout = useAppStore((s) => s.layout.resetLayout);
+  const address = useRootStore(selectAddress);
+  const statusText = useRootStore(selectStatusText);
+  const layout = useRootStore(selectLayout);
+  const setLayout = useRootStore(selectSetLayout);
+  const resetLayout = useRootStore(selectResetLayout);
   const {width, containerRef, mounted} = useContainerWidth({measureBeforeMount: true});
 
   return (

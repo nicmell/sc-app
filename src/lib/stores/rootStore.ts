@@ -3,19 +3,14 @@ import {useStore} from "zustand";
 import {persist} from "zustand/middleware";
 import {tauriStorage} from "@/lib/storage/tauriStorage";
 import {combineSlices} from "./utils";
-import {themeSlice, type ThemeState} from "./themeStore";
-import {layoutSlice, type LayoutState} from "./layoutStore";
-import {scsynthSlice, type ScsynthState} from "./scsynthStore";
+import {themeSlice} from "./theme";
+import {layoutSlice} from "./layout";
+import {scsynthSlice} from "./scsynth";
+import type {RootState} from "@/types/stores";
 
-export type {ScsynthOptions, ScsynthStatus} from "./scsynthStore";
+export type {RootState, ScsynthOptions, ScsynthStatus} from "@/types/stores";
 
-export interface AppState {
-  theme: ThemeState;
-  layout: LayoutState;
-  scsynth: ScsynthState;
-}
-
-export const appStore = createStore<AppState>()(
+export const rootStore = createStore<RootState>()(
   persist(
     (_set, _get, api) => combineSlices(api, {
       theme: themeSlice,
@@ -43,5 +38,5 @@ export const appStore = createStore<AppState>()(
   ),
 );
 
-export const useAppStore = <T>(selector: (state: AppState) => T) =>
-  useStore(appStore, selector);
+export const useRootStore = <T>(selector: (state: RootState) => T) =>
+  useStore(rootStore, selector);

@@ -2,16 +2,18 @@ import {useEffect, useRef, useState} from "react";
 import {oscService} from "@/lib/osc";
 import {logger} from "@/lib/logger";
 import {
+  // @ts-ignore
   createFreeNodeMessage,
   createNodeRunMessage,
   createSynthMessage,
 } from "@/lib/osc/messages";
 import {NodeValueRange} from "@/components/NodeValueRange";
-import {useAppStore} from "@/lib/stores/appStore";
+import {useRootStore} from "@/lib/stores/rootStore.ts";
+import {selectInitialNodeId} from "@/lib/stores/scsynth";
 import "./SynthControlsPanel.scss";
 
 export function SynthControlsPanel() {
-  const nodeId = useAppStore((s) => s.scsynth.options.initialNodeId);
+  const nodeId = useRootStore(selectInitialNodeId);
   const [playing, setPlaying] = useState(false);
   const playingRef = useRef(false);
   const mountedRef = useRef(false);

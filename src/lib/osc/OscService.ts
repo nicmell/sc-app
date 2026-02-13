@@ -1,10 +1,11 @@
 import OSC from 'osc-js';
 import {TauriUdpPlugin} from './TauriUdpPlugin';
 import {createNotifyMessage, createStatusMessage, createVersionMessage} from './messages';
-import {appStore, type ScsynthOptions} from '@/lib/stores/appStore';
+import {rootStore} from '@/lib/stores/rootStore.ts';
+import type {ScsynthOptions} from '@/lib/stores/scsynth';
 import {logger} from '@/lib/logger';
 
-import {ConnectionStatus} from '@/lib/constants';
+import {ConnectionStatus} from '@/constants/store';
 
 export class OscService {
   private osc: InstanceType<typeof OSC>;
@@ -18,13 +19,13 @@ export class OscService {
     this.osc.on('open', () => {
       this.resetTimeout();
       this.startPolling()
-      this.osc.send(createNotifyMessage(1, appStore.getState().scsynth.clientId));
+      this.osc.send(createNotifyMessage(1, rootStore.getState().scsynth.clientId));
     });
     this.osc.on('close', () => {
       this.clearTimeout();
       this.stopPolling();
-      appStore.getState().scsynth.clearClient()
-      appStore.getState().scsynth.setConnectionStatus(ConnectionStatus.DISCONNECTED);
+      rootStore.getState().scsynth.clearClient()
+      rootStore.getState().scsynth.setConnectionStatus(ConnectionStatus.DISCONNECTED);
       logger.log('Disconnected.')
     });
     this.osc.on('error', (err: unknown) => {
@@ -50,13 +51,13 @@ export class OscService {
       case '/status.reply': {
         this.resetTimeout();
         const [, ugens, synths, groups, defs, avgCpu, peakCpu, , sampleRate] = msg.args as number[];
-        appStore.getState().scsynth.setStatus({ugens, synths, groups, defs, avgCpu, peakCpu, sampleRate});
+        rootStore.getState().scsynth.setStatus({ugens, synths, groups, defs, avgCpu, peakCpu, sampleRate});
         break
       }
 
       case '/version.reply': {
         const [name, major, minor, patch, branch, hash] = msg.args as (string | number)[];
-        appStore.getState().scsynth.setVersion(`${name} ${major}.${minor}.${patch} (${branch} ${hash})`);
+        rootStore.getState().scsynth.setVersion(`${name} ${major}.${minor}.${patch} (${branch} ${hash})`);
         break
       }
       case '/done': {
@@ -68,18 +69,18 @@ export class OscService {
       }
     }
     if (this.status() === ConnectionStatus.CONNECTING && this.isReady()) {
-      appStore.getState().scsynth.setConnectionStatus(ConnectionStatus.CONNECTED);
+      rootStore.getState().scsynth.setConnectionStatus(ConnectionStatus.CONNECTED);
       logger.log('Connected.');
     }
     this.logMessage(msg);
   }
 
   private status() {
-    return appStore.getState().scsynth.connectionStatus
+    return rootStore.getState().scsynth.connectionStatus
   }
 
   private init(clientId: number) {
-    appStore.getState().scsynth.setClient(clientId);
+    rootStore.getState().scsynth.setClient(clientId);
     this.send(
         createStatusMessage(),
         createVersionMessage(),
@@ -87,29 +88,29 @@ export class OscService {
   }
 
   getOptions(): ScsynthOptions {
-    return appStore.getState().scsynth.options;
+    return rootStore.getState().scsynth.options;
   }
 
   setOptions(opts: Partial<ScsynthOptions>): void {
-    appStore.getState().scsynth.setOptions(opts);
+    rootStore.getState().scsynth.setOptions(opts);
   }
 
   private isReady(): boolean {
-    const {scsynth} = appStore.getState();
+    const {scsynth} = rootStore.getState();
     return (
         scsynth.clientId >= 0 && scsynth.status.sampleRate > 0 && scsynth.version.length > 0
     );
   }
 
   connect(): void {
-    const {scsynth} = appStore.getState();
+    const {scsynth} = rootStore.getState();
     const {host, port} = scsynth.options;
     scsynth.setConnectionStatus(ConnectionStatus.CONNECTING);
     this.osc.open({host, port});
   }
 
   disconnect(): void {
-    if (this.osc.status() === OSC.STATUS.IS_OPEN && appStore.getState().scsynth.clientId >= 0) {
+    if (this.osc.status() === OSC.STATUS.IS_OPEN && rootStore.getState().scsynth.clientId >= 0) {
       this.send(createNotifyMessage(0));
     }
     this.osc.close();

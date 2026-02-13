@@ -1,16 +1,8 @@
 import type {StateCreator} from "zustand";
-
-type Mode = "dark" | "light";
+import type {Mode, ThemeState} from "@/types/stores";
 
 const getSystemMode = (): Mode =>
   window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-
-export interface ThemeState {
-  mode: Mode;
-  primaryColor: string;
-  setMode: (mode: Mode) => void;
-  setPrimaryColor: (color: string) => void;
-}
 
 export const themeSlice: StateCreator<ThemeState> = (set) => ({
   mode: getSystemMode(),
