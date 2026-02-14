@@ -3,10 +3,10 @@ import type {Layout} from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import {oscService} from "@/lib/osc";
-import {useRootStore, useDispatch} from "@/lib/stores/rootStore.ts";
+import {useRootStore} from "@/lib/stores/rootStore.ts";
 import {selectAddress, selectStatusText} from "@/lib/stores/scsynth";
 import {selectLayout} from "@/lib/stores/layout";
-import {setLayout, resetLayout} from "@/lib/stores/layout";
+import {layoutApi} from "@/lib/stores/api";
 import {DashboardPanel} from "@/components/panels/DashboardPanel";
 import {ServerControlsPanel} from "@/components/panels/ServerControlsPanel";
 import {SynthControlsPanel} from "@/components/panels/SynthControlsPanel";
@@ -23,14 +23,13 @@ export function Dashboard() {
   const address = useRootStore(selectAddress);
   const statusText = useRootStore(selectStatusText);
   const layout = useRootStore(selectLayout);
-  const dispatch = useDispatch();
   const {width, containerRef, mounted} = useContainerWidth({measureBeforeMount: true});
 
   return (
     <div className="dashboard">
       <header className="header">
         <h1>SC-App</h1>
-        <button onClick={() => dispatch(resetLayout())}>Reset Layout</button>
+        <button onClick={() => layoutApi.resetLayout()}>Reset Layout</button>
         <button onClick={() => oscService.disconnect()}>Disconnect</button>
       </header>
 
@@ -44,7 +43,7 @@ export function Dashboard() {
             cols={{lg: 12, md: 12, sm: 6, xs: 1}}
             rowHeight={60}
             dragConfig={{handle: ".dashboard-panel-header"}}
-            onLayoutChange={(current: Layout) => dispatch(setLayout([...current]))}
+            onLayoutChange={(current: Layout) => layoutApi.setLayout([...current])}
           >
             {layout.map((item) => {
               const panel = PANEL_MAP[item.i];

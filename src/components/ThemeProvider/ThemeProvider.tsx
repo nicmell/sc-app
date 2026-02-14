@@ -1,7 +1,7 @@
 import { useEffect, type ReactNode } from "react";
-import { useRootStore, useDispatch } from "@/lib/stores/rootStore.ts";
+import { useRootStore } from "@/lib/stores/rootStore.ts";
 import { selectThemeMode, selectPrimaryColor } from "@/lib/stores/theme";
-import { setMode } from "@/lib/stores/theme";
+import { themeApi } from "@/lib/stores/api";
 
 const darkPalette = {
   "--color-bg": "#2f2f2f",
@@ -28,14 +28,12 @@ const lightPalette = {
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const mode = useRootStore(selectThemeMode);
   const primaryColor = useRootStore(selectPrimaryColor);
-  const dispatch = useDispatch();
-
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const handler = (e: MediaQueryListEvent) => dispatch(setMode(e.matches ? "dark" : "light"));
+    const handler = (e: MediaQueryListEvent) => themeApi.setMode(e.matches ? "dark" : "light");
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
-  }, [dispatch]);
+  }, []);
 
   useEffect(() => {
     const palette = mode === "dark" ? darkPalette : lightPalette;
