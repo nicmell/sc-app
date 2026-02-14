@@ -4,7 +4,7 @@ import {layoutApi, themeApi, pluginsApi} from "@/lib/stores/api";
 import layoutStore from "@/lib/stores/layout";
 import themeStore from "@/lib/stores/theme";
 import pluginsStore from "@/lib/stores/plugins";
-import type {Mode} from "@/types/stores";
+import type {Mode, PluginInfo} from "@/types/stores";
 import {installPlugin, removePlugin} from "@/lib/storage/pluginStorage";
 import "./SettingsDrawer.scss";
 
@@ -34,9 +34,9 @@ export function SettingsDrawer({open, onClose}: SettingsDrawerProps) {
     e.target.value = "";
   };
 
-  const handleRemovePlugin = async (name: string) => {
-    await removePlugin(name);
-    pluginsApi.removePlugin(name);
+  const handleRemovePlugin = async (plugin: PluginInfo) => {
+    await removePlugin(plugin.name, plugin.version);
+    pluginsApi.removePlugin(plugin.name);
   };
 
   return (
@@ -107,7 +107,7 @@ export function SettingsDrawer({open, onClose}: SettingsDrawerProps) {
                     </div>
                     <button
                       className="plugin-delete-btn"
-                      onClick={() => handleRemovePlugin(p.name)}
+                      onClick={() => handleRemovePlugin(p)}
                     >
                       ×
                     </button>

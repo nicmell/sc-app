@@ -4,12 +4,50 @@ use tauri::http::Response;
 use tauri::{AppHandle, Manager, UriSchemeContext};
 
 #[derive(Serialize)]
+pub struct AssetInfo {
+    pub path: String,
+    #[serde(rename = "type")]
+    pub mime_type: String,
+}
+
+#[derive(Serialize)]
 pub struct PluginInfo {
     pub name: String,
     pub author: String,
     pub version: String,
     pub entry: String,
+    pub assets: Vec<AssetInfo>,
 }
+
+fn is_valid_name(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+fn is_valid_version(s: &str) -> bool {
+    let parts: Vec<&str> = s.split('.').collect();
+    parts.len() == 3 && parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+}
+
+const SUPPORTED_MIME_TYPES: &[&str] = &[
+    "application/javascript",
+    "application/json",
+    "application/wasm",
+    "text/html",
+    "text/css",
+    "text/plain",
+    "image/svg+xml",
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
+    "audio/mpeg",
+    "audio/wav",
+    "audio/ogg",
+    "video/mp4",
+    "video/webm",
+    "application/pdf",
+    "application/xml",
+];
 
 fn validate_metadata(raw: &serde_json::Value) -> Result<PluginInfo, String> {
     let obj = raw
@@ -24,11 +62,73 @@ fn validate_metadata(raw: &serde_json::Value) -> Result<PluginInfo, String> {
             .ok_or_else(|| format!("metadata.json: \"{key}\" must be a non-empty string"))
     };
 
+    let name = get_str("name")?;
+    if !is_valid_name(&name) {
+        return Err("metadata.json: \"name\" must only contain A-Z a-z 0-9 - _".to_string());
+    }
+
+    let version = get_str("version")?;
+    if !is_valid_version(&version) {
+        return Err("metadata.json: \"version\" must be in the form major.minor.patch".to_string());
+    }
+
+    let entry = get_str("entry")?;
+    if !is_safe_path(&entry) {
+        return Err("metadata.json: \"entry\" must be a valid relative path".to_string());
+    }
+
+    let assets = match obj.get("assets") {
+        Some(serde_json::Value::Array(arr)) => {
+            let mut result = Vec::with_capacity(arr.len());
+            for (i, item) in arr.iter().enumerate() {
+                let asset_obj = item.as_object().ok_or_else(|| {
+                    format!("metadata.json: assets[{i}] must be an object")
+                })?;
+
+                let path = asset_obj
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .ok_or_else(|| {
+                        format!("metadata.json: assets[{i}].path must be a non-empty string")
+                    })?;
+
+                if !is_safe_path(&path) {
+                    return Err(format!(
+                        "metadata.json: assets[{i}].path must be a valid relative path"
+                    ));
+                }
+
+                let mime_type = asset_obj
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .ok_or_else(|| {
+                        format!("metadata.json: assets[{i}].type must be a non-empty string")
+                    })?;
+
+                if !SUPPORTED_MIME_TYPES.contains(&mime_type.as_str()) {
+                    return Err(format!(
+                        "metadata.json: assets[{i}].type \"{mime_type}\" is not a supported MIME type"
+                    ));
+                }
+
+                result.push(AssetInfo { path, mime_type });
+            }
+            result
+        }
+        Some(_) => return Err("metadata.json: \"assets\" must be an array".to_string()),
+        None => Vec::new(),
+    };
+
     Ok(PluginInfo {
-        name: get_str("name")?,
+        name,
         author: get_str("author")?,
-        version: get_str("version")?,
-        entry: get_str("entry")?,
+        version,
+        entry,
+        assets,
     })
 }
 
@@ -64,53 +164,39 @@ pub fn install(app: AppHandle, data: Vec<u8>) -> Result<PluginInfo, String> {
         .by_name(&info.entry)
         .map_err(|_| format!("Entry file \"{}\" not found in zip", info.entry))?;
 
-    // Extract to plugins/<name>/
+    // Verify all asset files exist in zip
+    for asset in &info.assets {
+        archive
+            .by_name(&asset.path)
+            .map_err(|_| format!("Asset file \"{}\" not found in zip", asset.path))?;
+    }
+
+    // Save the zip as-is to plugins/<name>.zip
     let plugins_dir = app
         .path()
         .app_data_dir()
         .map_err(|e| e.to_string())?
-        .join("plugins")
-        .join(&info.name);
+        .join("plugins");
 
     std::fs::create_dir_all(&plugins_dir).map_err(|e| e.to_string())?;
 
-    for i in 0..archive.len() {
-        let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
-        let name = file.name().to_string();
-
-        if !is_safe_path(&name) {
-            return Err(format!("Invalid path in zip: {name}"));
-        }
-
-        if file.is_dir() {
-            std::fs::create_dir_all(plugins_dir.join(&name)).map_err(|e| e.to_string())?;
-            continue;
-        }
-
-        let out_path = plugins_dir.join(&name);
-        if let Some(parent) = out_path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-
-        let mut contents = Vec::new();
-        file.read_to_end(&mut contents).map_err(|e| e.to_string())?;
-        std::fs::write(&out_path, &contents).map_err(|e| e.to_string())?;
-    }
+    let zip_path = plugins_dir.join(format!("{}-{}.zip", &info.name, &info.version));
+    std::fs::write(&zip_path, &data).map_err(|e| e.to_string())?;
 
     Ok(info)
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn remove(app: AppHandle, name: String) -> Result<(), String> {
-    let plugin_dir = app
+pub fn remove(app: AppHandle, name: String, version: String) -> Result<(), String> {
+    let zip_path = app
         .path()
         .app_data_dir()
         .map_err(|e| e.to_string())?
         .join("plugins")
-        .join(&name);
+        .join(format!("{name}-{version}.zip"));
 
-    if plugin_dir.exists() {
-        std::fs::remove_dir_all(&plugin_dir).map_err(|e| e.to_string())?;
+    if zip_path.exists() {
+        std::fs::remove_file(&zip_path).map_err(|e| e.to_string())?;
     }
 
     Ok(())
@@ -142,11 +228,8 @@ fn percent_decode(input: &str) -> String {
 fn mime_from_extension(ext: &str) -> &str {
     match ext {
         "js" | "mjs" => "application/javascript",
-        "json" => "application/json",
-        "wasm" => "application/wasm",
         "html" | "htm" => "text/html",
         "css" => "text/css",
-        "txt" => "text/plain",
         "svg" => "image/svg+xml",
         "png" => "image/png",
         "jpg" | "jpeg" => "image/jpeg",
@@ -176,41 +259,49 @@ pub fn handle<R: tauri::Runtime>(
     request: tauri::http::Request<Vec<u8>>,
 ) -> Response<Vec<u8>> {
     let plugin_name = percent_decode(request.uri().host().unwrap_or(""));
-    let file_path = percent_decode(request.uri().path().trim_start_matches('/'));
+    let raw_path = percent_decode(request.uri().path().trim_start_matches('/'));
 
-    if plugin_name.is_empty() || file_path.is_empty() {
+    // Path format: <version>/<file_path>
+    let (version, file_path) = match raw_path.split_once('/') {
+        Some((v, f)) if !v.is_empty() && !f.is_empty() => (v.to_string(), f.to_string()),
+        _ => return error_response(404, b"Not found"),
+    };
+
+    if plugin_name.is_empty() {
         return error_response(404, b"Not found");
     }
 
-    let plugins_dir = match ctx.app_handle().path().app_data_dir() {
-        Ok(d) => d.join("plugins"),
-        Err(_) => return error_response(500, b"Cannot resolve app data dir"),
-    };
-
-    let canonical_dir = match plugins_dir.canonicalize() {
-        Ok(p) => p,
-        Err(_) => return error_response(404, b"Plugins directory not found"),
-    };
-
-    let canonical_file = match plugins_dir
-        .join(&plugin_name)
-        .join(&file_path)
-        .canonicalize()
-    {
-        Ok(p) => p,
-        Err(_) => return error_response(404, b"File not found"),
-    };
-
-    if !canonical_file.starts_with(&canonical_dir) {
+    if !is_safe_path(&file_path) {
         return error_response(403, b"Forbidden");
     }
 
-    let content = match std::fs::read(&canonical_file) {
-        Ok(c) => c,
-        Err(_) => return error_response(500, b"Failed to read file"),
+    let zip_path = match ctx.app_handle().path().app_data_dir() {
+        Ok(d) => d.join("plugins").join(format!("{plugin_name}-{version}.zip")),
+        Err(_) => return error_response(500, b"Cannot resolve app data dir"),
     };
 
-    let ext = canonical_file
+    let zip_data = match std::fs::read(&zip_path) {
+        Ok(d) => d,
+        Err(_) => return error_response(404, b"Plugin not found"),
+    };
+
+    let cursor = std::io::Cursor::new(&zip_data);
+    let mut archive = match zip::ZipArchive::new(cursor) {
+        Ok(a) => a,
+        Err(_) => return error_response(500, b"Failed to read plugin archive"),
+    };
+
+    let mut file = match archive.by_name(&file_path) {
+        Ok(f) => f,
+        Err(_) => return error_response(404, b"File not found in plugin"),
+    };
+
+    let mut content = Vec::new();
+    if file.read_to_end(&mut content).is_err() {
+        return error_response(500, b"Failed to read file from archive");
+    }
+
+    let ext = std::path::Path::new(&file_path)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("");

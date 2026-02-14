@@ -1,0 +1,11 @@
+{
+  "name": "example-plugin",
+  "author": "sc-app",
+  "version": "0.1.0",
+  "entry": "index.html",
+  "assets": [
+    { "path": "style.css", "type": "text/css" },
+    { "path": "main.js", "type": "application/javascript" },
+    { "path": "logo.svg", "type": "image/svg+xml" }
+  ]
+}

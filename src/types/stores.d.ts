@@ -56,11 +56,17 @@ export interface ThemeState {
   primaryColor: string;
 }
 
+export interface AssetInfo {
+  path: string;
+  type: string;
+}
+
 export interface PluginInfo {
   name: string;
   author: string;
   version: string;
   entry: string;
+  assets: AssetInfo[];
 }
 
 export interface PluginsState {

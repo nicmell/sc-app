@@ -1,4 +1,4 @@
-import {useState, useEffect, type ReactNode, type Ref} from "react";
+import {useState, type ReactNode, type Ref} from "react";
 import {useSelector} from "@/lib/stores/store";
 import pluginsStore from "@/lib/stores/plugins";
 import type {PluginInfo} from "@/types/stores";
@@ -19,30 +19,11 @@ export function DashboardPanel({title, children, onClose, ref, style, className,
   const plugins = useSelector(pluginsStore.selectors.items);
   const [modalOpen, setModalOpen] = useState(true);
   const [selectedPlugin, setSelectedPlugin] = useState<PluginInfo | null>(null);
-  const [html, setHtml] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   const handleSelect = (plugin: PluginInfo) => {
     setSelectedPlugin(plugin);
     setModalOpen(false);
   };
-
-  useEffect(() => {
-    if (!selectedPlugin) return;
-    let cancelled = false;
-    setHtml(null);
-    setError(null);
-
-    fetch(pluginUrl(selectedPlugin.name, selectedPlugin.entry))
-      .then(res => {
-        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-        return res.text();
-      })
-      .then(text => { if (!cancelled) setHtml(text); })
-      .catch(err => { if (!cancelled) setError(String(err)); });
-
-    return () => { cancelled = true; };
-  }, [selectedPlugin]);
 
   return (
     <div ref={ref} style={style} className={`dashboard-panel ${className ?? ""}`} {...rest}>
@@ -76,11 +57,11 @@ export function DashboardPanel({title, children, onClose, ref, style, className,
             </button>
           </div>
         )}
-        {selectedPlugin && error && (
-          <div className="dashboard-panel-error">{error}</div>
-        )}
-        {selectedPlugin && html != null && (
-          <div className="dashboard-panel-html" dangerouslySetInnerHTML={{__html: html}} />
+        {selectedPlugin && (
+          <iframe
+            className="dashboard-panel-iframe"
+            src={pluginUrl(selectedPlugin.name, selectedPlugin.version, selectedPlugin.entry)}
+          />
         )}
       </div>
 

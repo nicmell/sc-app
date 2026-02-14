@@ -6,10 +6,10 @@ export async function installPlugin(file: File): Promise<PluginInfo> {
   return invoke<PluginInfo>("install", {data: Array.from(new Uint8Array(buffer))});
 }
 
-export async function removePlugin(name: string): Promise<void> {
-  return invoke("remove", {name});
+export async function removePlugin(name: string, version: string): Promise<void> {
+  return invoke("remove", {name, version});
 }
 
-export function pluginUrl(pluginName: string, filePath: string): string {
-  return `plugins://${encodeURIComponent(pluginName)}/${filePath}`;
+export function pluginUrl(name: string, version: string, filePath: string): string {
+  return `plugins://${name}/${version}/${filePath}`;
 }

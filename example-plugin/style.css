@@ -1,0 +1,57 @@
+.example-plugin {
+  font-family: system-ui, sans-serif;
+  padding: 16px;
+  color: #e0e0e0;
+}
+
+.example-plugin h1 {
+  font-size: 18px;
+  margin: 0 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.example-plugin .logo {
+  width: 28px;
+  height: 28px;
+}
+
+.example-plugin .controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.example-plugin button {
+  background: #333;
+  color: #e0e0e0;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.example-plugin button:hover {
+  background: #444;
+}
+
+.example-plugin button.active {
+  background: #0a6dc4;
+  border-color: #0a6dc4;
+}
+
+.example-plugin .display {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 12px;
+  font-size: 48px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
