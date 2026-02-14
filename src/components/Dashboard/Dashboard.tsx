@@ -23,6 +23,10 @@ const ROW_HEIGHT = 60;
 const MARGIN: [number, number] = [10, 10];
 
 function findMaxRect(grid: number[][], rows: number, cols: number) {
+
+  let bestArea = 0;
+  let best: {x: number; y: number; w: number; h: number} | null = null;
+
   const heights: number[][] = [];
   for (let i = 0; i < rows; i++) {
     heights[i] = new Array(cols).fill(0);
@@ -32,9 +36,6 @@ function findMaxRect(grid: number[][], rows: number, cols: number) {
       }
     }
   }
-
-  let bestArea = 0;
-  let best: {x: number; y: number; w: number; h: number} | null = null;
 
   for (let i = 0; i < rows; i++) {
     const h = heights[i];
@@ -90,6 +91,42 @@ function computePlaceholders(layout: BoxItem[], cols: number): BoxItem[] {
   return placeholders;
 }
 
+function collides(a: BoxItem, b: BoxItem): boolean {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function deriveLayout(layout: BoxItem[], cols: number): BoxItem[] {
+  if (cols >= COLS_MAP.lg) return layout;
+
+  const sorted = [...layout].sort((a, b) => a.y - b.y || a.x - b.x);
+  const placed: BoxItem[] = [];
+
+  for (const item of sorted) {
+    const w = Math.min(item.w, cols);
+    const x = Math.min(item.x, cols - w);
+    let y = item.y;
+
+    const candidate = {...item, x, y, w};
+
+    // Push down until no collision
+    let hasCollision = true;
+    while (hasCollision) {
+      hasCollision = false;
+      for (const p of placed) {
+        if (collides(candidate, p)) {
+          candidate.y = p.y + p.h;
+          hasCollision = true;
+          break;
+        }
+      }
+    }
+
+    placed.push(candidate);
+  }
+
+  return placed;
+}
+
 function toPixelStyle(item: BoxItem, containerWidth: number, cols: number) {
   const [mx, my] = MARGIN;
   const colWidth = (containerWidth - mx * (cols - 1) - mx * 2) / cols;
@@ -100,6 +137,19 @@ function toPixelStyle(item: BoxItem, containerWidth: number, cols: number) {
   const height = Math.round(ROW_HEIGHT * item.h + Math.max(0, item.h - 1) * my);
 
   return {left, top, width, height};
+}
+
+const LG_COLS = COLS_MAP.lg;
+
+function scaleToLg(item: {x: number; y: number; w: number; h: number}, cols: number) {
+  if (cols >= LG_COLS) return item;
+  const factor = LG_COLS / cols;
+  return {
+    x: Math.round(item.x * factor),
+    y: item.y,
+    w: Math.round(item.w * factor),
+    h: item.h,
+  };
 }
 
 function getBreakpointCols(width: number): number {
@@ -118,11 +168,12 @@ export function Dashboard() {
     setCols(newCols);
   }, []);
 
-  const placeholders = useMemo(() => computePlaceholders(layout, cols), [layout, cols]);
+  const derived = useMemo(() => deriveLayout(layout, cols), [layout, cols]);
+  const placeholders = useMemo(() => computePlaceholders(derived, cols), [derived, cols]);
 
   const syncLayout = (current: Layout) => {
     const active = current
-      .map(({i, x, y, w, h}) => ({i, x, y, w, h}));
+      .map(({i, x, y, w, h}) => ({i, ...scaleToLg({x, y, w, h}, cols)}));
     if (!deepEqual(active, layout)) {
       layoutApi.setLayout(active);
     }
@@ -141,7 +192,7 @@ export function Dashboard() {
             <ResponsiveGridLayout
               className="dashboard-grid"
               width={width}
-              layouts={{lg: layout}}
+              layouts={{lg: derived}}
               breakpoints={BREAKPOINTS}
               cols={COLS_MAP}
               rowHeight={ROW_HEIGHT}
@@ -152,7 +203,7 @@ export function Dashboard() {
               onDragStop={(current: Layout) => syncLayout(current)}
               onResizeStop={(current: Layout) => syncLayout(current)}
             >
-              {layout.map(item => (
+              {derived.map(item => (
                 <DashboardPanel
                   key={item.i}
                   title={item.i}
@@ -166,7 +217,7 @@ export function Dashboard() {
                 key={p.i}
                 className="add-box-placeholder"
                 style={toPixelStyle(p, width, cols)}
-                onClick={() => layoutApi.addBox({x: p.x, y: p.y, w: p.w, h: p.h})}
+                onClick={() => layoutApi.addBox(scaleToLg({x: p.x, y: p.y, w: p.w, h: p.h}, cols))}
               >
                 +
               </div>
