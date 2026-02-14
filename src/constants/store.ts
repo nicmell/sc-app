@@ -19,6 +19,7 @@ export const LayoutAction = {
   RESET_LAYOUT: "resetLayout",
   REMOVE_BOX: "removeBox",
   ADD_BOX: "addBox",
+  SET_OPTIONS: "setOptions",
 } as const;
 
 export const ThemeAction = {

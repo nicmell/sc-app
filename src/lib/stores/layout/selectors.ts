@@ -6,5 +6,6 @@ const createLayoutSelector: SliceSelector<typeof root.layout> = (fn) =>
 
 export default {
   // state
-  layout: createLayoutSelector(s => s.layout),
+  items: createLayoutSelector(s => s.items),
+  options: createLayoutSelector(s => s.options),
 };

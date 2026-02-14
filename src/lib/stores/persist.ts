@@ -7,7 +7,7 @@ export const persistConfig: PersistOptions<any> = {
   storage: tauriStorage,
   partialize: ({theme, layout, scsynth}: RootState) => ({
     theme: {mode: theme.mode, primaryColor: theme.primaryColor},
-    layout: {layout: layout.layout},
+    layout: {items: layout.items, options: layout.options},
     scsynth: {options: scsynth.options},
   }),
   merge: (persisted, current: RootState) => {

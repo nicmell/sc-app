@@ -40,8 +40,14 @@ export interface ScsynthState {
   version: string;
 }
 
+export interface LayoutOptions {
+  numRows: number;
+  numColumns: number;
+}
+
 export interface LayoutState {
-  layout: BoxItem[];
+  items: BoxItem[];
+  options: LayoutOptions;
 }
 
 export interface ThemeState {

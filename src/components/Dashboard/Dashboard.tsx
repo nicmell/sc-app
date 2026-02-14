@@ -107,13 +107,9 @@ function toPixelStyle(item: BoxItem, containerWidth: number, cols: number, rowHe
   return {left, top, width, height};
 }
 
-interface DashboardProps {
-  numRows: number;
-  numColumns: number;
-}
-
-export function Dashboard({numRows, numColumns}: DashboardProps) {
-  const layout = useSelector(layoutStore.selectors.layout);
+export function Dashboard() {
+  const layout = useSelector(layoutStore.selectors.items);
+  const {numRows, numColumns} = useSelector(layoutStore.selectors.options);
   const {width, containerRef, mounted} = useContainerWidth({measureBeforeMount: true});
   const viewportHeight = useSyncExternalStore(subscribeToResize, getViewportHeight);
   const rowHeight = computeRowHeight(numRows, viewportHeight);
