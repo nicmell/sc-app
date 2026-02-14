@@ -1,5 +1,6 @@
-import type {RootState} from "@/types/stores";
+import root from "@/lib/stores/root/selectors";
+import {createSelector} from "@/lib/stores/utils";
 
-export const layout = (s: RootState) => s.layout.layout;
+export const layout = createSelector(root.layout, s => s.layout);
 
 export default {layout};

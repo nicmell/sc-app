@@ -8,7 +8,7 @@ import {
   createSynthMessage,
 } from "@/lib/osc/messages";
 import {NodeValueRange} from "@/components/NodeValueRange";
-import {useRootStore} from "@/lib/stores/rootStore.ts";
+import {useRootStore} from "@/lib/stores/store";
 import {initialNodeId} from "@/lib/stores/scsynth";
 import "./SynthControlsPanel.scss";
 

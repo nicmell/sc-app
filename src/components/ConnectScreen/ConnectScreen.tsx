@@ -1,6 +1,6 @@
 import {useState} from "react";
 import {oscService} from "@/lib/osc";
-import {useRootStore} from "@/lib/stores/rootStore.ts";
+import {useRootStore} from "@/lib/stores/store";
 import * as scsynth from "@/lib/stores/scsynth/selectors";
 import {ADDRESS_REGEXP} from "@/constants/osc";
 import "./ConnectScreen.scss";

@@ -1,7 +1,6 @@
 import OSC from 'osc-js';
 import {TauriUdpPlugin} from './TauriUdpPlugin';
 import {createNotifyMessage, createStatusMessage, createVersionMessage} from './messages';
-import {rootStore} from '@/lib/stores/rootStore.ts';
 import type {ScsynthOptions} from '@/lib/stores/scsynth';
 import {scsynthApi} from '@/lib/stores/api';
 import {logger} from '@/lib/logger';
@@ -20,7 +19,7 @@ export class OscService {
     this.osc.on('open', () => {
       this.resetTimeout();
       this.startPolling()
-      this.osc.send(createNotifyMessage(1, rootStore.getState().scsynth.clientId));
+      this.osc.send(createNotifyMessage(1, scsynthApi.clientId));
     });
     this.osc.on('close', () => {
       this.clearTimeout();
@@ -77,7 +76,7 @@ export class OscService {
   }
 
   private status() {
-    return rootStore.getState().scsynth.connectionStatus
+    return scsynthApi.connectionStatus;
   }
 
   private init(clientId: number) {
@@ -89,7 +88,7 @@ export class OscService {
   }
 
   getOptions(): ScsynthOptions {
-    return rootStore.getState().scsynth.options;
+    return scsynthApi.options;
   }
 
   setOptions(opts: Partial<ScsynthOptions>): void {
@@ -97,21 +96,19 @@ export class OscService {
   }
 
   private isReady(): boolean {
-    const {scsynth} = rootStore.getState();
     return (
-        scsynth.clientId >= 0 && scsynth.status.sampleRate > 0 && scsynth.version.length > 0
+        scsynthApi.clientId >= 0 && scsynthApi.status.sampleRate > 0 && scsynthApi.version.length > 0
     );
   }
 
   connect(): void {
-    const {scsynth} = rootStore.getState();
-    const {host, port} = scsynth.options;
+    const {host, port} = scsynthApi.options;
     scsynthApi.setConnectionStatus(ConnectionStatus.CONNECTING);
     this.osc.open({host, port});
   }
 
   disconnect(): void {
-    if (this.osc.status() === OSC.STATUS.IS_OPEN && rootStore.getState().scsynth.clientId >= 0) {
+    if (this.osc.status() === OSC.STATUS.IS_OPEN && scsynthApi.clientId >= 0) {
       this.send(createNotifyMessage(0));
     }
     this.osc.close();

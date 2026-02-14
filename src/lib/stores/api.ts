@@ -1,4 +1,4 @@
-import {rootStore} from "@/lib/stores/rootStore";
+import {rootStore} from "@/lib/stores/store";
 import {scsynthSlice} from "./scsynth/scsynthStore";
 import scsynthSelectors from "./scsynth/selectors";
 import {layoutSlice} from "./layout/layoutStore";

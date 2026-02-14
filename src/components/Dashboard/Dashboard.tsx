@@ -3,7 +3,7 @@ import type {Layout} from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import {oscService} from "@/lib/osc";
-import {useRootStore} from "@/lib/stores/rootStore.ts";
+import {useRootStore} from "@/lib/stores/store";
 import * as scsynth from "@/lib/stores/scsynth/selectors";
 import * as layoutSelectors from "@/lib/stores/layout/selectors";
 import {layoutApi} from "@/lib/stores/api";

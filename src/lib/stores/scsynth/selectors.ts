@@ -1,18 +1,29 @@
-import type {RootState, ScsynthStatus} from "@/types/stores";
+import type {ScsynthStatus} from "@/types/stores";
 import {ConnectionStatus} from "@/constants/osc";
+import root from "@/lib/stores/root/selectors";
+import {createSelector} from "@/lib/stores/utils";
 
-export const isConnected = (s: RootState) =>
-  s.scsynth.connectionStatus === ConnectionStatus.CONNECTED;
+export const clientId = createSelector(root.scsynth, s => s.clientId);
 
-export const isConnecting = (s: RootState) =>
-  s.scsynth.connectionStatus === ConnectionStatus.CONNECTING;
+export const connectionStatus = createSelector(root.scsynth, s => s.connectionStatus);
 
-export const options = (s: RootState) => s.scsynth.options;
+export const isConnected = createSelector(
+  connectionStatus,
+  s => s === ConnectionStatus.CONNECTED,
+);
 
-export const initialNodeId = (s: RootState) => s.scsynth.options.initialNodeId;
+export const isConnecting = createSelector(
+  connectionStatus,
+  s => s === ConnectionStatus.CONNECTING,
+);
 
-export const address = (s: RootState) =>
-  `${s.scsynth.options.host}:${s.scsynth.options.port}`;
+export const options = createSelector(root.scsynth, s => s.options);
+
+export const initialNodeId = createSelector(options, o => o.initialNodeId);
+
+export const address = createSelector(options, o => `${o.host}:${o.port}`);
+
+export const status = createSelector(root.scsynth, s => s.status);
 
 function formatStatus(s: ScsynthStatus): string {
   return (
@@ -21,6 +32,8 @@ function formatStatus(s: ScsynthStatus): string {
   );
 }
 
-export const statusText = (s: RootState) => formatStatus(s.scsynth.status);
+export const statusText = createSelector(status, formatStatus);
 
-export default {isConnected, isConnecting, options, initialNodeId, address, statusText};
+export const version = createSelector(root.scsynth, s => s.version);
+
+export default {clientId, connectionStatus, isConnected, isConnecting, options, initialNodeId, address, status, statusText, version};

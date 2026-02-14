@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from "react";
-import { useRootStore } from "@/lib/stores/rootStore.ts";
+import { useRootStore } from "@/lib/stores/store";
 import * as theme from "@/lib/stores/theme/selectors";
 import { themeApi } from "@/lib/stores/api";
 

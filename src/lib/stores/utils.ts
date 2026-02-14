@@ -1,14 +1,21 @@
 export type Action<T extends string = string, P = void> =
   [P] extends [void] ? { type: T } : { type: T; payload: P };
 
+export type AnyAction = Action & { [key: string]: any };
+
 export type ActionCreator<T extends string = string, P = void> =
   [P] extends [void]
     ? { (): Action<T>; type: T; match: (action: Action) => action is Action<T> }
     : { (payload: P): Action<T, P>; type: T; match: (action: Action) => action is Action<T, P> };
 
+export type Reducer<S = any, A extends Action = AnyAction> = (
+    state: S | undefined,
+    action: A,
+) => S;
+
 export type CaseReducer<S, A extends Action = Action> = (state: S, action: A) => void | S;
 
-export type ReducerWithInitialState<S> = CaseReducer<S> & {
+export type ReducerWithInitialState<S> = Reducer<S> & {
   getInitialState: () => S;
 };
 
@@ -46,18 +53,23 @@ export function createAction(type: string, prepare?: (...args: any[]) => any) {
 export function createReducer<S, R extends CaseReducers<S>>(
   initialState: S | (() => S),
   reducers: R,
+  defaultReducer?: CaseReducer<S>,
 ): ReducerWithInitialState<S> {
   const getInitialState = typeof initialState === "function"
     ? initialState as () => S
     : () => initialState;
 
   return Object.assign(
-    ((state: S, action: Action) => {
+      ((state: S | undefined, action: Action) => {
+        const s = state ?? getInitialState();
       const handler = reducers[action.type];
       if (handler) {
-        handler(state, action);
+        handler(s, action);
+      } else {
+        defaultReducer?.(s, action);
       }
-    }) as CaseReducer<S>,
+        return s;
+      }) as Reducer<S>,
     {getInitialState},
   );
 }
@@ -66,8 +78,9 @@ export function createSlice<S, Name extends string, R extends CaseReducers<S>>(c
   name: Name;
   initialState: S | (() => S);
   reducers: R;
+  defaultReducer?: CaseReducer<S>;
 }): Slice<S, Name, R> {
-  const {name, initialState, reducers} = config;
+  const {name, initialState, reducers, defaultReducer} = config;
   const actions = {} as Record<string, any>;
   const handlerMap = {} as CaseReducers<S>;
 
@@ -77,7 +90,7 @@ export function createSlice<S, Name extends string, R extends CaseReducers<S>>(c
     handlerMap[type] = reducers[key];
   }
 
-  const reducer = createReducer(initialState, handlerMap);
+  const reducer = createReducer(initialState, handlerMap, defaultReducer);
 
   return {getInitialState: reducer.getInitialState, reducer, actions: actions as any};
 }
@@ -112,13 +125,56 @@ export function createApi<
   return api;
 }
 
-export function combineReducers<S extends object>(
-  reducers: { [K in keyof S]: CaseReducer<S[K]> },
-): CaseReducer<S> {
-  const keys = Object.keys(reducers) as (keyof S)[];
-  return (state, action) => {
-    for (const key of keys) {
-      reducers[key](state[key], action);
+type Selector<S = any, R = any> = (state: S) => R;
+
+export function createSelector<S, R1, Result>(
+    s1: Selector<S, R1>,
+    combiner: (r1: R1) => Result,
+): Selector<S, Result>;
+export function createSelector<S, R1, R2, Result>(
+    s1: Selector<S, R1>,
+    s2: Selector<S, R2>,
+    combiner: (r1: R1, r2: R2) => Result,
+): Selector<S, Result>;
+export function createSelector<S, R1, R2, R3, Result>(
+    s1: Selector<S, R1>,
+    s2: Selector<S, R2>,
+    s3: Selector<S, R3>,
+    combiner: (r1: R1, r2: R2, r3: R3) => Result,
+): Selector<S, Result>;
+export function createSelector<S, R1, R2, R3, R4, Result>(
+    s1: Selector<S, R1>,
+    s2: Selector<S, R2>,
+    s3: Selector<S, R3>,
+    s4: Selector<S, R4>,
+    combiner: (r1: R1, r2: R2, r3: R3, r4: R4) => Result,
+): Selector<S, Result>;
+export function createSelector(...args: ((...a: any[]) => any)[]) {
+  const combiner = args.pop()!;
+  const selectors = args;
+  let lastInputs: unknown[] | undefined;
+  let lastResult: unknown;
+
+  return (state: unknown) => {
+    const inputs = selectors.map(s => s(state));
+    if (lastInputs && inputs.every((v, i) => v === lastInputs![i])) {
+      return lastResult;
     }
+    lastInputs = inputs;
+    lastResult = combiner(...inputs);
+    return lastResult;
   };
+}
+
+export function combineReducers<S extends object>(
+    reducers: { [K in keyof S]: Reducer<S[K]> },
+): Reducer<S> {
+  const keys = Object.keys(reducers) as (keyof S)[];
+  return ((state, action) => {
+    const s = state ?? {} as S;
+    for (const key of keys) {
+      s[key] = reducers[key](s[key], action);
+    }
+    return s;
+  }) as Reducer<S>;
 }
