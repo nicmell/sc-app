@@ -25,6 +25,7 @@ export function DashboardPanel({title, children, onClose, ref, style, className,
           </button>
         )}
       </div>
+      <img className="dashboard-panel-logo" src="plugins://halo.jpg" alt="SCsynth Logo" style={{width: "100%", height: "auto"}}/>
       {children && <div className="dashboard-panel-body">{children}</div>}
     </div>
   );

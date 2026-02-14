@@ -36,7 +36,7 @@ export class TauriDatagramSocket {
     const address = options.address ?? '0.0.0.0';
     const port = options.port ?? 0;
 
-    invoke('udp_bind', { localAddr: `${address}:${port}` })
+    invoke('bind', { local_addr: `${address}:${port}` })
       .then(async () => {
         this.unlisten = await listen<number[]>('osc-data', (event) => {
           this.emit('message', new Uint8Array(event.payload));
@@ -54,7 +54,7 @@ export class TauriDatagramSocket {
       this.unlisten = null;
     }
 
-    invoke('udp_close')
+    invoke('close')
       .then(() => {
         callback();
       })
@@ -70,7 +70,7 @@ export class TauriDatagramSocket {
     port: number,
     host: string,
   ): void {
-    invoke('udp_send', {
+    invoke('send', {
       target: `${host}:${port}`,
       data: Array.from(data),
     }).catch((err) => {

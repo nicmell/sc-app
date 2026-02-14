@@ -36,3 +36,7 @@ export async function removePluginFile(name: string): Promise<void> {
     // file may already be gone
   }
 }
+
+export function pluginUrl(name: string): string {
+  return `plugins://${encodeURIComponent(name)}`;
+}
