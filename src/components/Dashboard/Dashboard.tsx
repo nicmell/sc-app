@@ -1,6 +1,5 @@
-import {useMemo, useState, useCallback, useSyncExternalStore} from "react";
-import {ResponsiveGridLayout, useContainerWidth, noCompactor} from "react-grid-layout";
-import type {Compactor} from "react-grid-layout";
+import {useMemo, useSyncExternalStore} from "react";
+import {GridLayout, useContainerWidth, noCompactor} from "react-grid-layout";
 import type {Layout} from "react-grid-layout";
 import type {BoxItem} from "@/types/stores";
 import "react-grid-layout/css/styles.css";
@@ -12,13 +11,6 @@ import {DashboardPanel} from "@/components/panels/DashboardPanel";
 import {deepEqual} from "@/lib/utils/deepEqual";
 import "./Dashboard.scss";
 
-const staticCompactor: Compactor = {
-  ...noCompactor,
-  preventCollision: true,
-};
-
-const BREAKPOINTS = {lg: 996, md: 768, sm: 480, xs: 0} as const;
-const COLS_MAP = {lg: 12, md: 12, sm: 6, xs: 1} as const;
 const MARGIN: [number, number] = [10, 10];
 const HEADER_HEIGHT = 75;
 const FOOTER_HEIGHT = 42;
@@ -38,7 +30,6 @@ function computeRowHeight(numRows: number, viewportHeight: number): number {
 }
 
 function findMaxRect(grid: number[][], rows: number, cols: number) {
-
   let bestArea = 0;
   let best: {x: number; y: number; w: number; h: number} | null = null;
 
@@ -75,9 +66,7 @@ function findMaxRect(grid: number[][], rows: number, cols: number) {
   return best;
 }
 
-function computePlaceholders(layout: BoxItem[], cols: number): BoxItem[] {
-  const rows = layout.reduce((max, item) => Math.max(max, item.y + item.h), 1);
-
+function computePlaceholders(layout: BoxItem[], rows: number, cols: number): BoxItem[] {
   const grid: number[][] = [];
   for (let i = 0; i < rows; i++) {
     grid[i] = new Array(cols).fill(0);
@@ -106,45 +95,9 @@ function computePlaceholders(layout: BoxItem[], cols: number): BoxItem[] {
   return placeholders;
 }
 
-function collides(a: BoxItem, b: BoxItem): boolean {
-  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-}
-
-function deriveLayout(layout: BoxItem[], cols: number): BoxItem[] {
-  if (cols >= COLS_MAP.lg) return layout;
-
-  const sorted = [...layout].sort((a, b) => a.y - b.y || a.x - b.x);
-  const placed: BoxItem[] = [];
-
-  for (const item of sorted) {
-    const w = Math.min(item.w, cols);
-    const x = Math.min(item.x, cols - w);
-    let y = item.y;
-
-    const candidate = {...item, x, y, w};
-
-    // Push down until no collision
-    let hasCollision = true;
-    while (hasCollision) {
-      hasCollision = false;
-      for (const p of placed) {
-        if (collides(candidate, p)) {
-          candidate.y = p.y + p.h;
-          hasCollision = true;
-          break;
-        }
-      }
-    }
-
-    placed.push(candidate);
-  }
-
-  return placed;
-}
-
 function toPixelStyle(item: BoxItem, containerWidth: number, cols: number, rowHeight: number) {
   const [mx, my] = MARGIN;
-  const colWidth = (containerWidth - mx * (cols - 1) - mx * 2) / cols;
+  const colWidth = (containerWidth - mx * (cols + 1)) / cols;
 
   const left = Math.round((colWidth + mx) * item.x + mx);
   const top = Math.round((rowHeight + my) * item.y + my);
@@ -154,47 +107,28 @@ function toPixelStyle(item: BoxItem, containerWidth: number, cols: number, rowHe
   return {left, top, width, height};
 }
 
-const LG_COLS = COLS_MAP.lg;
-
-function scaleToLg(item: {x: number; y: number; w: number; h: number}, cols: number) {
-  if (cols >= LG_COLS) return item;
-  const factor = LG_COLS / cols;
-  return {
-    x: Math.round(item.x * factor),
-    y: item.y,
-    w: Math.round(item.w * factor),
-    h: item.h,
-  };
-}
-
-function getBreakpointCols(width: number): number {
-  if (width >= BREAKPOINTS.lg) return COLS_MAP.lg;
-  if (width >= BREAKPOINTS.md) return COLS_MAP.md;
-  if (width >= BREAKPOINTS.sm) return COLS_MAP.sm;
-  return COLS_MAP.xs;
-}
-
 interface DashboardProps {
   numRows: number;
+  numColumns: number;
 }
 
-export function Dashboard({numRows}: DashboardProps) {
+export function Dashboard({numRows, numColumns}: DashboardProps) {
   const layout = useSelector(layoutStore.selectors.layout);
   const {width, containerRef, mounted} = useContainerWidth({measureBeforeMount: true});
-  const [cols, setCols] = useState(() => getBreakpointCols(width));
   const viewportHeight = useSyncExternalStore(subscribeToResize, getViewportHeight);
   const rowHeight = computeRowHeight(numRows, viewportHeight);
 
-  const onBreakpointChange = useCallback((_bp: string, newCols: number) => {
-    setCols(newCols);
-  }, []);
+  const actualNumRows =  useMemo(() => {
+    return layout.reduce((max, item) => Math.max(max, item.y + item.h), 1);
+  }, [layout])
 
-  const derived = useMemo(() => deriveLayout(layout, cols), [layout, cols]);
-  const placeholders = useMemo(() => computePlaceholders(derived, cols), [derived, cols]);
+  const placeholders = useMemo(() => {
+    return computePlaceholders(layout, Math.max(actualNumRows, numRows), numColumns)
+  }, [layout, actualNumRows, numRows, numColumns]);
 
   const syncLayout = (current: Layout) => {
     const active = current
-      .map(({i, x, y, w, h}) => ({i, ...scaleToLg({x, y, w, h}, cols)}));
+      .map(({i, x, y, w, h}) => ({i, x, y, w, h}));
     if (!deepEqual(active, layout)) {
       layoutApi.setLayout(active);
     }
@@ -210,35 +144,31 @@ export function Dashboard({numRows}: DashboardProps) {
       <div className="dashboard-grid-wrapper" ref={containerRef as React.RefObject<HTMLDivElement>}>
         {mounted && (
           <div className="dashboard-grid-container">
-            <ResponsiveGridLayout
+            <GridLayout
               className="dashboard-grid"
               width={width}
-              layouts={{lg: derived}}
-              breakpoints={BREAKPOINTS}
-              cols={COLS_MAP}
-              rowHeight={rowHeight}
-              margin={MARGIN}
-              compactor={staticCompactor}
+              layout={layout}
+              gridConfig={{cols: numColumns, rowHeight, margin: MARGIN}}
+              compactor={{...noCompactor, allowOverlap: false, preventCollision: true}}
               dragConfig={{handle: ".dashboard-panel-header"}}
-              onBreakpointChange={onBreakpointChange}
-              onDragStop={(current: Layout) => syncLayout(current)}
-              onResizeStop={(current: Layout) => syncLayout(current)}
+              onDragStop={(current) => syncLayout(current)}
+              onResizeStop={(current) => syncLayout(current)}
             >
-              {derived.map(item => (
+              {layout.map(item => (
                 <DashboardPanel
                   key={item.i}
                   title={item.i}
                   onClose={() => layoutApi.removeBox(item.i)}
                 />
               ))}
-            </ResponsiveGridLayout>
+            </GridLayout>
 
             {placeholders.map(p => (
               <div
                 key={p.i}
                 className="add-box-placeholder"
-                style={toPixelStyle(p, width, cols, rowHeight)}
-                onClick={() => layoutApi.addBox(scaleToLg({x: p.x, y: p.y, w: p.w, h: p.h}, cols))}
+                style={toPixelStyle(p, width, numColumns, rowHeight)}
+                onClick={() => layoutApi.addBox({x: p.x, y: p.y, w: p.w, h: p.h})}
               >
                 +
               </div>

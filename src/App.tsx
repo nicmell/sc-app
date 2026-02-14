@@ -10,7 +10,7 @@ function App() {
   return (
     <ThemeProvider>
       <main>
-        {connected ? <Dashboard numRows={7} /> : <ConnectScreen />}
+        {connected ? <Dashboard numRows={8} numColumns={12} /> : <ConnectScreen />}
       </main>
     </ThemeProvider>
   );
