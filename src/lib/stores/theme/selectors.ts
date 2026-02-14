@@ -1,5 +1,7 @@
 import type {RootState} from "@/types/stores";
 
-export const selectThemeMode = (s: RootState) => s.theme.mode;
+export const mode = (s: RootState) => s.theme.mode;
 
-export const selectPrimaryColor = (s: RootState) => s.theme.primaryColor;
+export const primaryColor = (s: RootState) => s.theme.primaryColor;
+
+export default {mode, primaryColor};

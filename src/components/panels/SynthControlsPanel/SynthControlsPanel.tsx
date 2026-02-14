@@ -9,11 +9,11 @@ import {
 } from "@/lib/osc/messages";
 import {NodeValueRange} from "@/components/NodeValueRange";
 import {useRootStore} from "@/lib/stores/rootStore.ts";
-import {selectInitialNodeId} from "@/lib/stores/scsynth";
+import {initialNodeId} from "@/lib/stores/scsynth";
 import "./SynthControlsPanel.scss";
 
 export function SynthControlsPanel() {
-  const nodeId = useRootStore(selectInitialNodeId);
+  const nodeId = useRootStore(initialNodeId);
   const [playing, setPlaying] = useState(false);
   const playingRef = useRef(false);
   const mountedRef = useRef(false);

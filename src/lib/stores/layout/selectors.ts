@@ -1,3 +1,5 @@
 import type {RootState} from "@/types/stores";
 
-export const selectLayout = (s: RootState) => s.layout.layout;
+export const layout = (s: RootState) => s.layout.layout;
+
+export default {layout};

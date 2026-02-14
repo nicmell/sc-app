@@ -1,17 +1,17 @@
 import type {RootState, ScsynthStatus} from "@/types/stores";
 import {ConnectionStatus} from "@/constants/osc";
 
-export const selectIsConnected = (s: RootState) =>
+export const isConnected = (s: RootState) =>
   s.scsynth.connectionStatus === ConnectionStatus.CONNECTED;
 
-export const selectIsConnecting = (s: RootState) =>
+export const isConnecting = (s: RootState) =>
   s.scsynth.connectionStatus === ConnectionStatus.CONNECTING;
 
-export const selectScsynthOptions = (s: RootState) => s.scsynth.options;
+export const options = (s: RootState) => s.scsynth.options;
 
-export const selectInitialNodeId = (s: RootState) => s.scsynth.options.initialNodeId;
+export const initialNodeId = (s: RootState) => s.scsynth.options.initialNodeId;
 
-export const selectAddress = (s: RootState) =>
+export const address = (s: RootState) =>
   `${s.scsynth.options.host}:${s.scsynth.options.port}`;
 
 function formatStatus(s: ScsynthStatus): string {
@@ -21,4 +21,6 @@ function formatStatus(s: ScsynthStatus): string {
   );
 }
 
-export const selectStatusText = (s: RootState) => formatStatus(s.scsynth.status);
+export const statusText = (s: RootState) => formatStatus(s.scsynth.status);
+
+export default {isConnected, isConnecting, options, initialNodeId, address, statusText};
