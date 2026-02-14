@@ -1,4 +1,4 @@
-import {useMemo, useState, useCallback} from "react";
+import {useMemo, useState, useCallback, useSyncExternalStore} from "react";
 import {ResponsiveGridLayout, useContainerWidth, noCompactor} from "react-grid-layout";
 import type {Compactor} from "react-grid-layout";
 import type {Layout} from "react-grid-layout";
@@ -19,8 +19,23 @@ const staticCompactor: Compactor = {
 
 const BREAKPOINTS = {lg: 996, md: 768, sm: 480, xs: 0} as const;
 const COLS_MAP = {lg: 12, md: 12, sm: 6, xs: 1} as const;
-const ROW_HEIGHT = 60;
 const MARGIN: [number, number] = [10, 10];
+const HEADER_HEIGHT = 75;
+const FOOTER_HEIGHT = 42;
+
+function subscribeToResize(cb: () => void) {
+  window.addEventListener("resize", cb);
+  return () => window.removeEventListener("resize", cb);
+}
+
+function getViewportHeight() {
+  return window.innerHeight;
+}
+
+function computeRowHeight(numRows: number, viewportHeight: number): number {
+  const available = viewportHeight - HEADER_HEIGHT - FOOTER_HEIGHT;
+  return Math.floor((available - MARGIN[1] * (numRows + 1)) / numRows);
+}
 
 function findMaxRect(grid: number[][], rows: number, cols: number) {
 
@@ -127,14 +142,14 @@ function deriveLayout(layout: BoxItem[], cols: number): BoxItem[] {
   return placed;
 }
 
-function toPixelStyle(item: BoxItem, containerWidth: number, cols: number) {
+function toPixelStyle(item: BoxItem, containerWidth: number, cols: number, rowHeight: number) {
   const [mx, my] = MARGIN;
   const colWidth = (containerWidth - mx * (cols - 1) - mx * 2) / cols;
 
   const left = Math.round((colWidth + mx) * item.x + mx);
-  const top = Math.round((ROW_HEIGHT + my) * item.y + my);
+  const top = Math.round((rowHeight + my) * item.y + my);
   const width = Math.round(colWidth * item.w + Math.max(0, item.w - 1) * mx);
-  const height = Math.round(ROW_HEIGHT * item.h + Math.max(0, item.h - 1) * my);
+  const height = Math.round(rowHeight * item.h + Math.max(0, item.h - 1) * my);
 
   return {left, top, width, height};
 }
@@ -159,10 +174,16 @@ function getBreakpointCols(width: number): number {
   return COLS_MAP.xs;
 }
 
-export function Dashboard() {
+interface DashboardProps {
+  numRows: number;
+}
+
+export function Dashboard({numRows}: DashboardProps) {
   const layout = useSelector(layoutStore.selectors.layout);
   const {width, containerRef, mounted} = useContainerWidth({measureBeforeMount: true});
   const [cols, setCols] = useState(() => getBreakpointCols(width));
+  const viewportHeight = useSyncExternalStore(subscribeToResize, getViewportHeight);
+  const rowHeight = computeRowHeight(numRows, viewportHeight);
 
   const onBreakpointChange = useCallback((_bp: string, newCols: number) => {
     setCols(newCols);
@@ -195,7 +216,7 @@ export function Dashboard() {
               layouts={{lg: derived}}
               breakpoints={BREAKPOINTS}
               cols={COLS_MAP}
-              rowHeight={ROW_HEIGHT}
+              rowHeight={rowHeight}
               margin={MARGIN}
               compactor={staticCompactor}
               dragConfig={{handle: ".dashboard-panel-header"}}
@@ -216,7 +237,7 @@ export function Dashboard() {
               <div
                 key={p.i}
                 className="add-box-placeholder"
-                style={toPixelStyle(p, width, cols)}
+                style={toPixelStyle(p, width, cols, rowHeight)}
                 onClick={() => layoutApi.addBox(scaleToLg({x: p.x, y: p.y, w: p.w, h: p.h}, cols))}
               >
                 +
