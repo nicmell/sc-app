@@ -82,29 +82,31 @@ export function createSlice<S, Name extends string, R extends CaseReducers<S>>(c
   return {getInitialState: reducer.getInitialState, reducer, actions: actions as any};
 }
 
-/** Creates an api object with getters from selectors and dispatch wrappers from actions. */
+export interface Store<S = any> {
+  getState: () => S;
+  dispatch: (action: any) => void;
+}
+
 export function createApi<
   State,
   Selectors extends Record<string, (state: State) => any>,
   Actions extends Record<string, (...args: any[]) => Action>,
->(config: {
-  selectors: Selectors;
-  actions: Actions;
-  getState: () => State;
-  dispatch: (action: any) => void;
-}): { readonly [K in keyof Selectors]: ReturnType<Selectors[K]> }
+>(
+  store: Store<State>,
+  config: { selectors: Selectors; actions: Actions },
+): { readonly [K in keyof Selectors]: ReturnType<Selectors[K]> }
    & { [K in keyof Actions]: (...args: Parameters<Actions[K]>) => void } {
   const api = {} as any;
 
   for (const [key, selector] of Object.entries(config.selectors)) {
     Object.defineProperty(api, key, {
-      get: () => selector(config.getState()),
+      get: () => selector(store.getState()),
       enumerable: true,
     });
   }
 
   for (const [key, actionCreator] of Object.entries(config.actions)) {
-    api[key] = (...args: any[]) => config.dispatch(actionCreator(...args));
+    api[key] = (...args: any[]) => store.dispatch(actionCreator(...args));
   }
 
   return api;

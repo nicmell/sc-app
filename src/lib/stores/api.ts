@@ -5,27 +5,25 @@ import {layoutSlice} from "./layout/layoutStore";
 import layoutSelectors from "./layout/selectors";
 import {themeSlice} from "./theme/themeStore";
 import themeSelectors from "./theme/selectors";
-import {createApi} from "./utils";
+import {createApi, type Store} from "./utils";
+import type {RootState} from "@/types/stores";
 
-const getState = () => rootStore.getState();
+const store: Store<RootState> = {
+  getState: () => rootStore.getState(),
+  dispatch,
+};
 
-export const scsynthApi = createApi({
+export const scsynthApi = createApi(store, {
   selectors: scsynthSelectors,
   actions: scsynthSlice.actions,
-  getState,
-  dispatch,
 });
 
-export const layoutApi = createApi({
+export const layoutApi = createApi(store, {
   selectors: layoutSelectors,
   actions: layoutSlice.actions,
-  getState,
-  dispatch,
 });
 
-export const themeApi = createApi({
+export const themeApi = createApi(store, {
   selectors: themeSelectors,
   actions: themeSlice.actions,
-  getState,
-  dispatch,
 });
