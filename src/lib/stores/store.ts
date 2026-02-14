@@ -3,24 +3,24 @@ import {useStore} from "zustand";
 import {persist} from "zustand/middleware";
 import {immer} from "zustand/middleware/immer";
 import {redux} from "zustand/middleware";
-import {rootReducer, rootInitialState} from "./root";
+import root from "./root";
 import {persistConfig} from "./persist";
 import type {RootAction, RootState} from "@/types/stores";
 
 export type {RootAction, RootState, ScsynthOptions, ScsynthStatus} from "@/types/stores";
 
-export const rootStore = createStore(
+export const store = createStore(
   persist(
-    immer(redux(rootReducer, rootInitialState)),
+    immer(redux(root.reducer, root.getInitialState())),
     persistConfig,
   ),
 );
 
 export const dispatch = (action: RootAction) =>
-  rootStore.getState().dispatch(action);
+  store.getState().dispatch(action);
 
 export const useDispatch = () =>
-  useStore(rootStore, (s) => s.dispatch);
+  useStore(store, (s) => s.dispatch);
 
 export const useRootStore = <T>(selector: (state: RootState) => T): T =>
-  useStore(rootStore, (state) => selector(state));
+  useStore(store, (state) => selector(state));

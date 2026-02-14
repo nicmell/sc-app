@@ -23,8 +23,8 @@ export type CaseReducers<S, A = Record<string, any>> = {
   [K in keyof A]: CaseReducer<S, A[K] & Action>
 };
 
-export type SliceActions<S extends { actions: Record<string, (...args: any[]) => any> }> =
-  ReturnType<S["actions"][keyof S["actions"]]>;
+export type SliceActions<A extends Record<string, (...args: any[]) => any>> =
+  ReturnType<A[keyof A]>;
 
 export type Slice<S, Name extends string, R extends CaseReducers<S>> = {
   getInitialState: () => S;
@@ -129,6 +129,9 @@ export function createApi<
 }
 
 type Selector<S = any, R = any> = (state: S) => R;
+
+export type SliceSelector<Root extends Selector> =
+  <R>(fn: (slice: ReturnType<Root>) => R) => Selector<Parameters<Root>[0], R>;
 
 export function createSelector<S, R1, Result>(
     s1: Selector<S, R1>,

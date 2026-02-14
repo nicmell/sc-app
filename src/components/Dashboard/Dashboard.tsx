@@ -4,8 +4,8 @@ import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import {oscService} from "@/lib/osc";
 import {useRootStore} from "@/lib/stores/store";
-import * as scsynth from "@/lib/stores/scsynth/selectors";
-import * as layoutSelectors from "@/lib/stores/layout/selectors";
+import scsynth from "@/lib/stores/scsynth";
+import layoutStore from "@/lib/stores/layout";
 import {layoutApi} from "@/lib/stores/api";
 import {DashboardPanel} from "@/components/panels/DashboardPanel";
 import {ServerControlsPanel} from "@/components/panels/ServerControlsPanel";
@@ -20,9 +20,9 @@ const PANEL_MAP: Record<string, {title: string; component: React.FC}> = {
 };
 
 export function Dashboard() {
-  const address = useRootStore(scsynth.address);
-  const statusText = useRootStore(scsynth.statusText);
-  const layout = useRootStore(layoutSelectors.layout);
+  const address = useRootStore(scsynth.selectors.address);
+  const statusText = useRootStore(scsynth.selectors.statusText);
+  const layout = useRootStore(layoutStore.selectors.layout);
   const {width, containerRef, mounted} = useContainerWidth({measureBeforeMount: true});
 
   return (

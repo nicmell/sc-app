@@ -1,7 +1,7 @@
 import OSC from 'osc-js';
 import {TauriUdpPlugin} from './TauriUdpPlugin';
 import {createNotifyMessage, createStatusMessage, createVersionMessage} from './messages';
-import type {ScsynthOptions} from '@/lib/stores/scsynth';
+import type {ScsynthOptions} from '@/types/stores';
 import {scsynthApi} from '@/lib/stores/api';
 import {logger} from '@/lib/logger';
 

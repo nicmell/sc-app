@@ -1,7 +1,7 @@
 import {useState} from "react";
 import {oscService} from "@/lib/osc";
 import {useRootStore} from "@/lib/stores/store";
-import * as scsynth from "@/lib/stores/scsynth/selectors";
+import scsynth from "@/lib/stores/scsynth";
 import {ADDRESS_REGEXP} from "@/constants/osc";
 import "./ConnectScreen.scss";
 
@@ -12,9 +12,9 @@ function parseAddress(addr: string): { host: string; port: number } {
 }
 
 export function ConnectScreen() {
-  const options = useRootStore(scsynth.options);
-  const connecting = useRootStore(scsynth.isConnecting);
-  const [address, setAddress] = useState(`${options.host}:${options.port}`);
+  const defaultAddress = useRootStore(scsynth.selectors.address);
+  const connecting = useRootStore(scsynth.selectors.isConnecting);
+  const [address, setAddress] = useState(defaultAddress);
 
   const valid = ADDRESS_REGEXP.test(address);
 

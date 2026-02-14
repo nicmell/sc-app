@@ -1,8 +1,8 @@
 import type {LayoutItem} from "react-grid-layout";
 import type {SliceActions} from "@/lib/stores/utils";
-import type {scsynthSlice} from "@/lib/stores/scsynth";
-import type {layoutSlice} from "@/lib/stores/layout";
-import type {themeSlice} from "@/lib/stores/theme";
+import type {scsynthSlice} from "@/lib/stores/scsynth/slice";
+import type {layoutSlice} from "@/lib/stores/layout/slice";
+import type {themeSlice} from "@/lib/stores/theme/slice";
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected";
 
@@ -48,7 +48,7 @@ export interface RootState {
   scsynth: ScsynthState;
 }
 
-export type ScsynthAction = SliceActions<typeof scsynthSlice>;
-export type LayoutAction = SliceActions<typeof layoutSlice>;
-export type ThemeAction = SliceActions<typeof themeSlice>;
+export type ScsynthAction = SliceActions<typeof scsynthSlice.actions>;
+export type LayoutAction = SliceActions<typeof layoutSlice.actions>;
+export type ThemeAction = SliceActions<typeof themeSlice.actions>;
 export type RootAction = ScsynthAction | LayoutAction | ThemeAction;

@@ -1,4 +1,5 @@
 export const SliceName = {
+  ROOT: "root",
   SCSYNTH: "scsynth",
   LAYOUT: "layout",
   THEME: "theme",

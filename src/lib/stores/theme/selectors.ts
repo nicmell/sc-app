@@ -1,10 +1,11 @@
 import root from "@/lib/stores/root/selectors";
-import {createSelector} from "@/lib/stores/utils";
+import {createSelector, type SliceSelector} from "@/lib/stores/utils";
 
-const selectors = {
-  mode: createSelector(root.theme, s => s.mode),
-  primaryColor: createSelector(root.theme, s => s.primaryColor),
-} as const;
+const createThemeSelector: SliceSelector<typeof root.theme> = (fn) =>
+  createSelector(root.theme, fn);
 
-export const {mode, primaryColor} = selectors;
-export default selectors;
+export default {
+  // state
+  mode: createThemeSelector(s => s.mode),
+  primaryColor: createThemeSelector(s => s.primaryColor),
+};

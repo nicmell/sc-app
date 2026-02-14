@@ -1,23 +1,26 @@
-import {rootStore} from "@/lib/stores/store";
-import {scsynthSlice} from "./scsynth";
-import scsynthSelectors from "./scsynth/selectors";
-import {layoutSlice} from "./layout";
-import layoutSelectors from "./layout/selectors";
-import {themeSlice} from "./theme";
-import themeSelectors from "./theme/selectors";
+import {store} from "@/lib/stores/store";
+import root from "./root";
+import scsynth from "./scsynth";
+import layout from "./layout";
+import theme from "./theme";
 import {createApi} from "./utils";
 
-export const scsynthApi = createApi(rootStore, {
-  selectors: scsynthSelectors,
-  actions: scsynthSlice.actions,
+export const rootApi = createApi(store, {
+  selectors: root.selectors,
+  actions: root.actions,
 });
 
-export const layoutApi = createApi(rootStore, {
-  selectors: layoutSelectors,
-  actions: layoutSlice.actions,
+export const scsynthApi = createApi(store, {
+  selectors: scsynth.selectors,
+  actions: scsynth.actions,
 });
 
-export const themeApi = createApi(rootStore, {
-  selectors: themeSelectors,
-  actions: themeSlice.actions,
+export const layoutApi = createApi(store, {
+  selectors: layout.selectors,
+  actions: layout.actions,
+});
+
+export const themeApi = createApi(store, {
+  selectors: theme.selectors,
+  actions: theme.actions,
 });

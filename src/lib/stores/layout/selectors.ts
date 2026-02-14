@@ -1,9 +1,10 @@
 import root from "@/lib/stores/root/selectors";
-import {createSelector} from "@/lib/stores/utils";
+import {createSelector, type SliceSelector} from "@/lib/stores/utils";
 
-const selectors = {
-  layout: createSelector(root.layout, s => s.layout),
-} as const;
+const createLayoutSelector: SliceSelector<typeof root.layout> = (fn) =>
+  createSelector(root.layout, fn);
 
-export const {layout} = selectors;
-export default selectors;
+export default {
+  // state
+  layout: createLayoutSelector(s => s.layout),
+};

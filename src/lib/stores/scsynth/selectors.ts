@@ -1,7 +1,10 @@
 import type {ScsynthStatus} from "@/types/stores";
 import {ConnectionStatus} from "@/constants/osc";
 import root from "@/lib/stores/root/selectors";
-import {createSelector} from "@/lib/stores/utils";
+import {createSelector, type SliceSelector} from "@/lib/stores/utils";
+
+const createScsynthSelector: SliceSelector<typeof root.scsynth> = (fn) =>
+  createSelector(root.scsynth, fn);
 
 function formatStatus(s: ScsynthStatus): string {
   return (
@@ -10,18 +13,18 @@ function formatStatus(s: ScsynthStatus): string {
   );
 }
 
-const selectors = {
-  clientId: createSelector(root.scsynth, s => s.clientId),
-  connectionStatus: createSelector(root.scsynth, s => s.connectionStatus),
-  isConnected: createSelector(root.scsynth, s => s.connectionStatus === ConnectionStatus.CONNECTED),
-  isConnecting: createSelector(root.scsynth, s => s.connectionStatus === ConnectionStatus.CONNECTING),
-  options: createSelector(root.scsynth, s => s.options),
-  initialNodeId: createSelector(root.scsynth, s => s.options.initialNodeId),
-  address: createSelector(root.scsynth, s => `${s.options.host}:${s.options.port}`),
-  status: createSelector(root.scsynth, s => s.status),
-  statusText: createSelector(root.scsynth, s => formatStatus(s.status)),
-  version: createSelector(root.scsynth, s => s.version),
-} as const;
+export default {
+  // state
+  clientId: createScsynthSelector(s => s.clientId),
+  options: createScsynthSelector(s => s.options),
+  connectionStatus: createScsynthSelector(s => s.connectionStatus),
+  status: createScsynthSelector(s => s.status),
+  version: createScsynthSelector(s => s.version),
 
-export const {clientId, connectionStatus, isConnected, isConnecting, options, initialNodeId, address, status, statusText, version} = selectors;
-export default selectors;
+  // derived
+  isConnected: createScsynthSelector(s => s.connectionStatus === ConnectionStatus.CONNECTED),
+  isConnecting: createScsynthSelector(s => s.connectionStatus === ConnectionStatus.CONNECTING),
+  initialNodeId: createScsynthSelector(s => s.options.initialNodeId),
+  address: createScsynthSelector(s => `${s.options.host}:${s.options.port}`),
+  statusText: createScsynthSelector(s => formatStatus(s.status)),
+};
