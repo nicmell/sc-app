@@ -11,6 +11,7 @@ import {DashboardPanel} from "@/components/panels/DashboardPanel";
 import {ServerControlsPanel} from "@/components/panels/ServerControlsPanel";
 import {SynthControlsPanel} from "@/components/panels/SynthControlsPanel";
 import {LogOutputPanel} from "@/components/panels/LogOutputPanel";
+import {deepEqual} from "@/lib/utils/deepEqual";
 import "./Dashboard.scss";
 
 const PANEL_MAP: Record<string, {title: string; component: React.FC}> = {
@@ -43,7 +44,9 @@ export function Dashboard() {
             cols={{lg: 12, md: 12, sm: 6, xs: 1}}
             rowHeight={60}
             dragConfig={{handle: ".dashboard-panel-header"}}
-            onLayoutChange={(current: Layout) => layoutApi.setLayout([...current])}
+            onLayoutChange={(current: Layout) => {
+                if (!deepEqual(current, layout)) layoutApi.setLayout([...current])
+            }}
           >
             {layout.map((item) => {
               const panel = PANEL_MAP[item.i];

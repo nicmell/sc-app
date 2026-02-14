@@ -119,7 +119,7 @@ export class OscService {
     this.stopPolling();
     const {pollStatusMs} = this.getOptions();
     this.pollingId = setInterval(() => {
-      if (this.isReady()) {
+      if (this.osc.status() === OSC.STATUS.IS_OPEN && this.isReady()) {
         this.send(createStatusMessage());
       }
     }, pollStatusMs);

@@ -4,23 +4,33 @@ import scsynth from "./scsynth";
 import layout from "./layout";
 import theme from "./theme";
 import {createApi} from "./utils";
+import {logger} from "@/lib/logger";
 
-export const rootApi = createApi(store, {
+const wrappedStore = {
+  ...store,
+  dispatch: (action: any) => {
+    if (!scsynth.actions.setStatus.match(action))
+    logger.log(JSON.stringify(action));
+    store.getState().dispatch(action);
+  },
+}
+
+export const rootApi = createApi(wrappedStore, {
   selectors: root.selectors,
   actions: root.actions,
 });
 
-export const scsynthApi = createApi(store, {
+export const scsynthApi = createApi(wrappedStore, {
   selectors: scsynth.selectors,
   actions: scsynth.actions,
 });
 
-export const layoutApi = createApi(store, {
+export const layoutApi = createApi(wrappedStore, {
   selectors: layout.selectors,
   actions: layout.actions,
 });
 
-export const themeApi = createApi(store, {
+export const themeApi = createApi(wrappedStore, {
   selectors: theme.selectors,
   actions: theme.actions,
 });

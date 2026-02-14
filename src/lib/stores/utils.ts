@@ -105,7 +105,7 @@ export interface Store<S = any> {
 
 export function createApi<
   State,
-  Selectors extends Record<string, (state: State) => any>,
+  Selectors extends Record<string, Selector<State>>,
   Actions extends Record<string, (...args: any[]) => Action>,
 >(
   store: Store<State>,
