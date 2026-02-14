@@ -1,22 +1,31 @@
-import {forwardRef, type ReactNode} from "react";
+import {type ReactNode, type Ref} from "react";
 import "./DashboardPanel.scss";
 
 interface DashboardPanelProps {
   title: string;
-  children: ReactNode;
+  children?: ReactNode;
+  onClose?: () => void;
+  ref?: Ref<HTMLDivElement>;
   style?: React.CSSProperties;
   className?: string;
 }
 
-export const DashboardPanel = forwardRef<HTMLDivElement, DashboardPanelProps>(
-  ({title, children, style, className, ...rest}, ref) => {
-    return (
-      <div ref={ref} style={style} className={`dashboard-panel ${className ?? ""}`} {...rest}>
-        <div className="dashboard-panel-header">{title}</div>
-        <div className="dashboard-panel-body">{children}</div>
+export function DashboardPanel({title, children, onClose, ref, style, className, ...rest}: DashboardPanelProps) {
+  return (
+    <div ref={ref} style={style} className={`dashboard-panel ${className ?? ""}`} {...rest}>
+      <div className="dashboard-panel-header">
+        <span className="dashboard-panel-title">{title}</span>
+        {onClose && (
+          <button
+            className="dashboard-panel-close"
+            onMouseDown={e => e.stopPropagation()}
+            onClick={onClose}
+          >
+            &times;
+          </button>
+        )}
       </div>
-    );
-  }
-);
-
-DashboardPanel.displayName = "DashboardPanel";
+      {children && <div className="dashboard-panel-body">{children}</div>}
+    </div>
+  );
+}

@@ -45,15 +45,33 @@ $footer-height: 42px;
   background: var(--color-panel-header);
 }
 
-.connected-address {
-  font-size: 0.85rem;
-  opacity: 0.6;
-  font-family: monospace;
-}
-
 .server-status {
   margin-left: auto;
   font-size: 0.85rem;
   opacity: 0.6;
   font-family: monospace;
+}
+
+.dashboard-grid-container {
+  position: relative;
+}
+
+.add-box-placeholder {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--color-border);
+  border-radius: 8px;
+  font-size: 1.5rem;
+  color: var(--color-border);
+  cursor: pointer;
+  user-select: none;
+
+  &:hover {
+    border-color: var(--color-text);
+    color: var(--color-text);
+    background: rgba(128, 128, 128, 0.05);
+  }
 }

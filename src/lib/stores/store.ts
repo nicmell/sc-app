@@ -9,12 +9,13 @@ import type {RootAction, RootState} from "@/types/stores";
 
 export type {RootAction, RootState, ScsynthOptions, ScsynthStatus} from "@/types/stores";
 
-export const store = createStore(
-  persist(
-    immer(redux(root.reducer, root.getInitialState())),
-    persistConfig,
-  ),
-);
+const ENABLE_PERSISTENCE = false;
+
+const coreStore = immer(redux(root.reducer, root.getInitialState()));
+
+export const store = ENABLE_PERSISTENCE
+  ? createStore(persist(coreStore, persistConfig))
+  : createStore(coreStore);
 
 export const dispatch = (action: RootAction) =>
   store.getState().dispatch(action);

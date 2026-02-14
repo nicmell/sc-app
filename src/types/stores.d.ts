@@ -1,8 +1,15 @@
-import type {LayoutItem} from "react-grid-layout";
 import type {SliceActions} from "@/lib/stores/utils";
 import type {scsynthSlice} from "@/lib/stores/scsynth/slice";
 import type {layoutSlice} from "@/lib/stores/layout/slice";
 import type {themeSlice} from "@/lib/stores/theme/slice";
+
+export interface BoxItem {
+  i: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected";
 
@@ -34,7 +41,7 @@ export interface ScsynthState {
 }
 
 export interface LayoutState {
-  layout: LayoutItem[];
+  layout: BoxItem[];
 }
 
 export interface ThemeState {

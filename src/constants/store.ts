@@ -17,6 +17,8 @@ export const ScsynthAction = {
 export const LayoutAction = {
   SET_LAYOUT: "setLayout",
   RESET_LAYOUT: "resetLayout",
+  REMOVE_BOX: "removeBox",
+  ADD_BOX: "addBox",
 } as const;
 
 export const ThemeAction = {
