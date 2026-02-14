@@ -1,11 +1,11 @@
 import {ThemeProvider} from "@/components/ThemeProvider";
 import {Dashboard} from "@/components/Dashboard";
 import {ConnectScreen} from "@/components/ConnectScreen";
-import {useRootStore} from "@/lib/stores/store";
+import {useSelector} from "@/lib/stores/store";
 import scsynth from "@/lib/stores/scsynth";
 
 function App() {
-  const connected = useRootStore(scsynth.selectors.isConnected);
+  const connected = useSelector(scsynth.selectors.isConnected);
 
   return (
     <ThemeProvider>

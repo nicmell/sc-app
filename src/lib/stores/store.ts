@@ -22,5 +22,5 @@ export const dispatch = (action: RootAction) =>
 export const useDispatch = () =>
   useStore(store, (s) => s.dispatch);
 
-export const useRootStore = <T>(selector: (state: RootState) => T): T =>
+export const useSelector = <T>(selector: (state: RootState) => T): T =>
   useStore(store, (state) => selector(state));
