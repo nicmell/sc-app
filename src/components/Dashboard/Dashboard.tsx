@@ -1,4 +1,4 @@
-import {useMemo, useSyncExternalStore} from "react";
+import {useState, useMemo, useSyncExternalStore} from "react";
 import {GridLayout, useContainerWidth, noCompactor} from "react-grid-layout";
 import type {Layout} from "react-grid-layout";
 import type {BoxItem} from "@/types/stores";
@@ -9,6 +9,7 @@ import layoutStore from "@/lib/stores/layout";
 import {layoutApi} from "@/lib/stores/api";
 import {DashboardPanel} from "@/components/panels/DashboardPanel";
 import {deepEqual} from "@/lib/utils/deepEqual";
+import {SettingsDrawer} from "@/components/SettingsDrawer";
 import "./Dashboard.scss";
 
 const MARGIN: [number, number] = [10, 10];
@@ -108,6 +109,7 @@ function toPixelStyle(item: BoxItem, containerWidth: number, cols: number, rowHe
 }
 
 export function Dashboard() {
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const layout = useSelector(layoutStore.selectors.items);
   const {numRows, numColumns} = useSelector(layoutStore.selectors.options);
   const {width, containerRef, mounted} = useContainerWidth({measureBeforeMount: true});
@@ -135,7 +137,10 @@ export function Dashboard() {
       <header className="header">
         <h1>SC-App</h1>
         <button onClick={() => layoutApi.resetLayout()}>Reset Layout</button>
+        <button onClick={() => setSettingsOpen(true)}>Settings</button>
       </header>
+
+      <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       <div className="dashboard-grid-wrapper" ref={containerRef as React.RefObject<HTMLDivElement>}>
         {mounted && (

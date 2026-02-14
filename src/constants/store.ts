@@ -3,6 +3,7 @@ export const SliceName = {
   SCSYNTH: "scsynth",
   LAYOUT: "layout",
   THEME: "theme",
+  PLUGINS: "plugins",
 } as const;
 
 export const ScsynthAction = {
@@ -25,4 +26,9 @@ export const LayoutAction = {
 export const ThemeAction = {
   SET_MODE: "setMode",
   SET_PRIMARY_COLOR: "setPrimaryColor",
+} as const;
+
+export const PluginsAction = {
+  ADD_PLUGIN: "addPlugin",
+  REMOVE_PLUGIN: "removePlugin",
 } as const;

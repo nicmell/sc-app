@@ -9,7 +9,7 @@ import type {RootAction, RootState} from "@/types/stores";
 
 export type {RootAction, RootState, ScsynthOptions, ScsynthStatus} from "@/types/stores";
 
-const ENABLE_PERSISTENCE = false;
+const ENABLE_PERSISTENCE = true;
 
 const coreStore = immer(redux(root.reducer, root.getInitialState()));
 

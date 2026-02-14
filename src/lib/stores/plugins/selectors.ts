@@ -1,0 +1,9 @@
+import root from "@/lib/stores/root/selectors";
+import {createSelector, type SliceSelector} from "@/lib/stores/utils";
+
+const createPluginsSelector: SliceSelector<typeof root.plugins> = (fn) =>
+  createSelector(root.plugins, fn);
+
+export default {
+  items: createPluginsSelector(s => s.items),
+};
