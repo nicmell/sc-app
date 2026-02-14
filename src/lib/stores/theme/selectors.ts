@@ -1,8 +1,10 @@
 import root from "@/lib/stores/root/selectors";
 import {createSelector} from "@/lib/stores/utils";
 
-export const mode = createSelector(root.theme, s => s.mode);
+const selectors = {
+  mode: createSelector(root.theme, s => s.mode),
+  primaryColor: createSelector(root.theme, s => s.primaryColor),
+} as const;
 
-export const primaryColor = createSelector(root.theme, s => s.primaryColor);
-
-export default {mode, primaryColor};
+export const {mode, primaryColor} = selectors;
+export default selectors;

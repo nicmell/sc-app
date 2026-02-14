@@ -1,6 +1,9 @@
 import root from "@/lib/stores/root/selectors";
 import {createSelector} from "@/lib/stores/utils";
 
-export const layout = createSelector(root.layout, s => s.layout);
+const selectors = {
+  layout: createSelector(root.layout, s => s.layout),
+} as const;
 
-export default {layout};
+export const {layout} = selectors;
+export default selectors;

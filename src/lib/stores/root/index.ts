@@ -1,6 +1,6 @@
-import {scsynthSlice} from "../scsynth/scsynthStore";
-import {layoutSlice} from "../layout/layoutStore";
-import {themeSlice} from "../theme/themeStore";
+import {scsynthSlice} from "../scsynth";
+import {layoutSlice} from "../layout";
+import {themeSlice} from "../theme";
 import {combineReducers} from "../utils";
 import type {RootState} from "@/types/stores";
 

@@ -1,9 +1,9 @@
 import {rootStore} from "@/lib/stores/store";
-import {scsynthSlice} from "./scsynth/scsynthStore";
+import {scsynthSlice} from "./scsynth";
 import scsynthSelectors from "./scsynth/selectors";
-import {layoutSlice} from "./layout/layoutStore";
+import {layoutSlice} from "./layout";
 import layoutSelectors from "./layout/selectors";
-import {themeSlice} from "./theme/themeStore";
+import {themeSlice} from "./theme";
 import themeSelectors from "./theme/selectors";
 import {createApi} from "./utils";
 

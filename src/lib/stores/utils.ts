@@ -23,6 +23,9 @@ export type CaseReducers<S, A = Record<string, any>> = {
   [K in keyof A]: CaseReducer<S, A[K] & Action>
 };
 
+export type SliceActions<S extends { actions: Record<string, (...args: any[]) => any> }> =
+  ReturnType<S["actions"][keyof S["actions"]]>;
+
 export type Slice<S, Name extends string, R extends CaseReducers<S>> = {
   getInitialState: () => S;
   reducer: ReducerWithInitialState<S>;
