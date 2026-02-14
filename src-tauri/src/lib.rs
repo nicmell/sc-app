@@ -12,6 +12,8 @@ pub fn run() {
             udp_server::bind,
             udp_server::send,
             udp_server::close,
+            plugin_manager::install,
+            plugin_manager::remove,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

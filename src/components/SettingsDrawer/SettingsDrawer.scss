@@ -114,12 +114,29 @@
   background: var(--color-surface);
 }
 
+.plugin-info {
+  min-width: 0;
+  overflow: hidden;
+}
+
 .plugin-name {
+  display: block;
   font-size: 0.85rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  min-width: 0;
+}
+
+.plugin-meta {
+  display: block;
+  font-size: 0.7rem;
+  opacity: 0.5;
+}
+
+.plugin-error {
+  color: #e55;
+  font-size: 0.8rem;
+  margin-bottom: 0.5rem;
 }
 
 .plugin-delete-btn {

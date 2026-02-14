@@ -112,6 +112,17 @@
   }
 }
 
+.dashboard-panel-plugin-name {
+  display: block;
+  font-weight: 600;
+}
+
+.dashboard-panel-plugin-meta {
+  display: block;
+  font-size: 0.75rem;
+  opacity: 0.5;
+}
+
 .dashboard-panel-error {
   color: #e55;
   font-size: 0.85rem;

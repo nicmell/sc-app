@@ -58,6 +58,9 @@ export interface ThemeState {
 
 export interface PluginInfo {
   name: string;
+  author: string;
+  version: string;
+  entry: string;
 }
 
 export interface PluginsState {

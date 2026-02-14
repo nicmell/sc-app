@@ -1,42 +1,15 @@
-import {
-  writeFile,
-  remove,
-  mkdir,
-  exists,
-} from "@tauri-apps/plugin-fs";
-import {BaseDirectory} from "@tauri-apps/api/path";
+import {invoke} from "@tauri-apps/api/core";
+import type {PluginInfo} from "@/types/stores";
 
-const DIR = "plugins";
-const baseDir = BaseDirectory.AppData;
-
-let dirCreated = false;
-
-async function ensureDir() {
-  if (dirCreated) return;
-  const dirExists = await exists(DIR, {baseDir});
-  if (!dirExists) {
-    await mkdir(DIR, {baseDir, recursive: true});
-  }
-  dirCreated = true;
-}
-
-export async function savePluginFile(file: File): Promise<string> {
-  await ensureDir();
+export async function installPlugin(file: File): Promise<PluginInfo> {
   const buffer = await file.arrayBuffer();
-  const path = `${DIR}/${file.name}`;
-  await writeFile(path, new Uint8Array(buffer), {baseDir});
-  return file.name;
+  return invoke<PluginInfo>("install", {data: Array.from(new Uint8Array(buffer))});
 }
 
-export async function removePluginFile(name: string): Promise<void> {
-  const path = `${DIR}/${name}`;
-  try {
-    await remove(path, {baseDir});
-  } catch {
-    // file may already be gone
-  }
+export async function removePlugin(name: string): Promise<void> {
+  return invoke("remove", {name});
 }
 
-export function pluginUrl(name: string): string {
-  return `plugins://${encodeURIComponent(name)}`;
+export function pluginUrl(pluginName: string, filePath: string): string {
+  return `plugins://${encodeURIComponent(pluginName)}/${filePath}`;
 }

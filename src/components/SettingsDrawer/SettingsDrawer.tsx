@@ -1,11 +1,11 @@
-import {useRef} from "react";
+import {useRef, useState} from "react";
 import {useSelector} from "@/lib/stores/store";
 import {layoutApi, themeApi, pluginsApi} from "@/lib/stores/api";
 import layoutStore from "@/lib/stores/layout";
 import themeStore from "@/lib/stores/theme";
 import pluginsStore from "@/lib/stores/plugins";
 import type {Mode} from "@/types/stores";
-import {savePluginFile, removePluginFile} from "@/lib/storage/pluginStorage";
+import {installPlugin, removePlugin} from "@/lib/storage/pluginStorage";
 import "./SettingsDrawer.scss";
 
 interface SettingsDrawerProps {
@@ -19,17 +19,23 @@ export function SettingsDrawer({open, onClose}: SettingsDrawerProps) {
   const {numRows, numColumns} = useSelector(layoutStore.selectors.options);
   const plugins = useSelector(pluginsStore.selectors.items);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pluginError, setPluginError] = useState<string | null>(null);
 
   const handleAddPlugin = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const name = await savePluginFile(file);
-    pluginsApi.addPlugin({name});
+    setPluginError(null);
+    try {
+      const info = await installPlugin(file);
+      pluginsApi.addPlugin(info);
+    } catch (err) {
+      setPluginError(err instanceof Error ? err.message : String(err));
+    }
     e.target.value = "";
   };
 
   const handleRemovePlugin = async (name: string) => {
-    await removePluginFile(name);
+    await removePlugin(name);
     pluginsApi.removePlugin(name);
   };
 
@@ -95,7 +101,10 @@ export function SettingsDrawer({open, onClose}: SettingsDrawerProps) {
               <ul className="plugin-list">
                 {plugins.map(p => (
                   <li key={p.name} className="plugin-item">
-                    <span className="plugin-name">{p.name}</span>
+                    <div className="plugin-info">
+                      <span className="plugin-name">{p.name}</span>
+                      <span className="plugin-meta">{p.author} &middot; v{p.version}</span>
+                    </div>
                     <button
                       className="plugin-delete-btn"
                       onClick={() => handleRemovePlugin(p.name)}
@@ -106,9 +115,11 @@ export function SettingsDrawer({open, onClose}: SettingsDrawerProps) {
                 ))}
               </ul>
             )}
+            {pluginError && <div className="plugin-error">{pluginError}</div>}
             <input
               ref={fileInputRef}
               type="file"
+              accept=".zip"
               hidden
               onChange={handleAddPlugin}
             />

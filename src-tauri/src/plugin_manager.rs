@@ -1,5 +1,122 @@
+use serde::Serialize;
+use std::io::Read;
 use tauri::http::Response;
-use tauri::{Manager, UriSchemeContext};
+use tauri::{AppHandle, Manager, UriSchemeContext};
+
+#[derive(Serialize)]
+pub struct PluginInfo {
+    pub name: String,
+    pub author: String,
+    pub version: String,
+    pub entry: String,
+}
+
+fn validate_metadata(raw: &serde_json::Value) -> Result<PluginInfo, String> {
+    let obj = raw
+        .as_object()
+        .ok_or("metadata.json must be a JSON object")?;
+
+    let get_str = |key: &str| -> Result<String, String> {
+        obj.get(key)
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| format!("metadata.json: \"{key}\" must be a non-empty string"))
+    };
+
+    Ok(PluginInfo {
+        name: get_str("name")?,
+        author: get_str("author")?,
+        version: get_str("version")?,
+        entry: get_str("entry")?,
+    })
+}
+
+fn is_safe_path(name: &str) -> bool {
+    let path = std::path::Path::new(name);
+    path.components().all(|c| matches!(c, std::path::Component::Normal(_)))
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn install(app: AppHandle, data: Vec<u8>) -> Result<PluginInfo, String> {
+    let cursor = std::io::Cursor::new(&data);
+    let mut archive = zip::ZipArchive::new(cursor)
+        .map_err(|_| "File is not a valid zip archive".to_string())?;
+
+    // Read metadata.json
+    let metadata_text = {
+        let mut file = archive
+            .by_name("metadata.json")
+            .map_err(|_| "Zip must contain a metadata.json at its root".to_string())?;
+        let mut text = String::new();
+        file.read_to_string(&mut text)
+            .map_err(|e| format!("Failed to read metadata.json: {e}"))?;
+        text
+    };
+
+    let meta_value: serde_json::Value = serde_json::from_str(&metadata_text)
+        .map_err(|_| "metadata.json is not valid JSON".to_string())?;
+
+    let info = validate_metadata(&meta_value)?;
+
+    // Verify entry file exists in zip
+    archive
+        .by_name(&info.entry)
+        .map_err(|_| format!("Entry file \"{}\" not found in zip", info.entry))?;
+
+    // Extract to plugins/<name>/
+    let plugins_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("plugins")
+        .join(&info.name);
+
+    std::fs::create_dir_all(&plugins_dir).map_err(|e| e.to_string())?;
+
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
+        let name = file.name().to_string();
+
+        if !is_safe_path(&name) {
+            return Err(format!("Invalid path in zip: {name}"));
+        }
+
+        if file.is_dir() {
+            std::fs::create_dir_all(plugins_dir.join(&name)).map_err(|e| e.to_string())?;
+            continue;
+        }
+
+        let out_path = plugins_dir.join(&name);
+        if let Some(parent) = out_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+
+        let mut contents = Vec::new();
+        file.read_to_end(&mut contents).map_err(|e| e.to_string())?;
+        std::fs::write(&out_path, &contents).map_err(|e| e.to_string())?;
+    }
+
+    Ok(info)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn remove(app: AppHandle, name: String) -> Result<(), String> {
+    let plugin_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("plugins")
+        .join(&name);
+
+    if plugin_dir.exists() {
+        std::fs::remove_dir_all(&plugin_dir).map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+// --- URI scheme handler for serving plugin files ---
 
 fn percent_decode(input: &str) -> String {
     let mut out = Vec::with_capacity(input.len());
@@ -58,10 +175,10 @@ pub fn handle<R: tauri::Runtime>(
     ctx: UriSchemeContext<'_, R>,
     request: tauri::http::Request<Vec<u8>>,
 ) -> Response<Vec<u8>> {
-    let raw_name = request.uri().host().unwrap_or("");
-    let name = percent_decode(raw_name);
+    let plugin_name = percent_decode(request.uri().host().unwrap_or(""));
+    let file_path = percent_decode(request.uri().path().trim_start_matches('/'));
 
-    if name.is_empty() {
+    if plugin_name.is_empty() || file_path.is_empty() {
         return error_response(404, b"Not found");
     }
 
@@ -75,7 +192,11 @@ pub fn handle<R: tauri::Runtime>(
         Err(_) => return error_response(404, b"Plugins directory not found"),
     };
 
-    let canonical_file = match plugins_dir.join(&name).canonicalize() {
+    let canonical_file = match plugins_dir
+        .join(&plugin_name)
+        .join(&file_path)
+        .canonicalize()
+    {
         Ok(p) => p,
         Err(_) => return error_response(404, b"File not found"),
     };

@@ -1,6 +1,7 @@
 import {useState, useEffect, type ReactNode, type Ref} from "react";
 import {useSelector} from "@/lib/stores/store";
 import pluginsStore from "@/lib/stores/plugins";
+import type {PluginInfo} from "@/types/stores";
 import {pluginUrl} from "@/lib/storage/pluginStorage";
 import {Modal} from "@/components/Modal";
 import "./DashboardPanel.scss";
@@ -17,12 +18,12 @@ interface DashboardPanelProps {
 export function DashboardPanel({title, children, onClose, ref, style, className, ...rest}: DashboardPanelProps) {
   const plugins = useSelector(pluginsStore.selectors.items);
   const [modalOpen, setModalOpen] = useState(true);
-  const [selectedPlugin, setSelectedPlugin] = useState<string | null>(null);
+  const [selectedPlugin, setSelectedPlugin] = useState<PluginInfo | null>(null);
   const [html, setHtml] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSelect = (name: string) => {
-    setSelectedPlugin(name);
+  const handleSelect = (plugin: PluginInfo) => {
+    setSelectedPlugin(plugin);
     setModalOpen(false);
   };
 
@@ -32,7 +33,7 @@ export function DashboardPanel({title, children, onClose, ref, style, className,
     setHtml(null);
     setError(null);
 
-    fetch(pluginUrl(selectedPlugin))
+    fetch(pluginUrl(selectedPlugin.name, selectedPlugin.entry))
       .then(res => {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
         return res.text();
@@ -92,7 +93,10 @@ export function DashboardPanel({title, children, onClose, ref, style, className,
           <ul className="dashboard-panel-plugin-list">
             {plugins.map(p => (
               <li key={p.name}>
-                <button onClick={() => handleSelect(p.name)}>{p.name}</button>
+                <button onClick={() => handleSelect(p)}>
+                    <span className="dashboard-panel-plugin-name">{p.name}</span>
+                    <span className="dashboard-panel-plugin-meta">{p.author} &middot; v{p.version}</span>
+                  </button>
               </li>
             ))}
           </ul>
