@@ -5,7 +5,7 @@ import {
   createQuitMessage,
   createStatusMessage,
   createVersionMessage,
-} from "@/lib/osc/messages";
+} from "@/lib/osc/messages.ts";
 import "./ServerControlsPanel.scss";
 
 export function ServerControlsPanel() {

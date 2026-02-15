@@ -6,9 +6,9 @@ import {
   createFreeNodeMessage,
   createNodeRunMessage,
   createSynthMessage,
-} from "@/lib/osc/messages";
+} from "@/lib/osc/messages.ts";
 import {NodeValueRange} from "@/components/NodeValueRange";
-import {useSelector} from "@/lib/stores/store";
+import {useSelector} from "@/lib/stores/store.ts";
 import scsynth from "@/lib/stores/scsynth";
 import "./SynthControlsPanel.scss";
 

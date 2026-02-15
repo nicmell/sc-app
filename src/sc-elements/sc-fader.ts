@@ -1,6 +1,6 @@
 import {LitElement, html, css} from 'lit';
 import {oscService} from '@/lib/osc';
-import {createNodeSetMessage} from '@/lib/osc/messages';
+import {createNodeSetMessage} from '@/lib/osc/messages.ts';
 
 export class ScFader extends LitElement {
   static properties = {

@@ -1,6 +1,6 @@
 import {LitElement, html, css} from 'lit';
 import {oscService} from '@/lib/osc';
-import {createNodeRunMessage} from '@/lib/osc/messages';
+import {createNodeRunMessage} from '@/lib/osc/messages.ts';
 
 export class ScToggle extends LitElement {
   static properties = {
