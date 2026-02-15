@@ -9,14 +9,15 @@
   <div class="example-plugin">
     <h1>
       <img class="logo" src="logo.svg" alt="logo" />
-      Stopwatch
+      Example Synth
     </h1>
+
+    <sc-toggle node-id="1000" label="Run"></sc-toggle>
+
     <div class="controls">
-      <button id="ep-start">Start</button>
-      <button id="ep-reset">Reset</button>
+      <sc-fader node-id="1000" param="freq" min="20" max="20000" step="1" value="440" label="Frequency"></sc-fader>
+      <sc-fader node-id="1000" param="amp" min="0" max="1" step="0.01" value="0.2" label="Amplitude"></sc-fader>
     </div>
-    <div class="display" id="ep-display">00:00.00</div>
   </div>
-  <script src="main.js"></script>
 </body>
 </html>

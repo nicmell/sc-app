@@ -19,39 +19,11 @@
 
 .example-plugin .controls {
   display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
 }
 
-.example-plugin button {
-  background: #333;
-  color: #e0e0e0;
-  border: 1px solid #555;
-  border-radius: 4px;
-  padding: 6px 12px;
-  cursor: pointer;
-  font-size: 13px;
-}
-
-.example-plugin button:hover {
-  background: #444;
-}
-
-.example-plugin button.active {
-  background: #0a6dc4;
-  border-color: #0a6dc4;
-}
-
-.example-plugin .display {
-  background: #1a1a1a;
-  border: 1px solid #333;
-  border-radius: 6px;
-  padding: 12px;
-  font-size: 48px;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-  min-height: 64px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.example-plugin sc-toggle {
+  margin-top: 8px;
 }
