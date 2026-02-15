@@ -67,6 +67,20 @@ interface PluginLoaderProps {
   plugin: PluginInfo;
 }
 
+function PluginHtml({html}: {html: TrustedHTML}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const injected = useRef(false);
+
+  useEffect(() => {
+    if (ref.current && !injected.current) {
+      injected.current = true;
+      ref.current.innerHTML = html as unknown as string;
+    }
+  }, [html]);
+
+  return <div ref={ref} />;
+}
+
 export function PluginLoader({plugin}: PluginLoaderProps) {
   const html = pluginManager.getHtml(plugin.id);
 
@@ -82,7 +96,7 @@ export function PluginLoader({plugin}: PluginLoaderProps) {
 
   return (
     <ShadowRoot>
-      <div dangerouslySetInnerHTML={{__html: html as unknown as string}} />
+      <PluginHtml html={html} />
     </ShadowRoot>
   );
 }

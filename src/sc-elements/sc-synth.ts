@@ -17,7 +17,6 @@ export class ScSynth extends LitElement {
     super();
     this.name = 'default';
     this.nodeId = oscService.nextNodeId();
-    console.log(this.nodeId)
     new ContextProvider(this, {context: nodeIdContext, initialValue: this.nodeId});
   }
 
