@@ -1,9 +1,9 @@
 import {useRef, useEffect, useState, type ReactNode} from "react";
 import {createPortal} from "react-dom";
-import {useSelector} from "@/lib/stores/store";
+import {useSelector} from "@/lib/stores/store.ts";
 import themeStore from "@/lib/stores/theme";
 import type {PluginInfo} from "@/types/stores";
-import {pluginManager} from "@/lib/plugins/PluginManager";
+import {pluginManager} from "@/lib/plugins/PluginManager.ts";
 
 const darkPalette: Record<string, string> = {
   "--color-bg": "#2f2f2f",

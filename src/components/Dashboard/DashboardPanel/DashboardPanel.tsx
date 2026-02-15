@@ -1,10 +1,10 @@
 import {useState, type ReactNode, type Ref} from "react";
 import {useSelector} from "@/lib/stores/store.ts";
 import pluginsStore from "@/lib/stores/plugins";
-import {layoutApi} from "@/lib/stores/api";
+import {layoutApi} from "@/lib/stores/api.ts";
 import type {PluginInfo} from "@/types/stores";
 import {Modal} from "@/components/Modal";
-import {PluginLoader} from "@/components/PluginLoader/PluginLoader.tsx";
+import {PluginLoader} from "@/components/Dashboard/PluginLoader/PluginLoader.tsx";
 import "./DashboardPanel.scss";
 
 interface DashboardPanelProps {

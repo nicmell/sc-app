@@ -6,7 +6,7 @@ import "react-resizable/css/styles.css";
 import {useSelector} from "@/lib/stores/store";
 import layoutStore from "@/lib/stores/layout";
 import {layoutApi} from "@/lib/stores/api";
-import {DashboardPanel} from "@/components/DashboardPanel";
+import {DashboardPanel} from "@/components/Dashboard/DashboardPanel";
 import {deepEqual} from "@/lib/utils/deepEqual";
 import {SettingsDrawer} from "@/components/SettingsDrawer";
 import {pluginManager} from "@/lib/plugins/PluginManager";
