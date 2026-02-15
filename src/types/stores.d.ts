@@ -79,7 +79,7 @@ export interface ConfigFile {
   theme: Pick<ThemeState, 'mode' | 'primaryColor'>;
   layout: Pick<LayoutState, 'items' | 'options'>;
   scsynth: Pick<ScsynthState, 'options'>;
-  plugins: PersistedPlugin[];
+  plugins: Omit<PluginInfo, 'found' | 'loaded' | 'errors'>[];
 }
 
 export interface PluginsState {

@@ -6,7 +6,7 @@ import {
 import {BaseDirectory} from "@tauri-apps/api/path";
 import type {PersistStorage, StorageValue} from "zustand/middleware";
 
-const FILE = "settings.json";
+const FILE = "config.json";
 const baseDir = BaseDirectory.AppData;
 
 let lastWritten = "";

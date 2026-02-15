@@ -17,8 +17,8 @@ impl UdpState {
     }
 }
 
-#[tauri::command(rename_all = "snake_case")]
-pub async fn bind(
+#[tauri::command]
+pub async fn udp_bind(
     window: Window,
     local_addr: String,
     state: State<'_, UdpState>,
@@ -52,8 +52,8 @@ pub async fn bind(
     Ok(())
 }
 
-#[tauri::command(rename_all = "snake_case")]
-pub async fn send(
+#[tauri::command]
+pub async fn udp_send(
     target: String,
     data: Vec<u8>,
     state: State<'_, UdpState>,
@@ -67,8 +67,8 @@ pub async fn send(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command(rename_all = "snake_case")]
-pub async fn close(state: State<'_, UdpState>) -> Result<(), String> {
+#[tauri::command]
+pub async fn udp_close(state: State<'_, UdpState>) -> Result<(), String> {
     let mut guard = state.0.write().await;
     if let Some(entry) = guard.take() {
         entry.task.abort();

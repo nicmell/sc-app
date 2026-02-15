@@ -137,8 +137,8 @@ fn is_safe_path(name: &str) -> bool {
     path.components().all(|c| matches!(c, std::path::Component::Normal(_)))
 }
 
-#[tauri::command(rename_all = "snake_case")]
-pub fn install(app: AppHandle, data: Vec<u8>) -> Result<PluginInfo, String> {
+#[tauri::command]
+pub fn add_plugin(app: AppHandle, data: Vec<u8>) -> Result<PluginInfo, String> {
     let cursor = std::io::Cursor::new(&data);
     let mut archive = zip::ZipArchive::new(cursor)
         .map_err(|_| "File is not a valid zip archive".to_string())?;
@@ -186,8 +186,8 @@ pub fn install(app: AppHandle, data: Vec<u8>) -> Result<PluginInfo, String> {
     Ok(info)
 }
 
-#[tauri::command(rename_all = "snake_case")]
-pub fn remove(app: AppHandle, name: String, version: String) -> Result<(), String> {
+#[tauri::command]
+pub fn remove_plugin(app: AppHandle, name: String, version: String) -> Result<(), String> {
     let zip_path = app
         .path()
         .app_data_dir()
@@ -387,3 +387,4 @@ pub fn handle<R: tauri::Runtime>(
         .body(content)
         .unwrap()
 }
+
