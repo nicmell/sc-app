@@ -254,6 +254,56 @@ fn error_response(status: u16, body: &[u8]) -> Response<Vec<u8>> {
         .unwrap()
 }
 
+/// Rewrite relative asset paths in the entry HTML to absolute `plugins://` URLs.
+fn rewrite_entry_html(html: &str, plugin_name: &str, version: &str, info: &PluginInfo) -> String {
+    let base = format!("plugins://{plugin_name}/{version}/");
+    let mut result = html.to_string();
+
+    for asset in &info.assets {
+        let path = &asset.path;
+        let absolute = format!("{base}{path}");
+
+        // Replace occurrences in src="...", href="...", url(...) with both quote styles
+        for attr in ["src", "href"] {
+            result = result.replace(
+                &format!("{attr}=\"{path}\""),
+                &format!("{attr}=\"{absolute}\""),
+            );
+            result = result.replace(
+                &format!("{attr}='{path}'"),
+                &format!("{attr}='{absolute}'"),
+            );
+        }
+
+        // Replace url() references in inline styles
+        result = result.replace(
+            &format!("url(\"{path}\")"),
+            &format!("url(\"{absolute}\")"),
+        );
+        result = result.replace(
+            &format!("url('{path}')"),
+            &format!("url('{absolute}')"),
+        );
+        result = result.replace(
+            &format!("url({path})"),
+            &format!("url({absolute})"),
+        );
+    }
+
+    result
+}
+
+/// Read and parse metadata.json from an already-opened archive.
+fn read_metadata(archive: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>) -> Result<PluginInfo, ()> {
+    let mut meta_file = archive.by_name("metadata.json").map_err(|_| ())?;
+    let mut meta_text = String::new();
+    meta_file.read_to_string(&mut meta_text).map_err(|_| ())?;
+    drop(meta_file);
+
+    let meta_value: serde_json::Value = serde_json::from_str(&meta_text).map_err(|_| ())?;
+    validate_metadata(&meta_value).map_err(|_| ())
+}
+
 pub fn handle<R: tauri::Runtime>(
     ctx: UriSchemeContext<'_, R>,
     request: tauri::http::Request<Vec<u8>>,
@@ -285,11 +335,26 @@ pub fn handle<R: tauri::Runtime>(
         Err(_) => return error_response(404, b"Plugin not found"),
     };
 
-    let cursor = std::io::Cursor::new(&zip_data);
+    let cursor = std::io::Cursor::new(zip_data.as_slice());
     let mut archive = match zip::ZipArchive::new(cursor) {
         Ok(a) => a,
         Err(_) => return error_response(500, b"Failed to read plugin archive"),
     };
+
+    // Read metadata to validate the requested path and rewrite entry HTML
+    let info = match read_metadata(&mut archive) {
+        Ok(i) => i,
+        Err(_) => return error_response(500, b"Failed to read plugin metadata"),
+    };
+
+    // Only allow access to the entry file, declared assets, and metadata.json
+    let is_allowed = file_path == info.entry
+        || file_path == "metadata.json"
+        || info.assets.iter().any(|a| a.path == file_path);
+
+    if !is_allowed {
+        return error_response(403, b"File not declared in plugin metadata");
+    }
 
     let mut file = match archive.by_name(&file_path) {
         Ok(f) => f,
@@ -300,6 +365,15 @@ pub fn handle<R: tauri::Runtime>(
     if file.read_to_end(&mut content).is_err() {
         return error_response(500, b"Failed to read file from archive");
     }
+
+    // If serving the entry HTML, rewrite relative asset paths to absolute URLs
+    let content = if file_path == info.entry {
+        let html = String::from_utf8_lossy(&content);
+        let rewritten = rewrite_entry_html(&html, &plugin_name, &version, &info);
+        rewritten.into_bytes()
+    } else {
+        content
+    };
 
     let ext = std::path::Path::new(&file_path)
         .extension()

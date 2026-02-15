@@ -1043,7 +1043,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/trusted-types@npm:^2.0.2":
+"@types/trusted-types@npm:^2, @types/trusted-types@npm:^2.0.2, @types/trusted-types@npm:^2.0.7":
   version: 2.0.7
   resolution: "@types/trusted-types@npm:2.0.7"
   checksum: 10c0/4c4855f10de7c6c135e0d32ce462419d8abbbc33713b31d294596c0cc34ae1fa6112a2f9da729c8f7a20707782b0d69da3b1f8df6645b0366d08825ca1522e0c
@@ -1208,6 +1208,18 @@ __metadata:
   version: 2.1.2
   resolution: "detect-libc@npm:2.1.2"
   checksum: 10c0/acc675c29a5649fa1fb6e255f993b8ee829e510b6b56b0910666949c80c364738833417d0edb5f90e4e46be17228b0f2b66a010513984e18b15deeeac49369c4
+  languageName: node
+  linkType: hard
+
+"dompurify@npm:^3.3.1":
+  version: 3.3.1
+  resolution: "dompurify@npm:3.3.1"
+  dependencies:
+    "@types/trusted-types": "npm:^2.0.7"
+  dependenciesMeta:
+    "@types/trusted-types":
+      optional: true
+  checksum: 10c0/fa0a8c55a436ba0d54389195e3d2337e311f56de709a2fc9efc98dbbc7746fa53bb4b74b6ac043b77a279a8f2ebd8685f0ebaa6e58c9e32e92051d529bc0baf8
   languageName: node
   linkType: hard
 
@@ -2301,7 +2313,9 @@ __metadata:
     "@types/node": "npm:^25.2.3"
     "@types/react": "npm:^19"
     "@types/react-dom": "npm:^19"
+    "@types/trusted-types": "npm:^2"
     "@vitejs/plugin-react": "npm:^4.3.4"
+    dompurify: "npm:^3.3.1"
     immer: "npm:^11.1.4"
     lit: "npm:^3.3.2"
     normalize.css: "npm:^8.0.1"
@@ -2310,6 +2324,7 @@ __metadata:
     react-dom: "npm:^19"
     react-grid-layout: "npm:^2.2.2"
     sass-embedded: "npm:^1.97.3"
+    trusted-types: "npm:^2.0.0"
     typescript: "npm:~5.6.2"
     vite: "npm:^6.0.3"
     zustand: "npm:^5.0.11"
@@ -2430,6 +2445,13 @@ __metadata:
     fdir: "npm:^6.5.0"
     picomatch: "npm:^4.0.3"
   checksum: 10c0/869c31490d0d88eedb8305d178d4c75e7463e820df5a9b9d388291daf93e8b1eb5de1dad1c1e139767e4269fe75f3b10d5009b2cc14db96ff98986920a186844
+  languageName: node
+  linkType: hard
+
+"trusted-types@npm:^2.0.0":
+  version: 2.0.0
+  resolution: "trusted-types@npm:2.0.0"
+  checksum: 10c0/210768998750c61440aa3f5ee006c362b03a927d131b06b1cd6ae6feb9a20d1b7fa406fdecf2432a4d8286c37a6f28057e3983cd1522b1241f2c380914720545
   languageName: node
   linkType: hard
 

@@ -1,22 +1,34 @@
 import type {PersistOptions} from "zustand/middleware";
 import {tauriStorage} from "@/lib/storage/tauriStorage";
-import type {RootState} from "@/types/stores";
+import type {RootState, ConfigFile, PersistedPlugin, PluginInfo} from "@/types/stores";
 
-export const persistConfig: PersistOptions<any> = {
+function stripRuntime({found, loaded, errors, ...rest}: PluginInfo): PersistedPlugin {
+  void found; void loaded; void errors;
+  return rest;
+}
+
+// State generic uses `any` because the redux middleware adds `dispatch` to the
+// actual store state, which isn't part of RootState.  The partialize/merge
+// functions are fully typed via ConfigFile and RootState.
+export const persistConfig: PersistOptions<any, ConfigFile> = {
   name: "settings",
   storage: tauriStorage,
-  partialize: ({theme, layout, scsynth}: RootState) => ({
+  partialize: ({theme, layout, scsynth, plugins}: RootState): ConfigFile => ({
     theme: {mode: theme.mode, primaryColor: theme.primaryColor},
     layout: {items: layout.items, options: layout.options},
     scsynth: {options: scsynth.options},
+    plugins: plugins.items.map(stripRuntime),
   }),
-  merge: (persisted, current: RootState) => {
-    const p = persisted as Record<string, Record<string, unknown>> | undefined;
+  merge: (persisted, current: RootState): RootState => {
+    const p = persisted as ConfigFile | undefined;
     return {
       ...current,
       theme: {...current.theme, ...p?.theme},
       layout: {...current.layout, ...p?.layout},
       scsynth: {...current.scsynth, ...p?.scsynth},
+      plugins: {
+        items: Array.isArray(p?.plugins) ? p.plugins as PluginInfo[] : current.plugins.items,
+      },
     };
   },
 };

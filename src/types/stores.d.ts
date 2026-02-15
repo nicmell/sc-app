@@ -67,6 +67,19 @@ export interface PluginInfo {
   version: string;
   entry: string;
   assets: AssetInfo[];
+  // Runtime-only (not persisted)
+  found?: boolean;
+  loaded?: boolean;
+  errors?: string[];
+}
+
+export type PersistedPlugin = Omit<PluginInfo, 'found' | 'loaded' | 'errors'>;
+
+export interface ConfigFile {
+  theme: Pick<ThemeState, 'mode' | 'primaryColor'>;
+  layout: Pick<LayoutState, 'items' | 'options'>;
+  scsynth: Pick<ScsynthState, 'options'>;
+  plugins: PersistedPlugin[];
 }
 
 export interface PluginsState {
