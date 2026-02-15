@@ -1,6 +1,6 @@
 import OSC from 'osc-js';
 import {TauriUdpPlugin} from './TauriUdpPlugin';
-import {createNotifyMessage, createStatusMessage, createVersionMessage} from './messages';
+import {createDumpOscMessage, createNotifyMessage, createStatusMessage, createVersionMessage} from './messages';
 import type {ScsynthOptions} from '@/types/stores';
 import {scsynthApi} from '@/lib/stores/api';
 import {logger} from '@/lib/logger';
@@ -18,6 +18,7 @@ export class OscService {
     this.osc.on('open', () => {
       this.resetTimeout();
       this.startPolling()
+      this.osc.send(createDumpOscMessage(1))
       this.osc.send(createNotifyMessage(1, scsynthApi.clientId || this.defaultClientId()));
     });
     this.osc.on('close', () => {
@@ -162,7 +163,7 @@ export class OscService {
   }
 
   nextNodeId(): number {
-    return (scsynthApi.options.clientId + 1) * 1000;
+    return (scsynthApi.clientId + 1) * 1000;
   }
 
   defaultClientId() {

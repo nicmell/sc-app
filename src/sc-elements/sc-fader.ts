@@ -1,10 +1,11 @@
 import {LitElement, html, css} from 'lit';
+import {ContextConsumer} from '@lit/context';
 import {oscService} from '@/lib/osc';
 import {createNodeSetMessage} from '@/lib/osc/messages.ts';
+import {nodeIdContext} from './context.ts';
 
 export class ScFader extends LitElement {
   static properties = {
-    'node-id': {type: Number, attribute: 'node-id'},
     param: {type: String},
     min: {type: Number},
     max: {type: Number},
@@ -13,13 +14,14 @@ export class ScFader extends LitElement {
     label: {type: String},
   };
 
-  declare 'node-id': number;
   declare param: string;
   declare min: number;
   declare max: number;
   declare step: number;
   declare value: number;
   declare label: string;
+
+  private _nodeId = new ContextConsumer(this, {context: nodeIdContext, subscribe: true});
 
   static styles = css`
     :host {
@@ -46,7 +48,6 @@ export class ScFader extends LitElement {
 
   constructor() {
     super();
-    this['node-id'] = 0;
     this.param = '';
     this.min = 0;
     this.max = 1;
@@ -58,7 +59,7 @@ export class ScFader extends LitElement {
   private _onInput(e: Event) {
     const val = parseFloat((e.target as HTMLInputElement).value);
     this.value = val;
-    const nodeId = this['node-id'];
+    const nodeId = this._nodeId.value;
     if (nodeId && this.param) {
       oscService.send(createNodeSetMessage(nodeId, {[this.param]: val}));
     }

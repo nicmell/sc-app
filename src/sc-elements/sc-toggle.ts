@@ -1,17 +1,19 @@
 import {LitElement, html, css} from 'lit';
+import {ContextConsumer} from '@lit/context';
 import {oscService} from '@/lib/osc';
 import {createNodeRunMessage} from '@/lib/osc/messages.ts';
+import {nodeIdContext} from './context.ts';
 
 export class ScToggle extends LitElement {
   static properties = {
-    'node-id': {type: Number, attribute: 'node-id'},
     label: {type: String},
     active: {type: Boolean, reflect: true},
   };
 
-  declare 'node-id': number;
   declare label: string;
   declare active: boolean;
+
+  private _nodeId = new ContextConsumer(this, {context: nodeIdContext, subscribe: true});
 
   static styles = css`
     :host {
@@ -38,14 +40,13 @@ export class ScToggle extends LitElement {
 
   constructor() {
     super();
-    this['node-id'] = 0;
     this.label = '';
     this.active = false;
   }
 
   private _onClick() {
     this.active = !this.active;
-    const nodeId = this['node-id'];
+    const nodeId = this._nodeId.value;
     if (nodeId) {
       oscService.send(createNodeRunMessage(nodeId, this.active ? 1 : 0));
     }

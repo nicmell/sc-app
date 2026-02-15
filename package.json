@@ -11,6 +11,7 @@
     "build-android": "yarn tauri android build --apk"
   },
   "dependencies": {
+    "@lit/context": "^1.1.6",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-fs": "^2.4.5",
     "@tauri-apps/plugin-opener": "^2",
