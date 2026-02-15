@@ -1,7 +1,7 @@
 import DOMPurify, {type RemovedElement, type RemovedAttribute} from "dompurify";
 import {trustedTypes} from "trusted-types";
 import type {PluginInfo, RootState} from "@/types/stores";
-import {pluginUrl, installPlugin, removePlugin} from "@/lib/storage/pluginStorage";
+import {pluginUrl, addPlugin, removePlugin} from "@/lib/storage/pluginStorage";
 import {pluginsApi} from "@/lib/stores/api";
 import {store, rehydrate} from "@/lib/stores/store";
 
@@ -22,7 +22,7 @@ export class PluginManager {
 
   constructor() {
     this.policy = trustedTypes.createPolicy('plugin-html', {
-      createHTML: (html: string) => html,
+      createHTML: (html: string) => this.sanitize(html),
     });
   }
 
@@ -32,9 +32,8 @@ export class PluginManager {
 
     if (resp.ok) {
       const raw = await resp.text();
-      const clean = this.sanitize(raw);
+      const html = this.policy.createHTML(raw);
       const violations = this.collectViolations();
-      const html = this.policy.createHTML(clean);
       this.cache.set(plugin.id, html);
       pluginsApi.loadPlugin({
         id: plugin.id,
@@ -51,10 +50,9 @@ export class PluginManager {
   }
 
   async addPlugin(file: File): Promise<void> {
-    const info = await installPlugin(file);
+    const info = await addPlugin(file);
     pluginsApi.addPlugin(info);
     await rehydrate();
-    await this.load(info);
   }
 
   async removePlugin(plugin: PluginInfo): Promise<void> {
@@ -77,6 +75,7 @@ export class PluginManager {
 
   private sanitize(html: string): string {
     return this.purify.sanitize(html, {
+      RETURN_TRUSTED_TYPE: false,
       ADD_ATTR: ['node-id', 'param', 'min', 'max', 'step', 'value', 'label', 'active'],
       FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form'],
       WHOLE_DOCUMENT: true,

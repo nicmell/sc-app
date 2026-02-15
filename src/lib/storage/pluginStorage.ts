@@ -1,7 +1,7 @@
 import {invoke} from "@tauri-apps/api/core";
 import type {PluginInfo} from "@/types/stores";
 
-export async function installPlugin(file: File): Promise<PluginInfo> {
+export async function addPlugin(file: File): Promise<PluginInfo> {
   const buffer = await file.arrayBuffer();
   return invoke<PluginInfo>("add_plugin", {data: Array.from(new Uint8Array(buffer))});
 }

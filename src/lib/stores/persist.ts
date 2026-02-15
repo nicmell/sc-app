@@ -23,7 +23,12 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
       layout: {...current.layout, ...p?.layout},
       scsynth: {...current.scsynth, ...p?.scsynth},
       plugins: {
-        items: Array.isArray(p?.plugins) ? p.plugins : current.plugins.items,
+        items: Array.isArray(p?.plugins)
+          ? p.plugins.map(pp => {
+              const cur = current.plugins.items.find(c => c.id === pp.id);
+              return cur ? {...cur, ...pp} : pp;
+            })
+          : current.plugins.items,
       },
     };
   },
