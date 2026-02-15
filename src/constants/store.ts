@@ -31,7 +31,5 @@ export const ThemeAction = {
 export const PluginsAction = {
   ADD_PLUGIN: "addPlugin",
   REMOVE_PLUGIN: "removePlugin",
-  SET_PLUGIN_FOUND: "setPluginFound",
-  SET_PLUGIN_LOADED: "setPluginLoaded",
-  SET_PLUGIN_ERRORS: "setPluginErrors",
+  LOAD_PLUGIN: "loadPlugin",
 } as const;

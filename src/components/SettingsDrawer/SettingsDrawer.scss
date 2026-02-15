@@ -134,9 +134,26 @@
 }
 
 .plugin-error {
+  display: block;
   color: #e55;
-  font-size: 0.8rem;
-  margin-bottom: 0.5rem;
+  font-size: 0.75rem;
+  margin-top: 0.2rem;
+}
+
+.plugin-violations {
+  font-size: 0.75rem;
+  margin-top: 0.2rem;
+  color: #ffb74d;
+
+  summary {
+    cursor: pointer;
+  }
+
+  ul {
+    margin: 0.25rem 0 0;
+    padding-left: 1.25rem;
+    opacity: 0.8;
+  }
 }
 
 .plugin-delete-btn {

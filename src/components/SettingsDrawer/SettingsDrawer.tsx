@@ -1,11 +1,11 @@
 import {useRef, useState} from "react";
 import {useSelector} from "@/lib/stores/store";
-import {layoutApi, themeApi, pluginsApi} from "@/lib/stores/api";
+import {layoutApi, themeApi} from "@/lib/stores/api";
 import layoutStore from "@/lib/stores/layout";
 import themeStore from "@/lib/stores/theme";
 import pluginsStore from "@/lib/stores/plugins";
 import type {Mode, PluginInfo} from "@/types/stores";
-import {installPlugin, removePlugin} from "@/lib/storage/pluginStorage";
+import {pluginManager} from "@/lib/plugins/PluginManager";
 import "./SettingsDrawer.scss";
 
 interface SettingsDrawerProps {
@@ -26,8 +26,7 @@ export function SettingsDrawer({open, onClose}: SettingsDrawerProps) {
     if (!file) return;
     setPluginError(null);
     try {
-      const info = await installPlugin(file);
-      pluginsApi.addPlugin(info);
+      await pluginManager.addPlugin(file);
     } catch (err) {
       setPluginError(err instanceof Error ? err.message : String(err));
     }
@@ -35,8 +34,7 @@ export function SettingsDrawer({open, onClose}: SettingsDrawerProps) {
   };
 
   const handleRemovePlugin = async (plugin: PluginInfo) => {
-    await removePlugin(plugin.name, plugin.version);
-    pluginsApi.removePlugin(plugin.name);
+    await pluginManager.removePlugin(plugin);
   };
 
   return (
@@ -104,6 +102,24 @@ export function SettingsDrawer({open, onClose}: SettingsDrawerProps) {
                     <div className="plugin-info">
                       <span className="plugin-name">{p.name}</span>
                       <span className="plugin-meta">{p.author} &middot; v{p.version}</span>
+                      {p.error && (
+                        <span className="plugin-error">
+                          Error {p.error.code}: {p.error.message}
+                        </span>
+                      )}
+                      {p.violations && p.violations.length > 0 && (
+                        <details className="plugin-violations">
+                          <summary>
+                            {p.violations.length} sanitization{" "}
+                            {p.violations.length === 1 ? "violation" : "violations"}
+                          </summary>
+                          <ul>
+                            {p.violations.map((v, i) => (
+                              <li key={i}>{v}</li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
                     </div>
                     <button
                       className="plugin-delete-btn"

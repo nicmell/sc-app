@@ -1,6 +1,6 @@
-import {useRef, useEffect, useCallback, useState} from "react";
+import {useRef, useEffect} from "react";
 import type {PluginInfo} from "@/types/stores";
-import {pluginManager, type SanitizeViolation} from "@/lib/plugins/PluginManager";
+import {pluginManager} from "@/lib/plugins/PluginManager";
 
 interface PluginLoaderProps {
   plugin: PluginInfo;
@@ -8,55 +8,33 @@ interface PluginLoaderProps {
 
 export function PluginLoader({plugin}: PluginLoaderProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [violations, setViolations] = useState<SanitizeViolation[]>([]);
-  const [error, setError] = useState<string | null>(null);
 
-  const loadPlugin = useCallback(async (p: PluginInfo) => {
+  useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     const shadow = container.shadowRoot ?? container.attachShadow({mode: 'open'});
+    const html = pluginManager.getHtml(plugin.name);
 
-    try {
-      const result = await pluginManager.load(p);
-      shadow.innerHTML = result.html as unknown as string;
-      setViolations(result.violations);
-      setError(null);
-    } catch (e) {
+    if (html) {
+      shadow.innerHTML = html as unknown as string;
+    } else if (plugin.error) {
       shadow.innerHTML = '';
-      setViolations([]);
-      setError(e instanceof Error ? e.message : 'Failed to load plugin');
     }
-  }, []);
 
-  useEffect(() => {
-    loadPlugin(plugin);
     return () => {
-      const shadow = containerRef.current?.shadowRoot;
-      if (shadow) shadow.innerHTML = '';
+      const s = containerRef.current?.shadowRoot;
+      if (s) s.innerHTML = '';
     };
-  }, [plugin, loadPlugin]);
+  }, [plugin.name, plugin.error]);
 
-  return (
-    <>
-      {error && (
-        <div style={{color: '#e57373', fontSize: '0.85rem', padding: '0.5rem 0'}}>
-          Error: {error}
-        </div>
-      )}
-      {violations.length > 0 && (
-        <details style={{fontSize: '0.8rem', marginBottom: '0.5rem'}}>
-          <summary style={{cursor: 'pointer', color: '#ffb74d'}}>
-            {violations.length} sanitization {violations.length === 1 ? 'violation' : 'violations'}
-          </summary>
-          <ul style={{margin: '0.25rem 0', paddingLeft: '1.25rem', opacity: 0.8}}>
-            {violations.map((v, i) => (
-              <li key={i}>{v.detail}</li>
-            ))}
-          </ul>
-        </details>
-      )}
-      <div ref={containerRef} />
-    </>
-  );
+  if (plugin.error) {
+    return (
+      <div style={{color: '#e57373', fontSize: '0.85rem', padding: '0.5rem 0'}}>
+        Error {plugin.error.code}: {plugin.error.message}
+      </div>
+    );
+  }
+
+  return <div ref={containerRef} />;
 }

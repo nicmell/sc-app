@@ -61,6 +61,11 @@ export interface AssetInfo {
   type: string;
 }
 
+export interface PluginError {
+  code: number;
+  message: string;
+}
+
 export interface PluginInfo {
   name: string;
   author: string;
@@ -68,18 +73,18 @@ export interface PluginInfo {
   entry: string;
   assets: AssetInfo[];
   // Runtime-only (not persisted)
-  found?: boolean;
   loaded?: boolean;
-  errors?: string[];
+  error?: PluginError;
+  violations?: string[];
 }
 
-export type PersistedPlugin = Omit<PluginInfo, 'found' | 'loaded' | 'errors'>;
+export type PersistedPlugin = Omit<PluginInfo, 'loaded' | 'error' | 'violations'>;
 
 export interface ConfigFile {
   theme: Pick<ThemeState, 'mode' | 'primaryColor'>;
   layout: Pick<LayoutState, 'items' | 'options'>;
   scsynth: Pick<ScsynthState, 'options'>;
-  plugins: Omit<PluginInfo, 'found' | 'loaded' | 'errors'>[];
+  plugins: Omit<PluginInfo, 'loaded' | 'error' | 'violations'>[];
 }
 
 export interface PluginsState {

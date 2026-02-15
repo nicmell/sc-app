@@ -1,4 +1,4 @@
-import {useState, useMemo, useSyncExternalStore} from "react";
+import {useState, useEffect, useMemo, useSyncExternalStore} from "react";
 import {GridLayout, useContainerWidth, noCompactor} from "react-grid-layout";
 import type {Layout} from "react-grid-layout";
 import type {BoxItem} from "@/types/stores";
@@ -10,6 +10,7 @@ import {layoutApi} from "@/lib/stores/api";
 import {DashboardPanel} from "@/components/DashboardPanel";
 import {deepEqual} from "@/lib/utils/deepEqual";
 import {SettingsDrawer} from "@/components/SettingsDrawer";
+import {pluginManager} from "@/lib/plugins/PluginManager";
 import "./Dashboard.scss";
 
 const MARGIN: [number, number] = [10, 10];
@@ -110,11 +111,16 @@ function toPixelStyle(item: BoxItem, containerWidth: number, cols: number, rowHe
 
 export function Dashboard() {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [pluginsLoading, setPluginsLoading] = useState(true);
   const layout = useSelector(layoutStore.selectors.items);
   const {numRows, numColumns} = useSelector(layoutStore.selectors.options);
   const {width, containerRef, mounted} = useContainerWidth({measureBeforeMount: true});
   const viewportHeight = useSyncExternalStore(subscribeToResize, getViewportHeight);
   const rowHeight = computeRowHeight(numRows, viewportHeight);
+
+  useEffect(() => {
+    pluginManager.loadAll().finally(() => setPluginsLoading(false));
+  }, []);
 
   const actualNumRows =  useMemo(() => {
     return layout.reduce((max, item) => Math.max(max, item.y + item.h), 1);
@@ -143,6 +149,12 @@ export function Dashboard() {
       <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       <div className="dashboard-grid-wrapper" ref={containerRef as React.RefObject<HTMLDivElement>}>
+        {pluginsLoading && (
+          <div className="dashboard-loading-overlay">
+            <span className="dashboard-loading-spinner" />
+            <span>Loading plugins...</span>
+          </div>
+        )}
         {mounted && (
           <div className="dashboard-grid-container">
             <GridLayout

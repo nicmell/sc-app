@@ -13,7 +13,7 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
     layout: {items: layout.items, options: layout.options},
     scsynth: {options: scsynth.options},
     plugins: plugins.items
-        .map(({found, loaded, errors, ...plugin}) => ({...plugin})),
+        .map(({loaded, error, violations, ...plugin}) => ({...plugin})),
   }),
   merge: (persisted, current: RootState): RootState => {
     const p = persisted as ConfigFile | undefined;

@@ -1,44 +1,75 @@
 import DOMPurify, {type RemovedElement, type RemovedAttribute} from "dompurify";
 import {trustedTypes} from "trusted-types";
-import type {PluginInfo} from "@/types/stores";
-import {pluginUrl} from "@/lib/storage/pluginStorage";
+import type {PluginInfo, RootState} from "@/types/stores";
+import {pluginUrl, installPlugin, removePlugin} from "@/lib/storage/pluginStorage";
+import {pluginsApi} from "@/lib/stores/api";
+import {store} from "@/lib/stores/store";
+
+export interface PluginFetchError {
+  code: number;
+  message: string;
+}
 
 export interface SanitizeViolation {
   type: 'element' | 'attribute';
   detail: string;
 }
 
-export interface PluginLoadResult {
-  html: TrustedHTML;
-  violations: SanitizeViolation[];
-}
-
 export class PluginManager {
   private purify = DOMPurify(window);
   private policy;
+  private cache = new Map<string, TrustedHTML>();
 
   constructor() {
-    // Trusted Types policy — single approved gateway for plugin HTML injection.
-    // The policy is an identity function: sanitization happens before createHTML
-    // is called, and URL rewriting is handled by the Rust backend.
     this.policy = trustedTypes.createPolicy('plugin-html', {
       createHTML: (html: string) => html,
     });
   }
 
-  async load(plugin: PluginInfo): Promise<PluginLoadResult> {
+  async load(plugin: PluginInfo): Promise<void> {
     const entryUrl = pluginUrl(plugin.name, plugin.version, plugin.entry);
-
     const resp = await fetch(entryUrl);
-    if (!resp.ok) {
-      throw new Error(`Failed to fetch plugin "${plugin.name}": ${resp.status} ${resp.statusText}`);
-    }
 
-    const raw = await resp.text();
-    const clean = this.sanitize(raw);
-    const violations = this.collectViolations();
-    const html = this.policy.createHTML(clean);
-    return {html, violations};
+    if (resp.ok) {
+      const raw = await resp.text();
+      const clean = this.sanitize(raw);
+      const violations = this.collectViolations();
+      const html = this.policy.createHTML(clean);
+      this.cache.set(plugin.name, html);
+      pluginsApi.loadPlugin({
+        name: plugin.name,
+        loaded: true,
+        violations: violations.length > 0 ? violations.map(v => v.detail) : undefined,
+      });
+    } else {
+      pluginsApi.loadPlugin({
+        name: plugin.name,
+        loaded: false,
+        error: {code: resp.status, message: resp.statusText},
+      });
+    }
+  }
+
+  async addPlugin(file: File): Promise<void> {
+    const info = await installPlugin(file);
+    pluginsApi.addPlugin(info);
+    await this.load(info);
+  }
+
+  async removePlugin(plugin: PluginInfo): Promise<void> {
+    this.cache.delete(plugin.name);
+    await removePlugin(plugin.name, plugin.version);
+    pluginsApi.removePlugin(plugin.name);
+  }
+
+  async loadAll(): Promise<void> {
+    const {items} = (store.getState() as RootState).plugins;
+    const pending = items.filter(p => p.loaded === undefined);
+    await Promise.all(pending.map(p => this.load(p)));
+  }
+
+  getHtml(name: string): TrustedHTML | undefined {
+    return this.cache.get(name);
   }
 
   private sanitize(html: string): string {
