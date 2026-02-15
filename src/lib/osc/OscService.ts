@@ -1,6 +1,6 @@
 import OSC from 'osc-js';
 import {TauriUdpPlugin} from './TauriUdpPlugin';
-import {createDumpOscMessage, createNotifyMessage, createStatusMessage, createVersionMessage} from './messages';
+import {createDumpOscMessage, createFreeNodeMessage, createGroupMessage, createNotifyMessage, createStatusMessage, createVersionMessage} from './messages';
 import type {ScsynthOptions} from '@/types/stores';
 import {scsynthApi} from '@/lib/stores/api';
 import {logger} from '@/lib/logger';
@@ -11,6 +11,8 @@ export class OscService {
   private osc: InstanceType<typeof OSC>;
   private pollingId: ReturnType<typeof setInterval> | null = null;
   private timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  private currentNodeId = 0;
 
   constructor() {
     this.osc = new OSC({ plugin: new TauriUdpPlugin() });
@@ -81,7 +83,9 @@ export class OscService {
 
   private init(clientId: number) {
     scsynthApi.setClient(clientId);
+    this.currentNodeId = this.defaultGroupId();
     this.send(
+        createGroupMessage(this.currentNodeId),
         createStatusMessage(),
         createVersionMessage(),
     )
@@ -109,6 +113,7 @@ export class OscService {
 
   disconnect(): void {
     if (this.osc.status() === OSC.STATUS.IS_OPEN && scsynthApi.clientId >= 0) {
+      this.send(createFreeNodeMessage(this.defaultGroupId()));
       this.send(createNotifyMessage(0));
     }
     this.osc.close();
@@ -162,8 +167,12 @@ export class OscService {
     }
   }
 
-  nextNodeId(): number {
+  defaultGroupId(): number {
     return (scsynthApi.clientId + 1) * 1000;
+  }
+
+  nextNodeId(): number {
+    return (this.currentNodeId += 1);
   }
 
   defaultClientId() {

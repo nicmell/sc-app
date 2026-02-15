@@ -40,6 +40,14 @@ export function createSynthMessage(
   return msg;
 }
 
+export function createGroupMessage(nodeId: number, addAction: number = 0, targetId: number = 0) {
+  return new OSC.Message('/g_new', nodeId, addAction, targetId);
+}
+
+export function createGroupTailMessage(groupId: number, nodeId: number) {
+  return new OSC.Message('/g_tail', groupId, nodeId);
+}
+
 export function createFreeNodeMessage(nodeId: number) {
   return new OSC.Message('/n_free', nodeId);
 }

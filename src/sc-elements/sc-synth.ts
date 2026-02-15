@@ -1,7 +1,7 @@
 import {LitElement, html} from 'lit';
 import {ContextProvider} from '@lit/context';
 import {oscService} from '@/lib/osc';
-import {createSynthMessage, createFreeNodeMessage, createNodeRunMessage} from '@/lib/osc/messages.ts';
+import {createSynthMessage, createFreeNodeMessage, createNodeRunMessage, createGroupTailMessage} from '@/lib/osc/messages.ts';
 import {nodeIdContext} from './context.ts';
 
 export class ScSynth extends LitElement {
@@ -24,7 +24,8 @@ export class ScSynth extends LitElement {
     super.connectedCallback();
     oscService.send(
       createSynthMessage(this.name, this.nodeId),
-      createNodeRunMessage(this.nodeId, 0),
+      createNodeRunMessage(-1, 0),
+      createGroupTailMessage(oscService.defaultGroupId(), -1),
     );
   }
 
