@@ -1,17 +1,18 @@
-use serde::Serialize;
+use crate::app_config;
+use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::http::Response;
 use tauri::{AppHandle, Manager, UriSchemeContext};
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct AssetInfo {
     pub path: String,
     #[serde(rename = "type")]
     pub mime_type: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct PluginInfo {
     pub id: String,
     pub name: String,
@@ -146,9 +147,8 @@ fn is_safe_path(name: &str) -> bool {
     path.components().all(|c| matches!(c, std::path::Component::Normal(_)))
 }
 
-#[tauri::command]
-pub fn add_plugin(app: AppHandle, data: Vec<u8>) -> Result<PluginInfo, String> {
-    let cursor = std::io::Cursor::new(&data);
+fn validate_plugin(data: &[u8]) -> Result<PluginInfo, String> {
+    let cursor = std::io::Cursor::new(data);
     let mut archive = zip::ZipArchive::new(cursor)
         .map_err(|_| "File is not a valid zip archive".to_string())?;
 
@@ -180,6 +180,13 @@ pub fn add_plugin(app: AppHandle, data: Vec<u8>) -> Result<PluginInfo, String> {
             .map_err(|_| format!("Asset file \"{}\" not found in zip", asset.path))?;
     }
 
+    Ok(info)
+}
+
+#[tauri::command]
+pub fn add_plugin(app: AppHandle, data: Vec<u8>) -> Result<PluginInfo, String> {
+    let info = validate_plugin(&data)?;
+
     // Save the zip as-is to plugins/<name>.zip
     let plugins_dir = app
         .path()
@@ -192,17 +199,61 @@ pub fn add_plugin(app: AppHandle, data: Vec<u8>) -> Result<PluginInfo, String> {
     let zip_path = plugins_dir.join(format!("{}-{}.zip", &info.name, &info.version));
     std::fs::write(&zip_path, &data).map_err(|e| e.to_string())?;
 
+    // Persist plugin entry in config.json
+    let mut config = app_config::read(&app)?;
+    let plugins = config
+        .as_object_mut()
+        .ok_or("config.json root must be an object")?
+        .entry("plugins")
+        .or_insert_with(|| serde_json::json!([]))
+        .as_array_mut()
+        .ok_or("config.json: \"plugins\" must be an array")?;
+
+    // Remove existing entry with the same name+version
+    plugins.retain(|p| {
+        !(p.get("name").and_then(|v| v.as_str()) == Some(&info.name)
+            && p.get("version").and_then(|v| v.as_str()) == Some(&info.version))
+    });
+
+    // Append new entry
+    plugins.push(serde_json::to_value(&info).map_err(|e| e.to_string())?);
+    app_config::write(&app, &config)?;
+
     Ok(info)
 }
 
 #[tauri::command]
-pub fn remove_plugin(app: AppHandle, name: String, version: String) -> Result<(), String> {
+pub fn remove_plugin(app: AppHandle, id: String) -> Result<(), String> {
+    // Read config and find the plugin entry
+    let mut config = app_config::read(&app)?;
+    let plugins = config
+        .as_object_mut()
+        .ok_or("config.json root must be an object")?
+        .get_mut("plugins")
+        .and_then(|v| v.as_array_mut())
+        .ok_or("config.json: \"plugins\" must be an array")?;
+
+    let idx = plugins
+        .iter()
+        .position(|p| p.get("id").and_then(|v| v.as_str()) == Some(&id))
+        .ok_or_else(|| format!("Plugin with id \"{id}\" not found in config"))?;
+
+    // Extract name+version for zip filename before removing
+    let entry = &plugins[idx];
+    let name = entry.get("name").and_then(|v| v.as_str()).unwrap_or("");
+    let version = entry.get("version").and_then(|v| v.as_str()).unwrap_or("");
+    let stem = format!("{name}-{version}");
+
+    plugins.remove(idx);
+    app_config::write(&app, &config)?;
+
+    // Delete the zip file
     let zip_path = app
         .path()
         .app_data_dir()
         .map_err(|e| e.to_string())?
         .join("plugins")
-        .join(format!("{name}-{version}.zip"));
+        .join(format!("{stem}.zip"));
 
     if zip_path.exists() {
         std::fs::remove_file(&zip_path).map_err(|e| e.to_string())?;

@@ -25,3 +25,9 @@ export const useDispatch = () =>
 
 export const useSelector = <T>(selector: (state: RootState) => T): T =>
   useStore(store, (state) => selector(state));
+
+export const rehydrate = async () => {
+    if ("persist" in store) {
+        return store.persist.rehydrate();
+    }
+};

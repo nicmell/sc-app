@@ -3,7 +3,7 @@ import {trustedTypes} from "trusted-types";
 import type {PluginInfo, RootState} from "@/types/stores";
 import {pluginUrl, installPlugin, removePlugin} from "@/lib/storage/pluginStorage";
 import {pluginsApi} from "@/lib/stores/api";
-import {store} from "@/lib/stores/store";
+import {store, rehydrate} from "@/lib/stores/store";
 
 export interface PluginFetchError {
   code: number;
@@ -52,24 +52,17 @@ export class PluginManager {
 
   async addPlugin(file: File): Promise<void> {
     const info = await installPlugin(file);
-
-    const {items} = (store.getState() as RootState).plugins;
-    const existing = items.find(
-      p => p.name === info.name && p.version === info.version,
-    );
-    if (existing) {
-      this.cache.delete(existing.id);
-      pluginsApi.removePlugin(existing.id);
-    }
-
     pluginsApi.addPlugin(info);
+    await rehydrate();
     await this.load(info);
   }
 
   async removePlugin(plugin: PluginInfo): Promise<void> {
     this.cache.delete(plugin.id);
-    await removePlugin(plugin.name, plugin.version);
+    await removePlugin(plugin.id);
     pluginsApi.removePlugin(plugin.id);
+    await rehydrate();
+
   }
 
   async loadAll(): Promise<void> {

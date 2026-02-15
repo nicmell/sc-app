@@ -1,3 +1,4 @@
+mod app_config;
 mod plugin_manager;
 mod udp_server;
 

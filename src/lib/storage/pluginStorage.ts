@@ -6,8 +6,8 @@ export async function installPlugin(file: File): Promise<PluginInfo> {
   return invoke<PluginInfo>("add_plugin", {data: Array.from(new Uint8Array(buffer))});
 }
 
-export async function removePlugin(name: string, version: string): Promise<void> {
-  return invoke("remove_plugin", {name, version});
+export async function removePlugin(id: string): Promise<void> {
+  await invoke("remove_plugin", {id});
 }
 
 export function pluginUrl(name: string, version: string, filePath: string): string {
