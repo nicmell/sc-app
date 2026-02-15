@@ -20,8 +20,10 @@ export type Mode = "dark" | "light";
 export interface ScsynthOptions {
   host: string;
   port: number;
+  clientId: number;
   initialNodeId: number;
   pollStatusMs: number;
+  replyTimeoutMs: number;
 }
 
 export interface ScsynthStatus {

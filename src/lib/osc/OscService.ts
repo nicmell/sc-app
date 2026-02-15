@@ -5,13 +5,12 @@ import type {ScsynthOptions} from '@/types/stores';
 import {scsynthApi} from '@/lib/stores/api';
 import {logger} from '@/lib/logger';
 
-import {ConnectionStatus} from '@/constants/osc';
+import {ConnectionStatus, DEFAULT_CLIENT_ID} from '@/constants/osc';
 
 export class OscService {
   private osc: InstanceType<typeof OSC>;
   private pollingId: ReturnType<typeof setInterval> | null = null;
   private timeoutId: ReturnType<typeof setTimeout> | null = null;
-  private static readonly REPLY_TIMEOUT_MS = 3000;
 
   constructor() {
     this.osc = new OSC({ plugin: new TauriUdpPlugin() });
@@ -19,7 +18,7 @@ export class OscService {
     this.osc.on('open', () => {
       this.resetTimeout();
       this.startPolling()
-      this.osc.send(createNotifyMessage(1, scsynthApi.clientId));
+      this.osc.send(createNotifyMessage(1, scsynthApi.clientId || this.defaultClientId()));
     });
     this.osc.on('close', () => {
       this.clearTimeout();
@@ -139,7 +138,7 @@ export class OscService {
         logger.log('No status.reply received for 3 seconds, disconnecting.');
       }
       void this.disconnect();
-    }, OscService.REPLY_TIMEOUT_MS);
+    }, scsynthApi.options.replyTimeoutMs);
   }
 
   private clearTimeout(): void {
@@ -160,6 +159,10 @@ export class OscService {
 
       return this.osc.send(bundle);
     }
+  }
+
+  defaultClientId() {
+    return scsynthApi.options.clientId || DEFAULT_CLIENT_ID;
   }
 
   on(event: string, handler: (...args: unknown[]) => void): number {
