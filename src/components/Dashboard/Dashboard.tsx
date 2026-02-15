@@ -34,6 +34,7 @@ function computeRowHeight(numRows: number, viewportHeight: number): number {
 export function Dashboard() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pluginsLoading, setPluginsLoading] = useState(true);
+  const plugins = useSelector(state => state.plugins.items);
   const layout = useSelector(layoutStore.selectors.items);
   const {numRows, numColumns} = useSelector(layoutStore.selectors.options);
   const {width, containerRef, mounted} = useContainerWidth({measureBeforeMount: true});
@@ -41,8 +42,13 @@ export function Dashboard() {
   const rowHeight = computeRowHeight(numRows, viewportHeight);
 
   useEffect(() => {
-    pluginManager.loadAll().finally(() => setPluginsLoading(false));
-  }, []);
+    (async () => {
+      setPluginsLoading(true);
+      const pending = plugins.filter(p => p.loaded === undefined);
+      await Promise.all(pending.map(p => pluginManager.load(p)));
+      setPluginsLoading(false);
+    })()
+  }, [plugins]);
 
   const actualNumRows =  useMemo(() => {
     return layout.reduce((max, item) => Math.max(max, item.y + item.h), 1);

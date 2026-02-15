@@ -50,14 +50,15 @@ export class PluginManager {
   }
 
   async addPlugin(file: File): Promise<void> {
-    const info = await addPlugin(file);
-    pluginsApi.addPlugin(info);
+    const plugin = await addPlugin(file);
+    this.cache.delete(plugin.id);
+    pluginsApi.addPlugin(plugin);
     await rehydrate();
   }
 
   async removePlugin(plugin: PluginInfo): Promise<void> {
-    this.cache.delete(plugin.id);
     await removePlugin(plugin.id);
+    this.cache.delete(plugin.id);
     pluginsApi.removePlugin(plugin.id);
     await rehydrate();
 
