@@ -6,6 +6,7 @@ import themeStore from "@/lib/stores/theme";
 import pluginsStore from "@/lib/stores/plugins";
 import type {Mode, PluginInfo} from "@/types/stores";
 import {pluginManager} from "@/lib/plugins/PluginManager";
+import {Modal} from "@/components/Modal";
 import "./SettingsDrawer.scss";
 
 interface SettingsDrawerProps {
@@ -18,8 +19,10 @@ export function SettingsDrawer({open, onClose}: SettingsDrawerProps) {
   const primaryColor = useSelector(themeStore.selectors.primaryColor);
   const {numRows, numColumns} = useSelector(layoutStore.selectors.options);
   const plugins = useSelector(pluginsStore.selectors.items);
+  const layoutItems = useSelector(layoutStore.selectors.items);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pluginError, setPluginError] = useState<string | null>(null);
+  const [confirmPlugin, setConfirmPlugin] = useState<PluginInfo | null>(null);
 
   const handleAddPlugin = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -33,8 +36,20 @@ export function SettingsDrawer({open, onClose}: SettingsDrawerProps) {
     e.target.value = "";
   };
 
-  const handleRemovePlugin = async (plugin: PluginInfo) => {
-    await pluginManager.removePlugin(plugin);
+  const handleRemovePlugin = (plugin: PluginInfo) => {
+    const inUse = layoutItems.some(box => box.plugin === plugin.id);
+    if (inUse) {
+      setConfirmPlugin(plugin);
+    } else {
+      pluginManager.removePlugin(plugin);
+    }
+  };
+
+  const confirmRemove = async () => {
+    if (confirmPlugin) {
+      await pluginManager.removePlugin(confirmPlugin);
+      setConfirmPlugin(null);
+    }
   };
 
   return (
@@ -98,7 +113,7 @@ export function SettingsDrawer({open, onClose}: SettingsDrawerProps) {
             {plugins.length > 0 && (
               <ul className="plugin-list">
                 {plugins.map(p => (
-                  <li key={p.name} className="plugin-item">
+                  <li key={p.id} className="plugin-item">
                     <div className="plugin-info">
                       <span className="plugin-name">{p.name}</span>
                       <span className="plugin-meta">{p.author} &middot; v{p.version}</span>
@@ -148,6 +163,17 @@ export function SettingsDrawer({open, onClose}: SettingsDrawerProps) {
           </section>
         </div>
       </div>
+
+      <Modal open={!!confirmPlugin} title="Remove plugin" onClose={() => setConfirmPlugin(null)}>
+        <p>
+          Plugin <strong>{confirmPlugin?.name}</strong> is currently used by one or more panels.
+          Removing it will unmount those panels.
+        </p>
+        <div style={{display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "1rem"}}>
+          <button onClick={() => setConfirmPlugin(null)}>Cancel</button>
+          <button className="plugin-delete-btn" onClick={confirmRemove}>Remove</button>
+        </div>
+      </Modal>
     </>
   );
 }

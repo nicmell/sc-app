@@ -35,15 +35,15 @@ export class PluginManager {
       const clean = this.sanitize(raw);
       const violations = this.collectViolations();
       const html = this.policy.createHTML(clean);
-      this.cache.set(plugin.name, html);
+      this.cache.set(plugin.id, html);
       pluginsApi.loadPlugin({
-        name: plugin.name,
+        id: plugin.id,
         loaded: true,
         violations: violations.length > 0 ? violations.map(v => v.detail) : undefined,
       });
     } else {
       pluginsApi.loadPlugin({
-        name: plugin.name,
+        id: plugin.id,
         loaded: false,
         error: {code: resp.status, message: resp.statusText},
       });
@@ -52,14 +52,24 @@ export class PluginManager {
 
   async addPlugin(file: File): Promise<void> {
     const info = await installPlugin(file);
+
+    const {items} = (store.getState() as RootState).plugins;
+    const existing = items.find(
+      p => p.name === info.name && p.version === info.version,
+    );
+    if (existing) {
+      this.cache.delete(existing.id);
+      pluginsApi.removePlugin(existing.id);
+    }
+
     pluginsApi.addPlugin(info);
     await this.load(info);
   }
 
   async removePlugin(plugin: PluginInfo): Promise<void> {
-    this.cache.delete(plugin.name);
+    this.cache.delete(plugin.id);
     await removePlugin(plugin.name, plugin.version);
-    pluginsApi.removePlugin(plugin.name);
+    pluginsApi.removePlugin(plugin.id);
   }
 
   async loadAll(): Promise<void> {
@@ -68,8 +78,8 @@ export class PluginManager {
     await Promise.all(pending.map(p => this.load(p)));
   }
 
-  getHtml(name: string): TrustedHTML | undefined {
-    return this.cache.get(name);
+  getHtml(id: string): TrustedHTML | undefined {
+    return this.cache.get(id);
   }
 
   private sanitize(html: string): string {

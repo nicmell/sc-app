@@ -21,6 +21,7 @@ export const LayoutAction = {
   REMOVE_BOX: "removeBox",
   ADD_BOX: "addBox",
   SET_OPTIONS: "setOptions",
+  SET_BOX_PLUGIN: "setBoxPlugin",
 } as const;
 
 export const ThemeAction = {

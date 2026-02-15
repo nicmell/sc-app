@@ -11,15 +11,15 @@ export const pluginsSlice = createSlice({
   initialState,
   reducers: {
     [PluginsAction.ADD_PLUGIN]: (state, action: { payload: PluginInfo }) => {
-      if (!state.items.some(p => p.name === action.payload.name)) {
+      if (!state.items.some(p => p.id === action.payload.id)) {
         state.items = [...state.items, action.payload];
       }
     },
     [PluginsAction.REMOVE_PLUGIN]: (state, action: { payload: string }) => {
-      state.items = state.items.filter(p => p.name !== action.payload);
+      state.items = state.items.filter(p => p.id !== action.payload);
     },
-    [PluginsAction.LOAD_PLUGIN]: (state, action: { payload: { name: string; loaded: boolean; error?: PluginError; violations?: string[] } }) => {
-      const plugin = state.items.find(p => p.name === action.payload.name);
+    [PluginsAction.LOAD_PLUGIN]: (state, action: { payload: { id: string; loaded: boolean; error?: PluginError; violations?: string[] } }) => {
+      const plugin = state.items.find(p => p.id === action.payload.id);
       if (plugin) {
         plugin.loaded = action.payload.loaded;
         plugin.error = action.payload.error;

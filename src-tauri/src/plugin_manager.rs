@@ -1,5 +1,6 @@
 use serde::Serialize;
 use std::io::Read;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::http::Response;
 use tauri::{AppHandle, Manager, UriSchemeContext};
 
@@ -12,6 +13,7 @@ pub struct AssetInfo {
 
 #[derive(Serialize)]
 pub struct PluginInfo {
+    pub id: String,
     pub name: String,
     pub author: String,
     pub version: String,
@@ -123,7 +125,14 @@ fn validate_metadata(raw: &serde_json::Value) -> Result<PluginInfo, String> {
         None => Vec::new(),
     };
 
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let id = format!("{name}-{version}-{timestamp}");
+
     Ok(PluginInfo {
+        id,
         name,
         author: get_str("author")?,
         version,

@@ -10,7 +10,8 @@ import {DashboardPanel} from "@/components/DashboardPanel";
 import {deepEqual} from "@/lib/utils/deepEqual";
 import {SettingsDrawer} from "@/components/SettingsDrawer";
 import {pluginManager} from "@/lib/plugins/PluginManager";
-import {MARGIN, computePlaceholders, toPixelStyle} from "./utils";
+import {MARGIN, computePlaceholders} from "./utils";
+import {Placeholder} from "./Placeholder";
 import "./Dashboard.scss";
 
 const HEADER_HEIGHT = 75;
@@ -52,8 +53,9 @@ export function Dashboard() {
   }, [layout, actualNumRows, numRows, numColumns]);
 
   const syncLayout = (current: Layout) => {
+    const pluginMap = new Map(layout.map(item => [item.i, item.plugin]));
     const active = current
-      .map(({i, x, y, w, h}) => ({i, x, y, w, h}));
+      .map(({i, x, y, w, h}) => ({i, x, y, w, h, plugin: pluginMap.get(i)}));
     if (!deepEqual(active, layout)) {
       layoutApi.setLayout(active);
     }
@@ -92,20 +94,22 @@ export function Dashboard() {
                 <DashboardPanel
                   key={item.i}
                   title={item.i}
+                  boxId={item.i}
+                  pluginId={item.plugin}
                   onClose={() => layoutApi.removeBox(item.i)}
                 />
               ))}
             </GridLayout>
 
             {placeholders.map(p => (
-              <div
+              <Placeholder
                 key={p.i}
-                className="add-box-placeholder"
-                style={toPixelStyle(p, width, numColumns, rowHeight)}
+                item={p}
+                containerWidth={width}
+                cols={numColumns}
+                rowHeight={rowHeight}
                 onClick={() => layoutApi.addBox({x: p.x, y: p.y, w: p.w, h: p.h})}
-              >
-                +
-              </div>
+              />
             ))}
           </div>
         )}

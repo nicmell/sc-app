@@ -19,20 +19,20 @@ export class ScToggle extends LitElement {
       font-family: system-ui, sans-serif;
     }
     button {
-      background: #333;
-      color: #e0e0e0;
-      border: 1px solid #555;
+      background: var(--color-surface, #333);
+      color: var(--color-text, #e0e0e0);
+      border: 1px solid var(--color-border, #555);
       border-radius: 4px;
       padding: 6px 12px;
       cursor: pointer;
       font-size: 13px;
     }
     button:hover {
-      background: #444;
+      background: var(--color-surface-active, #444);
     }
     :host([active]) button {
-      background: #0a6dc4;
-      border-color: #0a6dc4;
+      background: var(--color-primary, #0a6dc4);
+      border-color: var(--color-primary, #0a6dc4);
     }
   `;
 

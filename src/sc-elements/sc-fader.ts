@@ -25,7 +25,7 @@ export class ScFader extends LitElement {
     :host {
       display: block;
       font-family: system-ui, sans-serif;
-      color: #e0e0e0;
+      color: var(--color-text, #e0e0e0);
     }
     label {
       display: flex;
@@ -40,7 +40,7 @@ export class ScFader extends LitElement {
     input[type='range'] {
       width: 100%;
       cursor: pointer;
-      accent-color: #0a6dc4;
+      accent-color: var(--color-primary, #0a6dc4);
     }
   `;
 

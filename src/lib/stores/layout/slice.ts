@@ -38,5 +38,11 @@ export const layoutSlice = createSlice({
     [LayoutAction.SET_OPTIONS]: (state, action: { payload: Partial<LayoutOptions> }) => {
       state.options = {...state.options, ...action.payload};
     },
+    [LayoutAction.SET_BOX_PLUGIN]: (state, action: { payload: { id: string; plugin?: string } }) => {
+      const box = state.items.find(item => item.i === action.payload.id);
+      if (box) {
+        box.plugin = action.payload.plugin;
+      }
+    },
   },
 });

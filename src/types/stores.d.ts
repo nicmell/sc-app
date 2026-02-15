@@ -10,6 +10,7 @@ export interface BoxItem {
   y: number;
   w: number;
   h: number;
+  plugin?: string;
 }
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected";
@@ -67,6 +68,7 @@ export interface PluginError {
 }
 
 export interface PluginInfo {
+  id: string;
   name: string;
   author: string;
   version: string;
