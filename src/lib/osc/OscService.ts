@@ -161,6 +161,10 @@ export class OscService {
     }
   }
 
+  nextNodeId(): number {
+    return (scsynthApi.options.clientId + 1) * 1000;
+  }
+
   defaultClientId() {
     return scsynthApi.options.clientId || DEFAULT_CLIENT_ID;
   }

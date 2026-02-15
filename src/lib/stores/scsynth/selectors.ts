@@ -24,7 +24,6 @@ export default {
   // derived
   isConnected: createScsynthSelector(s => s.connectionStatus === ConnectionStatus.CONNECTED),
   isConnecting: createScsynthSelector(s => s.connectionStatus === ConnectionStatus.CONNECTING),
-  initialNodeId: createScsynthSelector(s => s.options.initialNodeId),
   address: createScsynthSelector(s => `${s.options.host}:${s.options.port}`),
   statusText: createScsynthSelector(s => formatStatus(s.status)),
 };

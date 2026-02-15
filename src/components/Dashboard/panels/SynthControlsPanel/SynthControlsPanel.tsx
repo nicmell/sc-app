@@ -8,12 +8,10 @@ import {
   createSynthMessage,
 } from "@/lib/osc/messages.ts";
 import {NodeValueRange} from "@/components/NodeValueRange";
-import {useSelector} from "@/lib/stores/store.ts";
-import scsynth from "@/lib/stores/scsynth";
 import "./SynthControlsPanel.scss";
 
 export function SynthControlsPanel() {
-  const nodeId = useSelector(scsynth.selectors.initialNodeId);
+  const [nodeId,] = useState(oscService.nextNodeId());
   const [playing, setPlaying] = useState(false);
   const playingRef = useRef(false);
   const mountedRef = useRef(false);
@@ -27,13 +25,13 @@ export function SynthControlsPanel() {
       );
       logger.log(`Created synth "sine" nodeId=${nodeId}`);
     }
-/*    mountedRef.current = true;
+    mountedRef.current = true;
     return () => {
       if (mountedRef.current) {
         mountedRef.current = false;
         oscService.send(createFreeNodeMessage(nodeId));
       }
-    };*/
+    };
   }, [nodeId]);
 
   const handleTogglePlay = () => {
