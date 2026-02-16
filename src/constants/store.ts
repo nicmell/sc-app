@@ -5,6 +5,7 @@ export const SliceName = {
   THEME: "theme",
   PLUGINS: "plugins",
   SYNTHS: "synths",
+  GROUPS: "groups",
 } as const;
 
 export const SynthsAction = {
@@ -12,6 +13,11 @@ export const SynthsAction = {
   FREE_SYNTH: "freeSynth",
   SET_RUNNING: "setRunning",
   SET_PARAMS: "setParams",
+} as const;
+
+export const GroupsAction = {
+  NEW_GROUP: "newGroup",
+  FREE_GROUP: "freeGroup",
 } as const;
 
 export const ScsynthAction = {

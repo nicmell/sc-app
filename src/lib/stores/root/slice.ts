@@ -3,6 +3,7 @@ import layout from "../layout";
 import theme from "../theme";
 import plugins from "../plugins";
 import synths from "../synths";
+import groups from "../groups";
 import {combineReducers, createSlice} from "../utils";
 import {SliceName} from "@/constants/store";
 import type {RootState} from "@/types/stores";
@@ -12,6 +13,7 @@ const initialState: RootState = {
   layout: layout.getInitialState(),
   theme: theme.getInitialState(),
   synths: synths.getInitialState(),
+  groups: groups.getInitialState(),
   plugins: plugins.getInitialState(),
 };
 
@@ -24,6 +26,7 @@ export const rootSlice = createSlice({
     layout: layout.reducer,
     theme: theme.reducer,
     synths: synths.reducer,
+    groups: groups.reducer,
     plugins: plugins.reducer,
   })
 });

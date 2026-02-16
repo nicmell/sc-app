@@ -4,6 +4,7 @@ import type {layoutSlice} from "@/lib/stores/layout/slice";
 import type {themeSlice} from "@/lib/stores/theme/slice";
 import type {pluginsSlice} from "@/lib/stores/plugins/slice";
 import type {synthsSlice} from "@/lib/stores/synths/slice";
+import type {groupsSlice} from "@/lib/stores/groups/slice";
 
 export interface BoxItem {
   i: string;
@@ -102,6 +103,14 @@ export interface SynthsState {
   items: SynthItem[];
 }
 
+export interface GroupItem {
+  nodeId: number;
+}
+
+export interface GroupsState {
+  items: GroupItem[];
+}
+
 export interface PluginsState {
   items: PluginInfo[];
 }
@@ -111,6 +120,7 @@ export interface RootState {
   layout: LayoutState;
   scsynth: ScsynthState;
   synths: SynthsState;
+  groups: GroupsState;
   plugins: PluginsState;
 }
 
@@ -119,4 +129,5 @@ export type LayoutAction = SliceActions<typeof layoutSlice.actions>;
 export type ThemeAction = SliceActions<typeof themeSlice.actions>;
 export type PluginsAction = SliceActions<typeof pluginsSlice.actions>;
 export type SynthsAction = SliceActions<typeof synthsSlice.actions>;
-export type RootAction = ScsynthAction | LayoutAction | ThemeAction | PluginsAction | SynthsAction;
+export type GroupsAction = SliceActions<typeof groupsSlice.actions>;
+export type RootAction = ScsynthAction | LayoutAction | ThemeAction | PluginsAction | SynthsAction | GroupsAction;

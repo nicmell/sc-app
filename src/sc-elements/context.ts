@@ -17,3 +17,15 @@ export interface SynthContext {
 }
 
 export const synthContext = createContext<SynthContext>('synth');
+
+export interface ScNode {
+  readonly nodeId: number;
+}
+
+export interface GroupContext {
+  nodeId: number;
+  register(node: ScNode): void;
+  unregister(node: ScNode): void;
+}
+
+export const groupContext = createContext<GroupContext>('group');

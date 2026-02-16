@@ -1,9 +1,9 @@
 import {LitElement, html} from 'lit';
-import {ContextProvider} from '@lit/context';
+import {ContextProvider, ContextConsumer} from '@lit/context';
 import {oscService} from '@/lib/osc';
 import {createSynthMessage, createFreeNodeMessage, createNodeRunMessage, createNodeSetMessage, createGroupTailMessage} from '@/lib/osc/messages.ts';
 import {synthsApi} from '@/lib/stores/api';
-import {synthContext, type SynthContext, type ScElement} from './context.ts';
+import {synthContext, type SynthContext, type ScElement, groupContext, type GroupContext} from './context.ts';
 
 export class ScSynth extends LitElement {
   static properties = {
@@ -14,6 +14,7 @@ export class ScSynth extends LitElement {
 
   readonly nodeId: number;
   private registeredElements = new Set<ScElement>();
+  private _group!: ContextConsumer<{__context__: GroupContext}, this>;
 
   constructor() {
     super();
@@ -45,6 +46,7 @@ export class ScSynth extends LitElement {
       },
     };
     new ContextProvider(this, {context: synthContext, initialValue: ctx});
+    this._group = new ContextConsumer(this, {context: groupContext, subscribe: false});
   }
 
   protected firstUpdated() {
@@ -53,15 +55,20 @@ export class ScSynth extends LitElement {
       Object.assign(params, el.getParams());
     }
     synthsApi.newSynth({nodeId: this.nodeId, params});
+
+    const group = this._group.value;
+    group?.register(this);
     oscService.send(
       createSynthMessage(this.name, this.nodeId, 0, 0, params),
       createNodeRunMessage(-1, 0),
       createGroupTailMessage(oscService.defaultGroupId(), -1),
+      group ? createGroupTailMessage(group.nodeId, -1) : undefined,
     );
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    this._group.value?.unregister(this);
     if (this.nodeId) {
       synthsApi.freeSynth(this.nodeId);
       oscService.send(createFreeNodeMessage(this.nodeId));

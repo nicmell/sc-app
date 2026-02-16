@@ -68,7 +68,7 @@ interface PluginLoaderProps {
 }
 
 function PluginHtml({html}: {html: TrustedHTML}) {
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLElement>(null);
   const injected = useRef(false);
 
   useEffect(() => {
@@ -78,7 +78,7 @@ function PluginHtml({html}: {html: TrustedHTML}) {
     }
   }, [html]);
 
-  return <div ref={ref} />;
+  return <sc-group ref={ref} />;
 }
 
 export function PluginLoader({plugin}: PluginLoaderProps) {

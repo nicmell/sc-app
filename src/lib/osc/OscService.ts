@@ -165,14 +165,12 @@ export class OscService {
     }
   }
 
-  send(...msg: InstanceType<typeof OSC.Message>[]): void {
-    if (msg.length === 1) {
-      return this.osc.send(msg[0]);
-
-    } else if (msg.length > 1) {
-
-      const bundle = new OSC.Bundle(msg, Date.now() + scsynthApi.options.msgLatencyMs);
-
+  send(...msg: (InstanceType<typeof OSC.Message> | undefined)[]): void {
+    const filtered = msg.filter((m): m is InstanceType<typeof OSC.Message> => m !== undefined);
+    if (filtered.length === 1) {
+      return this.osc.send(filtered[0]);
+    } else if (filtered.length > 1) {
+      const bundle = new OSC.Bundle(filtered, Date.now() + scsynthApi.options.msgLatencyMs);
       return this.osc.send(bundle);
     }
   }
