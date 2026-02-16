@@ -1,6 +1,14 @@
 import OSC from 'osc-js';
 import {TauriUdpPlugin} from './TauriUdpPlugin';
-import {createDumpOscMessage, createFreeNodeMessage, createGroupMessage, createNotifyMessage, createStatusMessage, createVersionMessage} from './messages';
+import {
+  createDeepFreeMessage,
+  createDumpOscMessage,
+  createFreeNodeMessage,
+  createGroupMessage,
+  createNotifyMessage,
+  createStatusMessage,
+  createVersionMessage
+} from './messages';
 import type {ScsynthOptions} from '@/types/stores';
 import {scsynthApi} from '@/lib/stores/api';
 import {logger} from '@/lib/logger';
@@ -113,7 +121,10 @@ export class OscService {
 
   disconnect(): void {
     if (this.osc.status() === OSC.STATUS.IS_OPEN && scsynthApi.clientId >= 0) {
-      this.send(createFreeNodeMessage(this.defaultGroupId()));
+      this.send(
+          createDeepFreeMessage(this.defaultGroupId()),
+          createFreeNodeMessage(this.defaultGroupId()),
+      );
       this.send(createNotifyMessage(0));
     }
     this.osc.close();

@@ -48,6 +48,10 @@ export function createGroupTailMessage(groupId: number, nodeId: number) {
   return new OSC.Message('/g_tail', groupId, nodeId);
 }
 
+export function createDeepFreeMessage(groupId: number) {
+  return new OSC.Message('/g_deepFree', groupId);
+}
+
 export function createFreeNodeMessage(nodeId: number) {
   return new OSC.Message('/n_free', nodeId);
 }
