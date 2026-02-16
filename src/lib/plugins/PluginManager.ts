@@ -77,12 +77,12 @@ export class PluginManager {
   private sanitize(html: string): string {
     return this.purify.sanitize(html, {
       RETURN_TRUSTED_TYPE: false,
-      ADD_ATTR: ['node-id', 'param', 'min', 'max', 'step', 'value', 'label', 'active'],
+      ADD_ATTR: ['node-id', 'param', 'min', 'max', 'step', 'value', 'label', 'checked'],
       FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form'],
       WHOLE_DOCUMENT: true,
       CUSTOM_ELEMENT_HANDLING: {
         tagNameCheck: /^sc-/,
-        attributeNameCheck: /^(node-id|param|min|max|step|value|label|active)$/,
+        attributeNameCheck: /^(node-id|param|min|max|step|value|label|checked)$/,
         allowCustomizedBuiltInElements: false,
       },
     });

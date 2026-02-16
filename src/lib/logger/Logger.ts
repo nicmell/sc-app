@@ -1,5 +1,6 @@
 import {create, type StoreApi, type UseBoundStore} from "zustand";
 import {appendLogLine} from "@/lib/storage/logWriter";
+import {_DEV_} from "@/constants/env";
 
 interface LogState {
   entries: string[];
@@ -20,6 +21,9 @@ export class Logger {
       entries: [...state.entries.slice(-(MAX_ENTRIES - 1)), line],
     }));
     appendLogLine(line);
+    if (_DEV_) {
+      console.log(line);
+    }
   }
 
   clear(): void {

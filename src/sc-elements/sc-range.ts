@@ -1,10 +1,8 @@
 import {LitElement, html, css} from 'lit';
 import {ContextConsumer} from '@lit/context';
-import {oscService} from '@/lib/osc';
-import {createNodeSetMessage} from '@/lib/osc/messages.ts';
-import {nodeIdContext} from './context.ts';
+import {synthContext, type ScElement} from './context.ts';
 
-export class ScFader extends LitElement {
+export class ScRange extends LitElement implements ScElement {
   static properties = {
     param: {type: String},
     min: {type: Number},
@@ -21,7 +19,9 @@ export class ScFader extends LitElement {
   declare value: number;
   declare label: string;
 
-  private _nodeId = new ContextConsumer(this, {context: nodeIdContext, subscribe: true});
+  private _synth = new ContextConsumer(this, {context: synthContext, subscribe: true,
+    callback: (ctx) => ctx?.register(this),
+  });
 
   static styles = css`
     :host {
@@ -56,13 +56,18 @@ export class ScFader extends LitElement {
     this.label = '';
   }
 
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this._synth.value?.unregister(this);
+  }
+
+  getParams(): Record<string, number> {
+    return this.param ? {[this.param]: this.value} : {};
+  }
+
   private _onInput(e: Event) {
-    const val = parseFloat((e.target as HTMLInputElement).value);
-    this.value = val;
-    const nodeId = this._nodeId.value;
-    if (nodeId && this.param) {
-      oscService.send(createNodeSetMessage(nodeId, {[this.param]: val}));
-    }
+    this.value = parseFloat((e.target as HTMLInputElement).value);
+    this._synth.value?.onChange(this);
   }
 
   render() {
