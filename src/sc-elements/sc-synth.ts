@@ -20,8 +20,18 @@ export class ScSynth extends LitElement {
     this.name = 'default';
     this.nodeId = oscService.nextNodeId();
 
+    const nodeId = this.nodeId;
     const ctx: SynthContext = {
-      nodeId: this.nodeId,
+      nodeId,
+      get loaded() {
+        return synthsApi.items.some(s => s.nodeId === nodeId);
+      },
+      get running() {
+        return synthsApi.items.find(s => s.nodeId === nodeId)?.isRunning ?? false;
+      },
+      get params() {
+        return synthsApi.items.find(s => s.nodeId === nodeId)?.params ?? {};
+      },
       register: (el) => this.registeredElements.add(el),
       unregister: (el) => this.registeredElements.delete(el),
       onChange: (el) => {

@@ -7,10 +7,24 @@
 </head>
 <body>
   <sc-synth name="sine" class="example-plugin">
-    <sc-toggle label="Run"></sc-toggle>
+    <label>
+      <sc-toggle></sc-toggle>
+      <sc-if prop="running" if-truthy>
+        <span>On</span>
+      </sc-if>
+      <sc-if prop="running" if-falsy>
+        <span>Off</span>
+      </sc-if>
+    </label>
     <div class="controls">
-      <sc-range param="freq" min="20" max="2000" step="1" value="440" label="Frequency"></sc-range>
-      <sc-range param="amp" min="0" max="1" step="0.01" value="0.2" label="Amplitude"></sc-range>
+      <label>
+        <span>Frequency: <sc-display prop="params.freq" format="%d Hz"></sc-display></span>
+        <sc-range param="freq" min="20" max="2000" step="1" value="440"></sc-range>
+      </label>
+      <label>
+        <span>Amplitude: <sc-display prop="params.amp" format="%.2f"></sc-display></span>
+        <sc-range param="amp" min="0" max="1" step="0.01" value="0.2"></sc-range>
+      </label>
     </div>
   </sc-synth>
 </body>

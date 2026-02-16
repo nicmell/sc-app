@@ -7,6 +7,9 @@ export interface ScElement {
 
 export interface SynthContext {
   nodeId: number;
+  loaded: boolean;
+  running: boolean;
+  params: Record<string, number>;
   register(el: ScElement): void;
   unregister(el: ScElement): void;
   onChange(el: ScElement): void;

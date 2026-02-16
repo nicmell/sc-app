@@ -9,7 +9,6 @@ export class ScRange extends LitElement implements ScElement {
     max: {type: Number},
     step: {type: Number},
     value: {type: Number},
-    label: {type: String},
   };
 
   declare param: string;
@@ -17,28 +16,13 @@ export class ScRange extends LitElement implements ScElement {
   declare max: number;
   declare step: number;
   declare value: number;
-  declare label: string;
 
   private _synth = new ContextConsumer(this, {context: synthContext, subscribe: true,
     callback: (ctx) => ctx?.register(this),
   });
 
   static styles = css`
-    :host {
-      display: block;
-      font-family: system-ui, sans-serif;
-      color: var(--color-text, #e0e0e0);
-    }
-    label {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      font-size: 13px;
-    }
-    span {
-      display: flex;
-      justify-content: space-between;
-    }
+    :host { display: block; }
     input[type='range'] {
       width: 100%;
       cursor: pointer;
@@ -53,7 +37,6 @@ export class ScRange extends LitElement implements ScElement {
     this.max = 1;
     this.step = 0.01;
     this.value = 0;
-    this.label = '';
   }
 
   disconnectedCallback() {
@@ -72,20 +55,14 @@ export class ScRange extends LitElement implements ScElement {
 
   render() {
     return html`
-      <label>
-        <span>
-          <span>${this.label || this.param}</span>
-          <span>${this.value}</span>
-        </span>
-        <input
-          type="range"
-          .min=${String(this.min)}
-          .max=${String(this.max)}
-          .step=${String(this.step)}
-          .value=${String(this.value)}
-          @input=${this._onInput}
-        />
-      </label>
+      <input
+        type="range"
+        .min=${String(this.min)}
+        .max=${String(this.max)}
+        .step=${String(this.step)}
+        .value=${String(this.value)}
+        @input=${this._onInput}
+      />
     `;
   }
 }
