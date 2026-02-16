@@ -1,5 +1,5 @@
-<!DOCTYPE html>
-<html lang="en">
+<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -9,10 +9,10 @@
   <sc-synth name="sine" class="example-plugin">
     <label>
       <sc-toggle></sc-toggle>
-      <sc-if prop="running" if-truthy>
+      <sc-if prop="running" is-truthy >
         <span>On</span>
       </sc-if>
-      <sc-if prop="running" if-falsy>
+      <sc-if prop="running" is-falsy >
         <span>Off</span>
       </sc-if>
     </label>

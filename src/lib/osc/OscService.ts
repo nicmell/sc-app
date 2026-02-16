@@ -95,7 +95,7 @@ export class OscService {
     this.send(
         createGroupMessage(this.currentNodeId),
         createStatusMessage(),
-        createVersionMessage(),
+        createVersionMessage()
     )
   }
 
