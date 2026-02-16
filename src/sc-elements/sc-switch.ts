@@ -1,5 +1,5 @@
 import {ContextConsumer} from '@lit/context';
-import {synthContext, type ScElement} from './context.ts';
+import {nodeContext, type ScElement} from './context.ts';
 import {ScCheckbox} from './sc-checkbox.ts';
 
 export class ScSwitch extends ScCheckbox implements ScElement {
@@ -10,8 +10,8 @@ export class ScSwitch extends ScCheckbox implements ScElement {
 
   declare param: string;
 
-  private _synth = new ContextConsumer(this, {context: synthContext, subscribe: true,
-    callback: (ctx) => ctx?.register(this),
+  private _node = new ContextConsumer(this, {context: nodeContext, subscribe: true,
+    callback: (ctx) => ctx?.registerElement(this),
   });
 
   constructor() {
@@ -21,7 +21,7 @@ export class ScSwitch extends ScCheckbox implements ScElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this._synth.value?.unregister(this);
+    this._node.value?.unregisterElement(this);
   }
 
   getParams(): Record<string, number> {
@@ -29,6 +29,6 @@ export class ScSwitch extends ScCheckbox implements ScElement {
   }
 
   protected _onToggle() {
-    this._synth.value?.onChange(this);
+    this._node.value?.onChange(this);
   }
 }

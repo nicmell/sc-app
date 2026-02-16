@@ -3,7 +3,7 @@ import {ContextProvider, ContextConsumer} from '@lit/context';
 import {oscService} from '@/lib/osc';
 import {createSynthMessage, createFreeNodeMessage, createNodeRunMessage, createNodeSetMessage, createGroupTailMessage} from '@/lib/osc/messages.ts';
 import {synthsApi} from '@/lib/stores/api';
-import {synthContext, type SynthContext, type ScElement, groupContext, type GroupContext} from './context.ts';
+import {nodeContext, type NodeContext, type ScElement} from './context.ts';
 
 export class ScSynth extends LitElement {
   static properties = {
@@ -14,15 +14,17 @@ export class ScSynth extends LitElement {
 
   readonly nodeId: number;
   private registeredElements = new Set<ScElement>();
-  private _group!: ContextConsumer<{__context__: GroupContext}, this>;
+  private _node!: ContextConsumer<{__context__: NodeContext}, this>;
 
   constructor() {
     super();
     this.name = 'default';
     this.nodeId = oscService.nextNodeId();
 
+    this._node = new ContextConsumer(this, {context: nodeContext, subscribe: false});
+
     const nodeId = this.nodeId;
-    const ctx: SynthContext = {
+    const ctx: NodeContext = {
       nodeId,
       get loaded() {
         return synthsApi.items.some(s => s.nodeId === nodeId);
@@ -33,8 +35,10 @@ export class ScSynth extends LitElement {
       get params() {
         return synthsApi.items.find(s => s.nodeId === nodeId)?.params ?? {};
       },
-      register: (el) => this.registeredElements.add(el),
-      unregister: (el) => this.registeredElements.delete(el),
+      registerElement: (el) => this.registeredElements.add(el),
+      unregisterElement: (el) => this.registeredElements.delete(el),
+      registerNode: () => {},
+      unregisterNode: () => {},
       onChange: (el) => {
         const params = el.getParams();
         synthsApi.setParams({nodeId: this.nodeId, params});
@@ -45,8 +49,7 @@ export class ScSynth extends LitElement {
         oscService.send(createNodeRunMessage(this.nodeId, isRunning ? 1 : 0));
       },
     };
-    new ContextProvider(this, {context: synthContext, initialValue: ctx});
-    this._group = new ContextConsumer(this, {context: groupContext, subscribe: false});
+    new ContextProvider(this, {context: nodeContext, initialValue: ctx});
   }
 
   protected firstUpdated() {
@@ -56,19 +59,19 @@ export class ScSynth extends LitElement {
     }
     synthsApi.newSynth({nodeId: this.nodeId, params});
 
-    const group = this._group.value;
-    group?.register(this);
+    const parent = this._node.value;
+    parent?.registerNode(this);
     oscService.send(
       createSynthMessage(this.name, this.nodeId, 0, 0, params),
       createNodeRunMessage(-1, 0),
       createGroupTailMessage(oscService.defaultGroupId(), -1),
-      group ? createGroupTailMessage(group.nodeId, -1) : undefined,
+      parent ? createGroupTailMessage(parent.nodeId, -1) : undefined,
     );
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this._group.value?.unregister(this);
+    this._node.value?.unregisterNode(this);
     if (this.nodeId) {
       synthsApi.freeSynth(this.nodeId);
       oscService.send(createFreeNodeMessage(this.nodeId));

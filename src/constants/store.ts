@@ -18,6 +18,8 @@ export const SynthsAction = {
 export const GroupsAction = {
   NEW_GROUP: "newGroup",
   FREE_GROUP: "freeGroup",
+  SET_RUNNING: "setRunning",
+  SET_PARAMS: "setParams",
 } as const;
 
 export const ScsynthAction = {

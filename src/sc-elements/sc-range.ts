@@ -1,6 +1,6 @@
 import {LitElement, html, css} from 'lit';
 import {ContextConsumer} from '@lit/context';
-import {synthContext, type ScElement} from './context.ts';
+import {nodeContext, type ScElement} from './context.ts';
 
 export class ScRange extends LitElement implements ScElement {
   static properties = {
@@ -17,8 +17,8 @@ export class ScRange extends LitElement implements ScElement {
   declare step: number;
   declare value: number;
 
-  protected _synth = new ContextConsumer(this, {context: synthContext, subscribe: true,
-    callback: (ctx) => ctx?.register(this),
+  protected _node = new ContextConsumer(this, {context: nodeContext, subscribe: true,
+    callback: (ctx) => ctx?.registerElement(this),
   });
 
   static styles = css`
@@ -41,7 +41,7 @@ export class ScRange extends LitElement implements ScElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this._synth.value?.unregister(this);
+    this._node.value?.unregisterElement(this);
   }
 
   getParams(): Record<string, number> {
@@ -57,13 +57,13 @@ export class ScRange extends LitElement implements ScElement {
     v = Math.max(this.min, Math.min(this.max, v));
     if (v !== this.value) {
       this.value = v;
-      this._synth.value?.onChange(this);
+      this._node.value?.onChange(this);
     }
   }
 
   private _onInput(e: Event) {
     this.value = parseFloat((e.target as HTMLInputElement).value);
-    this._synth.value?.onChange(this);
+    this._node.value?.onChange(this);
   }
 
   render() {

@@ -105,6 +105,8 @@ export interface SynthsState {
 
 export interface GroupItem {
   nodeId: number;
+  isRunning: boolean;
+  params: Record<string, number>;
 }
 
 export interface GroupsState {

@@ -1,6 +1,6 @@
 import {LitElement, html, css} from 'lit';
 import {ContextConsumer} from '@lit/context';
-import {synthContext} from './context.ts';
+import {nodeContext} from './context.ts';
 import {StoreSubscriber} from './store-subscriber.ts';
 import {get} from '@/lib/utils/get';
 
@@ -26,7 +26,7 @@ export class ScDisplay extends LitElement {
   declare prop: string;
   declare format: string;
 
-  private _synth = new ContextConsumer(this, {context: synthContext, subscribe: true});
+  private _node = new ContextConsumer(this, {context: nodeContext, subscribe: true});
 
   static styles = css`
     :host {
@@ -41,11 +41,11 @@ export class ScDisplay extends LitElement {
     super();
     this.prop = '';
     this.format = '';
-    new StoreSubscriber(this, () => get(this._synth.value, this.prop));
+    new StoreSubscriber(this, () => get(this._node.value, this.prop));
   }
 
   render() {
-    const value = get(this._synth.value, this.prop);
+    const value = get(this._node.value, this.prop);
     const text = this.format ? formatValue(this.format, value) : String(value ?? '');
     return html`${text}`;
   }

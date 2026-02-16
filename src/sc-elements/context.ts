@@ -5,27 +5,21 @@ export interface ScElement {
   getParams(): Record<string, number>;
 }
 
-export interface SynthContext {
-  nodeId: number;
-  loaded: boolean;
-  running: boolean;
-  params: Record<string, number>;
-  register(el: ScElement): void;
-  unregister(el: ScElement): void;
-  onChange(el: ScElement): void;
-  onRun(isRunning: boolean): void;
-}
-
-export const synthContext = createContext<SynthContext>('synth');
-
 export interface ScNode {
   readonly nodeId: number;
 }
 
-export interface GroupContext {
+export interface NodeContext {
   nodeId: number;
-  register(node: ScNode): void;
-  unregister(node: ScNode): void;
+  loaded: boolean;
+  running: boolean;
+  params: Record<string, number>;
+  registerElement(el: ScElement): void;
+  unregisterElement(el: ScElement): void;
+  registerNode(node: ScNode): void;
+  unregisterNode(node: ScNode): void;
+  onChange(el: ScElement): void;
+  onRun(isRunning: boolean): void;
 }
 
-export const groupContext = createContext<GroupContext>('group');
+export const nodeContext = createContext<NodeContext>('node');

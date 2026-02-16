@@ -1,6 +1,6 @@
 import {LitElement, html, css} from 'lit';
 import {ContextConsumer} from '@lit/context';
-import {synthContext} from './context.ts';
+import {nodeContext} from './context.ts';
 import {StoreSubscriber} from './store-subscriber.ts';
 import {get} from '@/lib/utils/get';
 
@@ -23,7 +23,7 @@ export class ScIf extends LitElement {
   declare isGreaterThan: string | null;
   declare isLesserThan: string | null;
 
-  private _synth = new ContextConsumer(this, {context: synthContext, subscribe: true});
+  private _node = new ContextConsumer(this, {context: nodeContext, subscribe: true});
 
   static styles = css`
     :host { display: contents; }
@@ -38,11 +38,11 @@ export class ScIf extends LitElement {
     this.isNotEqual = null;
     this.isGreaterThan = null;
     this.isLesserThan = null;
-    new StoreSubscriber(this, () => get(this._synth.value, this.prop));
+    new StoreSubscriber(this, () => get(this._node.value, this.prop));
   }
 
   private _test(): boolean {
-    const value = get(this._synth.value, this.prop);
+    const value = get(this._node.value, this.prop);
     const num = typeof value === 'number' ? value : Number(value);
     if (this.isEqual !== null) return String(value) === this.isEqual;
     if (this.isNotEqual !== null) return String(value) !== this.isNotEqual;
