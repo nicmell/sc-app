@@ -1,5 +1,5 @@
-import { groupsSlice } from "./slice";
+import { nodesSlice } from "./slice";
 import selectors from "./selectors";
 
-const { actions, reducer, getInitialState } = groupsSlice;
+const { actions, reducer, getInitialState } = nodesSlice;
 export default { actions, reducer, getInitialState, selectors };

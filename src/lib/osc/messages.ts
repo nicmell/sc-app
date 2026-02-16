@@ -49,7 +49,7 @@ export function groupTailMessage(groupId: number, nodeId: number) {
 }
 
 export function groupFreeAllMessage(groupId: number) {
-  return new OSC.Message('/g_free_all', groupId);
+  return new OSC.Message('/g_freeAll', groupId);
 }
 
 export function freeNodeMessage(nodeId: number) {

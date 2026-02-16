@@ -3,8 +3,7 @@ import root from "./root";
 import scsynth from "./scsynth";
 import layout from "./layout";
 import theme from "./theme";
-import synths from "./synths";
-import groups from "./groups";
+import nodes from "./nodes";
 import plugins from "./plugins";
 import {createApi} from "./utils";
 import {logger} from "@/lib/logger";
@@ -38,14 +37,9 @@ export const themeApi = createApi(wrappedStore, {
   actions: theme.actions,
 });
 
-export const synthsApi = createApi(wrappedStore, {
-  selectors: synths.selectors,
-  actions: synths.actions,
-});
-
-export const groupsApi = createApi(wrappedStore, {
-  selectors: groups.selectors,
-  actions: groups.actions,
+export const nodesApi = createApi(wrappedStore, {
+  selectors: nodes.selectors,
+  actions: nodes.actions,
 });
 
 export const pluginsApi = createApi(wrappedStore, {

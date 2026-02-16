@@ -4,20 +4,13 @@ export const SliceName = {
   LAYOUT: "layout",
   THEME: "theme",
   PLUGINS: "plugins",
-  SYNTHS: "synths",
-  GROUPS: "groups",
+  NODES: "nodes",
 } as const;
 
-export const SynthsAction = {
+export const NodesAction = {
   NEW_SYNTH: "newSynth",
-  FREE_SYNTH: "freeSynth",
-  SET_RUNNING: "setRunning",
-  SET_PARAMS: "setParams",
-} as const;
-
-export const GroupsAction = {
   NEW_GROUP: "newGroup",
-  FREE_GROUP: "freeGroup",
+  FREE_NODE: "freeNode",
   SET_RUNNING: "setRunning",
   SET_PARAMS: "setParams",
 } as const;

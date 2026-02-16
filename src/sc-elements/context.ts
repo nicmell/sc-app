@@ -10,6 +10,7 @@ export interface ScNode {
 }
 
 export interface NodeContext {
+  type: 'synth' | 'group';
   nodeId: number;
   loaded: boolean;
   running: boolean;
