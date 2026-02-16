@@ -2,7 +2,7 @@ import {LitElement, html} from 'lit';
 import {ContextProvider} from '@lit/context';
 import {oscService} from '@/lib/osc';
 import {createSynthMessage, createFreeNodeMessage, createNodeRunMessage, createNodeSetMessage, createGroupTailMessage} from '@/lib/osc/messages.ts';
-import {logger} from '@/lib/logger';
+import {synthsApi} from '@/lib/stores/api';
 import {synthContext, type SynthContext, type ScElement} from './context.ts';
 
 export class ScSynth extends LitElement {
@@ -26,24 +26,25 @@ export class ScSynth extends LitElement {
       unregister: (el) => this.registeredElements.delete(el),
       onChange: (el) => {
         const params = el.getParams();
-        logger.log(`[sc-synth:${this.nodeId}] ${el.tagName.toLowerCase()} changed: ${JSON.stringify(params)}`);
+        synthsApi.setParams({nodeId: this.nodeId, params});
         oscService.send(createNodeSetMessage(this.nodeId, params));
       },
       onRun: (isRunning) => {
+        synthsApi.setRunning({nodeId: this.nodeId, isRunning});
         oscService.send(createNodeRunMessage(this.nodeId, isRunning ? 1 : 0));
-        logger.log(`[sc-synth:${this.nodeId}] run: ${isRunning}`);
       },
     };
     new ContextProvider(this, {context: synthContext, initialValue: ctx});
   }
 
   protected firstUpdated() {
+    const params: Record<string, number> = {};
     for (const el of this.registeredElements) {
-      const tag = el.tagName.toLowerCase();
-      logger.log(`[sc-synth:${this.nodeId}] ${tag} defaults: ${JSON.stringify(el.getParams())}`);
+      Object.assign(params, el.getParams());
     }
+    synthsApi.newSynth({nodeId: this.nodeId, params});
     oscService.send(
-      createSynthMessage(this.name, this.nodeId),
+      createSynthMessage(this.name, this.nodeId, 0, 0, params),
       createNodeRunMessage(-1, 0),
       createGroupTailMessage(oscService.defaultGroupId(), -1),
     );
@@ -52,6 +53,7 @@ export class ScSynth extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this.nodeId) {
+      synthsApi.freeSynth(this.nodeId);
       oscService.send(createFreeNodeMessage(this.nodeId));
     }
   }

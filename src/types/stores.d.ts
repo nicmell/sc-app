@@ -3,6 +3,7 @@ import type {scsynthSlice} from "@/lib/stores/scsynth/slice";
 import type {layoutSlice} from "@/lib/stores/layout/slice";
 import type {themeSlice} from "@/lib/stores/theme/slice";
 import type {pluginsSlice} from "@/lib/stores/plugins/slice";
+import type {synthsSlice} from "@/lib/stores/synths/slice";
 
 export interface BoxItem {
   i: string;
@@ -91,6 +92,16 @@ export interface ConfigFile {
   plugins: Omit<PluginInfo, 'loaded' | 'error' | 'violations'>[];
 }
 
+export interface SynthItem {
+  nodeId: number;
+  isRunning: boolean;
+  params: Record<string, number>;
+}
+
+export interface SynthsState {
+  items: SynthItem[];
+}
+
 export interface PluginsState {
   items: PluginInfo[];
 }
@@ -99,6 +110,7 @@ export interface RootState {
   theme: ThemeState;
   layout: LayoutState;
   scsynth: ScsynthState;
+  synths: SynthsState;
   plugins: PluginsState;
 }
 
@@ -106,4 +118,5 @@ export type ScsynthAction = SliceActions<typeof scsynthSlice.actions>;
 export type LayoutAction = SliceActions<typeof layoutSlice.actions>;
 export type ThemeAction = SliceActions<typeof themeSlice.actions>;
 export type PluginsAction = SliceActions<typeof pluginsSlice.actions>;
-export type RootAction = ScsynthAction | LayoutAction | ThemeAction | PluginsAction;
+export type SynthsAction = SliceActions<typeof synthsSlice.actions>;
+export type RootAction = ScsynthAction | LayoutAction | ThemeAction | PluginsAction | SynthsAction;

@@ -4,6 +4,14 @@ export const SliceName = {
   LAYOUT: "layout",
   THEME: "theme",
   PLUGINS: "plugins",
+  SYNTHS: "synths",
+} as const;
+
+export const SynthsAction = {
+  NEW_SYNTH: "newSynth",
+  FREE_SYNTH: "freeSynth",
+  SET_RUNNING: "setRunning",
+  SET_PARAMS: "setParams",
 } as const;
 
 export const ScsynthAction = {
