@@ -48,6 +48,10 @@ export class ScRange extends LitElement implements ScElement {
     return this.param ? {[this.param]: this.value} : {};
   }
 
+  protected _ratio(): number {
+    return (this.value - this.min) / (this.max - this.min);
+  }
+
   protected _setValue(v: number) {
     v = Math.round((v - this.min) / this.step) * this.step + this.min;
     v = Math.max(this.min, Math.min(this.max, v));

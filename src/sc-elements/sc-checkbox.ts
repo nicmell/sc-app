@@ -19,8 +19,8 @@ export class ScCheckbox extends LitElement {
 
   static styles = css`
     :host { display: inline-block; cursor: pointer; user-select: none; }
-    svg { display: block; }
-    img { display: block; }
+    svg { display: block; pointer-events: none; }
+    img { display: block; pointer-events: none; }
   `;
 
   constructor() {

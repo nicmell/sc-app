@@ -18,9 +18,10 @@ export class ScKnob extends ScRange {
   declare bgcolor: string;
 
   static styles = css`
-    :host { display: inline-block; cursor: pointer; touch-action: none; user-select: none; }
-    svg { display: block; }
-    img { display: block; }
+    :host { display: inline-block; cursor: grab; touch-action: none; user-select: none; }
+    :host(:active) { cursor: grabbing; }
+    svg { display: block; pointer-events: none; }
+    img { display: block; pointer-events: none; }
   `;
 
   constructor() {
@@ -35,8 +36,8 @@ export class ScKnob extends ScRange {
   connectedCallback() {
     super.connectedCallback();
     this.addEventListener('mousedown', this._onPointerDown);
-    this.addEventListener('touchstart', this._onPointerDown);
-    this.addEventListener('wheel', this._onWheel);
+    this.addEventListener('touchstart', this._onPointerDown, {passive: false});
+    this.addEventListener('wheel', this._onWheel, {passive: false});
   }
 
   disconnectedCallback() {
@@ -46,21 +47,22 @@ export class ScKnob extends ScRange {
     this.removeEventListener('wheel', this._onWheel);
   }
 
-  private _ratio(): number {
-    return (this.value - this.min) / (this.max - this.min);
-  }
-
   private _onPointerDown = (e: MouseEvent | TouchEvent) => {
     e.preventDefault();
     const ev = 'touches' in e ? e.touches[0] : e;
+    const startX = ev.clientX;
     const startY = ev.clientY;
     const startValue = this.value;
-    const sensitivity = 200;
+    const range = this.max - this.min;
 
     const onMove = (me: MouseEvent | TouchEvent) => {
+      me.preventDefault();
       const mev = 'touches' in me ? me.touches[0] : me;
+      const dx = mev.clientX - startX;
       const dy = startY - mev.clientY;
-      let dv = (dy / sensitivity) * (this.max - this.min);
+      const d = Math.abs(dx) > Math.abs(dy) ? dx : dy;
+      const sensitivity = this.diameter * 2;
+      let dv = (d / sensitivity) * range;
       if (me instanceof MouseEvent && me.shiftKey) dv *= 0.2;
       this._setValue(startValue + dv);
     };
@@ -75,7 +77,7 @@ export class ScKnob extends ScRange {
 
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
-    document.addEventListener('touchmove', onMove);
+    document.addEventListener('touchmove', onMove, {passive: false});
     document.addEventListener('touchend', onUp);
     document.addEventListener('touchcancel', onUp);
   };
