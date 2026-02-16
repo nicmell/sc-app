@@ -171,8 +171,7 @@ export class OscService {
 
     } else if (msg.length > 1) {
 
-      const latency = 200
-      const bundle = new OSC.Bundle(msg, Date.now() + latency);
+      const bundle = new OSC.Bundle(msg, Date.now() + scsynthApi.options.msgLatencyMs);
 
       return this.osc.send(bundle);
     }

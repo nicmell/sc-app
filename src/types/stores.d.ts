@@ -23,6 +23,7 @@ export interface ScsynthOptions {
   clientId: number;
   pollStatusMs: number;
   replyTimeoutMs: number;
+  msgLatencyMs: number;
 }
 
 export interface ScsynthStatus {
