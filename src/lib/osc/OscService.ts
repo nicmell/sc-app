@@ -1,13 +1,13 @@
 import OSC from 'osc-js';
 import {TauriUdpPlugin} from './TauriUdpPlugin';
 import {
-  createDeepFreeMessage,
-  createDumpOscMessage,
-  createFreeNodeMessage,
-  createGroupMessage,
-  createNotifyMessage,
-  createStatusMessage,
-  createVersionMessage
+  groupFreeAllMessage,
+  dumpOscMessage,
+  freeNodeMessage,
+  newGroupMessage,
+  notifyMessage,
+  statusMessage,
+  versionMessage
 } from './messages';
 import type {ScsynthOptions} from '@/types/stores';
 import {scsynthApi} from '@/lib/stores/api';
@@ -28,8 +28,8 @@ export class OscService {
     this.osc.on('open', () => {
       this.resetTimeout();
       this.startPolling()
-      this.osc.send(createDumpOscMessage(1))
-      this.osc.send(createNotifyMessage(1, scsynthApi.clientId || this.defaultClientId()));
+      this.osc.send(dumpOscMessage(1))
+      this.osc.send(notifyMessage(1, scsynthApi.clientId || this.defaultClientId()));
     });
     this.osc.on('close', () => {
       this.clearTimeout();
@@ -93,9 +93,9 @@ export class OscService {
     scsynthApi.setClient(clientId);
     this.currentNodeId = this.defaultGroupId();
     this.send(
-        createGroupMessage(this.currentNodeId),
-        createStatusMessage(),
-        createVersionMessage()
+        newGroupMessage(this.currentNodeId),
+        statusMessage(),
+        versionMessage()
     )
   }
 
@@ -122,10 +122,10 @@ export class OscService {
   disconnect(): void {
     if (this.osc.status() === OSC.STATUS.IS_OPEN && scsynthApi.clientId >= 0) {
       this.send(
-          createDeepFreeMessage(this.defaultGroupId()),
-          createFreeNodeMessage(this.defaultGroupId()),
+          groupFreeAllMessage(this.defaultGroupId()),
+          freeNodeMessage(this.defaultGroupId()),
       );
-      this.send(createNotifyMessage(0));
+      this.send(notifyMessage(0));
     }
     this.osc.close();
   }
@@ -136,7 +136,7 @@ export class OscService {
     const {pollStatusMs} = this.getOptions();
     this.pollingId = setInterval(() => {
       if (this.osc.status() === OSC.STATUS.IS_OPEN && this.isReady()) {
-        this.send(createStatusMessage());
+        this.send(statusMessage());
       }
     }, pollStatusMs);
   }

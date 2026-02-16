@@ -1,17 +1,17 @@
 import {oscService} from "@/lib/osc";
 import {logger} from "@/lib/logger";
 import {
-  createDumpOscMessage,
-  createQuitMessage,
-  createStatusMessage,
-  createVersionMessage,
+  dumpOscMessage,
+  quitMessage,
+  statusMessage,
+  versionMessage,
 } from "@/lib/osc/messages.ts";
 import "./ServerControlsPanel.scss";
 
 export function ServerControlsPanel() {
   const handleSendStatus = () => {
     try {
-      oscService.send(createStatusMessage());
+      oscService.send(statusMessage());
     } catch (e) {
       logger.log(`/status failed: ${e}`);
     }
@@ -19,7 +19,7 @@ export function ServerControlsPanel() {
 
   const handleVersion = () => {
     try {
-      oscService.send(createVersionMessage());
+      oscService.send(versionMessage());
     } catch (e) {
       logger.log(`/version failed: ${e}`);
     }
@@ -27,7 +27,7 @@ export function ServerControlsPanel() {
 
   const handleDumpOsc = () => {
     try {
-      oscService.send(createDumpOscMessage(1));
+      oscService.send(dumpOscMessage(1));
       logger.log("Sent /dumpOSC 1");
     } catch (e) {
       logger.log(`Send failed: ${e}`);
@@ -36,7 +36,7 @@ export function ServerControlsPanel() {
 
   const handleQuit = () => {
     try {
-      oscService.send(createQuitMessage());
+      oscService.send(quitMessage());
       logger.log("Sent /quit — server shutting down");
     } catch (e) {
       logger.log(`Send failed: ${e}`);

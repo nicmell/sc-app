@@ -1,7 +1,7 @@
 import {LitElement, html} from 'lit';
 import {ContextProvider, ContextConsumer} from '@lit/context';
 import {oscService} from '@/lib/osc';
-import {createGroupMessage, createGroupTailMessage, createDeepFreeMessage, createNodeRunMessage, createNodeSetMessage} from '@/lib/osc/messages.ts';
+import {newGroupMessage, groupTailMessage, groupFreeAllMessage, nodeRunMessage, nodeSetMessage} from '@/lib/osc/messages.ts';
 import {groupsApi} from '@/lib/stores/api';
 import {nodeContext, type NodeContext, type ScNode, type ScElement} from './context.ts';
 
@@ -36,11 +36,11 @@ export class ScGroup extends LitElement {
       onChange: (el) => {
         const params = el.getParams();
         groupsApi.setParams({nodeId: this.nodeId, params});
-        oscService.send(createNodeSetMessage(this.nodeId, params));
+        oscService.send(nodeSetMessage(this.nodeId, params));
       },
       onRun: (isRunning) => {
         groupsApi.setRunning({nodeId: this.nodeId, isRunning});
-        oscService.send(createNodeRunMessage(this.nodeId, isRunning ? 1 : 0));
+        oscService.send(nodeRunMessage(this.nodeId, isRunning ? 1 : 0));
       },
     };
     new ContextProvider(this, {context: nodeContext, initialValue: ctx});
@@ -56,10 +56,10 @@ export class ScGroup extends LitElement {
     const parent = this._node.value;
     parent?.registerNode(this);
     oscService.send(
-        createGroupMessage(this.nodeId),
+        newGroupMessage(this.nodeId),
         // createNodeRunMessage(-1, 0),
-        createGroupTailMessage(oscService.defaultGroupId(), -1),
-        parent ? createGroupTailMessage(parent.nodeId, -1) : undefined,
+        groupTailMessage(oscService.defaultGroupId(), -1),
+        parent ? groupTailMessage(parent.nodeId, -1) : undefined,
     );
   }
 
@@ -68,7 +68,7 @@ export class ScGroup extends LitElement {
     this._node.value?.unregisterNode(this);
     if (this.nodeId) {
       groupsApi.freeGroup(this.nodeId);
-      oscService.send(createDeepFreeMessage(this.nodeId));
+      oscService.send(groupFreeAllMessage(this.nodeId));
     }
   }
 

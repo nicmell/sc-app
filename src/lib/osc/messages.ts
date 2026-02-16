@@ -1,15 +1,15 @@
 import OSC from 'osc-js';
 import sineSynthDefUrl from '@/assets/synthdefs/sine.scsyndef?url';
 
-export function createStatusMessage() {
+export function statusMessage() {
   return new OSC.Message('/status');
 }
 
-export function createDumpOscMessage(level: number = 1) {
+export function dumpOscMessage(level: number = 1) {
   return new OSC.Message('/dumpOSC', level);
 }
 
-export function createNotifyMessage(flag: number = 1, clientId: number = -1) {
+export function notifyMessage(flag: number = 1, clientId: number = -1) {
   const msg = new OSC.Message('/notify', flag);
   if (clientId >= 0) {
     msg.add(clientId);
@@ -17,15 +17,15 @@ export function createNotifyMessage(flag: number = 1, clientId: number = -1) {
   return msg;
 }
 
-export function createQuitMessage() {
+export function quitMessage() {
   return new OSC.Message('/quit');
 }
 
-export function createVersionMessage() {
+export function versionMessage() {
   return new OSC.Message('/version');
 }
 
-export function createSynthMessage(
+export function newSynthMessage(
   synthName: string = 'default',
   nodeId: number = 1000,
   addAction: number = 0,
@@ -40,27 +40,27 @@ export function createSynthMessage(
   return msg;
 }
 
-export function createGroupMessage(nodeId: number, addAction: number = 0, targetId: number = 0) {
+export function newGroupMessage(nodeId: number, addAction: number = 0, targetId: number = 0) {
   return new OSC.Message('/g_new', nodeId, addAction, targetId);
 }
 
-export function createGroupTailMessage(groupId: number, nodeId: number) {
+export function groupTailMessage(groupId: number, nodeId: number) {
   return new OSC.Message('/g_tail', groupId, nodeId);
 }
 
-export function createDeepFreeMessage(groupId: number) {
-  return new OSC.Message('/g_deepFree', groupId);
+export function groupFreeAllMessage(groupId: number) {
+  return new OSC.Message('/g_free_all', groupId);
 }
 
-export function createFreeNodeMessage(nodeId: number) {
+export function freeNodeMessage(nodeId: number) {
   return new OSC.Message('/n_free', nodeId);
 }
 
-export function createNodeRunMessage(nodeId: number, flag: number) {
+export function nodeRunMessage(nodeId: number, flag: number) {
   return new OSC.Message('/n_run', nodeId, flag);
 }
 
-export function createNodeSetMessage(nodeId: number, params: Record<string, number>) {
+export function nodeSetMessage(nodeId: number, params: Record<string, number>) {
   const msg = new OSC.Message('/n_set', nodeId);
   for (const [key, value] of Object.entries(params)) {
     msg.add(key);
@@ -69,7 +69,7 @@ export function createNodeSetMessage(nodeId: number, params: Record<string, numb
   return msg;
 }
 
-export async function createDefRecvMessage() {
+export async function defRecvMessage() {
   const resp = await fetch(sineSynthDefUrl);
   const bytes = new Uint8Array(await resp.arrayBuffer());
   return new OSC.Message('/d_recv', bytes as unknown as Blob);

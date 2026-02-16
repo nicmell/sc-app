@@ -3,9 +3,9 @@ import {oscService} from "@/lib/osc";
 import {logger} from "@/lib/logger";
 import {
   // @ts-ignore
-  createFreeNodeMessage,
-  createNodeRunMessage,
-  createSynthMessage,
+  freeNodeMessage,
+  nodeRunMessage,
+  newSynthMessage,
 } from "@/lib/osc/messages.ts";
 import {NodeValueRange} from "@/components/NodeValueRange";
 import "./SynthControlsPanel.scss";
@@ -20,8 +20,8 @@ export function SynthControlsPanel() {
     if (!mountedRef.current) {
       mountedRef.current = true;
       oscService.send(
-          createSynthMessage("sine", nodeId),
-          createNodeRunMessage(-1, 0)
+          newSynthMessage("sine", nodeId),
+          nodeRunMessage(-1, 0)
       );
       logger.log(`Created synth "sine" nodeId=${nodeId}`);
     }
@@ -29,7 +29,7 @@ export function SynthControlsPanel() {
     return () => {
       if (mountedRef.current) {
         mountedRef.current = false;
-        oscService.send(createFreeNodeMessage(nodeId));
+        oscService.send(freeNodeMessage(nodeId));
       }
     };
   }, [nodeId]);
@@ -37,12 +37,12 @@ export function SynthControlsPanel() {
   const handleTogglePlay = () => {
     try {
       if (playingRef.current) {
-        oscService.send(createNodeRunMessage(nodeId, 0));
+        oscService.send(nodeRunMessage(nodeId, 0));
         logger.log(`Sent /n_run nodeId=${nodeId} 0`);
         playingRef.current = false;
         setPlaying(false);
       } else {
-        oscService.send(createNodeRunMessage(nodeId, 1));
+        oscService.send(nodeRunMessage(nodeId, 1));
         logger.log(`Sent /n_run nodeId=${nodeId} 1`);
         playingRef.current = true;
         setPlaying(true);

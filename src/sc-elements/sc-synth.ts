@@ -1,7 +1,7 @@
 import {LitElement, html} from 'lit';
 import {ContextProvider, ContextConsumer} from '@lit/context';
 import {oscService} from '@/lib/osc';
-import {createSynthMessage, createFreeNodeMessage, createNodeRunMessage, createNodeSetMessage, createGroupTailMessage} from '@/lib/osc/messages.ts';
+import {newSynthMessage, freeNodeMessage, nodeRunMessage, nodeSetMessage, groupTailMessage} from '@/lib/osc/messages.ts';
 import {synthsApi} from '@/lib/stores/api';
 import {nodeContext, type NodeContext, type ScElement} from './context.ts';
 
@@ -42,11 +42,11 @@ export class ScSynth extends LitElement {
       onChange: (el) => {
         const params = el.getParams();
         synthsApi.setParams({nodeId: this.nodeId, params});
-        oscService.send(createNodeSetMessage(this.nodeId, params));
+        oscService.send(nodeSetMessage(this.nodeId, params));
       },
       onRun: (isRunning) => {
         synthsApi.setRunning({nodeId: this.nodeId, isRunning});
-        oscService.send(createNodeRunMessage(this.nodeId, isRunning ? 1 : 0));
+        oscService.send(nodeRunMessage(this.nodeId, isRunning ? 1 : 0));
       },
     };
     new ContextProvider(this, {context: nodeContext, initialValue: ctx});
@@ -62,10 +62,10 @@ export class ScSynth extends LitElement {
     const parent = this._node.value;
     parent?.registerNode(this);
     oscService.send(
-      createSynthMessage(this.name, this.nodeId, 0, 0, params),
-      createNodeRunMessage(-1, 0),
-      createGroupTailMessage(oscService.defaultGroupId(), -1),
-      parent ? createGroupTailMessage(parent.nodeId, -1) : undefined,
+      newSynthMessage(this.name, this.nodeId, 0, 0, params),
+      nodeRunMessage(-1, 0),
+      groupTailMessage(oscService.defaultGroupId(), -1),
+      parent ? groupTailMessage(parent.nodeId, -1) : undefined,
     );
   }
 
@@ -74,7 +74,7 @@ export class ScSynth extends LitElement {
     this._node.value?.unregisterNode(this);
     if (this.nodeId) {
       synthsApi.freeSynth(this.nodeId);
-      oscService.send(createFreeNodeMessage(this.nodeId));
+      oscService.send(freeNodeMessage(this.nodeId));
     }
   }
 
