@@ -17,7 +17,7 @@ export class ScRange extends LitElement implements ScElement {
   declare step: number;
   declare value: number;
 
-  private _synth = new ContextConsumer(this, {context: synthContext, subscribe: true,
+  protected _synth = new ContextConsumer(this, {context: synthContext, subscribe: true,
     callback: (ctx) => ctx?.register(this),
   });
 
@@ -46,6 +46,15 @@ export class ScRange extends LitElement implements ScElement {
 
   getParams(): Record<string, number> {
     return this.param ? {[this.param]: this.value} : {};
+  }
+
+  protected _setValue(v: number) {
+    v = Math.round((v - this.min) / this.step) * this.step + this.min;
+    v = Math.max(this.min, Math.min(this.max, v));
+    if (v !== this.value) {
+      this.value = v;
+      this._synth.value?.onChange(this);
+    }
   }
 
   private _onInput(e: Event) {

@@ -8,23 +8,30 @@
 <body>
   <sc-synth name="sine" class="example-plugin">
     <label>
-      <sc-toggle></sc-toggle>
-      <sc-if prop="running" is-truthy >
-        <span>On</span>
-      </sc-if>
-      <sc-if prop="running" is-falsy >
-        <span>Off</span>
-      </sc-if>
+      <sc-toggle width="24" height="24"></sc-toggle>
+      <sc-if prop="running" is-truthy="On" is-falsy="Off"></sc-if>
     </label>
     <div class="controls">
-      <label>
-        <span>Frequency: <sc-display prop="params.freq" format="%d Hz"></sc-display></span>
-        <sc-range param="freq" min="20" max="2000" step="1" value="440"></sc-range>
-      </label>
-      <label>
-        <span>Amplitude: <sc-display prop="params.amp" format="%.2f"></sc-display></span>
-        <sc-range param="amp" min="0" max="1" step="0.01" value="0.2"></sc-range>
-      </label>
+      <div class="knobs">
+        <label>
+          <sc-knob param="freq" min="20" max="2000" step="1" value="440" diameter="48"></sc-knob>
+          <span><sc-display prop="params.freq" format="%d Hz"></sc-display></span>
+        </label>
+        <label>
+          <sc-knob param="amp" min="0" max="1" step="0.01" value="0.2" diameter="48"></sc-knob>
+          <span><sc-display prop="params.amp" format="%.2f"></sc-display></span>
+        </label>
+      </div>
+      <div class="sliders">
+        <label>
+          <span>Pan: <sc-display prop="params.pan" format="%.2f"></sc-display></span>
+          <sc-slider param="pan" min="-1" max="1" step="0.01" value="0" width="120" height="16"></sc-slider>
+        </label>
+        <label>
+          <sc-switch param="mute" width="24" height="24"></sc-switch>
+          <span>Mute</span>
+        </label>
+      </div>
     </div>
   </sc-synth>
 </body>

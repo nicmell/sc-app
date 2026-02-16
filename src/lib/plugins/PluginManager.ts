@@ -77,12 +77,12 @@ export class PluginManager {
   private sanitize(html: string): string {
     return this.purify.sanitize(html, {
       RETURN_TRUSTED_TYPE: false,
-      ADD_ATTR: ['node-id', 'name', 'param', 'prop', 'format', 'is-truthy', 'is-falsy', 'is-equal', 'is-not-equal', 'is-greater-than', 'is-lesser-than', 'min', 'max', 'step', 'value', 'label', 'checked'],
+      ADD_ATTR: ['node-id', 'name', 'param', 'prop', 'format', 'is-truthy', 'is-falsy', 'is-equal', 'is-not-equal', 'is-greater-than', 'is-lesser-than', 'min', 'max', 'step', 'value', 'label', 'checked', 'diameter', 'width', 'height', 'src', 'sprites', 'fgcolor', 'bgcolor'],
       FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form'],
       WHOLE_DOCUMENT: true,
       CUSTOM_ELEMENT_HANDLING: {
         tagNameCheck: /^sc-/,
-        attributeNameCheck: /^(node-id|name|param|prop|format|is-truthy|is-falsy|is-equal|is-not-equal|is-greater-than|is-lesser-than|min|max|step|value|label|checked)$/,
+        attributeNameCheck: /^(node-id|name|param|prop|format|is-truthy|is-falsy|is-equal|is-not-equal|is-greater-than|is-lesser-than|min|max|step|value|label|checked|diameter|width|height|src|sprites|fgcolor|bgcolor)$/,
         allowCustomizedBuiltInElements: false,
       },
     });
