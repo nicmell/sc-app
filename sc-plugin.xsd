@@ -1,0 +1,202 @@
+<xs:schema
+    xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    targetNamespace="http://www.w3.org/1999/xhtml"
+    xmlns="http://www.w3.org/1999/xhtml"
+    elementFormDefault="qualified">
+
+  <!-- ================= ROOT ================= -->
+
+  <xs:element name="html">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="head">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="title" type="xs:string"/>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="body" type="blockType"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string" use="optional"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- ================= ATTRIBUTI COMUNI ================= -->
+
+  <xs:attributeGroup name="commonAttrs">
+    <xs:attribute name="id" type="xs:string" use="optional"/>
+    <xs:attribute name="class" type="xs:string" use="optional"/>
+    <xs:attribute name="title" type="xs:string" use="optional"/>
+    <xs:attribute name="style" type="xs:string" use="optional"/>
+  </xs:attributeGroup>
+
+  <!-- ================= BLOCK ================= -->
+
+  <xs:complexType name="blockType" mixed="true">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="div" type="blockType"/>
+      <xs:element name="p" type="inlineType"/>
+      <xs:element name="ul" type="listType"/>
+      <xs:element name="ol" type="listType"/>
+      <xs:element name="h1" type="inlineType"/>
+      <xs:element name="h2" type="inlineType"/>
+      <xs:element name="h3" type="inlineType"/>
+      <xs:element name="h4" type="inlineType"/>
+      <xs:element name="h5" type="inlineType"/>
+      <xs:element name="h6" type="inlineType"/>
+      <xs:element name="hr"/>
+      <xs:element name="span" type="inlineType"/>
+      <xs:element name="br"/>
+      <!-- SC Components -->
+      <xs:element name="sc-display" type="scDisplayType"/>
+      <xs:element name="sc-if" type="scIfType"/>
+      <xs:element name="sc-knob" type="scKnobType"/>
+      <xs:element name="sc-range" type="scRangeType"/>
+      <xs:element name="sc-slider" type="scSliderType"/>
+      <xs:element name="sc-switch" type="scSwitchType"/>
+      <xs:element name="sc-group" type="scGroupType"/>
+      <xs:element name="sc-synth" type="scSynthType"/>
+      <xs:element name="sc-toggle" type="scToggleType"/>
+    </xs:choice>
+    <xs:attributeGroup ref="commonAttrs"/>
+  </xs:complexType>
+
+  <!-- ================= INLINE ================= -->
+
+  <xs:complexType name="inlineType" mixed="true">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="span" type="inlineType"/>
+      <xs:element name="strong" type="inlineType"/>
+      <xs:element name="em" type="inlineType"/>
+      <xs:element name="br"/>
+    </xs:choice>
+    <xs:attributeGroup ref="commonAttrs"/>
+  </xs:complexType>
+
+  <!-- ================= LIST ================= -->
+
+  <xs:complexType name="listType">
+    <xs:sequence>
+      <xs:element name="li" type="blockType" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="commonAttrs"/>
+  </xs:complexType>
+
+  <!-- ================= SC COMPONENTS ================= -->
+
+  <!-- sc-display -->
+  <xs:complexType name="scDisplayType">
+    <xs:attribute name="prop" type="xs:string"/>
+    <xs:attribute name="format" type="xs:string"/>
+    <xs:attributeGroup ref="commonAttrs"/>
+  </xs:complexType>
+
+  <!-- sc-if -->
+  <xs:complexType name="scIfType" mixed="true">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="div" type="blockType"/>
+      <xs:element name="span" type="inlineType"/>
+      <xs:element name="sc-display" type="scDisplayType"/>
+    </xs:choice>
+    <xs:attribute name="prop" type="xs:string"/>
+    <xs:attribute name="is-truthy" type="xs:string"/>
+    <xs:attribute name="is-falsy" type="xs:string"/>
+    <xs:attribute name="is-equal" type="xs:string"/>
+    <xs:attribute name="is-not-equal" type="xs:string"/>
+    <xs:attribute name="is-greater-than" type="xs:string"/>
+    <xs:attribute name="is-lesser-than" type="xs:string"/>
+    <xs:attributeGroup ref="commonAttrs"/>
+  </xs:complexType>
+
+  <!-- sc-range -->
+  <xs:complexType name="scRangeType">
+    <xs:attribute name="param" type="xs:string"/>
+    <xs:attribute name="min" type="xs:decimal"/>
+    <xs:attribute name="max" type="xs:decimal"/>
+    <xs:attribute name="step" type="xs:decimal"/>
+    <xs:attribute name="value" type="xs:decimal"/>
+    <xs:attributeGroup ref="commonAttrs"/>
+  </xs:complexType>
+
+  <!-- sc-knob -->
+  <xs:complexType name="scKnobType">
+    <xs:attribute name="param" type="xs:string"/>
+    <xs:attribute name="min" type="xs:decimal"/>
+    <xs:attribute name="max" type="xs:decimal"/>
+    <xs:attribute name="step" type="xs:decimal"/>
+    <xs:attribute name="value" type="xs:decimal"/>
+    <xs:attribute name="diameter" type="xs:decimal"/>
+    <xs:attribute name="src" type="xs:string"/>
+    <xs:attribute name="sprites" type="xs:integer"/>
+    <xs:attribute name="fgcolor" type="xs:string"/>
+    <xs:attribute name="bgcolor" type="xs:string"/>
+    <xs:attributeGroup ref="commonAttrs"/>
+  </xs:complexType>
+
+  <!-- sc-slider -->
+  <xs:complexType name="scSliderType">
+    <xs:attribute name="param" type="xs:string"/>
+    <xs:attribute name="min" type="xs:decimal"/>
+    <xs:attribute name="max" type="xs:decimal"/>
+    <xs:attribute name="step" type="xs:decimal"/>
+    <xs:attribute name="value" type="xs:decimal"/>
+    <xs:attribute name="width" type="xs:decimal"/>
+    <xs:attribute name="height" type="xs:decimal"/>
+    <xs:attribute name="src" type="xs:string"/>
+    <xs:attribute name="sprites" type="xs:integer"/>
+    <xs:attribute name="fgcolor" type="xs:string"/>
+    <xs:attribute name="bgcolor" type="xs:string"/>
+    <xs:attributeGroup ref="commonAttrs"/>
+  </xs:complexType>
+
+  <!-- sc-switch -->
+  <xs:complexType name="scSwitchType">
+    <xs:attribute name="param" type="xs:string"/>
+    <xs:attribute name="checked" type="xs:boolean"/>
+    <xs:attribute name="width" type="xs:decimal"/>
+    <xs:attribute name="height" type="xs:decimal"/>
+    <xs:attribute name="src" type="xs:string"/>
+    <xs:attribute name="fgcolor" type="xs:string"/>
+    <xs:attribute name="bgcolor" type="xs:string"/>
+    <xs:attributeGroup ref="commonAttrs"/>
+  </xs:complexType>
+
+  <!-- sc-toggle -->
+  <xs:complexType name="scToggleType">
+    <xs:attribute name="checked" type="xs:boolean"/>
+    <xs:attribute name="width" type="xs:decimal"/>
+    <xs:attribute name="height" type="xs:decimal"/>
+    <xs:attribute name="src" type="xs:string"/>
+    <xs:attribute name="fgcolor" type="xs:string"/>
+    <xs:attribute name="bgcolor" type="xs:string"/>
+    <xs:attributeGroup ref="commonAttrs"/>
+  </xs:complexType>
+
+  <!-- sc-group (container, accepts children) -->
+  <xs:complexType name="scGroupType" mixed="true">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="sc-synth" type="scSynthType"/>
+      <xs:element name="sc-group" type="scGroupType"/>
+    </xs:choice>
+    <xs:attributeGroup ref="commonAttrs"/>
+  </xs:complexType>
+
+  <!-- sc-synth (container, accepts control elements) -->
+  <xs:complexType name="scSynthType" mixed="true">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="div" type="blockType"/>
+      <xs:element name="span" type="inlineType"/>
+      <xs:element name="sc-display" type="scDisplayType"/>
+      <xs:element name="sc-if" type="scIfType"/>
+      <xs:element name="sc-knob" type="scKnobType"/>
+      <xs:element name="sc-range" type="scRangeType"/>
+      <xs:element name="sc-slider" type="scSliderType"/>
+      <xs:element name="sc-switch" type="scSwitchType"/>
+      <xs:element name="sc-toggle" type="scToggleType"/>
+    </xs:choice>
+    <xs:attribute name="name" type="xs:string"/>
+    <xs:attributeGroup ref="commonAttrs"/>
+  </xs:complexType>
+
+</xs:schema>
