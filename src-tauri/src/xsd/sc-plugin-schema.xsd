@@ -96,17 +96,21 @@
 
   <!-- ==================== Root element ==================== -->
 
+  <xs:element name="title" type="xs:string"/>
+  <xs:element name="head">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="title"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="body" type="bodyType"/>
+
   <xs:element name="html">
     <xs:complexType>
       <xs:sequence>
-        <xs:element name="head">
-          <xs:complexType>
-            <xs:sequence>
-              <xs:element name="title" type="xs:string"/>
-            </xs:sequence>
-          </xs:complexType>
-        </xs:element>
-        <xs:element name="body" type="bodyType"/>
+        <xs:element ref="head"/>
+        <xs:element ref="body"/>
       </xs:sequence>
       <xs:attribute name="id" type="xs:string" use="optional"/>
     </xs:complexType>
