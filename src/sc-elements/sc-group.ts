@@ -7,7 +7,7 @@ import {
 } from '@/lib/osc/messages.ts';
 import {nodesApi} from '@/lib/stores/api';
 import {type ScNode as IScNode} from './context.ts';
-import {ScNode} from './sc-node.ts';
+import {ScNode} from './internal/sc-node.ts';
 
 export class ScGroup extends ScNode {
   private registeredNodes = new Set<IScNode>();

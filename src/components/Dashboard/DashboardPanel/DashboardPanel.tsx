@@ -5,6 +5,7 @@ import {layoutApi} from "@/lib/stores/api.ts";
 import type {PluginInfo} from "@/types/stores";
 import {Modal} from "@/components/Modal";
 import {PluginLoader} from "@/components/Dashboard/PluginLoader/PluginLoader.tsx";
+import cn from "classnames";
 import "./DashboardPanel.scss";
 
 interface DashboardPanelProps {
@@ -30,7 +31,7 @@ export function DashboardPanel({title, boxId, pluginId, children, onClose, ref, 
   };
 
   return (
-    <div ref={ref} style={style} className={`dashboard-panel ${className ?? ""}`} {...rest}>
+    <div ref={ref} style={style} className={cn("dashboard-panel", className)} {...rest}>
       <div className="dashboard-panel-header">
         <span className="dashboard-panel-title">{title}</span>
         {(selectedPlugin || pluginMissing) && (

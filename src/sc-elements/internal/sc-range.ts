@@ -1,6 +1,6 @@
 import {LitElement, html, css} from 'lit';
 import {ContextConsumer} from '@lit/context';
-import {nodeContext, type ScElement} from './context.ts';
+import {nodeContext, type ScElement} from '../context.ts';
 
 export class ScRange extends LitElement implements ScElement {
   static properties = {

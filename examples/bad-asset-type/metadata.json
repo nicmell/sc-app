@@ -1,0 +1,9 @@
+{
+  "name": "bad-asset-type",
+  "author": "test",
+  "version": "0.1.0",
+  "entry": "index.html",
+  "assets": [
+    { "path": "icon.svg", "type": "svg" }
+  ]
+}

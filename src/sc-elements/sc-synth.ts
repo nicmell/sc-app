@@ -7,7 +7,7 @@ import {
 } from '@/lib/osc/messages.ts';
 import {nodesApi} from '@/lib/stores/api';
 import {isSynth} from '@/lib/stores/nodes/slice';
-import {ScNode} from './sc-node.ts';
+import {ScNode} from './internal/sc-node.ts';
 
 export class ScSynth extends ScNode {
   static properties = {

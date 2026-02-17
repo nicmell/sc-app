@@ -1,14 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<html xmlns="http://www.w3.org/1999/xhtml">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="style.css" />
+  <title>Example Plugin</title>
 </head>
 <body>
   <sc-synth name="sine" class="example-plugin">
     <label>
-      <sc-toggle width="24" height="24"></sc-toggle>
+      <sc-run width="24" height="24"></sc-run>
       <sc-if prop="running" is-truthy="On" is-falsy="Off"></sc-if>
     </label>
     <div class="controls">

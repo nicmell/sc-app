@@ -1,0 +1,9 @@
+{
+  "name": "bad-asset-mismatch",
+  "author": "test",
+  "version": "0.1.0",
+  "entry": "index.html",
+  "assets": [
+    { "path": "logo.png", "type": "png" }
+  ]
+}

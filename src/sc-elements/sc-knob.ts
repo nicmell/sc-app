@@ -1,5 +1,5 @@
 import {html, css} from 'lit';
-import {ScRange} from './sc-range.ts';
+import {ScRange} from './internal/sc-range.ts';
 
 export class ScKnob extends ScRange {
   static properties = {

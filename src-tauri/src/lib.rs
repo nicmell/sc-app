@@ -1,5 +1,6 @@
 mod app_config;
-mod plugin_manager;
+pub mod cli;
+pub mod plugin_manager;
 mod udp_server;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

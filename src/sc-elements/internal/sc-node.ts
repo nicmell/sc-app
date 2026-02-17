@@ -3,7 +3,7 @@ import {ContextProvider, ContextConsumer} from '@lit/context';
 import {oscService} from '@/lib/osc';
 import {nodeRunMessage, nodeSetMessage} from '@/lib/osc/messages.ts';
 import {nodesApi} from '@/lib/stores/api';
-import {nodeContext, type NodeContext, type ScNode as IScNode, type ScElement} from './context.ts';
+import {nodeContext, type NodeContext, type ScNode as IScNode, type ScElement} from '../context.ts';
 
 export abstract class ScNode extends LitElement implements IScNode {
   readonly nodeId: number;

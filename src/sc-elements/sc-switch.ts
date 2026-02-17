@@ -1,6 +1,6 @@
 import {ContextConsumer} from '@lit/context';
 import {nodeContext, type ScElement} from './context.ts';
-import {ScCheckbox} from './sc-checkbox.ts';
+import {ScCheckbox} from './internal/sc-checkbox.ts';
 
 export class ScSwitch extends ScCheckbox implements ScElement {
   static properties = {

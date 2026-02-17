@@ -7,6 +7,7 @@ import pluginsStore from "@/lib/stores/plugins";
 import type {Mode, PluginInfo} from "@/types/stores";
 import {pluginManager} from "@/lib/plugins/PluginManager";
 import {Modal} from "@/components/Modal";
+import cn from "classnames";
 import "./SettingsDrawer.scss";
 
 interface SettingsDrawerProps {
@@ -23,6 +24,7 @@ export function SettingsDrawer({open, onClose}: SettingsDrawerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pluginError, setPluginError] = useState<string | null>(null);
   const [confirmPlugin, setConfirmPlugin] = useState<PluginInfo | null>(null);
+  const [errorDetail, setErrorDetail] = useState(false);
 
   const handleAddPlugin = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -55,7 +57,7 @@ export function SettingsDrawer({open, onClose}: SettingsDrawerProps) {
   return (
     <>
       {open && <div className="settings-overlay" onClick={onClose} />}
-      <div className={`settings-drawer ${open ? "open" : ""}`}>
+      <div className={cn("settings-drawer", {open})}>
         <div className="settings-drawer-header">
           <h2>Settings</h2>
           <button className="settings-close-btn" onClick={onClose}>×</button>
@@ -146,7 +148,14 @@ export function SettingsDrawer({open, onClose}: SettingsDrawerProps) {
                 ))}
               </ul>
             )}
-            {pluginError && <div className="plugin-error">{pluginError}</div>}
+            {pluginError && (
+              <div className="plugin-error">
+                Failed to add plugin.{" "}
+                <a href="#" onClick={(e) => { e.preventDefault(); setErrorDetail(true); }}>
+                  See details
+                </a>
+              </div>
+            )}
             <input
               ref={fileInputRef}
               type="file"
@@ -163,6 +172,10 @@ export function SettingsDrawer({open, onClose}: SettingsDrawerProps) {
           </section>
         </div>
       </div>
+
+      <Modal open={errorDetail} title="Plugin error" className="plugin-error-modal" onClose={() => setErrorDetail(false)}>
+        <pre className="plugin-error-detail">{pluginError}</pre>
+      </Modal>
 
       <Modal open={!!confirmPlugin} title="Remove plugin" onClose={() => setConfirmPlugin(null)}>
         <p>

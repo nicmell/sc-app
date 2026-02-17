@@ -1,0 +1,7 @@
+{
+  "name": "bad-entry-schema",
+  "author": "test",
+  "version": "0.1.0",
+  "entry": "index.html",
+  "assets": []
+}

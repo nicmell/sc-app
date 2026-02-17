@@ -31,26 +31,7 @@ fn is_valid_version(s: &str) -> bool {
     parts.len() == 3 && parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
 }
 
-const SUPPORTED_MIME_TYPES: &[&str] = &[
-    "application/javascript",
-    "application/json",
-    "application/wasm",
-    "text/html",
-    "text/css",
-    "text/plain",
-    "image/svg+xml",
-    "image/png",
-    "image/jpeg",
-    "image/gif",
-    "image/webp",
-    "audio/mpeg",
-    "audio/wav",
-    "audio/ogg",
-    "video/mp4",
-    "video/webm",
-    "application/pdf",
-    "application/xml",
-];
+const SUPPORTED_ASSET_TYPES: &[&str] = &["png", "jpeg"];
 
 fn validate_metadata(raw: &serde_json::Value) -> Result<PluginInfo, String> {
     let obj = raw
@@ -112,9 +93,9 @@ fn validate_metadata(raw: &serde_json::Value) -> Result<PluginInfo, String> {
                         format!("metadata.json: assets[{i}].type must be a non-empty string")
                     })?;
 
-                if !SUPPORTED_MIME_TYPES.contains(&mime_type.as_str()) {
+                if !SUPPORTED_ASSET_TYPES.contains(&mime_type.as_str()) {
                     return Err(format!(
-                        "metadata.json: assets[{i}].type \"{mime_type}\" is not a supported MIME type"
+                        "metadata.json: assets[{i}].type \"{mime_type}\" is not a supported asset type (expected one of: {SUPPORTED_ASSET_TYPES:?})"
                     ));
                 }
 
@@ -142,12 +123,55 @@ fn validate_metadata(raw: &serde_json::Value) -> Result<PluginInfo, String> {
     })
 }
 
+const XSD_SCHEMA: &str = include_str!("xsd/sc-plugin-schema.xsd");
+
+fn validate_entry_xhtml(entry_content: &str) -> Result<(), String> {
+    let ctx = fastxml::create_xml_schema_validation_context_from_buffer(XSD_SCHEMA.as_bytes())
+        .map_err(|e| format!("Failed to parse XSD schema: {e}"))?;
+    let doc = fastxml::parse(entry_content)
+        .map_err(|e| format!("Entry file is not valid XHTML: {e}"))?;
+    let errors = fastxml::validate_document_by_schema_context(&doc, &ctx)
+        .map_err(|e| format!("Entry file validation failed: {e}"))?;
+    if !errors.is_empty() {
+        let msgs: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
+        return Err(format!(
+            "Entry file does not conform to sc-plugin schema:\n{}",
+            msgs.join("\n")
+        ));
+    }
+    Ok(())
+}
+
+fn validate_asset_image(data: &[u8], declared_type: &str) -> Result<(), String> {
+    let format = image::guess_format(data)
+        .map_err(|e| format!("Failed to detect image format: {e}"))?;
+    let detected = match format {
+        image::ImageFormat::Png => "png",
+        image::ImageFormat::Jpeg => "jpeg",
+        _ => return Err(format!("Unsupported image format detected: {format:?}")),
+    };
+    if detected != declared_type {
+        return Err(format!(
+            "Image content is {detected} but declared type is \"{declared_type}\""
+        ));
+    }
+    Ok(())
+}
+
+fn asset_type_to_mime(t: &str) -> &str {
+    match t {
+        "png" => "image/png",
+        "jpeg" => "image/jpeg",
+        _ => "application/octet-stream",
+    }
+}
+
 fn is_safe_path(name: &str) -> bool {
     let path = std::path::Path::new(name);
     path.components().all(|c| matches!(c, std::path::Component::Normal(_)))
 }
 
-fn validate_plugin(data: &[u8]) -> Result<PluginInfo, String> {
+pub fn validate_plugin(data: &[u8]) -> Result<PluginInfo, String> {
     let cursor = std::io::Cursor::new(data);
     let mut archive = zip::ZipArchive::new(cursor)
         .map_err(|_| "File is not a valid zip archive".to_string())?;
@@ -168,16 +192,29 @@ fn validate_plugin(data: &[u8]) -> Result<PluginInfo, String> {
 
     let info = validate_metadata(&meta_value)?;
 
-    // Verify entry file exists in zip
-    archive
-        .by_name(&info.entry)
-        .map_err(|_| format!("Entry file \"{}\" not found in zip", info.entry))?;
+    // Read and validate entry file
+    let entry_content = {
+        let mut entry_file = archive
+            .by_name(&info.entry)
+            .map_err(|_| format!("Entry file \"{}\" not found in zip", info.entry))?;
+        let mut content = String::new();
+        entry_file.read_to_string(&mut content)
+            .map_err(|e| format!("Failed to read entry file \"{}\": {e}", info.entry))?;
+        content
+    };
+    validate_entry_xhtml(&entry_content)?;
 
-    // Verify all asset files exist in zip
+    // Verify all asset files exist in zip and validate image content
     for asset in &info.assets {
-        archive
+        let mut asset_file = archive
             .by_name(&asset.path)
             .map_err(|_| format!("Asset file \"{}\" not found in zip", asset.path))?;
+        let mut bytes = Vec::new();
+        asset_file
+            .read_to_end(&mut bytes)
+            .map_err(|e| format!("Failed to read asset \"{}\": {e}", asset.path))?;
+        validate_asset_image(&bytes, &asset.mime_type)
+            .map_err(|e| format!("Asset \"{}\": {e}", asset.path))?;
     }
 
     Ok(info)
@@ -285,72 +322,12 @@ fn percent_decode(input: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-fn mime_from_extension(ext: &str) -> &str {
-    match ext {
-        "js" | "mjs" => "application/javascript",
-        "html" | "htm" => "text/html",
-        "css" => "text/css",
-        "svg" => "image/svg+xml",
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        "mp3" => "audio/mpeg",
-        "wav" => "audio/wav",
-        "ogg" => "audio/ogg",
-        "mp4" => "video/mp4",
-        "webm" => "video/webm",
-        "pdf" => "application/pdf",
-        "xml" => "application/xml",
-        _ => "application/octet-stream",
-    }
-}
-
 fn error_response(status: u16, body: &[u8]) -> Response<Vec<u8>> {
     Response::builder()
         .status(status)
         .header("access-control-allow-origin", "*")
         .body(body.to_vec())
         .unwrap()
-}
-
-/// Rewrite relative asset paths in the entry HTML to absolute `plugins://` URLs.
-fn rewrite_entry_html(html: &str, plugin_name: &str, version: &str, info: &PluginInfo) -> String {
-    let base = format!("plugins://{plugin_name}/{version}/");
-    let mut result = html.to_string();
-
-    for asset in &info.assets {
-        let path = &asset.path;
-        let absolute = format!("{base}{path}");
-
-        // Replace occurrences in src="...", href="...", url(...) with both quote styles
-        for attr in ["src", "href"] {
-            result = result.replace(
-                &format!("{attr}=\"{path}\""),
-                &format!("{attr}=\"{absolute}\""),
-            );
-            result = result.replace(
-                &format!("{attr}='{path}'"),
-                &format!("{attr}='{absolute}'"),
-            );
-        }
-
-        // Replace url() references in inline styles
-        result = result.replace(
-            &format!("url(\"{path}\")"),
-            &format!("url(\"{absolute}\")"),
-        );
-        result = result.replace(
-            &format!("url('{path}')"),
-            &format!("url('{absolute}')"),
-        );
-        result = result.replace(
-            &format!("url({path})"),
-            &format!("url({absolute})"),
-        );
-    }
-
-    result
 }
 
 /// Read and parse metadata.json from an already-opened archive.
@@ -401,18 +378,16 @@ pub fn handle<R: tauri::Runtime>(
         Err(_) => return error_response(500, b"Failed to read plugin archive"),
     };
 
-    // Read metadata to validate the requested path and rewrite entry HTML
     let info = match read_metadata(&mut archive) {
         Ok(i) => i,
         Err(_) => return error_response(500, b"Failed to read plugin metadata"),
     };
 
-    // Only allow access to the entry file, declared assets, and metadata.json
-    let is_allowed = file_path == info.entry
-        || file_path == "metadata.json"
-        || info.assets.iter().any(|a| a.path == file_path);
+    // Only allow access to the entry file and declared assets
+    let matching_asset = info.assets.iter().find(|a| a.path == file_path);
+    let is_entry = file_path == info.entry;
 
-    if !is_allowed {
+    if !is_entry && matching_asset.is_none() {
         return error_response(403, b"File not declared in plugin metadata");
     }
 
@@ -426,23 +401,25 @@ pub fn handle<R: tauri::Runtime>(
         return error_response(500, b"Failed to read file from archive");
     }
 
-    // If serving the entry HTML, rewrite relative asset paths to absolute URLs
-    let content = if file_path == info.entry {
-        let html = String::from_utf8_lossy(&content);
-        let rewritten = rewrite_entry_html(&html, &plugin_name, &version, &info);
-        rewritten.into_bytes()
+    let content_type = if let Some(asset) = matching_asset {
+        if let Err(e) = validate_asset_image(&content, &asset.mime_type) {
+            return error_response(500, format!("Asset validation failed: {e}").as_bytes());
+        }
+        asset_type_to_mime(&asset.mime_type)
     } else {
-        content
+        let html = match std::str::from_utf8(&content) {
+            Ok(s) => s,
+            Err(_) => return error_response(500, b"Entry file is not valid UTF-8"),
+        };
+        if let Err(e) = fastxml::parse(html) {
+            return error_response(500, format!("Entry file is not valid XHTML: {e}").as_bytes());
+        }
+        "application/xhtml+xml"
     };
-
-    let ext = std::path::Path::new(&file_path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
 
     Response::builder()
         .status(200)
-        .header("content-type", mime_from_extension(ext))
+        .header("content-type", content_type)
         .header("access-control-allow-origin", "*")
         .body(content)
         .unwrap()
