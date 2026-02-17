@@ -2,7 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    if !sc_app_lib::cli::run() {
+    if !sc_plugin::cli::run() {
         sc_app_lib::run();
     }
 }

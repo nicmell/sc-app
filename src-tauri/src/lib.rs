@@ -1,5 +1,4 @@
 mod app_config;
-pub mod cli;
 pub mod plugin_manager;
 mod udp_server;
 

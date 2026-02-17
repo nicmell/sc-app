@@ -3072,8 +3072,7 @@ dependencies = [
 name = "sc-app"
 version = "0.1.0"
 dependencies = [
- "fastxml",
- "image",
+ "sc-plugin",
  "serde",
  "serde_json",
  "tauri",
@@ -3081,6 +3080,23 @@ dependencies = [
  "tauri-plugin-fs",
  "tauri-plugin-opener",
  "tokio",
+]
+
+[[package]]
+name = "sc-cli"
+version = "0.1.0"
+dependencies = [
+ "sc-plugin",
+]
+
+[[package]]
+name = "sc-plugin"
+version = "0.1.0"
+dependencies = [
+ "fastxml",
+ "image",
+ "serde",
+ "serde_json",
  "zip",
 ]
 

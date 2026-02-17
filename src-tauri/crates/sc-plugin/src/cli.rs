@@ -1,4 +1,4 @@
-use crate::plugin_manager;
+use crate::validation;
 use std::path::PathBuf;
 
 const APP_IDENTIFIER: &str = "com.nicmell.scapp";
@@ -48,7 +48,7 @@ fn write_config(config: &serde_json::Value) -> Result<(), String> {
     std::fs::write(&path, json).map_err(|e| e.to_string())
 }
 
-fn print_plugin_info(info: &plugin_manager::PluginInfo) {
+fn print_plugin_info(info: &validation::PluginInfo) {
     println!("  name:    {}", info.name);
     println!("  version: {}", info.version);
     println!("  author:  {}", info.author);
@@ -63,7 +63,7 @@ fn print_plugin_info(info: &plugin_manager::PluginInfo) {
 
 fn cmd_validate(path: &str) -> Result<(), String> {
     let data = std::fs::read(path).map_err(|e| format!("Error reading \"{path}\": {e}"))?;
-    let info = plugin_manager::validate_plugin(&data)?;
+    let info = validation::validate_plugin(&data)?;
     println!("Plugin is valid.");
     print_plugin_info(&info);
     Ok(())
@@ -71,7 +71,7 @@ fn cmd_validate(path: &str) -> Result<(), String> {
 
 fn cmd_add(path: &str) -> Result<(), String> {
     let data = std::fs::read(path).map_err(|e| format!("Error reading \"{path}\": {e}"))?;
-    let info = plugin_manager::validate_plugin(&data)?;
+    let info = validation::validate_plugin(&data)?;
 
     let plugins_dir = data_dir()?.join("plugins");
     std::fs::create_dir_all(&plugins_dir).map_err(|e| e.to_string())?;
@@ -167,15 +167,13 @@ fn cmd_list() -> Result<(), String> {
 }
 
 fn print_usage() {
-    eprintln!("Usage: sc-app <command> [args]");
+    eprintln!("Usage: sc-cli <command> [args]");
     eprintln!();
     eprintln!("Commands:");
     eprintln!("  validate <path>   Validate a plugin zip file");
     eprintln!("  add <path>        Validate and install a plugin");
     eprintln!("  remove <name>     Remove a plugin (by name or name-version)");
     eprintln!("  list              List installed plugins");
-    eprintln!();
-    eprintln!("If no command is given, the GUI is launched.");
 }
 
 /// Run the CLI. Returns `true` if a CLI command was handled, `false` if the GUI should start.
@@ -188,15 +186,15 @@ pub fn run() -> bool {
     let result = match args[1].as_str() {
         "validate" => args
             .get(2)
-            .ok_or_else(|| "Usage: sc-app validate <path>".to_string())
+            .ok_or_else(|| "Usage: sc-cli validate <path>".to_string())
             .and_then(|p| cmd_validate(p)),
         "add" => args
             .get(2)
-            .ok_or_else(|| "Usage: sc-app add <path>".to_string())
+            .ok_or_else(|| "Usage: sc-cli add <path>".to_string())
             .and_then(|p| cmd_add(p)),
         "remove" => args
             .get(2)
-            .ok_or_else(|| "Usage: sc-app remove <name>".to_string())
+            .ok_or_else(|| "Usage: sc-cli remove <name>".to_string())
             .and_then(|q| cmd_remove(q)),
         "list" => cmd_list(),
         "help" | "--help" | "-h" => {
