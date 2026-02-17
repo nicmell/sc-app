@@ -3,8 +3,11 @@ import {useSelector} from "@/lib/stores/store.ts";
 import pluginsStore from "@/lib/stores/plugins";
 import {layoutApi} from "@/lib/stores/api.ts";
 import type {PluginInfo} from "@/types/stores";
-import {Modal} from "@/components/Modal";
+import {Modal} from "@/components/ui/Modal";
+import {PluginList} from "@/components/PluginList";
 import {PluginLoader} from "@/components/Dashboard/PluginLoader/PluginLoader.tsx";
+import {Button} from "@/components/ui/Button";
+import {IconButton} from "@/components/ui/IconButton";
 import cn from "classnames";
 import "./DashboardPanel.scss";
 
@@ -35,39 +38,41 @@ export function DashboardPanel({title, boxId, pluginId, children, onClose, ref, 
       <div className="dashboard-panel-header">
         <span className="dashboard-panel-title">{title}</span>
         {(selectedPlugin || pluginMissing) && (
-          <button
-            className="dashboard-panel-header-btn"
+          <IconButton
+            size="sm"
             onMouseDown={e => e.stopPropagation()}
             onClick={() => setModalOpen(true)}
+            aria-label="Change plugin"
           >
             &#8943;
-          </button>
+          </IconButton>
         )}
         {onClose && (
-          <button
-            className="dashboard-panel-close"
+          <IconButton
+            size="sm"
             onMouseDown={e => e.stopPropagation()}
             onClick={onClose}
+            aria-label="Close panel"
           >
             &times;
-          </button>
+          </IconButton>
         )}
       </div>
       <div className="dashboard-panel-body">
         {pluginMissing && (
           <div className="dashboard-panel-empty">
             Plugin not found
-            <button className="dashboard-panel-select-btn" onClick={() => setModalOpen(true)}>
+            <Button size="sm" onClick={() => setModalOpen(true)}>
               Select plugin
-            </button>
+            </Button>
           </div>
         )}
         {!selectedPlugin && !pluginMissing && !modalOpen && (
           <div className="dashboard-panel-empty">
             No plugin selected
-            <button className="dashboard-panel-select-btn" onClick={() => setModalOpen(true)}>
+            <Button size="sm" onClick={() => setModalOpen(true)}>
               Select plugin
-            </button>
+            </Button>
           </div>
         )}
         {selectedPlugin && <PluginLoader plugin={selectedPlugin} />}
@@ -76,20 +81,7 @@ export function DashboardPanel({title, boxId, pluginId, children, onClose, ref, 
       {children}
 
       <Modal open={modalOpen} title="Select plugin" onClose={() => setModalOpen(false)}>
-        {plugins.length === 0 ? (
-          <div className="dashboard-panel-empty">No plugins available</div>
-        ) : (
-          <ul className="dashboard-panel-plugin-list">
-            {plugins.map(p => (
-              <li key={p.id}>
-                <button onClick={() => handleSelect(p)}>
-                    <span className="dashboard-panel-plugin-name">{p.name}</span>
-                    <span className="dashboard-panel-plugin-meta">{p.author} &middot; v{p.version}</span>
-                  </button>
-              </li>
-            ))}
-          </ul>
-        )}
+        <PluginList onSelect={handleSelect} />
       </Modal>
     </div>
   );

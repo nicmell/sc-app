@@ -9,12 +9,13 @@ import {layoutApi} from "@/lib/stores/api";
 import {DashboardPanel} from "@/components/Dashboard/DashboardPanel";
 import {deepEqual} from "@/lib/utils/deepEqual";
 import {SettingsDrawer} from "@/components/SettingsDrawer";
+import {IconButton} from "@/components/ui/IconButton";
 import {pluginManager} from "@/lib/plugins/PluginManager";
 import {MARGIN, computePlaceholders} from "./utils";
 import {Placeholder} from "./Placeholder";
 import "./Dashboard.scss";
 
-const HEADER_HEIGHT = 75;
+const HEADER_HEIGHT = 48;
 const FOOTER_HEIGHT = 42;
 
 function subscribeToResize(cb: () => void) {
@@ -70,9 +71,14 @@ export function Dashboard() {
   return (
     <div className="dashboard">
       <header className="header">
-        <h1>SC-App</h1>
-        <button onClick={() => layoutApi.resetLayout()}>Reset Layout</button>
-        <button onClick={() => setSettingsOpen(true)}>Settings</button>
+        <span className="header-title">SC-App</span>
+        <IconButton size="md" onClick={() => setSettingsOpen(true)} aria-label="Menu">
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor">
+            <rect y="3" width="20" height="2" rx="1"/>
+            <rect y="9" width="20" height="2" rx="1"/>
+            <rect y="15" width="20" height="2" rx="1"/>
+          </svg>
+        </IconButton>
       </header>
 
       <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />

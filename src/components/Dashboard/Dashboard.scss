@@ -1,4 +1,4 @@
-$header-height: 75px;
+$header-height: 48px;
 $footer-height: 42px;
 
 .react-grid-item {
@@ -16,18 +16,19 @@ $footer-height: 42px;
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 1rem;
+  padding: 0 0.75rem;
   flex-shrink: 0;
   height: $header-height;
   background: var(--color-panel-header);
   border-bottom: 1px solid var(--color-border);
 }
 
-.header h1 {
+.header-title {
   flex: 1;
-  margin: 0;
-  text-align: left;
+  font-size: 0.9rem;
+  font-weight: 600;
 }
+
 
 .dashboard-grid-wrapper {
   position: relative;

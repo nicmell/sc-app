@@ -1,5 +1,6 @@
 import {type ReactNode} from "react";
 import {createPortal} from "react-dom";
+import {IconButton} from "@/components/ui/IconButton";
 import cn from "classnames";
 import "./Modal.scss";
 
@@ -20,7 +21,7 @@ export function Modal({open, title, className, onClose, children}: ModalProps) {
         <div className="modal-header">
           <h3>{title}</h3>
           {onClose && (
-            <button className="modal-close" onClick={onClose}>&times;</button>
+            <IconButton size="md" onClick={onClose} aria-label="Close">&times;</IconButton>
           )}
         </div>
         <div className="modal-body">{children}</div>

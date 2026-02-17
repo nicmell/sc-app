@@ -1,12 +1,15 @@
-import {useRef, useState} from "react";
+import {useState} from "react";
 import {useSelector} from "@/lib/stores/store";
 import {layoutApi, themeApi} from "@/lib/stores/api";
 import layoutStore from "@/lib/stores/layout";
 import themeStore from "@/lib/stores/theme";
-import pluginsStore from "@/lib/stores/plugins";
 import type {Mode, PluginInfo} from "@/types/stores";
 import {pluginManager} from "@/lib/plugins/PluginManager";
-import {Modal} from "@/components/Modal";
+import {oscService} from "@/lib/osc";
+import {Modal} from "@/components/ui/Modal";
+import {PluginList} from "@/components/PluginList";
+import {Button} from "@/components/ui/Button";
+import {IconButton} from "@/components/ui/IconButton";
 import cn from "classnames";
 import "./SettingsDrawer.scss";
 
@@ -19,24 +22,8 @@ export function SettingsDrawer({open, onClose}: SettingsDrawerProps) {
   const mode = useSelector(themeStore.selectors.mode);
   const primaryColor = useSelector(themeStore.selectors.primaryColor);
   const {numRows, numColumns} = useSelector(layoutStore.selectors.options);
-  const plugins = useSelector(pluginsStore.selectors.items);
   const layoutItems = useSelector(layoutStore.selectors.items);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [pluginError, setPluginError] = useState<string | null>(null);
   const [confirmPlugin, setConfirmPlugin] = useState<PluginInfo | null>(null);
-  const [errorDetail, setErrorDetail] = useState(false);
-
-  const handleAddPlugin = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setPluginError(null);
-    try {
-      await pluginManager.addPlugin(file);
-    } catch (err) {
-      setPluginError(err instanceof Error ? err.message : String(err));
-    }
-    e.target.value = "";
-  };
 
   const handleRemovePlugin = (plugin: PluginInfo) => {
     const inUse = layoutItems.some(box => box.plugin === plugin.id);
@@ -60,7 +47,7 @@ export function SettingsDrawer({open, onClose}: SettingsDrawerProps) {
       <div className={cn("settings-drawer", {open})}>
         <div className="settings-drawer-header">
           <h2>Settings</h2>
-          <button className="settings-close-btn" onClick={onClose}>×</button>
+          <IconButton size="lg" onClick={onClose} aria-label="Close">×</IconButton>
         </div>
 
         <div className="settings-drawer-body">
@@ -112,70 +99,22 @@ export function SettingsDrawer({open, onClose}: SettingsDrawerProps) {
 
           <section className="settings-section">
             <h3>Plugins</h3>
-            {plugins.length > 0 && (
-              <ul className="plugin-list">
-                {plugins.map(p => (
-                  <li key={p.id} className="plugin-item">
-                    <div className="plugin-info">
-                      <span className="plugin-name">{p.name}</span>
-                      <span className="plugin-meta">{p.author} &middot; v{p.version}</span>
-                      {p.error && (
-                        <span className="plugin-error">
-                          Error {p.error.code}: {p.error.message}
-                        </span>
-                      )}
-                      {p.violations && p.violations.length > 0 && (
-                        <details className="plugin-violations">
-                          <summary>
-                            {p.violations.length} sanitization{" "}
-                            {p.violations.length === 1 ? "violation" : "violations"}
-                          </summary>
-                          <ul>
-                            {p.violations.map((v, i) => (
-                              <li key={i}>{v}</li>
-                            ))}
-                          </ul>
-                        </details>
-                      )}
-                    </div>
-                    <button
-                      className="plugin-delete-btn"
-                      onClick={() => handleRemovePlugin(p)}
-                    >
-                      ×
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {pluginError && (
-              <div className="plugin-error">
-                Failed to add plugin.{" "}
-                <a href="#" onClick={(e) => { e.preventDefault(); setErrorDetail(true); }}>
-                  See details
-                </a>
-              </div>
-            )}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".zip"
-              hidden
-              onChange={handleAddPlugin}
-            />
-            <button
-              className="add-plugin-btn"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              Add plugin
-            </button>
+            <PluginList showDetails onRemove={handleRemovePlugin} />
           </section>
+
+          <div className="settings-drawer-footer">
+            <Button
+              variant="ghost"
+              size="lg"
+              fullWidth
+              className="settings-disconnect-btn"
+              onClick={() => oscService.disconnect()}
+            >
+              Disconnect
+            </Button>
+          </div>
         </div>
       </div>
-
-      <Modal open={errorDetail} title="Plugin error" className="plugin-error-modal" onClose={() => setErrorDetail(false)}>
-        <pre className="plugin-error-detail">{pluginError}</pre>
-      </Modal>
 
       <Modal open={!!confirmPlugin} title="Remove plugin" onClose={() => setConfirmPlugin(null)}>
         <p>
@@ -184,7 +123,7 @@ export function SettingsDrawer({open, onClose}: SettingsDrawerProps) {
         </p>
         <div style={{display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "1rem"}}>
           <button onClick={() => setConfirmPlugin(null)}>Cancel</button>
-          <button className="plugin-delete-btn" onClick={confirmRemove}>Remove</button>
+          <button className="settings-confirm-remove-btn" onClick={confirmRemove}>Remove</button>
         </div>
       </Modal>
     </>
