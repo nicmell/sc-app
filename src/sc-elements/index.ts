@@ -9,12 +9,14 @@ import {ScGroup} from './sc-group.ts';
 import {ScSynth} from './sc-synth.ts';
 import {ScToggle} from './sc-toggle.ts';
 
-customElements.define(ELEMENTS.SC_DISPLAY, ScDisplay);
-customElements.define(ELEMENTS.SC_IF, ScIf);
-customElements.define(ELEMENTS.SC_KNOB, ScKnob);
-customElements.define(ELEMENTS.SC_RANGE, ScRange);
-customElements.define(ELEMENTS.SC_SLIDER, ScSlider);
-customElements.define(ELEMENTS.SC_SWITCH, ScSwitch);
-customElements.define(ELEMENTS.SC_GROUP, ScGroup);
-customElements.define(ELEMENTS.SC_SYNTH, ScSynth);
-customElements.define(ELEMENTS.SC_TOGGLE, ScToggle);
+export default {
+  [ELEMENTS.SC_DISPLAY]: ScDisplay,
+  [ELEMENTS.SC_IF]: ScIf,
+  [ELEMENTS.SC_KNOB]: ScKnob,
+  [ELEMENTS.SC_RANGE]: ScRange,
+  [ELEMENTS.SC_SLIDER]: ScSlider,
+  [ELEMENTS.SC_SWITCH]: ScSwitch,
+  [ELEMENTS.SC_GROUP]: ScGroup,
+  [ELEMENTS.SC_SYNTH]: ScSynth,
+  [ELEMENTS.SC_TOGGLE]: ScToggle,
+};

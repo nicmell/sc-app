@@ -61,7 +61,7 @@ export class ScKnob extends ScRange {
       const dx = mev.clientX - startX;
       const dy = startY - mev.clientY;
       const d = Math.abs(dx) > Math.abs(dy) ? dx : dy;
-      const sensitivity = this.diameter * 2;
+      const sensitivity = this.diameter * 1.5;
       let dv = (d / sensitivity) * range;
       if (me instanceof MouseEvent && me.shiftKey) dv *= 0.2;
       this._setValue(startValue + dv);
