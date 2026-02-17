@@ -18,6 +18,28 @@ export const ConnectionStatus = {
   CONNECTED: "connected",
 } as const;
 
+export const OSC_MESSAGES = {
+  STATUS: '/status',
+  DUMP_OSC: '/dumpOSC',
+  NOTIFY: '/notify',
+  QUIT: '/quit',
+  VERSION: '/version',
+  SYNTH_NEW: '/s_new',
+  GROUP_NEW: '/g_new',
+  GROUP_TAIL: '/g_tail',
+  GROUP_FREE_ALL: '/g_freeAll',
+  NODE_FREE: '/n_free',
+  NODE_RUN: '/n_run',
+  NODE_SET: '/n_set',
+  DEF_RECV: '/d_recv',
+} as const;
+
+export const OSC_REPLIES = {
+  STATUS: '/status.reply',
+  VERSION: '/version.reply',
+  DONE: '/done',
+} as const;
+
 export const ADDRESS_REGEXP = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{1,5})$/;
 
 

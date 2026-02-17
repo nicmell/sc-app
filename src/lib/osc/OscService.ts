@@ -10,6 +10,7 @@ import {
   versionMessage
 } from './messages';
 import type {ScsynthOptions} from '@/types/stores';
+import {OSC_MESSAGES, OSC_REPLIES} from '@/constants/osc.ts';
 import {scsynthApi} from '@/lib/stores/api';
 import {logger} from '@/lib/logger';
 
@@ -51,27 +52,27 @@ export class OscService {
   }
 
   private logMessage(msg: InstanceType<typeof OSC.Message>) {
-    if (msg.address !== '/status.reply') {
+    if (msg.address !== OSC_REPLIES.STATUS) {
       logger.log(`${msg.address} ${(msg.args as unknown[]).join(' ')}`);
     }
   }
 
   private handleMessage(msg: InstanceType<typeof OSC.Message>): void {
     switch (msg.address) {
-      case '/status.reply': {
+      case OSC_REPLIES.STATUS: {
         this.resetTimeout();
         const [, ugens, synths, groups, defs, avgCpu, peakCpu, , sampleRate] = msg.args as number[];
         scsynthApi.setStatus({ugens, synths, groups, defs, avgCpu, peakCpu, sampleRate});
         break
       }
 
-      case '/version.reply': {
+      case OSC_REPLIES.VERSION: {
         const [name, major, minor, patch, branch, hash] = msg.args as (string | number)[];
         scsynthApi.setVersion(`${name} ${major}.${minor}.${patch} (${branch} ${hash})`);
         break
       }
-      case '/done': {
-        if (msg.args[0] === '/notify') {
+      case OSC_REPLIES.DONE: {
+        if (msg.args[0] === OSC_MESSAGES.NOTIFY) {
           const clientId = msg.args[1] as number;
            return this.init(clientId);
         }

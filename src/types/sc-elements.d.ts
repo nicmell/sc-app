@@ -1,17 +1,14 @@
+import {ELEMENTS} from '@/constants/sc-elements';
 import 'react';
+
+export type ScElementTagNames = (typeof ELEMENTS)[keyof typeof ELEMENTS];
+
+type ScElementIntrinsicElements = {
+  [K in ScElementTagNames]: React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+};
 
 declare module 'react' {
   namespace JSX {
-    interface IntrinsicElements {
-      'sc-display': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
-      'sc-group': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
-      'sc-if': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
-      'sc-knob': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
-      'sc-range': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
-      'sc-slider': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
-      'sc-switch': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
-      'sc-synth': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
-      'sc-toggle': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
-    }
+    interface IntrinsicElements extends ScElementIntrinsicElements {}
   }
 }
