@@ -174,6 +174,13 @@ fn print_usage() {
     eprintln!("  add <path>        Validate and install a plugin");
     eprintln!("  remove <name>     Remove a plugin (by name or name-version)");
     eprintln!("  list              List installed plugins");
+    eprintln!("  serve [options]   Start HTTP server with OSC bridge");
+    eprintln!();
+    eprintln!("Serve options:");
+    eprintln!("  --dist <path>     Path to dist directory (required)");
+    eprintln!("  --port <number>   Port to listen on (default: 3000)");
+    eprintln!("  --host <addr>     Host to bind to (default: 0.0.0.0)");
+    eprintln!("  --scsynth <addr>  scsynth address (default: 127.0.0.1:57110)");
 }
 
 /// Run the CLI. Returns `true` if a CLI command was handled, `false` if the GUI should start.
@@ -197,6 +204,12 @@ pub fn run() -> bool {
             .ok_or_else(|| "Usage: sc-cli remove <name>".to_string())
             .and_then(|q| cmd_remove(q)),
         "list" => cmd_list(),
+        "serve" => {
+            // Handled by sc-cli binary directly; if we get here it means
+            // the Tauri binary was invoked with "serve" — just print usage.
+            eprintln!("The 'serve' command is only available via the sc-cli binary.");
+            std::process::exit(1);
+        }
         "help" | "--help" | "-h" => {
             print_usage();
             std::process::exit(0);

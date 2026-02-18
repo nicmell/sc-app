@@ -1,21 +1,15 @@
-import {
-  readTextFile,
-  writeTextFile,
-  remove,
-} from "@tauri-apps/plugin-fs";
-import {BaseDirectory} from "@tauri-apps/api/path";
 import type {PersistStorage, StorageValue} from "zustand/middleware";
 
 const FILE = "config.json";
-const baseDir = BaseDirectory.AppData;
 
 let lastWritten = "";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const tauriStorage: PersistStorage<any> = {
   async getItem() {
     try {
-      const text = await readTextFile(FILE, {baseDir});
+      const {readTextFile} = await import("@tauri-apps/plugin-fs");
+      const {BaseDirectory} = await import("@tauri-apps/api/path");
+      const text = await readTextFile(FILE, {baseDir: BaseDirectory.AppData});
       lastWritten = text;
       return {state: JSON.parse(text), version: 0};
     } catch {
@@ -27,13 +21,17 @@ export const tauriStorage: PersistStorage<any> = {
     const json = JSON.stringify(state, null, 2);
     if (json === lastWritten) return;
     lastWritten = json;
-    await writeTextFile(FILE, json, {baseDir});
+    const {writeTextFile} = await import("@tauri-apps/plugin-fs");
+    const {BaseDirectory} = await import("@tauri-apps/api/path");
+    await writeTextFile(FILE, json, {baseDir: BaseDirectory.AppData});
   },
 
   async removeItem() {
     try {
       lastWritten = "";
-      await remove(FILE, {baseDir});
+      const {remove} = await import("@tauri-apps/plugin-fs");
+      const {BaseDirectory} = await import("@tauri-apps/api/path");
+      await remove(FILE, {baseDir: BaseDirectory.AppData});
     } catch {
       // ignore
     }

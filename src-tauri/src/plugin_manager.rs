@@ -1,10 +1,6 @@
 use crate::app_config;
-use sc_plugin::validation::{
-    asset_type_to_mime, is_safe_path, validate_asset_image, validate_metadata, validate_plugin,
-    PluginInfo,
-};
-use sc_plugin::{fastxml, zip};
-use std::io::Read;
+use sc_plugin::plugin_server::read_plugin_file;
+use sc_plugin::validation::{validate_plugin, PluginInfo};
 use tauri::http::Response;
 use tauri::{AppHandle, Manager, UriSchemeContext};
 
@@ -118,17 +114,6 @@ fn error_response(status: u16, body: &[u8]) -> Response<Vec<u8>> {
         .unwrap()
 }
 
-/// Read and parse metadata.json from an already-opened archive.
-fn read_metadata(archive: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>) -> Result<PluginInfo, ()> {
-    let mut meta_file = archive.by_name("metadata.json").map_err(|_| ())?;
-    let mut meta_text = String::new();
-    meta_file.read_to_string(&mut meta_text).map_err(|_| ())?;
-    drop(meta_file);
-
-    let meta_value: serde_json::Value = serde_json::from_str(&meta_text).map_err(|_| ())?;
-    validate_metadata(&meta_value).map_err(|_| ())
-}
-
 pub fn handle<R: tauri::Runtime>(
     ctx: UriSchemeContext<'_, R>,
     request: tauri::http::Request<Vec<u8>>,
@@ -142,73 +127,18 @@ pub fn handle<R: tauri::Runtime>(
         _ => return error_response(404, b"Not found"),
     };
 
-    if plugin_name.is_empty() {
-        return error_response(404, b"Not found");
-    }
-
-    if !is_safe_path(&file_path) {
-        return error_response(403, b"Forbidden");
-    }
-
-    let zip_path = match ctx.app_handle().path().app_data_dir() {
-        Ok(d) => d.join("plugins").join(format!("{plugin_name}-{version}.zip")),
+    let plugins_dir = match ctx.app_handle().path().app_data_dir() {
+        Ok(d) => d.join("plugins"),
         Err(_) => return error_response(500, b"Cannot resolve app data dir"),
     };
 
-    let zip_data = match std::fs::read(&zip_path) {
-        Ok(d) => d,
-        Err(_) => return error_response(404, b"Plugin not found"),
-    };
-
-    let cursor = std::io::Cursor::new(zip_data.as_slice());
-    let mut archive = match zip::ZipArchive::new(cursor) {
-        Ok(a) => a,
-        Err(_) => return error_response(500, b"Failed to read plugin archive"),
-    };
-
-    let info = match read_metadata(&mut archive) {
-        Ok(i) => i,
-        Err(_) => return error_response(500, b"Failed to read plugin metadata"),
-    };
-
-    // Only allow access to the entry file and declared assets
-    let matching_asset = info.assets.iter().find(|a| a.path == file_path);
-    let is_entry = file_path == info.entry;
-
-    if !is_entry && matching_asset.is_none() {
-        return error_response(403, b"File not declared in plugin metadata");
+    match read_plugin_file(&plugins_dir, &plugin_name, &version, &file_path) {
+        Ok((content, content_type)) => Response::builder()
+            .status(200)
+            .header("content-type", content_type)
+            .header("access-control-allow-origin", "*")
+            .body(content)
+            .unwrap(),
+        Err(e) => error_response(e.status(), e.to_string().as_bytes()),
     }
-
-    let mut file: zip::read::ZipFile = match archive.by_name(&file_path) {
-        Ok(f) => f,
-        Err(_) => return error_response(404, b"File not found in plugin"),
-    };
-
-    let mut content = Vec::new();
-    if file.read_to_end(&mut content).is_err() {
-        return error_response(500, b"Failed to read file from archive");
-    }
-
-    let content_type = if let Some(asset) = matching_asset {
-        if let Err(e) = validate_asset_image(&content, &asset.mime_type) {
-            return error_response(500, format!("Asset validation failed: {e}").as_bytes());
-        }
-        asset_type_to_mime(&asset.mime_type)
-    } else {
-        let html = match std::str::from_utf8(&content) {
-            Ok(s) => s,
-            Err(_) => return error_response(500, b"Entry file is not valid UTF-8"),
-        };
-        if let Err(e) = fastxml::parse(html) {
-            return error_response(500, format!("Entry file is not valid XHTML: {e}").as_bytes());
-        }
-        "application/xhtml+xml"
-    };
-
-    Response::builder()
-        .status(200)
-        .header("content-type", content_type)
-        .header("access-control-allow-origin", "*")
-        .body(content)
-        .unwrap()
 }

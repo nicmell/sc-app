@@ -1,5 +1,7 @@
 import type {PersistOptions} from "zustand/middleware";
+import {IS_TAURI} from "@/lib/env";
 import {tauriStorage} from "@/lib/storage/tauriStorage";
+import {browserStorage} from "@/lib/storage/browserStorage";
 import type {RootState, ConfigFile} from "@/types/stores";
 
 // State generic uses `any` because the redux middleware adds `dispatch` to the
@@ -7,7 +9,7 @@ import type {RootState, ConfigFile} from "@/types/stores";
 // functions are fully typed via ConfigFile and RootState.
 export const persistConfig: PersistOptions<any, ConfigFile> = {
   name: "config",
-  storage: tauriStorage,
+  storage: IS_TAURI ? tauriStorage : browserStorage,
   partialize: ({theme, layout, scsynth, plugins}: RootState): ConfigFile => ({
     theme: {mode: theme.mode, primaryColor: theme.primaryColor},
     layout: {items: layout.items, options: layout.options},

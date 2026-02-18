@@ -13,6 +13,7 @@ import type {ScsynthOptions} from '@/types/stores';
 import {OSC_MESSAGES, OSC_REPLIES} from '@/constants/osc.ts';
 import {scsynthApi} from '@/lib/stores/api';
 import {logger} from '@/lib/logger';
+import {IS_TAURI} from '@/lib/env';
 
 import {ConnectionStatus, DEFAULT_CLIENT_ID} from '@/constants/osc';
 
@@ -24,7 +25,10 @@ export class OscService {
   private currentNodeId = 0;
 
   constructor() {
-    this.osc = new OSC({ plugin: new TauriUdpPlugin() });
+    const plugin = IS_TAURI
+        ? new TauriUdpPlugin()
+        : new OSC.WebsocketClientPlugin();
+    this.osc = new OSC({ plugin });
 
     this.osc.on('open', () => {
       this.resetTimeout();
@@ -115,9 +119,14 @@ export class OscService {
   }
 
   connect(): void {
-    const {host, port} = scsynthApi.options;
     scsynthApi.setConnectionStatus(ConnectionStatus.CONNECTING);
-    this.osc.open({host, port});
+    if (IS_TAURI) {
+      const {host, port} = scsynthApi.options;
+      this.osc.open({host, port});
+    } else {
+      // WebsocketClientPlugin connects to the serve origin's /ws endpoint
+      this.osc.open({host: location.hostname, port: Number(location.port) || 3000});
+    }
   }
 
   disconnect(): void {
@@ -184,7 +193,7 @@ export class OscService {
     return (this.currentNodeId += 1);
   }
 
-  defaultClientId() {
+  private defaultClientId() {
     return scsynthApi.options.clientId || DEFAULT_CLIENT_ID;
   }
 

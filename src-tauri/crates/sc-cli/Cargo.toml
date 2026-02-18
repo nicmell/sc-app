@@ -5,3 +5,5 @@ edition = "2021"
 
 [dependencies]
 sc-plugin = { path = "../sc-plugin" }
+sc-server = { path = "../sc-server" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

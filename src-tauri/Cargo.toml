@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/sc-plugin", "crates/sc-cli"]
+members = [".", "crates/sc-plugin", "crates/sc-cli", "crates/sc-server"]
 
 [package]
 name = "sc-app"
