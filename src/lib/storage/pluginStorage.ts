@@ -11,5 +11,5 @@ export async function removePlugin(id: string): Promise<void> {
 }
 
 export function pluginUrl(name: string, version: string, filePath: string): string {
-  return `plugins://${name}/${version}/${filePath}`;
+  return `app://plugins/${name}/${version}/${filePath}`;
 }

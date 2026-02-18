@@ -39,7 +39,7 @@ bash scripts/package_examples.sh tmp
 ### Backend (`src-tauri/src/`)
 
 - `lib.rs` — Tauri app builder, registers commands and URI scheme
-- `plugin_manager.rs` — Plugin validation (zip, metadata, XSD, assets) + `plugins://` URI handler
+- `plugin_manager.rs` — Plugin validation (zip, metadata, XSD, assets) + `app://plugins/` URI handler
 - `udp_server.rs` — Async UDP socket via tokio, emits `osc-data` events to frontend
 - `cli.rs` — CLI for validate/add/remove/list (works without Tauri runtime)
 - `app_config.rs` — Config file I/O (reads/writes `config.json` in app data dir)
@@ -58,15 +58,16 @@ bash scripts/package_examples.sh tmp
 
 ## Store Architecture
 
-Five slices in `src/lib/stores/`:
+Four top-level slices in `src/lib/stores/`:
 
 | Slice | Purpose |
 |-------|---------|
-| `scsynth` | Connection state, server status, options |
+| `scsynth` | Connection state, server status, options, live node tree |
 | `layout` | Dashboard grid items + grid options |
 | `theme` | Dark/light mode, primary color |
 | `plugins` | Installed plugin registry |
-| `nodes` | Live SC node tree (synths, groups) |
+
+The `nodes` sub-slice (synths, groups) is nested inside `scsynth` — its reducer is delegated via `defaultReducer` and its state lives at `scsynth.nodes`.
 
 Each slice has: `slice.ts` (reducer + actions), `selectors.ts`, `index.ts` (barrel).
 
@@ -85,7 +86,7 @@ Persisted to `config.json` via Zustand persist middleware with custom `tauriStor
 4. Assets — format detection must match declared type
 
 **Frontend loading** (`src/lib/plugins/PluginManager.ts`):
-- Fetches via `plugins://{name}/{version}/{entry}` URI scheme
+- Fetches via `app://plugins/{name}/{version}/{entry}` URI scheme
 - Sanitizes with DOMPurify (forbids script/iframe/object/embed/form)
 - Caches as TrustedHTML, renders inside shadow DOM
 

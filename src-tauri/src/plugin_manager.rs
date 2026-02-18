@@ -345,18 +345,22 @@ pub fn handle<R: tauri::Runtime>(
     ctx: UriSchemeContext<'_, R>,
     request: tauri::http::Request<Vec<u8>>,
 ) -> Response<Vec<u8>> {
-    let plugin_name = percent_decode(request.uri().host().unwrap_or(""));
+    let base = percent_decode(request.uri().host().unwrap_or(""));
+    if base != "plugins" {
+        return error_response(404, b"Not found");
+    }
+
     let raw_path = percent_decode(request.uri().path().trim_start_matches('/'));
 
-    // Path format: <version>/<file_path>
-    let (version, file_path) = match raw_path.split_once('/') {
+    // Path format: <plugin_name>/<version>/<file_path>
+    let (plugin_name, rest) = match raw_path.split_once('/') {
+        Some((n, r)) if !n.is_empty() && !r.is_empty() => (n.to_string(), r.to_string()),
+        _ => return error_response(404, b"Not found"),
+    };
+    let (version, file_path) = match rest.split_once('/') {
         Some((v, f)) if !v.is_empty() && !f.is_empty() => (v.to_string(), f.to_string()),
         _ => return error_response(404, b"Not found"),
     };
-
-    if plugin_name.is_empty() {
-        return error_response(404, b"Not found");
-    }
 
     if !is_safe_path(&file_path) {
         return error_response(403, b"Forbidden");

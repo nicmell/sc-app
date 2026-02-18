@@ -20,6 +20,7 @@ export default {
   connectionStatus: createScsynthSelector(s => s.connectionStatus),
   status: createScsynthSelector(s => s.status),
   version: createScsynthSelector(s => s.version),
+  nodes: createScsynthSelector(s => s.nodes),
 
   // derived
   isConnected: createScsynthSelector(s => s.connectionStatus === ConnectionStatus.CONNECTED),

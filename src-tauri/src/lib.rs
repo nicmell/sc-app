@@ -9,7 +9,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
         .manage(udp_server::UdpState::new())
-        .register_uri_scheme_protocol("plugins", plugin_manager::handle)
+        .register_uri_scheme_protocol("app", plugin_manager::handle)
         .invoke_handler(tauri::generate_handler![
             udp_server::udp_bind,
             udp_server::udp_send,

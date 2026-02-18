@@ -43,6 +43,7 @@ export interface ScsynthState {
   connectionStatus: ConnectionStatus;
   status: ScsynthStatus;
   version: string;
+  nodes: NodesState
 }
 
 export interface LayoutOptions {
@@ -120,7 +121,6 @@ export interface RootState {
   theme: ThemeState;
   layout: LayoutState;
   scsynth: ScsynthState;
-  nodes: NodesState;
   plugins: PluginsState;
 }
 
