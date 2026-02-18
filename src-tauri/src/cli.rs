@@ -1,52 +1,5 @@
+use crate::config;
 use crate::plugin_manager;
-use std::path::PathBuf;
-
-const APP_IDENTIFIER: &str = "com.nicmell.scapp";
-
-fn data_dir() -> Result<PathBuf, String> {
-    #[cfg(target_os = "macos")]
-    {
-        let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
-        Ok(PathBuf::from(home)
-            .join("Library/Application Support")
-            .join(APP_IDENTIFIER))
-    }
-    #[cfg(target_os = "linux")]
-    {
-        let dir = std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| {
-            let home = std::env::var("HOME").unwrap_or_default();
-            format!("{home}/.local/share")
-        });
-        Ok(PathBuf::from(dir).join(APP_IDENTIFIER))
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let dir = std::env::var("APPDATA").map_err(|_| "APPDATA not set".to_string())?;
-        Ok(PathBuf::from(dir).join(APP_IDENTIFIER))
-    }
-}
-
-fn config_path() -> Result<PathBuf, String> {
-    Ok(data_dir()?.join("config.json"))
-}
-
-fn read_config() -> Result<serde_json::Value, String> {
-    let path = config_path()?;
-    if !path.exists() {
-        return Ok(serde_json::json!({}));
-    }
-    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    serde_json::from_str(&text).map_err(|e| e.to_string())
-}
-
-fn write_config(config: &serde_json::Value) -> Result<(), String> {
-    let path = config_path()?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let json = serde_json::to_string_pretty(config).map_err(|e| e.to_string())?;
-    std::fs::write(&path, json).map_err(|e| e.to_string())
-}
 
 fn print_plugin_info(info: &plugin_manager::PluginInfo) {
     println!("  name:    {}", info.name);
@@ -73,14 +26,15 @@ fn cmd_add(path: &str) -> Result<(), String> {
     let data = std::fs::read(path).map_err(|e| format!("Error reading \"{path}\": {e}"))?;
     let info = plugin_manager::validate_plugin(&data)?;
 
-    let plugins_dir = data_dir()?.join("plugins");
+    let data_dir = config::data_dir()?;
+    let plugins_dir = config::plugins_dir(&data_dir);
     std::fs::create_dir_all(&plugins_dir).map_err(|e| e.to_string())?;
 
-    let zip_path = plugins_dir.join(format!("{}-{}.zip", &info.name, &info.version));
+    let zip_path = plugins_dir.join(format!("{}-{}.{}.zip", &info.name, &info.version, &info.id));
     std::fs::write(&zip_path, &data).map_err(|e| e.to_string())?;
 
-    let mut config = read_config()?;
-    let plugins = config
+    let mut cfg = config::read(&data_dir)?;
+    let plugins = cfg
         .as_object_mut()
         .ok_or("config.json root must be an object")?
         .entry("plugins")
@@ -94,7 +48,7 @@ fn cmd_add(path: &str) -> Result<(), String> {
     });
 
     plugins.push(serde_json::to_value(&info).map_err(|e| e.to_string())?);
-    write_config(&config)?;
+    config::write(&data_dir, &cfg)?;
 
     println!("Plugin added.");
     print_plugin_info(&info);
@@ -102,8 +56,9 @@ fn cmd_add(path: &str) -> Result<(), String> {
 }
 
 fn cmd_remove(query: &str) -> Result<(), String> {
-    let mut config = read_config()?;
-    let plugins = config
+    let data_dir = config::data_dir()?;
+    let mut cfg = config::read(&data_dir)?;
+    let plugins = cfg
         .as_object_mut()
         .ok_or("config.json root must be an object")?
         .get_mut("plugins")
@@ -127,15 +82,15 @@ fn cmd_remove(query: &str) -> Result<(), String> {
         .ok_or_else(|| format!("Plugin \"{query}\" not found"))?;
 
     let entry = &plugins[idx];
-    let name = entry.get("name").and_then(|v| v.as_str()).unwrap_or("");
-    let version = entry.get("version").and_then(|v| v.as_str()).unwrap_or("");
-    let stem = format!("{name}-{version}");
+    let id = entry.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let name = entry.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let version = entry.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string();
     println!("Removing {name} v{version}...");
 
     plugins.remove(idx);
-    write_config(&config)?;
+    config::write(&data_dir, &cfg)?;
 
-    let zip_path = data_dir()?.join("plugins").join(format!("{stem}.zip"));
+    let zip_path = config::plugins_dir(&data_dir).join(format!("{name}-{version}.{id}.zip"));
     if zip_path.exists() {
         std::fs::remove_file(&zip_path).map_err(|e| e.to_string())?;
     }
@@ -145,7 +100,7 @@ fn cmd_remove(query: &str) -> Result<(), String> {
 }
 
 fn cmd_list() -> Result<(), String> {
-    let config = read_config()?;
+    let config = config::read(&config::data_dir()?)?;
     let plugins = config
         .get("plugins")
         .and_then(|v| v.as_array())

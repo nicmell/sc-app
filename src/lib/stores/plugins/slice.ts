@@ -23,12 +23,11 @@ export const pluginsSlice = createSlice({
       if (!state.items.some(p => p.id === action.payload)) return;
       state.items = state.items.filter(p => p.id !== action.payload);
     },
-    [PluginsAction.LOAD_PLUGIN]: (state, action: { payload: { id: string; loaded: boolean; error?: PluginError; violations?: string[] } }) => {
+    [PluginsAction.LOAD_PLUGIN]: (state, action: { payload: { id: string; loaded: boolean; error?: PluginError } }) => {
       const plugin = state.items.find(p => p.id === action.payload.id);
       if (plugin) {
         plugin.loaded = action.payload.loaded;
         plugin.error = action.payload.error;
-        plugin.violations = action.payload.violations;
       }
     },
   },

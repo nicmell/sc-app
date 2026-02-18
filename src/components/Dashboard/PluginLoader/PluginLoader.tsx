@@ -1,102 +1,88 @@
-import {useRef, useEffect, useState, type ReactNode} from "react";
+import {useRef, useEffect, useState} from "react";
 import {createPortal} from "react-dom";
 import {useSelector} from "@/lib/stores/store.ts";
 import themeStore from "@/lib/stores/theme";
-import type {PluginInfo} from "@/types/stores";
-import {pluginManager} from "@/lib/plugins/PluginManager.ts";
+import pluginsStore from "@/lib/stores/plugins";
+import {pluginManager} from "@/lib/plugins/PluginManager";
 
-const darkPalette: Record<string, string> = {
-  "--color-bg": "#2f2f2f",
-  "--color-text": "#f6f6f6",
-  "--color-surface": "#0f0f0f98",
-  "--color-surface-active": "#0f0f0f69",
-  "--color-border": "#555",
-  "--color-panel-header": "#3a3a3a",
+const palettes: Record<string, Record<string, string>> = {
+  dark: {
+    "--color-bg": "#2f2f2f",
+    "--color-text": "#f6f6f6",
+    "--color-surface": "#0f0f0f98",
+    "--color-surface-active": "#0f0f0f69",
+    "--color-border": "#555",
+    "--color-panel-header": "#3a3a3a",
+  },
+  light: {
+    "--color-bg": "#f6f6f6",
+    "--color-text": "#0f0f0f",
+    "--color-surface": "#ffffff",
+    "--color-surface-active": "#e8e8e8",
+    "--color-border": "#ccc",
+    "--color-panel-header": "#e8e8e8",
+  },
 };
 
-const lightPalette: Record<string, string> = {
-  "--color-bg": "#f6f6f6",
-  "--color-text": "#0f0f0f",
-  "--color-surface": "#ffffff",
-  "--color-surface-active": "#e8e8e8",
-  "--color-border": "#ccc",
-  "--color-panel-header": "#e8e8e8",
-};
-
-function buildThemeCss(mode: string, primaryColor: string): string {
-  const palette = mode === "dark" ? darkPalette : lightPalette;
-  const vars = Object.entries(palette)
-    .map(([k, v]) => `${k}:${v}`)
-    .join(";");
-  return `:host{--color-primary:${primaryColor};${vars}}`;
-}
-
-interface ShadowRootProps {
-  mode?: ShadowRootMode;
-  delegatesFocus?: boolean;
-  children: ReactNode;
-}
-
-function ShadowRoot({mode = "open", delegatesFocus = false, children}: ShadowRootProps) {
+function useShadowRoot() {
   const hostRef = useRef<HTMLDivElement>(null);
-  const [shadowRoot, setShadowRoot] = useState<globalThis.ShadowRoot | null>(null);
-  const themeMode = useSelector(themeStore.selectors.mode);
-  const primaryColor = useSelector(themeStore.selectors.primaryColor);
+  const [root, setRoot] = useState<ShadowRoot | null>(null);
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-    const root = host.shadowRoot ?? host.attachShadow({mode, delegatesFocus});
-    setShadowRoot(root);
-  }, [mode, delegatesFocus]);
+    setRoot(host.shadowRoot ?? host.attachShadow({mode: "open"}));
+  }, []);
 
-  return (
-    <div ref={hostRef}>
-      {shadowRoot && createPortal(
-        <>
-          <style>{buildThemeCss(themeMode, primaryColor)}</style>
-          {children}
-        </>,
-        shadowRoot as unknown as Element,
-      )}
-    </div>
-  );
+  return {hostRef, root};
 }
 
 interface PluginLoaderProps {
-  plugin: PluginInfo;
+  pluginId: string;
 }
 
-function PluginHtml({html}: {html: TrustedHTML}) {
-  const ref = useRef<HTMLElement>(null);
-  const injected = useRef(false);
+export function PluginLoader({pluginId}: PluginLoaderProps) {
+  const plugin = useSelector(pluginsStore.selectors.getById(pluginId));
+  const mode = useSelector(themeStore.selectors.mode);
+  const primaryColor = useSelector(themeStore.selectors.primaryColor);
+  const {hostRef, root} = useShadowRoot();
+  const containerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    if (ref.current && !injected.current) {
-      injected.current = true;
-      ref.current.innerHTML = html as unknown as string;
-    }
-  }, [html]);
+    if (!plugin || plugin.loaded !== undefined || !root) return;
+    const el = document.createElement("sc-group");
+    containerRef.current = el;
+    pluginManager.loadPlugin(plugin, el);
+  }, [plugin?.id, plugin?.loaded, root]);
 
-  return <sc-group ref={ref} />;
-}
+  useEffect(() => {
+    if (!root || !plugin?.loaded || !containerRef.current) return;
+    root.appendChild(containerRef.current);
+  }, [plugin?.loaded, root]);
 
-export function PluginLoader({plugin}: PluginLoaderProps) {
-  const html = pluginManager.getHtml(plugin.id);
+  if (!plugin) return null;
 
-  if (plugin.error) {
-    return (
-      <div style={{color: '#e57373', fontSize: '0.85rem', padding: '0.5rem 0'}}>
-        Error {plugin.error.code}: {plugin.error.message}
-      </div>
-    );
-  }
-
-  if (!html) return null;
+  const palette = palettes[mode] ?? palettes.dark;
+  const vars = Object.entries(palette).map(([k, v]) => `${k}:${v}`).join(";");
+  const themeCss = `:host{--color-primary:${primaryColor};${vars}}`;
 
   return (
-    <ShadowRoot>
-      <PluginHtml html={html} />
-    </ShadowRoot>
+    <div ref={hostRef}>
+      {root && createPortal(
+        <>
+          <style>{themeCss}</style>
+          {plugin.error ? (
+            <div style={{color: '#e57373', fontSize: '0.85rem', padding: '0.5rem 0'}}>
+              Error {plugin.error.code}: {plugin.error.message}
+            </div>
+          ) : !plugin.loaded && (
+            <div style={{fontSize: '0.85rem', padding: '0.5rem 0', opacity: 0.6}}>
+              Loading...
+            </div>
+          )}
+        </>,
+        root as unknown as Element,
+      )}
+    </div>
   );
 }

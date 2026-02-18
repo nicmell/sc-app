@@ -1,111 +1,52 @@
-import DOMPurify, {type RemovedElement, type RemovedAttribute} from "dompurify";
-import {trustedTypes} from "trusted-types";
-import type {PluginInfo, RootState} from "@/types/stores";
-import {pluginUrl, addPlugin, removePlugin} from "@/lib/storage/pluginStorage";
+import type {PluginInfo} from "@/types/stores";
 import {pluginsApi} from "@/lib/stores/api";
-import {store, rehydrate} from "@/lib/stores/store";
+import {rehydrate} from "@/lib/stores/store";
 
-export interface PluginFetchError {
-  code: number;
-  message: string;
-}
-
-export interface SanitizeViolation {
-  type: 'element' | 'attribute';
-  detail: string;
-}
+export const PLUGINS_URL = "app://plugins";
 
 export class PluginManager {
-  private purify = DOMPurify(window);
-  private policy;
-  private cache = new Map<string, TrustedHTML>();
-
-  constructor() {
-    this.policy = trustedTypes.createPolicy('plugin-html', {
-      createHTML: (html: string) => this.sanitize(html),
-    });
-  }
-
-  async load(plugin: PluginInfo): Promise<void> {
-    const entryUrl = pluginUrl(plugin.name, plugin.version, plugin.entry);
-    const resp = await fetch(entryUrl);
-
-    if (resp.ok) {
-      const raw = await resp.text();
-      const html = this.policy.createHTML(raw);
-      const violations = this.collectViolations();
-      this.cache.set(plugin.id, html);
-      pluginsApi.loadPlugin({
-        id: plugin.id,
-        loaded: true,
-        violations: violations.length > 0 ? violations.map(v => v.detail) : undefined,
-      });
-    } else {
-      pluginsApi.loadPlugin({
-        id: plugin.id,
-        loaded: false,
-        error: {code: resp.status, message: resp.statusText},
-      });
-    }
-  }
 
   async addPlugin(file: File): Promise<void> {
-    const plugin = await addPlugin(file);
-    this.cache.delete(plugin.id);
+    const buffer = await file.arrayBuffer();
+    const resp = await fetch(PLUGINS_URL, {
+      method: "POST",
+      body: new Uint8Array(buffer),
+    });
+    if (!resp.ok) throw new Error(`Failed to add plugin: ${resp.statusText}`);
+    const plugin: PluginInfo = await resp.json();
     pluginsApi.addPlugin(plugin);
     await rehydrate();
   }
 
   async removePlugin(plugin: PluginInfo): Promise<void> {
-    await removePlugin(plugin.id);
-    this.cache.delete(plugin.id);
+    const resp = await fetch(`${PLUGINS_URL}/${plugin.id}`, {method: "DELETE"});
+    if (!resp.ok) throw new Error(`Failed to remove plugin: ${resp.statusText}`);
     pluginsApi.removePlugin(plugin.id);
     await rehydrate();
-
   }
 
-  async loadAll(): Promise<void> {
-    const {items} = (store.getState() as RootState).plugins;
-    const pending = items.filter(p => p.loaded === undefined);
-    await Promise.all(pending.map(p => this.load(p)));
-  }
-
-  getHtml(id: string): TrustedHTML | undefined {
-    return this.cache.get(id);
-  }
-
-  private sanitize(html: string): string {
-    return this.purify.sanitize(html, {
-      RETURN_TRUSTED_TYPE: false,
-      ADD_ATTR: ['node-id', 'name', 'param', 'prop', 'format', 'is-truthy', 'is-falsy', 'is-equal', 'is-not-equal', 'is-greater-than', 'is-lesser-than', 'min', 'max', 'step', 'value', 'label', 'checked', 'diameter', 'width', 'height', 'src', 'sprites', 'fgcolor', 'bgcolor'],
-      FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form'],
-      WHOLE_DOCUMENT: true,
-      CUSTOM_ELEMENT_HANDLING: {
-        tagNameCheck: /^sc-/,
-        attributeNameCheck: /^(node-id|name|param|prop|format|is-truthy|is-falsy|is-equal|is-not-equal|is-greater-than|is-lesser-than|min|max|step|value|label|checked|diameter|width|height|src|sprites|fgcolor|bgcolor)$/,
-        allowCustomizedBuiltInElements: false,
-      },
-    });
-  }
-
-  private collectViolations(): SanitizeViolation[] {
-    const violations: SanitizeViolation[] = [];
-
-    for (const item of this.purify.removed) {
-      if ('element' in item) {
-        const {element} = item as RemovedElement;
-        if (element instanceof Element) {
-          violations.push({type: 'element', detail: `<${element.tagName.toLowerCase()}> removed`});
-        }
-      } else if ('attribute' in item) {
-        const {attribute, from} = item as RemovedAttribute;
-        const tag = from instanceof Element ? from.tagName.toLowerCase() : '?';
-        violations.push({type: 'attribute', detail: `${attribute?.name} on <${tag}> removed`});
+  async loadPlugin(plugin: PluginInfo, target: HTMLElement): Promise<void> {
+    try {
+      const resp = await fetch(`${PLUGINS_URL}/${plugin.id}/${plugin.entry}`);
+      if (!resp.ok) {
+        pluginsApi.loadPlugin({
+          id: plugin.id,
+          loaded: false,
+          error: {code: resp.status, message: resp.statusText},
+        });
+        return;
       }
+      target.innerHTML = await resp.text();
+      pluginsApi.loadPlugin({id: plugin.id, loaded: true});
+    } catch (e) {
+      pluginsApi.loadPlugin({
+        id: plugin.id,
+        loaded: false,
+        error: {code: 0, message: e instanceof Error ? e.message : String(e)},
+      });
     }
-
-    return violations;
   }
+
 }
 
 export const pluginManager = new PluginManager();

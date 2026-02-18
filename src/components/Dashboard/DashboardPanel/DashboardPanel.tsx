@@ -75,7 +75,7 @@ export function DashboardPanel({title, boxId, pluginId, children, onClose, ref, 
             </Button>
           </div>
         )}
-        {selectedPlugin && <PluginLoader plugin={selectedPlugin} />}
+        {selectedPlugin && <PluginLoader pluginId={selectedPlugin.id} />}
       </div>
 
       {children}

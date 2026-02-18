@@ -1,4 +1,4 @@
-import {useState, useEffect, useMemo, useSyncExternalStore} from "react";
+import {useState, useMemo, useSyncExternalStore} from "react";
 import {GridLayout, useContainerWidth, noCompactor} from "react-grid-layout";
 import type {Layout} from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
@@ -10,7 +10,6 @@ import {DashboardPanel} from "@/components/Dashboard/DashboardPanel";
 import {deepEqual} from "@/lib/utils/deepEqual";
 import {SettingsDrawer} from "@/components/SettingsDrawer";
 import {IconButton} from "@/components/ui/IconButton";
-import {pluginManager} from "@/lib/plugins/PluginManager";
 import {MARGIN, computePlaceholders} from "./utils";
 import {Placeholder} from "./Placeholder";
 import "./Dashboard.scss";
@@ -34,22 +33,11 @@ function computeRowHeight(numRows: number, viewportHeight: number): number {
 
 export function Dashboard() {
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [pluginsLoading, setPluginsLoading] = useState(true);
-  const plugins = useSelector(state => state.plugins.items);
   const layout = useSelector(layoutStore.selectors.items);
   const {numRows, numColumns} = useSelector(layoutStore.selectors.options);
   const {width, containerRef, mounted} = useContainerWidth({measureBeforeMount: true});
   const viewportHeight = useSyncExternalStore(subscribeToResize, getViewportHeight);
   const rowHeight = computeRowHeight(numRows, viewportHeight);
-
-  useEffect(() => {
-    (async () => {
-      setPluginsLoading(true);
-      const pending = plugins.filter(p => p.loaded === undefined);
-      await Promise.all(pending.map(p => pluginManager.load(p)));
-      setPluginsLoading(false);
-    })()
-  }, [plugins]);
 
   const actualNumRows =  useMemo(() => {
     return layout.reduce((max, item) => Math.max(max, item.y + item.h), 1);
@@ -84,12 +72,6 @@ export function Dashboard() {
       <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       <div className="dashboard-grid-wrapper" ref={containerRef as React.RefObject<HTMLDivElement>}>
-        {pluginsLoading && (
-          <div className="dashboard-loading-overlay">
-            <span className="dashboard-loading-spinner" />
-            <span>Loading plugins...</span>
-          </div>
-        )}
         {mounted && (
           <div className="dashboard-grid-container">
             <GridLayout

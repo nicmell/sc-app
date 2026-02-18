@@ -81,16 +81,15 @@ export interface PluginInfo {
   // Runtime-only (not persisted)
   loaded?: boolean;
   error?: PluginError;
-  violations?: string[];
 }
 
-export type PersistedPlugin = Omit<PluginInfo, 'loaded' | 'error' | 'violations'>;
+export type PersistedPlugin = Omit<PluginInfo, 'loaded' | 'error'>;
 
 export interface ConfigFile {
   theme: Pick<ThemeState, 'mode' | 'primaryColor'>;
   layout: Pick<LayoutState, 'items' | 'options'>;
   scsynth: Pick<ScsynthState, 'options'>;
-  plugins: Omit<PluginInfo, 'loaded' | 'error' | 'violations'>[];
+  plugins: Omit<PluginInfo, 'loaded' | 'error'>[];
 }
 
 export interface SynthItem {

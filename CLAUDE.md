@@ -38,11 +38,12 @@ bash scripts/package_examples.sh tmp
 
 ### Backend (`src-tauri/src/`)
 
-- `lib.rs` — Tauri app builder, registers commands and URI scheme
-- `plugin_manager.rs` — Plugin validation (zip, metadata, XSD, assets) + `app://plugins/` URI handler
-- `udp_server.rs` — Async UDP socket via tokio, emits `osc-data` events to frontend
-- `cli.rs` — CLI for validate/add/remove/list (works without Tauri runtime)
-- `app_config.rs` — Config file I/O (reads/writes `config.json` in app data dir)
+- `lib.rs` — Tauri glue (sole file with Tauri deps): app builder, commands, URI scheme handler
+- `plugin_manager.rs` — Plugin validation (zip, metadata, XSD, assets), CRUD (add/remove/list)
+- `http_server.rs` — HTTP router for `app://plugins/` (GET list, POST add, DELETE remove, GET file serving)
+- `udp_server.rs` — Async UDP socket management via tokio (no Tauri deps)
+- `cli.rs` — CLI for validate/add/remove/list (no Tauri deps)
+- `config.rs` — App data dir resolution, config file I/O (`config.json`), plugins dir helper
 
 ### App Data Directory
 
@@ -86,7 +87,7 @@ Persisted to `config.json` via Zustand persist middleware with custom `tauriStor
 4. Assets — format detection must match declared type
 
 **Frontend loading** (`src/lib/plugins/PluginManager.ts`):
-- Fetches via `app://plugins/{name}/{version}/{entry}` URI scheme
+- Fetches via `app://plugins/{id}/{entry}` URI scheme
 - Sanitizes with DOMPurify (forbids script/iframe/object/embed/form)
 - Caches as TrustedHTML, renders inside shadow DOM
 

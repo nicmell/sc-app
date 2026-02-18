@@ -3073,6 +3073,8 @@ name = "sc-app"
 version = "0.1.0"
 dependencies = [
  "fastxml",
+ "getrandom 0.2.17",
+ "http",
  "image",
  "serde",
  "serde_json",

@@ -52,19 +52,6 @@ export function PluginList({onSelect, onRemove, showDetails}: PluginListProps) {
                       Error {p.error.code}: {p.error.message}
                     </span>
                   )}
-                  {showDetails && p.violations && p.violations.length > 0 && (
-                    <details className="plugin-list-violations">
-                      <summary>
-                        {p.violations.length} sanitization{" "}
-                        {p.violations.length === 1 ? "violation" : "violations"}
-                      </summary>
-                      <ul>
-                        {p.violations.map((v, i) => (
-                          <li key={i}>{v}</li>
-                        ))}
-                      </ul>
-                    </details>
-                  )}
                 </div>
               )}
               {onRemove && (
