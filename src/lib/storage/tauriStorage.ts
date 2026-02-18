@@ -11,7 +11,6 @@ const baseDir = BaseDirectory.AppData;
 
 let lastWritten = "";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const tauriStorage: PersistStorage<any> = {
   async getItem() {
     try {

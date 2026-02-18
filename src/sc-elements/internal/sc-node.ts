@@ -46,6 +46,7 @@ export abstract class ScNode extends LitElement implements IScNode {
     this.nodeId = oscService.nextNodeId();
     this._group = new ContextConsumer(this, {context: nodeContext, subscribe: false});
 
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
     const ctx: NodeContext = {
       get type() { return self.type; },

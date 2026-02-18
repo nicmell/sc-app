@@ -5,7 +5,6 @@ import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import {useSelector} from "@/lib/stores/store";
 import layoutStore from "@/lib/stores/layout";
-import pluginsStore from "@/lib/stores/plugins";
 import {layoutApi} from "@/lib/stores/api";
 import {DashboardPanel} from "./DashboardPanel";
 import {deepEqual} from "@/lib/utils/deepEqual";
@@ -46,7 +45,6 @@ function boxId() {
 export function Dashboard() {
     const [settingsOpen, setSettingsOpen] = useState(false);
     const layout = useSelector(layoutStore.selectors.items);
-    const plugins = useSelector(pluginsStore.selectors.items)
     const {numRows, numColumns} = useSelector(layoutStore.selectors.options);
     const {width: containerWidth, containerRef, mounted} = useContainerWidth({measureBeforeMount: true});
     const viewportHeight = useSyncExternalStore(subscribeToResize, getViewportHeight);
@@ -82,7 +80,7 @@ export function Dashboard() {
         setModalOpen(undefined);
     }, [modalOpen])
 
-    const renderDashboardPanel = useCallback((item: BoxItem) => {
+    const renderDashboardPanel = (item: BoxItem) => {
         const fallback = (
             <div className="dashboard-panel-empty">
                 Plugin not found
@@ -107,7 +105,7 @@ export function Dashboard() {
                 }
             </DashboardPanel>
         )
-    }, [plugins])
+    }
 
     const placeholderElements = useMemo(() => placeholders.map(item => (
         <Placeholder
@@ -120,9 +118,7 @@ export function Dashboard() {
         />
     )), [placeholders, numColumns, containerWidth, rowHeight]);
 
-    const items = useMemo(() => layout.map(item => {
-        return renderDashboardPanel(item)
-    }), [layout, renderDashboardPanel])
+    const items = layout.map(item => renderDashboardPanel(item))
 
     return (
         <div className="dashboard">

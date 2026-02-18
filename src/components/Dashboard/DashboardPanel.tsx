@@ -15,7 +15,7 @@ interface DashboardPanelProps {
   className?: string;
 }
 
-export function DashboardPanel({title, boxId, pluginId, children, onClose, onEdit, ref, style, className, ...rest}: DashboardPanelProps) {
+export function DashboardPanel({title, boxId: _boxId, pluginId: _pluginId, children, onClose, onEdit, ref, style, className, ...rest}: DashboardPanelProps) {
   return (
     <div ref={ref} style={style} className={cn("dashboard-panel", className)} {...rest}>
       <div className="dashboard-panel-header">

@@ -2,7 +2,6 @@ import {useEffect, useRef, useState} from "react";
 import {oscService} from "@/lib/osc";
 import {logger} from "@/lib/logger";
 import {
-  // @ts-ignore
   freeNodeMessage,
   nodeRunMessage,
   newSynthMessage,

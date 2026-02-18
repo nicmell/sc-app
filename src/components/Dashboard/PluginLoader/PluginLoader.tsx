@@ -12,19 +12,21 @@ export function PluginLoader({pluginId, fallback}: PluginLoaderProps) {
   const plugin = useSelector(pluginsStore.selectors.getById(pluginId));
   const hostRef = useRef<HTMLDivElement>(null);
 
+  const pluginExists = !!plugin;
+
   useEffect(() => {
     const host = hostRef.current;
-    if (!plugin || !host) return;
+    if (!pluginExists || !host) return;
 
     const root = host.shadowRoot ?? host.attachShadow({mode: "open"});
     const container = document.createElement("sc-group");
     root.appendChild(container);
-    pluginManager.loadPlugin(plugin, container);
+    pluginManager.loadPlugin(pluginId, container);
 
     return () => {
       container.remove();
     };
-  }, [plugin?.id]);
+  }, [pluginId, pluginExists]);
 
   if (!plugin) return fallback ?? null;
 
