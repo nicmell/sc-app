@@ -105,20 +105,32 @@ export interface Store<S = any> {
 
 export function createApi<
   State,
-  Selectors extends Record<string, Selector<State>>,
+  Selectors extends Record<string, ((state: State) => any) | ((...args: any[]) => (state: State) => any)>,
   Actions extends Record<string, (...args: any[]) => Action>,
 >(
   store: Store<State>,
   config: { selectors: Selectors; actions: Actions },
-): { readonly [K in keyof Selectors]: ReturnType<Selectors[K]> }
-   & { [K in keyof Actions]: (...args: Parameters<Actions[K]>) => void } {
+): { readonly [K in keyof Selectors]:
+      Selectors[K] extends (...args: infer A) => (state: State) => infer R
+        ? (...args: A) => R
+        : Selectors[K] extends (state: State) => infer R
+          ? R
+          : never
+   } & { [K in keyof Actions]: (...args: Parameters<Actions[K]>) => void } {
   const api = {} as any;
 
   for (const [key, selector] of Object.entries(config.selectors)) {
-    Object.defineProperty(api, key, {
-      get: () => selector(store.getState()),
-      enumerable: true,
-    });
+    const probe = selector(store.getState());
+    if (typeof probe === "function") {
+      // Factory selector: (...args) => (state) => R  →  (...args) => R
+      api[key] = (...args: any[]) => (selector as any)(...args)(store.getState());
+    } else {
+      // Simple selector: (state) => R  →  getter returning R
+      Object.defineProperty(api, key, {
+        get: () => selector(store.getState()),
+        enumerable: true,
+      });
+    }
   }
 
   for (const [key, actionCreator] of Object.entries(config.actions)) {

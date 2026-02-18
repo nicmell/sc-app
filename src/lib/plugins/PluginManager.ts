@@ -1,7 +1,6 @@
 import type {PluginInfo} from "@/types/stores";
 import {pluginsApi} from "@/lib/stores/api";
-import {rehydrate, store} from "@/lib/stores/store";
-import pluginsSelectors from "@/lib/stores/plugins/selectors";
+import {rehydrate} from "@/lib/stores/store";
 
 export const PLUGINS_URL = "app://plugins";
 
@@ -27,7 +26,7 @@ export class PluginManager {
   }
 
   async loadPlugin(pluginId: string, target: HTMLElement): Promise<void> {
-    const plugin = pluginsSelectors.getById(pluginId)(store.getState());
+    const plugin = pluginsApi.getById(pluginId);
     if (!plugin) return;
     try {
       const resp = await fetch(`${PLUGINS_URL}/${plugin.id}/${plugin.entry}`);

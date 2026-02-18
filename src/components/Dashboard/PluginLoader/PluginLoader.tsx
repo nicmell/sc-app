@@ -11,24 +11,23 @@ interface PluginLoaderProps {
 export function PluginLoader({pluginId, fallback}: PluginLoaderProps) {
   const plugin = useSelector(pluginsStore.selectors.getById(pluginId));
   const hostRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLElement>(null);
 
   const pluginExists = !!plugin;
 
   useEffect(() => {
     const host = hostRef.current;
-    if (!pluginExists || !host) return;
+    const container = containerRef.current
+    if (!pluginExists || !host || container) return;
 
     const root = host.shadowRoot ?? host.attachShadow({mode: "open"});
-    const container = document.createElement("sc-group");
-    root.appendChild(container);
-    pluginManager.loadPlugin(pluginId, container);
+    containerRef.current = document.createElement("sc-group");
+    pluginManager.loadPlugin(pluginId, containerRef.current);
+    root.appendChild(containerRef.current);
 
-    return () => {
-      container.remove();
-    };
   }, [pluginId, pluginExists]);
 
-  if (!plugin) return fallback ?? null;
+  if (!pluginExists) return fallback;
 
   return (
     <div ref={hostRef}>

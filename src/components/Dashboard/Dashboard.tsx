@@ -138,7 +138,6 @@ export function Dashboard() {
             <div className="dashboard-grid-wrapper" ref={containerRef as React.RefObject<HTMLDivElement>}>
                 {mounted && (
                     <div className="dashboard-grid-container">
-                        {placeholderElements}
                         <GridLayout
                             className="dashboard-grid"
                             width={containerWidth}
@@ -151,6 +150,7 @@ export function Dashboard() {
                         >
                             {items}
                         </GridLayout>
+                        {placeholderElements}
                     </div>
                 )}
             </div>
