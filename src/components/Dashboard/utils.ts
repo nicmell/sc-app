@@ -1,4 +1,7 @@
 import type {BoxItem} from "@/types/stores";
+import {LayoutItem} from "react-grid-layout";
+
+const PLACEHOLDER_PREFIX = "__placeholder";
 
 export const MARGIN: [number, number] = [10, 10];
 
@@ -57,7 +60,7 @@ export function computePlaceholders(layout: BoxItem[], rows: number, cols: numbe
 
   let rect: ReturnType<typeof findMaxRect>;
   while ((rect = findMaxRect(grid, rows, cols))) {
-    placeholders.push({i: `__placeholder-${id++}`, x: rect.x, y: rect.y, w: rect.w, h: rect.h});
+    placeholders.push({i: `${PLACEHOLDER_PREFIX}-${id++}`, x: rect.x, y: rect.y, w: rect.w, h: rect.h});
     for (let r = rect.y; r < rect.y + rect.h; r++) {
       for (let c = rect.x; c < rect.x + rect.w; c++) {
         grid[r][c] = 1;
@@ -78,4 +81,8 @@ export function toPixelStyle(item: BoxItem, containerWidth: number, cols: number
   const height = Math.round(rowHeight * item.h + Math.max(0, item.h - 1) * my);
 
   return {left, top, width, height};
+}
+
+export const isPlaceholder = ({i}: LayoutItem) => {
+  return i.startsWith(PLACEHOLDER_PREFIX)
 }
