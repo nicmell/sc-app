@@ -1,47 +1,44 @@
-import {useRef, useEffect} from "react";
+import {type ReactNode, useRef, useEffect} from "react";
 import {useSelector} from "@/lib/stores/store.ts";
 import pluginsStore from "@/lib/stores/plugins";
 import {pluginManager} from "@/lib/plugins/PluginManager";
 
 interface PluginLoaderProps {
   pluginId: string;
+  fallback?: ReactNode;
 }
 
-export function PluginLoader({pluginId}: PluginLoaderProps) {
+export function PluginLoader({pluginId, fallback}: PluginLoaderProps) {
   const plugin = useSelector(pluginsStore.selectors.getById(pluginId));
   const hostRef = useRef<HTMLDivElement>(null);
-  const containerRef = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    if (!plugin || plugin.loaded !== undefined) return;
-    containerRef.current = document.createElement("sc-group");
-    pluginManager.loadPlugin(plugin, containerRef.current);
-  }, [plugin?.id, plugin?.loaded]);
 
   useEffect(() => {
     const host = hostRef.current;
-    if (!host || !plugin?.loaded || !containerRef.current) return;
+    if (!plugin || !host) return;
+
     const root = host.shadowRoot ?? host.attachShadow({mode: "open"});
-    root.appendChild(containerRef.current);
-  }, [plugin?.loaded]);
+    const container = document.createElement("sc-group");
+    root.appendChild(container);
+    pluginManager.loadPlugin(plugin, container);
 
-  if (!plugin) return null;
+    return () => {
+      container.remove();
+    };
+  }, [plugin?.id]);
 
-  if (plugin.error) {
-    return (
-      <div style={{color: '#e57373', fontSize: '0.85rem', padding: '0.5rem 0'}}>
-        Error {plugin.error.code}: {plugin.error.message}
-      </div>
-    );
-  }
+  if (!plugin) return fallback ?? null;
 
-  if (!plugin.loaded) {
-    return (
-      <div style={{fontSize: '0.85rem', padding: '0.5rem 0', opacity: 0.6}}>
-        Loading...
-      </div>
-    );
-  }
-
-  return <div ref={hostRef} />;
+  return (
+    <div ref={hostRef}>
+      {plugin.error ? (
+        <div style={{color: '#e57373', fontSize: '0.85rem', padding: '0.5rem 0'}}>
+          Error {plugin.error.code}: {plugin.error.message}
+        </div>
+      ) : !plugin.loaded && (
+        <div style={{fontSize: '0.85rem', padding: '0.5rem 0', opacity: 0.6}}>
+          Loading...
+        </div>
+      )}
+    </div>
+  );
 }

@@ -75,24 +75,22 @@ export function Dashboard() {
     const handleSelectPlugin = useCallback((plugin: PluginInfo) => {
         const item = modalOpen!;
         if (isPlaceholder(item)) {
-          layoutApi.addBox({i: boxId(), x: item.x, y: item.y, w: item.w, h: item.h, plugin: plugin.id})
+            layoutApi.addBox({i: boxId(), x: item.x, y: item.y, w: item.w, h: item.h, plugin: plugin.id})
         } else {
-          layoutApi.setBoxPlugin({id: item.i, plugin: plugin.id});
+            layoutApi.setBoxPlugin({id: item.i, plugin: plugin.id});
         }
         setModalOpen(undefined);
     }, [modalOpen])
 
     const renderDashboardPanel = useCallback((item: BoxItem) => {
-        const plugin = plugins.find(p => p.id === item.plugin);
-        const pluginMissing = !plugin;
-        const panelContent = item.plugin && !pluginMissing ?
-            <PluginLoader pluginId={item.plugin}/> :
+        const fallback = (
             <div className="dashboard-panel-empty">
                 Plugin not found
                 <Button size="sm" onClick={() => setModalOpen(item)}>
                     Select plugin
                 </Button>
-            </div>;
+            </div>
+        );
         return (
             <DashboardPanel
                 key={item.i}
@@ -100,25 +98,31 @@ export function Dashboard() {
                 boxId={item.i}
                 pluginId={item.plugin}
                 onClose={() => layoutApi.removeBox(item.i)}
+                onEdit={() => setModalOpen(item)}
             >
-                {panelContent}
+                {
+                    item.plugin
+                        ? <PluginLoader pluginId={item.plugin} fallback={fallback}/>
+                        : fallback
+                }
             </DashboardPanel>
         )
     }, [plugins])
 
-    const items = useMemo(() => [...placeholders, ...layout].map(item => {
-        return isPlaceholder(item) ?
-            <Placeholder
-                key={item.i}
-                item={item}
-                containerWidth={containerWidth}
-                cols={numColumns}
-                rowHeight={rowHeight}
-                onClick={() => setModalOpen(item)}
-            />
-            :
-            renderDashboardPanel(item)
-    }), [placeholders, layout, numColumns, containerWidth, rowHeight])
+    const placeholderElements = useMemo(() => placeholders.map(item => (
+        <Placeholder
+            key={item.i}
+            item={item}
+            containerWidth={containerWidth}
+            cols={numColumns}
+            rowHeight={rowHeight}
+            onClick={() => setModalOpen(item)}
+        />
+    )), [placeholders, numColumns, containerWidth, rowHeight]);
+
+    const items = useMemo(() => layout.map(item => {
+        return renderDashboardPanel(item)
+    }), [layout, renderDashboardPanel])
 
     return (
         <div className="dashboard">
@@ -138,6 +142,7 @@ export function Dashboard() {
             <div className="dashboard-grid-wrapper" ref={containerRef as React.RefObject<HTMLDivElement>}>
                 {mounted && (
                     <div className="dashboard-grid-container">
+                        {placeholderElements}
                         <GridLayout
                             className="dashboard-grid"
                             width={containerWidth}
