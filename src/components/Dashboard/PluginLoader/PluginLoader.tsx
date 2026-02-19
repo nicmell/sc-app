@@ -20,7 +20,7 @@ export function PluginLoader({pluginId, fallback}: PluginLoaderProps) {
     const container = containerRef.current
     if (!pluginExists || !host || container) return;
 
-    const root = host.shadowRoot ?? host.attachShadow({mode: "open"});
+    const root = host.attachShadow({mode: "open"});
     containerRef.current = document.createElement("sc-group");
     pluginManager.loadPlugin(pluginId, containerRef.current);
     root.appendChild(containerRef.current);
