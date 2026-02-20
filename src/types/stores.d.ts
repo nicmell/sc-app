@@ -12,7 +12,12 @@ export interface BoxItem {
   w: number;
   h: number;
   plugin?: string;
+  // Runtime-only (not persisted)
+  loaded?: boolean;
+  error?: string;
 }
+
+export type PersistedBoxItem = Omit<BoxItem, 'loaded' | 'error'>;
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected";
 
@@ -82,9 +87,9 @@ export type PersistedPlugin = Omit<PluginInfo, 'loaded' | 'error'>;
 
 export interface ConfigFile {
   theme: Pick<ThemeState, 'mode' | 'primaryColor'>;
-  layout: Pick<LayoutState, 'items' | 'options'>;
+  layout: { items: PersistedBoxItem[]; options: LayoutOptions };
   scsynth: Pick<ScsynthState, 'options'>;
-  plugins: Omit<PluginInfo, 'loaded' | 'error'>[];
+  plugins: PersistedPlugin[];
 }
 
 export interface SynthItem {

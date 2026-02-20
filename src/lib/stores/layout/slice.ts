@@ -34,5 +34,19 @@ export const layoutSlice = createSlice({
         box.plugin = action.payload.plugin;
       }
     },
+    [LayoutAction.LOAD_PLUGIN]: (state, action: { payload: { id: string; loaded: boolean; error?: string } }) => {
+      const box = state.items.find(item => item.i === action.payload.id);
+      if (box) {
+        box.loaded = action.payload.loaded;
+        box.error = action.payload.error;
+      }
+    },
+    [LayoutAction.UNLOAD_PLUGIN]: (state, action: { payload: string }) => {
+      const box = state.items.find(item => item.i === action.payload);
+      if (box) {
+        box.loaded = undefined;
+        box.error = undefined;
+      }
+    },
   },
 });

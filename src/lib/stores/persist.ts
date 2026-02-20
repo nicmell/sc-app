@@ -10,7 +10,10 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
   storage: tauriStorage,
   partialize: ({theme, layout, scsynth, plugins}: RootState): ConfigFile => ({
     theme: {mode: theme.mode, primaryColor: theme.primaryColor},
-    layout: {items: layout.items, options: layout.options},
+    layout: {
+      items: layout.items.map(({loaded: _l, error: _e, ...box}) => ({...box})),
+      options: layout.options,
+    },
     scsynth: {options: scsynth.options},
     plugins: plugins.items
         .map(({loaded: _loaded, error: _error, ...plugin}) => ({...plugin})),

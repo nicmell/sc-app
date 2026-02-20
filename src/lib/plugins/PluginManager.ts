@@ -26,17 +26,11 @@ export class PluginManager {
     await rehydrate();
   }
 
-  async loadPlugin(pluginId: string, target: HTMLElement): Promise<void> {
+  async loadPlugin(pluginId: string): Promise<string> {
     const plugin = pluginsApi.getById(pluginId);
-    if (!plugin) return;
-    try {
-      const resp = await get(`${PLUGINS_URL}/${plugin.id}/${plugin.entry}`);
-      target.innerHTML = await resp.text();
-      pluginsApi.loadPlugin({id: plugin.id, loaded: true});
-    } catch (e) {
-      const error = e instanceof Error ? e.message : String(e);
-      pluginsApi.loadPlugin({id: plugin.id, loaded: false, error});
-    }
+    if (!plugin) throw new Error(`Plugin ${pluginId} not found`);
+    const resp = await get(`${PLUGINS_URL}/${plugin.id}/${plugin.entry}`);
+    return resp.text();
   }
 }
 

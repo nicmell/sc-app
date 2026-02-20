@@ -8,4 +8,5 @@ export default {
   // state
   items: createLayoutSelector(s => s.items),
   options: createLayoutSelector(s => s.options),
+  getById: (id: string) => createLayoutSelector(s => s.items.find(item => item.i === id)),
 };

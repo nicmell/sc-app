@@ -31,6 +31,8 @@ export const LayoutAction = {
   ADD_BOX: "addBox",
   SET_OPTIONS: "setOptions",
   SET_BOX_PLUGIN: "setBoxPlugin",
+  LOAD_PLUGIN: "loadPlugin",
+  UNLOAD_PLUGIN: "unloadPlugin",
 } as const;
 
 export const ThemeAction = {

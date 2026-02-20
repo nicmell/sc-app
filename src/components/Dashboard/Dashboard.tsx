@@ -5,7 +5,7 @@ import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import {useSelector} from "@/lib/stores/store";
 import layoutStore from "@/lib/stores/layout";
-import {layoutApi} from "@/lib/stores/api";
+import {layoutApi, pluginsApi} from "@/lib/stores/api";
 import {DashboardPanel} from "./DashboardPanel";
 import {deepEqual} from "@/lib/utils/deepEqual";
 import {SettingsDrawer} from "@/components/SettingsDrawer";
@@ -61,10 +61,13 @@ export function Dashboard() {
     }, [layout, actualNumRows, numRows, numColumns]);
 
     const syncLayout = (current: Layout) => {
-        const pluginMap = new Map(layout.map(item => [item.i, item.plugin]));
+        const boxMap = new Map(layout.map(item => [item.i, item]));
         const active = current
             .filter((item) => !isPlaceholder(item))
-            .map(({i, x, y, w, h}) => ({i, x, y, w, h, plugin: pluginMap.get(i)}));
+            .map(({i, x, y, w, h}) => {
+                const prev = boxMap.get(i);
+                return {i, x, y, w, h, plugin: prev?.plugin, loaded: prev?.loaded, error: prev?.error};
+            });
         if (!deepEqual(active, layout)) {
             layoutApi.setLayout(active);
         }
@@ -81,6 +84,7 @@ export function Dashboard() {
     }, [modalOpen])
 
     const renderDashboardPanel = (item: BoxItem) => {
+        const plugin = item.plugin ? pluginsApi.getById(item.plugin) : undefined;
         const fallback = (
             <div className="dashboard-panel-empty">
                 Plugin not found
@@ -99,8 +103,8 @@ export function Dashboard() {
                 onEdit={() => setModalOpen(item)}
             >
                 {
-                    item.plugin
-                        ? <PluginLoader pluginId={item.plugin} fallback={fallback}/>
+                    plugin
+                        ? <PluginLoader box={item} plugin={plugin}/>
                         : fallback
                 }
             </DashboardPanel>

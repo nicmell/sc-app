@@ -1,41 +1,43 @@
-import {type ReactNode, useRef, useEffect} from "react";
-import {useSelector} from "@/lib/stores/store.ts";
-import pluginsStore from "@/lib/stores/plugins";
+import {PropsWithChildren, useEffect, useRef} from "react";
+import {layoutApi} from "@/lib/stores/api";
 import {pluginManager} from "@/lib/plugins/PluginManager";
+import type {BoxItem, PluginInfo} from "@/types/stores";
 
-interface PluginLoaderProps {
-  pluginId: string;
-  fallback?: ReactNode;
+interface PluginLoaderProps extends PropsWithChildren {
+  box: BoxItem;
+  plugin: PluginInfo;
 }
 
-export function PluginLoader({pluginId, fallback}: PluginLoaderProps) {
-  const plugin = useSelector(pluginsStore.selectors.getById(pluginId));
+export function PluginLoader({box, plugin}: PluginLoaderProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLElement>(null);
 
-  const pluginExists = !!plugin;
-
   useEffect(() => {
     const host = hostRef.current;
-    const container = containerRef.current
-    if (!pluginExists || !host || container) return;
+    const root = host?.shadowRoot ?? host?.attachShadow({mode: "open"});
+    if (!root || root.contains(containerRef.current)) return;
 
-    const root = host.attachShadow({mode: "open"});
     containerRef.current = document.createElement("sc-group");
-    pluginManager.loadPlugin(pluginId, containerRef.current);
     root.appendChild(containerRef.current);
 
-  }, [pluginId, pluginExists]);
+    const container = containerRef.current;
+    pluginManager.loadPlugin(plugin.id).then(html => {
+      container.innerHTML = html;
+      layoutApi.loadPlugin({id: box.i, loaded: true});
+    }).catch(e => {
+      const error = e instanceof Error ? e.message : String(e);
+      layoutApi.loadPlugin({id: box.i, loaded: false, error});
+    });
 
-  if (!pluginExists) return fallback;
+  }, [box.i, plugin.id]);
 
   return (
     <div ref={hostRef}>
-      {plugin.error ? (
+      {box.error ? (
         <div style={{color: '#e57373', fontSize: '0.85rem', padding: '0.5rem 0'}}>
-          {plugin.error}
+          {box.error}
         </div>
-      ) : !plugin.loaded && (
+      ) : !box.loaded && (
         <div style={{fontSize: '0.85rem', padding: '0.5rem 0', opacity: 0.6}}>
           Loading...
         </div>
