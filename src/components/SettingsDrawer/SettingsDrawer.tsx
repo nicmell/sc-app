@@ -59,6 +59,7 @@ export function SettingsDrawer({open, onClose}: SettingsDrawerProps) {
                 value={mode}
                 onChange={(e) => themeApi.setMode(e.target.value as Mode)}
               >
+                <option value="adaptive">Adaptive</option>
                 <option value="dark">Dark</option>
                 <option value="light">Light</option>
               </select>

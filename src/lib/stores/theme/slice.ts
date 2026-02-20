@@ -2,11 +2,8 @@ import type {Mode, ThemeState} from "@/types/stores";
 import {createSlice} from "@/lib/stores/utils";
 import {SliceName, ThemeAction} from "@/constants/store";
 
-const getSystemMode = (): Mode =>
-  window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-
 const initialState: ThemeState = {
-  mode: getSystemMode(),
+  mode: "adaptive",
   primaryColor: "#396cd8",
 };
 

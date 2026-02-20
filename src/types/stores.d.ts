@@ -16,7 +16,7 @@ export interface BoxItem {
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected";
 
-export type Mode = "dark" | "light";
+export type Mode = "dark" | "light" | "adaptive";
 
 export interface ScsynthOptions {
   host: string;

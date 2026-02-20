@@ -1,7 +1,6 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useSyncExternalStore, type ReactNode } from "react";
 import { useSelector } from "@/lib/stores/store";
 import theme from "@/lib/stores/theme";
-import { themeApi } from "@/lib/stores/api";
 
 const darkPalette = {
   "--color-bg": "#2f2f2f",
@@ -25,25 +24,31 @@ const lightPalette = {
   "--color-log-text": "#00ff00",
 };
 
+const mq = window.matchMedia("(prefers-color-scheme: dark)");
+
+function useSystemDark() {
+  return useSyncExternalStore(
+    (cb) => { mq.addEventListener("change", cb); return () => mq.removeEventListener("change", cb); },
+    () => mq.matches,
+  );
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const mode = useSelector(theme.selectors.mode);
   const primaryColor = useSelector(theme.selectors.primaryColor);
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const handler = (e: MediaQueryListEvent) => themeApi.setMode(e.matches ? "dark" : "light");
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, []);
+  const systemDark = useSystemDark();
+
+  const effectiveMode = mode === "adaptive" ? (systemDark ? "dark" : "light") : mode;
 
   useEffect(() => {
-    const palette = mode === "dark" ? darkPalette : lightPalette;
+    const palette = effectiveMode === "dark" ? darkPalette : lightPalette;
     const root = document.documentElement;
 
     root.style.setProperty("--color-primary", primaryColor);
     for (const [key, value] of Object.entries(palette)) {
       root.style.setProperty(key, value);
     }
-  }, [mode, primaryColor]);
+  }, [effectiveMode, primaryColor]);
 
   return <>{children}</>;
 }
