@@ -33,7 +33,7 @@ export function PluginLoader({pluginId, fallback}: PluginLoaderProps) {
     <div ref={hostRef}>
       {plugin.error ? (
         <div style={{color: '#e57373', fontSize: '0.85rem', padding: '0.5rem 0'}}>
-          Error {plugin.error.code}: {plugin.error.message}
+          {plugin.error}
         </div>
       ) : !plugin.loaded && (
         <div style={{fontSize: '0.85rem', padding: '0.5rem 0', opacity: 0.6}}>

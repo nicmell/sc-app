@@ -66,11 +66,6 @@ export interface AssetInfo {
   type: string;
 }
 
-export interface PluginError {
-  code: number;
-  message: string;
-}
-
 export interface PluginInfo {
   id: string;
   name: string;
@@ -80,7 +75,7 @@ export interface PluginInfo {
   assets: AssetInfo[];
   // Runtime-only (not persisted)
   loaded?: boolean;
-  error?: PluginError;
+  error?: string;
 }
 
 export type PersistedPlugin = Omit<PluginInfo, 'loaded' | 'error'>;

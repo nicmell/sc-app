@@ -49,7 +49,7 @@ export function PluginList({onSelect, onRemove, showDetails}: PluginListProps) {
                   <span className="plugin-list-meta">{p.author} &middot; v{p.version}</span>
                   {showDetails && p.error && (
                     <span className="plugin-list-error">
-                      Error {p.error.code}: {p.error.message}
+                      {p.error}
                     </span>
                   )}
                 </div>

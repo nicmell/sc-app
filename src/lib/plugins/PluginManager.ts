@@ -1,26 +1,27 @@
 import type {PluginInfo} from "@/types/stores";
 import {pluginsApi} from "@/lib/stores/api";
 import {rehydrate} from "@/lib/stores/store";
+import {get, post, del} from "@/lib/http";
 
 export const PLUGINS_URL = "app://plugins";
 
 export class PluginManager {
 
+  async listPlugins(): Promise<PluginInfo[]> {
+    const resp = await get(PLUGINS_URL);
+    return resp.json();
+  }
+
   async addPlugin(file: File): Promise<void> {
     const buffer = await file.arrayBuffer();
-    const resp = await fetch(PLUGINS_URL, {
-      method: "POST",
-      body: new Uint8Array(buffer),
-    });
-    if (!resp.ok) throw new Error(`Failed to add plugin: ${resp.statusText}`);
+    const resp = await post(PLUGINS_URL, new Uint8Array(buffer));
     const plugin: PluginInfo = await resp.json();
     pluginsApi.addPlugin(plugin);
     await rehydrate();
   }
 
   async removePlugin(plugin: PluginInfo): Promise<void> {
-    const resp = await fetch(`${PLUGINS_URL}/${plugin.id}`, {method: "DELETE"});
-    if (!resp.ok) throw new Error(`Failed to remove plugin: ${resp.statusText}`);
+    await del(`${PLUGINS_URL}/${plugin.id}`);
     pluginsApi.removePlugin(plugin.id);
     await rehydrate();
   }
@@ -29,26 +30,14 @@ export class PluginManager {
     const plugin = pluginsApi.getById(pluginId);
     if (!plugin) return;
     try {
-      const resp = await fetch(`${PLUGINS_URL}/${plugin.id}/${plugin.entry}`);
-      if (!resp.ok) {
-        pluginsApi.loadPlugin({
-          id: plugin.id,
-          loaded: false,
-          error: {code: resp.status, message: resp.statusText},
-        });
-        return;
-      }
+      const resp = await get(`${PLUGINS_URL}/${plugin.id}/${plugin.entry}`);
       target.innerHTML = await resp.text();
       pluginsApi.loadPlugin({id: plugin.id, loaded: true});
     } catch (e) {
-      pluginsApi.loadPlugin({
-        id: plugin.id,
-        loaded: false,
-        error: {code: 0, message: e instanceof Error ? e.message : String(e)},
-      });
+      const error = e instanceof Error ? e.message : String(e);
+      pluginsApi.loadPlugin({id: plugin.id, loaded: false, error});
     }
   }
-
 }
 
 export const pluginManager = new PluginManager();

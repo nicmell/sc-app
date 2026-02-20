@@ -1,6 +1,7 @@
 import OSC from 'osc-js';
 import sineSynthDefUrl from '@/assets/synthdefs/sine.scsyndef?url';
 import {OSC_MESSAGES} from '@/constants/osc.ts';
+import {get} from '@/lib/http';
 
 export function statusMessage() {
   return new OSC.Message(OSC_MESSAGES.STATUS);
@@ -71,7 +72,7 @@ export function nodeSetMessage(nodeId: number, params: Record<string, number>) {
 }
 
 export async function defRecvMessage() {
-  const resp = await fetch(sineSynthDefUrl);
+  const resp = await get(sineSynthDefUrl);
   const bytes = new Uint8Array(await resp.arrayBuffer());
   return new OSC.Message(OSC_MESSAGES.DEF_RECV, bytes as unknown as Blob);
 }
