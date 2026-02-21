@@ -12,7 +12,7 @@ export const NodesAction = {
   NEW_GROUP: "newGroup",
   FREE_NODE: "freeNode",
   SET_RUNNING: "setRunning",
-  SET_PARAMS: "setParams",
+  SET_INPUTS: "setInputs",
 } as const;
 
 export const ScsynthAction = {

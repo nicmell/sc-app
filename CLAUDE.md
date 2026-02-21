@@ -32,7 +32,7 @@ bash scripts/package_examples.sh tmp
 ### Frontend (`src/`)
 
 - **React** for layout, panels, settings UI
-- **Lit web components** (`src/sc-elements/`) for plugin content (sc-synth, sc-knob, sc-slider, etc.)
+- **Lit web components** (`src/sc-elements/`) for plugin content (sc-synth, sc-ugen, sc-knob, sc-slider, etc.)
 - **Zustand** store with Redux-style slices + Immer (`src/lib/stores/`)
 - **OSC communication** via `osc-js` + custom Tauri UDP plugin (`src/lib/osc/`)
 
@@ -56,6 +56,7 @@ bash scripts/package_examples.sh tmp
 2. `Dashboard` — grid of panels, each can load a plugin
 3. Plugins render as Lit web components inside shadow DOM
 4. Web components send OSC messages to control synths
+5. Plugins can define synths inline via `<sc-ugen>` children — SynthDefs are built client-side and sent via `/d_recv`
 
 ## Store Architecture
 
@@ -68,7 +69,7 @@ Four top-level slices in `src/lib/stores/`:
 | `theme` | Dark/light mode, primary color |
 | `plugins` | Installed plugin registry |
 
-The `nodes` sub-slice (synths, groups) is nested inside `scsynth` — its reducer is delegated via `defaultReducer` and its state lives at `scsynth.nodes`.
+The `nodes` sub-slice (synths, groups) is nested inside `scsynth` — its reducer is delegated via `defaultReducer` and its state lives at `scsynth.nodes`. `SynthItem` stores both `inputs` (param name→value) and `ugens` (serialized UGen graph as `UGenItem[]`).
 
 Each slice has: `slice.ts` (reducer + actions), `selectors.ts`, `index.ts` (barrel).
 
@@ -90,6 +91,63 @@ Persisted to `config.json` via Zustand persist middleware with custom `tauriStor
 - Fetches via `app://plugins/{id}/{entry}` URI scheme
 - Sanitizes with DOMPurify (forbids script/iframe/object/embed/form)
 - Caches as TrustedHTML, renders inside shadow DOM
+
+### Inline SynthDef Building
+
+Plugins can define synths in two modes:
+
+- **Named synth** (`<sc-synth name="sine">`) — assumes the SynthDef already exists on the server. Sends `/s_new` immediately.
+- **Inline synth** (`<sc-synth>` without `name`) — builds a SynthDef from `<sc-ugen>` children, encodes it to binary (SCgf v2), sends `/d_recv`, then `/s_new` after 50ms.
+
+UGen graph is declared in HTML via `<sc-ugen>` elements:
+
+```html
+<sc-synth>
+  <sc-ugen id="osc" type="SinOsc" rate="ar" freq="inputs.freq" phase="0"/>
+  <sc-ugen id="pan" type="Pan2" rate="ar" in="ugens.osc" pos="0" level="inputs.amp"/>
+  <sc-ugen type="Out" rate="ar" bus="0" in="ugens.pan.0,ugens.pan.1"/>
+  <sc-knob param="freq" min="20" max="2000" value="440" diameter="48"/>
+  <sc-knob param="amp" min="0" max="1" value="0.2" diameter="48"/>
+</sc-synth>
+```
+
+**Input reference syntax** (resolved via `get()` dot-path accessor):
+- `inputs.<name>` — references a control param (from sc-knob, sc-slider, sc-switch)
+- `ugens.<id>` — references another UGen's output
+- `ugens.<id>.<n>` — references a specific output channel (e.g. `ugens.pan.0` for Pan2's left)
+- Comma-separated values expand to multiple inputs (e.g. `ugens.pan.0,ugens.pan.1`)
+- Bare numbers are parsed as float constants
+
+**UGen registry** (`src/sc-elements/internal/ugen-registry.ts`): maps UGen type names to `{inputs: string[], numOutputs: number}`. Covers oscillators, noise, filters, envelopes, I/O, panning, delays, dynamics, effects, triggers, math, and operators.
+
+**SynthDef encoding** (`src/lib/ugen/`): builds UGen graph in memory and serializes to SuperCollider's binary SynthDef format (SCgf v2).
+
+## SC Elements Architecture (`src/sc-elements/`)
+
+Lit web components for plugin UI. All use `@lit/context` for parent-child communication.
+
+### Context System
+
+`ScNode` (abstract base for `ScSynth`, `ScGroup`) acts as a `ContextProvider`. Children consume context to register themselves:
+
+- **`ScElement`** interface — implemented by controls (sc-knob, sc-slider, sc-switch). Provides `getInputs()` returning `Record<string, number>`.
+- **`ScUGenData`** interface — implemented by `ScUGen`. Exposes `type`, `rate`, `id`, and `getAttribute()` for reading dynamic UGen inputs.
+- **`ScControl`** (`internal/sc-control.ts`) — base class for param-bearing controls. Handles context registration, `param` property, and `_notifyChange()`.
+- **`ScNode`** (`internal/sc-node.ts`) — base class for synth/group nodes. Manages `registeredElements` (Set) and `registeredUGens` (array), provides context, handles `onChange` → store update + OSC message.
+
+### Key Elements
+
+| Element | Purpose |
+|---------|---------|
+| `sc-synth` | Synth node — named or inline SynthDef |
+| `sc-group` | Group node |
+| `sc-ugen` | UGen declaration (`display: contents`, renders children via slot) |
+| `sc-knob` | Rotary knob param control (extends `ScRange` → `ScControl`) |
+| `sc-slider` | Linear slider param control (extends `ScRange` → `ScControl`) |
+| `sc-switch` | Toggle switch param control |
+| `sc-run` | Play/stop button |
+| `sc-display` | Read-only value display |
+| `sc-if` | Conditional text display |
 
 ## Conventions
 
@@ -145,6 +203,15 @@ export function Foo({variant = "a", size = "md", className, ...rest}: FooProps) 
 - Header height: 48px, footer height: 42px
 - Tauri identifier: `com.nicmell.scapp`
 - OSC polling: 1000ms, reply timeout: 3000ms
+
+## Example Plugins (`examples/`)
+
+| Plugin | Description |
+|--------|-------------|
+| `example-plugin` | Named synth (`name="sine"`), knobs + slider + switch |
+| `sine-inline` | Inline SinOsc → Pan2 → Out |
+| `fm-synth` | Inline FM synthesis: mod SinOsc → MulAdd → carrier SinOsc → Pan2 → Out |
+| `noise-filter` | Inline WhiteNoise → RLPF → Pan2 → Out |
 
 ## No Linter/Formatter Configured
 

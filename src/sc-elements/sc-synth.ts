@@ -17,18 +17,16 @@ import {UGEN_REGISTRY} from './internal/ugen-registry.ts';
 import {ScNode} from './internal/sc-node.ts';
 
 interface ResolveContext {
-  params: Record<string, UGen>;
+  inputs: Record<string, UGen>;
   ugens: Record<string, UGen>;
 }
 
 function resolveInput(raw: string, ctx: ResolveContext): UGenInput {
-  const parts = raw.split('.');
   const resolved = get(ctx, raw);
   if (resolved instanceof UGen) return resolved;
-  // ugens.<id>.<outputIndex> — get stops at UGen, last segment is the index
-  if (parts.length >= 3 && parts[0] === 'ugens') {
-    const ugen = get(ctx, parts.slice(0, -1).join('.'));
-    if (ugen instanceof UGen) return ugen.output(parseInt(parts[parts.length - 1], 10));
+  const parent = get(ctx, raw.split('.').slice(0, -1).join('.'));
+  if (parent instanceof UGen) {
+    return parent.output(parseInt(raw.split('.').pop()!, 10))
   }
   return parseFloat(raw);
 }
@@ -53,9 +51,9 @@ export class ScSynth extends ScNode {
     return n && isSynth(n) ? n.isRunning : false;
   }
 
-  get params() {
+  get inputs(): Record<string, any> {
     const n = nodesApi.items.find(n => n.nodeId === this.nodeId);
-    return n && isSynth(n) ? n.params : {};
+    return n && isSynth(n) ? n.inputs : {};
   }
 
   get ugens(): UGenItem[] {
@@ -71,9 +69,9 @@ export class ScSynth extends ScNode {
   private _serializeUGens(): UGenItem[] {
     return this.registeredUGens.map(el => {
       const entry = UGEN_REGISTRY[el.type];
-      const inputs: Record<string, string> = {};
+      const inputs: Record<string, any> = {};
       if (entry) {
-        for (const paramName of entry.params) {
+        for (const paramName of entry.inputs) {
           const val = el.getAttribute(paramName);
           if (val != null) inputs[paramName] = val;
         }
@@ -83,39 +81,39 @@ export class ScSynth extends ScNode {
   }
 
   protected firstUpdated() {
-    const params: Record<string, number> = {};
+    const inputs: Record<string, any> = {};
     for (const el of this.registeredElements) {
-      Object.assign(params, el.getParams());
+      Object.assign(inputs, el.getInputs());
     }
 
     const ugens = this._serializeUGens();
 
     if (this.hasAttribute('name')) {
-      this._createSynth(params, ugens);
+      this._createSynth(inputs, ugens);
     } else {
-      this._buildAndSendDef(params, ugens);
+      this._buildAndSendDef(inputs, ugens);
     }
   }
 
-  private _createSynth(params: Record<string, number>, ugens: UGenItem[]) {
+  private _createSynth(inputs: Record<string, any>, ugens: UGenItem[]) {
     const group = this._group.value;
     const groupId = group?.nodeId ?? oscService.defaultGroupId();
     group?.registerNode(this);
-    nodesApi.newSynth({nodeId: this.nodeId, groupId, params, ugens});
+    nodesApi.newSynth({nodeId: this.nodeId, groupId, inputs, ugens});
     oscService.send(
-      newSynthMessage(this.name, this.nodeId, 0, 0, params),
+      newSynthMessage(this.name, this.nodeId, 0, 0, inputs),
       nodeRunMessage(-1, 0),
       groupTailMessage(groupId, -1),
     );
   }
 
-  private _buildAndSendDef(params: Record<string, number>, ugens: UGenItem[]) {
+  private _buildAndSendDef(inputs: Record<string, any>, ugens: UGenItem[]) {
     const defName = `_sc${this.nodeId}`;
 
     const def = synthDef(defName, () => {
-      const ctx: ResolveContext = {params: {}, ugens: {}};
-      for (const [name, value] of Object.entries(params)) {
-        ctx.params[name] = control(name, value);
+      const ctx: ResolveContext = {inputs: {}, ugens: {}};
+      for (const [name, value] of Object.entries(inputs)) {
+        ctx.inputs[name] = control(name, parseFloat(value));
       }
 
       for (const item of ugens) {
@@ -123,18 +121,18 @@ export class ScSynth extends ScNode {
         if (!entry) throw new Error(`Unknown UGen type: ${item.type}`);
 
         const rate = parseRate(item.rate);
-        const inputs: UGenInput[] = [];
+        const resolved: UGenInput[] = [];
 
-        for (const paramName of entry.params) {
+        for (const paramName of entry.inputs) {
           const raw = item.inputs[paramName];
           if (raw == null) continue;
           const parts = raw.split(',');
           for (const part of parts) {
-            inputs.push(resolveInput(part.trim(), ctx));
+            resolved.push(resolveInput(part.trim(), ctx));
           }
         }
 
-        const ugen = new UGen(item.type, rate, inputs, entry.numOutputs);
+        const ugen = new UGen(item.type, rate, resolved, entry.numOutputs);
         if (item.id) ctx.ugens[item.id] = ugen;
       }
     });
@@ -143,7 +141,7 @@ export class ScSynth extends ScNode {
     oscService.send(defRecvBytesMessage(bytes));
 
     this.name = defName;
-    setTimeout(() => this._createSynth(params, ugens), 50);
+    setTimeout(() => this._createSynth(inputs, ugens), 50);
   }
 
   disconnectedCallback() {

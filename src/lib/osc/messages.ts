@@ -28,11 +28,11 @@ export function versionMessage() {
 }
 
 export function newSynthMessage(
-  synthName: string = 'default',
-  nodeId: number = 1000,
-  addAction: number = 0,
-  targetId: number = 0,
-  params: Record<string, number> = { freq: 440, amp: 0.2 }
+  synthName: string,
+  nodeId: number,
+  addAction: number,
+  targetId: number,
+  params: Record<string, any> = {}
 ) {
   const msg = new OSC.Message(OSC_MESSAGES.SYNTH_NEW, synthName, nodeId, addAction, targetId);
   for (const [key, value] of Object.entries(params)) {
@@ -62,7 +62,7 @@ export function nodeRunMessage(nodeId: number, flag: number) {
   return new OSC.Message(OSC_MESSAGES.NODE_RUN, nodeId, flag);
 }
 
-export function nodeSetMessage(nodeId: number, params: Record<string, number>) {
+export function nodeSetMessage(nodeId: number, params: Record<string, any> = {}) {
   const msg = new OSC.Message(OSC_MESSAGES.NODE_SET, nodeId);
   for (const [key, value] of Object.entries(params)) {
     msg.add(key);

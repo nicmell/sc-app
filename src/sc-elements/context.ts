@@ -2,7 +2,7 @@ import {createContext} from '@lit/context';
 
 export interface ScElement {
   tagName: string;
-  getParams(): Record<string, number>;
+  getInputs(): Record<string, any>;
 }
 
 export interface ScUGenData {
@@ -21,7 +21,7 @@ export interface NodeContext {
   nodeId: number;
   loaded: boolean;
   running: boolean;
-  params: Record<string, number>;
+  inputs: Record<string, any>;
   registerElement(el: ScElement): void;
   unregisterElement(el: ScElement): void;
   registerUGen(el: ScUGenData): void;

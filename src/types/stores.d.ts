@@ -96,7 +96,7 @@ export interface UGenItem {
   type: string;
   rate: string;
   id: string;
-  inputs: Record<string, string>;
+  inputs: Record<string, any>;
 }
 
 export interface SynthItem {
@@ -104,7 +104,7 @@ export interface SynthItem {
   nodeId: number;
   groupId: number;
   isRunning: boolean;
-  params: Record<string, number>;
+  inputs: Record<string, any>;
   ugens: UGenItem[];
 }
 

@@ -19,7 +19,7 @@ export function SynthControlsPanel() {
     if (!mountedRef.current) {
       mountedRef.current = true;
       oscService.send(
-          newSynthMessage("sine", nodeId),
+          newSynthMessage("sine", nodeId, 0, 0),
           nodeRunMessage(-1, 0)
       );
       logger.log(`Created synth "sine" nodeId=${nodeId}`);

@@ -13,7 +13,7 @@ export abstract class ScNode extends LitElement implements IScNode {
 
   protected abstract get type(): 'synth' | 'group';
   abstract get isRunning(): boolean;
-  abstract get params(): Record<string, number>;
+  abstract get inputs(): Record<string, any>;
 
   get loaded() {
     return nodesApi.items.some(n => n.nodeId === this.nodeId);
@@ -41,9 +41,9 @@ export abstract class ScNode extends LitElement implements IScNode {
   unregisterNode(_node: IScNode) {}
 
   onChange(el: ScElement) {
-    const params = el.getParams();
-    nodesApi.setParams({nodeId: this.nodeId, params});
-    oscService.send(nodeSetMessage(this.nodeId, params));
+    const inputs = el.getInputs();
+    nodesApi.setInputs({nodeId: this.nodeId, inputs});
+    oscService.send(nodeSetMessage(this.nodeId, inputs));
   }
 
   onRun(isRunning: boolean) {
@@ -63,7 +63,7 @@ export abstract class ScNode extends LitElement implements IScNode {
       nodeId: this.nodeId,
       get loaded() { return self.loaded; },
       get running() { return self.isRunning; },
-      get params() { return self.params; },
+      get inputs() { return self.inputs; },
       registerElement: (el) => this.registerElement(el),
       unregisterElement: (el) => this.unregisterElement(el),
       registerUGen: (el) => this.registerUGen(el),

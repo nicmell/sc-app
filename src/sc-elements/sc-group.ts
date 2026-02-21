@@ -16,7 +16,7 @@ export class ScGroup extends ScNode {
 
   get isRunning() { return false; }
 
-  get params(): Record<string, number> { return {}; }
+  get inputs(): Record<string, any> { return {}; }
 
   registerNode(node: IScNode) {
     this.registeredNodes.add(node);

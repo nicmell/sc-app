@@ -23,7 +23,7 @@ export class ScControl extends LitElement implements ScElement {
     this._node.value?.unregisterElement(this);
   }
 
-  getParams(): Record<string, number> {
+  getInputs(): Record<string, any> {
     return {};
   }
 

@@ -32,7 +32,7 @@ export class ScRange extends ScControl {
     this.value = 0;
   }
 
-  getParams(): Record<string, number> {
+  getInputs(): Record<string, any> {
     return this.param ? {[this.param]: this.value} : {};
   }
 

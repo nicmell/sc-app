@@ -23,8 +23,7 @@ export class ScSwitch extends ScCheckbox implements ScElement {
     super.disconnectedCallback();
     this._node.value?.unregisterElement(this);
   }
-
-  getParams(): Record<string, number> {
+  getInputs(): Record<string, any> {
     return this.param ? {[this.param]: this.checked ? 1 : 0} : {};
   }
 

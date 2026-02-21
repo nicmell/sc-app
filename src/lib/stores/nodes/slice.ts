@@ -37,8 +37,8 @@ export const nodesSlice = createSlice({
   name: SliceName.NODES,
   initialState,
   reducers: {
-    [NodesAction.NEW_SYNTH]: (state, action: { payload: { nodeId: number; groupId: number; params: Record<string, number>; ugens?: UGenItem[] } }) => {
-      state.items.push({type: 'synth', nodeId: action.payload.nodeId, groupId: action.payload.groupId, isRunning: false, params: action.payload.params, ugens: action.payload.ugens ?? []});
+    [NodesAction.NEW_SYNTH]: (state, action: { payload: { nodeId: number; groupId: number; inputs: Record<string, any>; ugens?: UGenItem[] } }) => {
+      state.items.push({type: 'synth', nodeId: action.payload.nodeId, groupId: action.payload.groupId, isRunning: false, inputs: action.payload.inputs, ugens: action.payload.ugens ?? []});
     },
     [NodesAction.NEW_GROUP]: (state, action: { payload: { nodeId: number; groupId: number } }) => {
       state.items.push({type: 'group', nodeId: action.payload.nodeId, groupId: action.payload.groupId});
@@ -65,16 +65,16 @@ export const nodesSlice = createSlice({
         }
       }
     },
-    [NodesAction.SET_PARAMS]: (state, action: { payload: { nodeId: number; params: Record<string, number> } }) => {
+    [NodesAction.SET_INPUTS]: (state, action: { payload: { nodeId: number; inputs: Record<string, any> } }) => {
       const node = state.items.find(n => n.nodeId === action.payload.nodeId);
       if (!node) return;
       if (isSynth(node)) {
-        Object.assign(node.params, action.payload.params);
+        Object.assign(node.inputs, action.payload.inputs);
       } else if (isGroup(node)) {
-        const keys = Object.keys(action.payload.params);
+        const keys = Object.keys(action.payload.inputs);
         for (const synth of getLeaves(state.items, node.nodeId)) {
           for (const key of keys) {
-            if (key in synth.params) synth.params[key] = action.payload.params[key];
+            if (key in synth.inputs) synth.inputs[key] = action.payload.inputs[key];
           }
         }
       }
