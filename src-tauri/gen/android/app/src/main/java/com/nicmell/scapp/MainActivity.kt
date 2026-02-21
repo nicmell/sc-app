@@ -1,4 +1,4 @@
-package com.sc.app
+package com.nicmell.scapp
 
 import android.os.Bundle
 import androidx.activity.enableEdgeToEdge

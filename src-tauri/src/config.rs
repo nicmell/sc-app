@@ -24,6 +24,11 @@ pub fn data_dir() -> Result<PathBuf, String> {
         let dir = std::env::var("APPDATA").map_err(|_| "APPDATA not set".to_string())?;
         Ok(PathBuf::from(dir).join(APP_IDENTIFIER))
     }
+    #[cfg(target_os = "android")]
+    {
+        let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
+        Ok(PathBuf::from(home).join(APP_IDENTIFIER))
+    }
 }
 
 pub fn plugins_dir(data_dir: &Path) -> PathBuf {
