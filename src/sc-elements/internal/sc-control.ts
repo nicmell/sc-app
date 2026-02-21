@@ -1,16 +1,15 @@
+import {LitElement} from 'lit';
 import {ContextConsumer} from '@lit/context';
-import {nodeContext, type ScElement} from './context.ts';
-import {ScCheckbox} from './internal/sc-checkbox.ts';
+import {nodeContext, type ScElement} from '../context.ts';
 
-export class ScSwitch extends ScCheckbox implements ScElement {
+export class ScControl extends LitElement implements ScElement {
   static properties = {
-    ...ScCheckbox.properties,
     param: {type: String},
   };
 
   declare param: string;
 
-  private _node = new ContextConsumer(this, {context: nodeContext, subscribe: true,
+  protected _node = new ContextConsumer(this, {context: nodeContext, subscribe: true,
     callback: (ctx) => ctx?.registerElement(this),
   });
 
@@ -25,14 +24,10 @@ export class ScSwitch extends ScCheckbox implements ScElement {
   }
 
   getParams(): Record<string, number> {
-    return this.param ? {[this.param]: this.checked ? 1 : 0} : {};
+    return {};
   }
 
-  protected _onToggle() {
-    this._notifyChange();
-  }
-
-  private _notifyChange() {
+  protected _notifyChange() {
     this._node.value?.onChange(this);
   }
 }

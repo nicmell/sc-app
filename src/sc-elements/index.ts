@@ -7,6 +7,7 @@ import {ScSwitch} from './sc-switch.ts';
 import {ScGroup} from './sc-group.ts';
 import {ScSynth} from './sc-synth.ts';
 import {ScRun} from './sc-run.ts';
+import {ScUGen} from './sc-ugen.ts';
 
 export default {
   [ELEMENTS.SC_DISPLAY]: ScDisplay,
@@ -17,4 +18,5 @@ export default {
   [ELEMENTS.SC_GROUP]: ScGroup,
   [ELEMENTS.SC_SYNTH]: ScSynth,
   [ELEMENTS.SC_RUN]: ScRun,
+  [ELEMENTS.SC_UGEN]: ScUGen,
 };

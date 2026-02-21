@@ -41,6 +41,7 @@
   <xs:element name="sc-group" type="scGroupType"/>
   <xs:element name="sc-synth" type="scSynthType"/>
   <xs:element name="sc-run" type="scRunType"/>
+  <xs:element name="sc-ugen" type="scUGenType"/>
 
   <!-- ==================== Content model groups ==================== -->
 
@@ -231,11 +232,20 @@
     <xs:attributeGroup ref="commonAttrs"/>
   </xs:complexType>
 
-  <!-- sc-synth (container: accepts HTML + control sc-* elements, no sc-group/sc-synth) -->
+  <!-- sc-ugen (inline UGen declaration, display:none, dynamic attributes for inputs) -->
+  <xs:complexType name="scUGenType">
+    <xs:attribute name="type" type="xs:string" use="required"/>
+    <xs:attribute name="rate" type="xs:string"/>
+    <xs:attributeGroup ref="commonAttrs"/>
+    <xs:anyAttribute processContents="skip"/>
+  </xs:complexType>
+
+  <!-- sc-synth (container: accepts HTML + control sc-* elements + sc-ugen, no sc-group/sc-synth) -->
   <xs:complexType name="scSynthType" mixed="true">
     <xs:choice minOccurs="0" maxOccurs="unbounded">
       <xs:group ref="htmlElements"/>
       <xs:group ref="scControls"/>
+      <xs:element ref="sc-ugen"/>
     </xs:choice>
     <xs:attribute name="name" type="xs:string"/>
     <xs:attributeGroup ref="commonAttrs"/>

@@ -7,4 +7,5 @@ export const ELEMENTS = {
   SC_GROUP: 'sc-group',
   SC_SYNTH: 'sc-synth',
   SC_RUN: 'sc-run',
+  SC_UGEN: 'sc-ugen',
 } as const;

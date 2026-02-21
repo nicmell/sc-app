@@ -76,3 +76,7 @@ export async function defRecvMessage() {
   const bytes = new Uint8Array(await resp.arrayBuffer());
   return new OSC.Message(OSC_MESSAGES.DEF_RECV, bytes as unknown as Blob);
 }
+
+export function defRecvBytesMessage(bytes: Uint8Array) {
+  return new OSC.Message(OSC_MESSAGES.DEF_RECV, bytes as unknown as Blob);
+}

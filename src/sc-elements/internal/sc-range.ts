@@ -1,25 +1,19 @@
-import {LitElement, html, css} from 'lit';
-import {ContextConsumer} from '@lit/context';
-import {nodeContext, type ScElement} from '../context.ts';
+import {html, css} from 'lit';
+import {ScControl} from './sc-control.ts';
 
-export class ScRange extends LitElement implements ScElement {
+export class ScRange extends ScControl {
   static properties = {
-    param: {type: String},
+    ...ScControl.properties,
     min: {type: Number},
     max: {type: Number},
     step: {type: Number},
     value: {type: Number},
   };
 
-  declare param: string;
   declare min: number;
   declare max: number;
   declare step: number;
   declare value: number;
-
-  protected _node = new ContextConsumer(this, {context: nodeContext, subscribe: true,
-    callback: (ctx) => ctx?.registerElement(this),
-  });
 
   static styles = css`
     :host { display: block; }
@@ -32,16 +26,10 @@ export class ScRange extends LitElement implements ScElement {
 
   constructor() {
     super();
-    this.param = '';
     this.min = 0;
     this.max = 1;
     this.step = 0.01;
     this.value = 0;
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    this._node.value?.unregisterElement(this);
   }
 
   getParams(): Record<string, number> {
@@ -57,13 +45,13 @@ export class ScRange extends LitElement implements ScElement {
     v = Math.max(this.min, Math.min(this.max, v));
     if (v !== this.value) {
       this.value = v;
-      this._node.value?.onChange(this);
+      this._notifyChange();
     }
   }
 
   private _onInput(e: Event) {
     this.value = parseFloat((e.target as HTMLInputElement).value);
-    this._node.value?.onChange(this);
+    this._notifyChange();
   }
 
   render() {

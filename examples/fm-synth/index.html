@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>FM Synth</title>
+</head>
+<body>
+  <sc-synth>
+    <sc-ugen id="mod" type="SinOsc" rate="ar" freq="@modfreq" phase="0"/>
+    <sc-ugen id="modscaled" type="MulAdd" rate="ar" in="#mod" mul="@index" add="@freq"/>
+    <sc-ugen id="car" type="SinOsc" rate="ar" freq="#modscaled" phase="0"/>
+    <sc-ugen id="pan" type="Pan2" rate="ar" in="#car" pos="0" level="@amp"/>
+    <sc-ugen type="Out" rate="ar" bus="0" in="#pan.0,#pan.1"/>
+
+    <label>
+      <sc-run width="24" height="24"/>
+      <sc-if prop="running" is-truthy="On" is-falsy="Off"/>
+    </label>
+    <div>
+      <label>
+        <sc-knob param="freq" min="20" max="2000" step="1" value="440" diameter="48"/>
+        <span>Freq: <sc-display prop="params.freq" format="%d Hz"/></span>
+      </label>
+      <label>
+        <sc-knob param="modfreq" min="1" max="2000" step="1" value="220" diameter="48"/>
+        <span>Mod: <sc-display prop="params.modfreq" format="%d Hz"/></span>
+      </label>
+      <label>
+        <sc-knob param="index" min="0" max="1000" step="1" value="200" diameter="48"/>
+        <span>Index: <sc-display prop="params.index" format="%d"/></span>
+      </label>
+      <label>
+        <sc-knob param="amp" min="0" max="1" step="0.01" value="0.2" diameter="48"/>
+        <span><sc-display prop="params.amp" format="%.2f"/></span>
+      </label>
+    </div>
+  </sc-synth>
+</body>
+</html>
