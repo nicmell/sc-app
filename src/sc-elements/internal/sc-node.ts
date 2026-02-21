@@ -3,11 +3,12 @@ import {ContextProvider, ContextConsumer} from '@lit/context';
 import {oscService} from '@/lib/osc';
 import {nodeRunMessage, nodeSetMessage} from '@/lib/osc/messages.ts';
 import {nodesApi} from '@/lib/stores/api';
-import {nodeContext, type NodeContext, type ScNode as IScNode, type ScElement} from '../context.ts';
+import {nodeContext, type NodeContext, type ScNode as IScNode, type ScElement, type ScUGenData} from '../context.ts';
 
 export abstract class ScNode extends LitElement implements IScNode {
   readonly nodeId: number;
   protected registeredElements = new Set<ScElement>();
+  protected registeredUGens: ScUGenData[] = [];
   protected _group!: ContextConsumer<{__context__: NodeContext}, this>;
 
   protected abstract get type(): 'synth' | 'group';
@@ -24,6 +25,15 @@ export abstract class ScNode extends LitElement implements IScNode {
 
   unregisterElement(el: ScElement) {
     this.registeredElements.delete(el);
+  }
+
+  registerUGen(el: ScUGenData) {
+    this.registeredUGens.push(el);
+  }
+
+  unregisterUGen(el: ScUGenData) {
+    const idx = this.registeredUGens.indexOf(el);
+    if (idx >= 0) this.registeredUGens.splice(idx, 1);
   }
 
   registerNode(_node: IScNode) {}
@@ -56,6 +66,8 @@ export abstract class ScNode extends LitElement implements IScNode {
       get params() { return self.params; },
       registerElement: (el) => this.registerElement(el),
       unregisterElement: (el) => this.unregisterElement(el),
+      registerUGen: (el) => this.registerUGen(el),
+      unregisterUGen: (el) => this.unregisterUGen(el),
       registerNode: (node) => this.registerNode(node),
       unregisterNode: (node) => this.unregisterNode(node),
       onChange: (el) => this.onChange(el),

@@ -92,12 +92,20 @@ export interface ConfigFile {
   plugins: PersistedPlugin[];
 }
 
+export interface UGenItem {
+  type: string;
+  rate: string;
+  id: string;
+  inputs: Record<string, string>;
+}
+
 export interface SynthItem {
   type: 'synth';
   nodeId: number;
   groupId: number;
   isRunning: boolean;
   params: Record<string, number>;
+  ugens: UGenItem[];
 }
 
 export interface GroupItem {

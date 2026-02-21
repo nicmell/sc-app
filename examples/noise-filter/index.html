@@ -6,9 +6,9 @@
 <body>
   <sc-synth>
     <sc-ugen id="noise" type="WhiteNoise" rate="ar"/>
-    <sc-ugen id="filt" type="RLPF" rate="ar" in="#noise" freq="@cutoff" rq="@rq"/>
-    <sc-ugen id="pan" type="Pan2" rate="ar" in="#filt" pos="0" level="@amp"/>
-    <sc-ugen type="Out" rate="ar" bus="0" in="#pan.0,#pan.1"/>
+    <sc-ugen id="filt" type="RLPF" rate="ar" in="ugens.noise" freq="params.cutoff" rq="params.rq"/>
+    <sc-ugen id="pan" type="Pan2" rate="ar" in="ugens.filt" pos="0" level="params.amp"/>
+    <sc-ugen type="Out" rate="ar" bus="0" in="ugens.pan.0,ugens.pan.1"/>
 
     <label>
       <sc-run width="24" height="24"/>

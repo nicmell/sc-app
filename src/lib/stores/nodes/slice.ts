@@ -1,4 +1,4 @@
-import type {NodesState, NodeItem, SynthItem, GroupItem} from "@/types/stores";
+import type {NodesState, NodeItem, SynthItem, GroupItem, UGenItem} from "@/types/stores";
 import {createSlice} from "@/lib/stores/utils";
 import {SliceName, NodesAction} from "@/constants/store";
 
@@ -37,8 +37,8 @@ export const nodesSlice = createSlice({
   name: SliceName.NODES,
   initialState,
   reducers: {
-    [NodesAction.NEW_SYNTH]: (state, action: { payload: { nodeId: number; groupId: number; params: Record<string, number> } }) => {
-      state.items.push({type: 'synth', nodeId: action.payload.nodeId, groupId: action.payload.groupId, isRunning: false, params: action.payload.params});
+    [NodesAction.NEW_SYNTH]: (state, action: { payload: { nodeId: number; groupId: number; params: Record<string, number>; ugens?: UGenItem[] } }) => {
+      state.items.push({type: 'synth', nodeId: action.payload.nodeId, groupId: action.payload.groupId, isRunning: false, params: action.payload.params, ugens: action.payload.ugens ?? []});
     },
     [NodesAction.NEW_GROUP]: (state, action: { payload: { nodeId: number; groupId: number } }) => {
       state.items.push({type: 'group', nodeId: action.payload.nodeId, groupId: action.payload.groupId});
