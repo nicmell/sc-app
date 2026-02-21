@@ -72,6 +72,7 @@
       <xs:element ref="sc-slider"/>
       <xs:element ref="sc-switch"/>
       <xs:element ref="sc-run"/>
+      <xs:element ref="sc-ugen"/>
     </xs:choice>
   </xs:group>
 
@@ -245,7 +246,6 @@
     <xs:choice minOccurs="0" maxOccurs="unbounded">
       <xs:group ref="htmlElements"/>
       <xs:group ref="scControls"/>
-      <xs:element ref="sc-ugen"/>
     </xs:choice>
     <xs:attribute name="name" type="xs:string"/>
     <xs:attributeGroup ref="commonAttrs"/>

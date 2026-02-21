@@ -30,7 +30,13 @@ export class PluginManager {
     const plugin = pluginsApi.getById(pluginId);
     if (!plugin) throw new Error(`Plugin ${pluginId} not found`);
     const resp = await get(`${PLUGINS_URL}/${plugin.id}/${plugin.entry}`);
-    return resp.text();
+    const text = await resp.text();
+    const doc = new DOMParser().parseFromString(text, "text/xml");
+    const error = doc.querySelector("parsererror");
+    if (error) {
+      throw new Error(error.textContent ?? "Invalid XHTML")
+    }
+    return doc.documentElement.innerHTML;
   }
 }
 
