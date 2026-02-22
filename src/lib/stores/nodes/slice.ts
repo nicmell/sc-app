@@ -27,16 +27,12 @@ export function isUGen(el: AnyElement): el is UGenElement {
   return el.type === 'ugen';
 }
 
-export function isNodeElement(el: AnyElement): el is NodeElement {
+export function isNode(el: AnyElement): el is NodeElement {
   return el.type === 'synth' || el.type === 'group';
 }
 
 export function isScUGenData(el: ScElement): el is ScElement & ScUGenData {
   return 'rate' in el && 'id' in el;
-}
-
-export function isScNode(el: ScElement): boolean {
-  return 'nodeId' in el;
 }
 
 function getChildren(items: NodeElement[], groupId: number): NodeElement[] {
@@ -103,7 +99,7 @@ export const nodesSlice = createSlice({
         state.items = state.items.filter(n => n.nodeId !== action.payload);
       }
       for (const item of state.items) {
-        item.elements = item.elements.filter(el => !isNodeElement(el) || !freedIds.has(el.nodeId));
+        item.elements = item.elements.filter(el => !isNode(el) || !freedIds.has(el.nodeId));
       }
     },
     [NodesAction.SET_RUNNING]: (state, action: { payload: { nodeId: number; isRunning: boolean } }) => {

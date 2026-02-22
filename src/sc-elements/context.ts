@@ -1,5 +1,5 @@
 import {createContext} from '@lit/context';
-import type {AnyElement, InputElement, UGenElement} from '@/types/stores';
+import type {AnyElement, InputElement, NodeElement, UGenElement} from '@/types/stores';
 
 export interface ScElement {
   tagName: string;
@@ -21,7 +21,7 @@ export interface NodeContext {
   elements: AnyElement[];
   inputs: InputElement[];
   ugens: UGenElement[];
-  nodes: ScElement[];
+  nodes: NodeElement[];
   registerElement(el: ScElement): void;
   unregisterElement(el: ScElement): void;
   onChange(el: ScElement): void;

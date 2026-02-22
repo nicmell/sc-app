@@ -4,7 +4,7 @@ import {oscService} from '@/lib/osc';
 import {nodeRunMessage, nodeSetMessage} from '@/lib/osc/messages.ts';
 import {nodesApi} from '@/lib/stores/api';
 import type {AnyElement, InputElement, UGenElement} from '@/types/stores';
-import {isInput, isUGen, isScNode} from '@/lib/stores/nodes/slice';
+import {isInput, isUGen, isNode} from '@/lib/stores/nodes/slice';
 import {nodeContext, type NodeContext, type ScElement} from '../context.ts';
 
 export abstract class ScNode extends LitElement implements ScElement {
@@ -63,7 +63,7 @@ export abstract class ScNode extends LitElement implements ScElement {
         return self.elements.filter(isUGen);
       },
       get nodes() {
-        return [...self.registeredElements].filter(isScNode);
+        return self.elements.filter(isNode);
       },
       registerElement: (el) => this.registerElement(el),
       unregisterElement: (el) => this.unregisterElement(el),
