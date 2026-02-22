@@ -5,32 +5,32 @@
 </head>
 <body>
   <sc-synth>
-    <sc-ugen id="u_mod" type="SinOsc" rate="ar" freq="inputs.modfreq" phase="0"/>
-    <sc-ugen id="u_modscaled" type="MulAdd" rate="ar" in="ugens.u_mod" mul="inputs.index" add="inputs.freq"/>
-    <sc-ugen id="u_car" type="SinOsc" rate="ar" freq="ugens.u_modscaled" phase="0"/>
-    <sc-ugen id="u_pan" type="Pan2" rate="ar" in="ugens.u_car" pos="0" level="inputs.amp"/>
-    <sc-ugen type="Out" rate="ar" bus="0" in="ugens.u_pan.0,ugens.u_pan.1"/>
+    <sc-ugen id="u_mod" type="SinOsc" rate="ar" freq="modfreq" phase="0"/>
+    <sc-ugen id="u_modscaled" type="MulAdd" rate="ar" in="u_mod" mul="index" add="freq"/>
+    <sc-ugen id="u_car" type="SinOsc" rate="ar" freq="u_modscaled" phase="0"/>
+    <sc-ugen id="u_pan" type="Pan2" rate="ar" in="u_car" pos="0" level="amp"/>
+    <sc-ugen type="Out" rate="ar" bus="0" in="u_pan.0,u_pan.1"/>
 
     <label>
       <sc-run width="24" height="24"/>
-      <sc-if is-running is-truthy="On" is-falsy="Off"/>
+      <sc-if is-running="true" is-truthy="On" is-falsy="Off"/>
     </label>
     <div>
       <label>
         <sc-knob param="freq" min="20" max="2000" step="1" value="440" diameter="48"/>
-        <span>Freq: <sc-display prop="input.freq" format="%d Hz"/></span>
+        <span>Freq: <sc-display prop="freq" format="%d Hz"/></span>
       </label>
       <label>
         <sc-knob param="modfreq" min="1" max="2000" step="1" value="220" diameter="48"/>
-        <span>Mod: <sc-display prop="input.modfreq" format="%d Hz"/></span>
+        <span>Mod: <sc-display prop="modfreq" format="%d Hz"/></span>
       </label>
       <label>
         <sc-knob param="index" min="0" max="1000" step="1" value="200" diameter="48"/>
-        <span>Index: <sc-display prop="input.index" format="%d"/></span>
+        <span>Index: <sc-display prop="index" format="%d"/></span>
       </label>
       <label>
         <sc-knob param="amp" min="0" max="1" step="0.01" value="0.2" diameter="48"/>
-        <span><sc-display prop="input.amp" format="%.2f"/></span>
+        <span><sc-display prop="amp" format="%.2f"/></span>
       </label>
     </div>
   </sc-synth>

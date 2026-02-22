@@ -6,26 +6,26 @@
 <body>
   <sc-synth>
     <sc-ugen id="u_noise" type="WhiteNoise" rate="ar"/>
-    <sc-ugen id="u_filt" type="RLPF" rate="ar" in="ugens.u_noise" freq="inputs.cutoff" rq="inputs.rq"/>
-    <sc-ugen id="u_pan" type="Pan2" rate="ar" in="ugens.u_filt" pos="0" level="inputs.amp"/>
-    <sc-ugen type="Out" rate="ar" bus="0" in="ugens.u_pan.0,ugens.u_pan.1"/>
+    <sc-ugen id="u_filt" type="RLPF" rate="ar" in="u_noise" freq="cutoff" rq="rq"/>
+    <sc-ugen id="u_pan" type="Pan2" rate="ar" in="u_filt" pos="0" level="amp"/>
+    <sc-ugen type="Out" rate="ar" bus="0" in="u_pan.0,u_pan.1"/>
 
     <label>
       <sc-run width="24" height="24"/>
-      <sc-if is-running is-truthy="On" is-falsy="Off"/>
+      <sc-if is-running="true" is-truthy="On" is-falsy="Off"/>
     </label>
     <div>
       <label>
         <sc-knob param="cutoff" min="20" max="10000" step="1" value="1000" diameter="48"/>
-        <span><sc-display prop="input.cutoff" format="%d Hz"/></span>
+        <span><sc-display prop="cutoff" format="%d Hz"/></span>
       </label>
       <label>
         <sc-knob param="rq" min="0.01" max="1" step="0.01" value="0.5" diameter="48"/>
-        <span>Q: <sc-display prop="input.rq" format="%.2f"/></span>
+        <span>Q: <sc-display prop="rq" format="%.2f"/></span>
       </label>
       <label>
         <sc-knob param="amp" min="0" max="1" step="0.01" value="0.15" diameter="48"/>
-        <span><sc-display prop="input.amp" format="%.2f"/></span>
+        <span><sc-display prop="amp" format="%.2f"/></span>
       </label>
     </div>
   </sc-synth>

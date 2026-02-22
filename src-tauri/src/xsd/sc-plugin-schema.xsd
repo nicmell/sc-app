@@ -167,6 +167,8 @@
     <xs:attribute name="is-not-equal" type="xs:string"/>
     <xs:attribute name="is-greater-than" type="xs:string"/>
     <xs:attribute name="is-lesser-than" type="xs:string"/>
+    <xs:attribute name="is-running" type="xs:string"/>
+    <xs:attribute name="is-loaded" type="xs:string"/>
     <xs:attributeGroup ref="commonAttrs"/>
   </xs:complexType>
 

@@ -21,15 +21,12 @@ interface ResolveContext {
 }
 
 function resolveInput(raw: string, ctx: ResolveContext): UGenInput {
-  if (raw.startsWith('inputs.')) {
-    const id = raw.slice(7);
-    if (id in ctx.inputs) return ctx.inputs[id];
-  }
-  if (raw.startsWith('ugens.')) {
-    const parts = raw.slice(6).split('.');
-    const ugen = ctx.ugens[parts[0]];
-    if (ugen && parts.length > 1) return ugen.output(parseInt(parts[1], 10));
-    if (ugen) return ugen;
+  const parts = raw.split('.');
+  const id = parts[0];
+  if (id in ctx.inputs) return ctx.inputs[id];
+  if (id in ctx.ugens) {
+    const ugen = ctx.ugens[id];
+    return parts.length > 1 ? ugen.output(parseInt(parts[1], 10)) : ugen;
   }
   return parseFloat(raw);
 }

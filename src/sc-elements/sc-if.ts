@@ -2,15 +2,10 @@ import {LitElement, html, css} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext, type NodeContext} from './context.ts';
 import {StoreSubscriber} from './store-subscriber.ts';
-import {get} from '@/lib/utils/get';
 
 function resolveContextProp(ctx: NodeContext | undefined, prop: string): unknown {
   if (!ctx) return undefined;
-  if (prop.startsWith('input.')) {
-    const id = prop.slice(6);
-    return ctx.inputs.find(e => e.id === id)?.value;
-  }
-  return get(ctx, prop);
+  return ctx.inputs.find(e => e.id === prop)?.value;
 }
 
 export class ScIf extends LitElement {

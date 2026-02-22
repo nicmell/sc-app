@@ -7,22 +7,22 @@
   <sc-synth name="sine" class="example-plugin">
     <label>
       <sc-run width="24" height="24"/>
-      <sc-if is-running is-truthy="On" is-falsy="Off"></sc-if>
+      <sc-if is-running="true" is-truthy="On" is-falsy="Off"></sc-if>
     </label>
     <div class="controls">
       <div class="knobs">
         <label>
           <sc-knob param="freq" min="20" max="2000" step="1" value="440" diameter="48"></sc-knob>
-          <span><sc-display prop="input.freq" format="%d Hz"></sc-display></span>
+          <span><sc-display prop="freq" format="%d Hz"></sc-display></span>
         </label>
         <label>
           <sc-knob param="amp" min="0" max="1" step="0.01" value="0.2" diameter="48"></sc-knob>
-          <span><sc-display prop="input.amp" format="%.2f"></sc-display></span>
+          <span><sc-display prop="amp" format="%.2f"></sc-display></span>
         </label>
       </div>
       <div class="sliders">
         <label>
-          <span>Pan: <sc-display prop="input.pan" format="%.2f"></sc-display></span>
+          <span>Pan: <sc-display prop="pan" format="%.2f"></sc-display></span>
           <sc-slider param="pan" min="-1" max="1" step="0.01" value="0" width="120" height="16"></sc-slider>
         </label>
         <label>
