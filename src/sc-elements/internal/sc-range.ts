@@ -1,4 +1,5 @@
 import {html, css} from 'lit';
+import type {AnyElement} from '@/types/stores';
 import {ScControl} from './sc-control.ts';
 
 export class ScRange extends ScControl {
@@ -32,8 +33,8 @@ export class ScRange extends ScControl {
     this.value = 0;
   }
 
-  getInputs(): Record<string, any> {
-    return this.param ? {[this.param]: this.value} : {};
+  getElement(): AnyElement | undefined {
+    return this.param ? {type: 'input', id: this.param, value: this.value} : undefined;
   }
 
   protected _ratio(): number {

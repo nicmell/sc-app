@@ -16,8 +16,8 @@ export abstract class ScNode extends LitElement implements ScElement {
   abstract get isRunning(): boolean;
   abstract get elements(): AnyElement[];
 
-  getInputs(): Record<string, any> {
-    return {};
+  getElement(): AnyElement | undefined {
+    return nodesApi.items.find(n => n.nodeId === this.nodeId);
   }
 
   get loaded() {
@@ -33,9 +33,12 @@ export abstract class ScNode extends LitElement implements ScElement {
   }
 
   onChange(el: ScElement) {
-    const inputs = el.getInputs();
-    nodesApi.setInputs({nodeId: this.nodeId, inputs});
-    oscService.send(nodeSetMessage(this.nodeId, inputs));
+    const value = el.getElement();
+    if (value && value.type === 'input') {
+      const inputs = {[value.id]: value.value};
+      nodesApi.setInputs({nodeId: this.nodeId, inputs});
+      oscService.send(nodeSetMessage(this.nodeId, inputs));
+    }
   }
 
   onRun(isRunning: boolean) {

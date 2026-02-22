@@ -1,5 +1,6 @@
 import {LitElement} from 'lit';
 import {ContextConsumer} from '@lit/context';
+import type {AnyElement} from '@/types/stores';
 import {nodeContext, type ScElement} from '../context.ts';
 
 export class ScControl extends LitElement implements ScElement {
@@ -23,8 +24,8 @@ export class ScControl extends LitElement implements ScElement {
     this._node.value?.unregisterElement(this);
   }
 
-  getInputs(): Record<string, any> {
-    return {};
+  getElement(): AnyElement | undefined {
+    return undefined;
   }
 
   protected _notifyChange() {

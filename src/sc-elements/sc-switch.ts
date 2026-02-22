@@ -1,4 +1,5 @@
 import {ContextConsumer} from '@lit/context';
+import type {AnyElement} from '@/types/stores';
 import {nodeContext, type ScElement} from './context.ts';
 import {ScCheckbox} from './internal/sc-checkbox.ts';
 
@@ -23,8 +24,8 @@ export class ScSwitch extends ScCheckbox implements ScElement {
     super.disconnectedCallback();
     this._node.value?.unregisterElement(this);
   }
-  getInputs(): Record<string, any> {
-    return this.param ? {[this.param]: this.checked ? 1 : 0} : {};
+  getElement(): AnyElement | undefined {
+    return this.param ? {type: 'input', id: this.param, value: this.checked ? 1 : 0} : undefined;
   }
 
   protected _onToggle() {

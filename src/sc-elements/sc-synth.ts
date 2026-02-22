@@ -90,8 +90,9 @@ export class ScSynth extends ScNode {
   protected firstUpdated() {
     const inputElements: InputElement[] = [];
     for (const el of this.registeredElements) {
-      for (const [id, value] of Object.entries(el.getInputs())) {
-        inputElements.push({type: 'input', id, value});
+      const value = el.getElement();
+      if (value && isInput(value)) {
+        inputElements.push(value);
       }
     }
 

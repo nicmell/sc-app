@@ -1,6 +1,8 @@
 import {LitElement, html, css} from 'lit';
 import {ContextConsumer} from '@lit/context';
+import type {AnyElement} from '@/types/stores';
 import {nodeContext, type ScElement, type ScUGenData} from './context.ts';
+import {UGEN_REGISTRY} from './internal/ugen-registry.ts';
 
 export class ScUGen extends LitElement implements ScUGenData, ScElement {
   static properties = {
@@ -23,8 +25,16 @@ export class ScUGen extends LitElement implements ScUGenData, ScElement {
     this.rate = 'ar';
   }
 
-  getInputs(): Record<string, any> {
-    return {};
+  getElement(): AnyElement | undefined {
+    const entry = UGEN_REGISTRY[this.type];
+    const inputs: Record<string, any> = {};
+    if (entry) {
+      for (const paramName of entry.inputs) {
+        const val = this.getAttribute(paramName);
+        if (val != null) inputs[paramName] = val;
+      }
+    }
+    return {type: 'ugen', id: this.id, ugen: this.type, rate: this.rate, inputs};
   }
 
   disconnectedCallback() {

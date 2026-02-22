@@ -3,7 +3,7 @@ import type {AnyElement, InputElement, NodeElement, UGenElement} from '@/types/s
 
 export interface ScElement {
   tagName: string;
-  getInputs(): Record<string, any>;
+  getElement(): AnyElement | undefined;
 }
 
 export interface ScUGenData {
