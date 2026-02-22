@@ -6,6 +6,7 @@ import "react-resizable/css/styles.css";
 import {useSelector} from "@/lib/stores/store";
 import layoutStore from "@/lib/stores/layout";
 import {layoutApi, pluginsApi} from "@/lib/stores/api";
+import {store} from "@/lib/stores/store";
 import {DashboardPanel} from "./DashboardPanel";
 import {deepEqual} from "@/lib/utils/deepEqual";
 import {SettingsDrawer} from "@/components/SettingsDrawer";
@@ -128,6 +129,11 @@ export function Dashboard() {
         <div className="dashboard">
             <header className="header">
                 <span className="header-title">SC-App</span>
+                <IconButton size="md" onClick={() => console.log(store.getState())} aria-label="Log state">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                    </svg>
+                </IconButton>
                 <IconButton size="md" onClick={() => setSettingsOpen(true)} aria-label="Menu">
                     <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor">
                         <rect y="3" width="20" height="2" rx="1"/>

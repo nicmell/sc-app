@@ -1,4 +1,5 @@
 import {createContext} from '@lit/context';
+import type {AnyElement, InputElement, UGenElement} from '@/types/stores';
 
 export interface ScElement {
   tagName: string;
@@ -12,22 +13,17 @@ export interface ScUGenData {
   getAttribute(name: string): string | null;
 }
 
-export interface ScNode {
-  readonly nodeId: number;
-}
-
 export interface NodeContext {
   type: 'synth' | 'group';
   nodeId: number;
   loaded: boolean;
   running: boolean;
-  inputs: Record<string, any>;
+  elements: AnyElement[];
+  inputs: InputElement[];
+  ugens: UGenElement[];
+  nodes: ScElement[];
   registerElement(el: ScElement): void;
   unregisterElement(el: ScElement): void;
-  registerUGen(el: ScUGenData): void;
-  unregisterUGen(el: ScUGenData): void;
-  registerNode(node: ScNode): void;
-  unregisterNode(node: ScNode): void;
   onChange(el: ScElement): void;
   onRun(isRunning: boolean): void;
 }

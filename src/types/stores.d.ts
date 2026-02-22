@@ -92,32 +92,43 @@ export interface ConfigFile {
   plugins: PersistedPlugin[];
 }
 
-export interface UGenItem {
-  type: string;
-  rate: string;
+export interface InputElement {
+  type: 'input';
   id: string;
+  value: any;
+}
+
+export interface UGenElement {
+  type: 'ugen';
+  id: string;
+  ugen: string;
+  rate: string;
   inputs: Record<string, any>;
 }
 
-export interface SynthItem {
+export interface SynthElement {
+  id: string;
   type: 'synth';
   nodeId: number;
   groupId: number;
   isRunning: boolean;
-  inputs: Record<string, any>;
-  ugens: UGenItem[];
+  elements: AnyElement[];
 }
 
-export interface GroupItem {
+export interface GroupElement {
+  id: string;
   type: 'group';
   nodeId: number;
   groupId: number;
+  elements: AnyElement[];
 }
 
-export type NodeItem = SynthItem | GroupItem;
+export type NodeElement = SynthElement | GroupElement;
+
+export type AnyElement = InputElement | UGenElement | NodeElement;
 
 export interface NodesState {
-  items: NodeItem[];
+  items: NodeElement[];
 }
 
 export interface PluginsState {

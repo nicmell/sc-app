@@ -1,8 +1,17 @@
 import {LitElement, html, css} from 'lit';
 import {ContextConsumer} from '@lit/context';
-import {nodeContext} from './context.ts';
+import {nodeContext, type NodeContext} from './context.ts';
 import {StoreSubscriber} from './store-subscriber.ts';
 import {get} from '@/lib/utils/get';
+
+function resolveContextProp(ctx: NodeContext | undefined, prop: string): unknown {
+  if (!ctx) return undefined;
+  if (prop.startsWith('input.')) {
+    const id = prop.slice(6);
+    return ctx.inputs.find(e => e.id === id)?.value;
+  }
+  return get(ctx, prop);
+}
 
 function formatValue(template: string, value: unknown): string {
   if (typeof value === 'boolean') return template.replace('%b', value ? 'true' : 'false');
@@ -41,11 +50,11 @@ export class ScDisplay extends LitElement {
     super();
     this.prop = '';
     this.format = '';
-    new StoreSubscriber(this, () => get(this._node.value, this.prop));
+    new StoreSubscriber(this, () => resolveContextProp(this._node.value, this.prop));
   }
 
   render() {
-    const value = get(this._node.value, this.prop);
+    const value = resolveContextProp(this._node.value, this.prop);
     const text = this.format ? formatValue(this.format, value) : String(value ?? '');
     return html`${text}`;
   }

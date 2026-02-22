@@ -3,17 +3,22 @@ import {ContextProvider, ContextConsumer} from '@lit/context';
 import {oscService} from '@/lib/osc';
 import {nodeRunMessage, nodeSetMessage} from '@/lib/osc/messages.ts';
 import {nodesApi} from '@/lib/stores/api';
-import {nodeContext, type NodeContext, type ScNode as IScNode, type ScElement, type ScUGenData} from '../context.ts';
+import type {AnyElement, InputElement, UGenElement} from '@/types/stores';
+import {isInput, isUGen, isScNode} from '@/lib/stores/nodes/slice';
+import {nodeContext, type NodeContext, type ScElement} from '../context.ts';
 
-export abstract class ScNode extends LitElement implements IScNode {
+export abstract class ScNode extends LitElement implements ScElement {
   readonly nodeId: number;
   protected registeredElements = new Set<ScElement>();
-  protected registeredUGens: ScUGenData[] = [];
   protected _group!: ContextConsumer<{__context__: NodeContext}, this>;
 
   protected abstract get type(): 'synth' | 'group';
   abstract get isRunning(): boolean;
-  abstract get inputs(): Record<string, any>;
+  abstract get elements(): AnyElement[];
+
+  getInputs(): Record<string, any> {
+    return {};
+  }
 
   get loaded() {
     return nodesApi.items.some(n => n.nodeId === this.nodeId);
@@ -26,19 +31,6 @@ export abstract class ScNode extends LitElement implements IScNode {
   unregisterElement(el: ScElement) {
     this.registeredElements.delete(el);
   }
-
-  registerUGen(el: ScUGenData) {
-    this.registeredUGens.push(el);
-  }
-
-  unregisterUGen(el: ScUGenData) {
-    const idx = this.registeredUGens.indexOf(el);
-    if (idx >= 0) this.registeredUGens.splice(idx, 1);
-  }
-
-  registerNode(_node: IScNode) {}
-
-  unregisterNode(_node: IScNode) {}
 
   onChange(el: ScElement) {
     const inputs = el.getInputs();
@@ -63,13 +55,18 @@ export abstract class ScNode extends LitElement implements IScNode {
       nodeId: this.nodeId,
       get loaded() { return self.loaded; },
       get running() { return self.isRunning; },
-      get inputs() { return self.inputs; },
+      get elements() { return self.elements; },
+      get inputs(): InputElement[] {
+        return self.elements.filter(isInput);
+      },
+      get ugens(): UGenElement[] {
+        return self.elements.filter(isUGen);
+      },
+      get nodes() {
+        return [...self.registeredElements].filter(isScNode);
+      },
       registerElement: (el) => this.registerElement(el),
       unregisterElement: (el) => this.unregisterElement(el),
-      registerUGen: (el) => this.registerUGen(el),
-      unregisterUGen: (el) => this.unregisterUGen(el),
-      registerNode: (node) => this.registerNode(node),
-      unregisterNode: (node) => this.unregisterNode(node),
       onChange: (el) => this.onChange(el),
       onRun: (isRunning) => this.onRun(isRunning),
     };

@@ -6,30 +6,24 @@ import {
   freeNodeMessage
 } from '@/lib/osc/messages.ts';
 import {nodesApi} from '@/lib/stores/api';
-import {type ScNode as IScNode} from './context.ts';
+import type {AnyElement} from '@/types/stores';
+import {isGroup} from '@/lib/stores/nodes/slice';
 import {ScNode} from './internal/sc-node.ts';
 
 export class ScGroup extends ScNode {
-  private registeredNodes = new Set<IScNode>();
-
   protected get type() { return 'group' as const; }
 
   get isRunning() { return false; }
 
-  get inputs(): Record<string, any> { return {}; }
-
-  registerNode(node: IScNode) {
-    this.registeredNodes.add(node);
-  }
-
-  unregisterNode(node: IScNode) {
-    this.registeredNodes.delete(node);
+  get elements(): AnyElement[] {
+    const n = nodesApi.items.find(n => n.nodeId === this.nodeId);
+    return n && isGroup(n) ? n.elements : [];
   }
 
   protected firstUpdated() {
     const group = this._group.value;
     const groupId = group?.nodeId ?? oscService.defaultGroupId();
-    group?.registerNode(this);
+    group?.registerElement(this);
     nodesApi.newGroup({nodeId: this.nodeId, groupId});
     oscService.send(
       newGroupMessage(this.nodeId),
@@ -39,7 +33,7 @@ export class ScGroup extends ScNode {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this._group.value?.unregisterNode(this);
+    this._group.value?.unregisterElement(this);
     if (this.loaded) {
       nodesApi.freeNode(this.nodeId);
       oscService.send(

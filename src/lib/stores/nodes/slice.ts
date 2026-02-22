@@ -1,21 +1,50 @@
-import type {NodesState, NodeItem, SynthItem, GroupItem, UGenItem} from "@/types/stores";
+import type {
+  AnyElement,
+  GroupElement,
+  InputElement,
+  NodeElement,
+  NodesState,
+  SynthElement,
+  UGenElement
+} from "@/types/stores";
+import type {ScElement, ScUGenData} from "@/sc-elements/context";
 import {createSlice} from "@/lib/stores/utils";
-import {SliceName, NodesAction} from "@/constants/store";
+import {NodesAction, SliceName} from "@/constants/store";
 
-export function isSynth(node: NodeItem): node is SynthItem {
+export function isSynth(node: NodeElement): node is SynthElement {
   return node.type === 'synth';
 }
 
-export function isGroup(node: NodeItem): node is GroupItem {
+export function isGroup(node: NodeElement): node is GroupElement {
   return node.type === 'group';
 }
 
-function getChildren(items: NodeItem[], groupId: number): NodeItem[] {
+export function isInput(el: AnyElement): el is InputElement {
+  return el.type === 'input';
+}
+
+export function isUGen(el: AnyElement): el is UGenElement {
+  return el.type === 'ugen';
+}
+
+export function isNodeElement(el: AnyElement): el is NodeElement {
+  return el.type === 'synth' || el.type === 'group';
+}
+
+export function isScUGenData(el: ScElement): el is ScElement & ScUGenData {
+  return 'rate' in el && 'id' in el;
+}
+
+export function isScNode(el: ScElement): boolean {
+  return 'nodeId' in el;
+}
+
+function getChildren(items: NodeElement[], groupId: number): NodeElement[] {
   return items.filter(n => n.groupId === groupId);
 }
 
-function getDescendants(items: NodeItem[], groupId: number): NodeItem[] {
-  const result: NodeItem[] = [];
+function getDescendants(items: NodeElement[], groupId: number): NodeElement[] {
+  const result: NodeElement[] = [];
   for (const child of getChildren(items, groupId)) {
     result.push(child);
     if (isGroup(child)) {
@@ -25,7 +54,7 @@ function getDescendants(items: NodeItem[], groupId: number): NodeItem[] {
   return result;
 }
 
-function getLeaves(items: NodeItem[], groupId: number): SynthItem[] {
+function getLeaves(items: NodeElement[], groupId: number): SynthElement[] {
   return getDescendants(items, groupId).filter(isSynth);
 }
 
@@ -37,21 +66,44 @@ export const nodesSlice = createSlice({
   name: SliceName.NODES,
   initialState,
   reducers: {
-    [NodesAction.NEW_SYNTH]: (state, action: { payload: { nodeId: number; groupId: number; inputs: Record<string, any>; ugens?: UGenItem[] } }) => {
-      state.items.push({type: 'synth', nodeId: action.payload.nodeId, groupId: action.payload.groupId, isRunning: false, inputs: action.payload.inputs, ugens: action.payload.ugens ?? []});
+    [NodesAction.NEW_SYNTH]: (state, action: {
+      payload: { nodeId: number; groupId: number; elements: AnyElement[] }
+    }) => {
+      const {nodeId, groupId, elements} = action.payload;
+      const id = `synth_${nodeId}`;
+      const item: SynthElement = {id, type: 'synth', nodeId, groupId, isRunning: false, elements};
+      state.items.push(item);
+      const parent = state.items.find(n => n.nodeId === groupId);
+      if (parent) {
+        parent.elements.push(item);
+      }
     },
     [NodesAction.NEW_GROUP]: (state, action: { payload: { nodeId: number; groupId: number } }) => {
-      state.items.push({type: 'group', nodeId: action.payload.nodeId, groupId: action.payload.groupId});
+      const {nodeId, groupId} = action.payload;
+      const id = `group_${nodeId}`;
+      const item: GroupElement = {id, type: 'group', nodeId, groupId, elements: []};
+      state.items.push(item);
+      const parent = state.items.find(n => n.nodeId === groupId);
+      if (parent) {
+        parent.elements.push(item);
+      }
     },
     [NodesAction.FREE_NODE]: (state, action: { payload: number }) => {
       const node = state.items.find(n => n.nodeId === action.payload);
       if (!node) return;
+      const freedIds: Set<number> = new Set();
       if (isGroup(node)) {
-        const ids = new Set(getDescendants(state.items, node.nodeId).map(n => n.nodeId));
-        ids.add(node.nodeId);
-        state.items = state.items.filter(n => !ids.has(n.nodeId));
+        freedIds.add(node.nodeId);
+        for (const d of getDescendants(state.items, node.nodeId)) {
+          freedIds.add(d.nodeId);
+        }
+        state.items = state.items.filter(n => !freedIds.has(n.nodeId));
       } else {
+        freedIds.add(action.payload);
         state.items = state.items.filter(n => n.nodeId !== action.payload);
+      }
+      for (const item of state.items) {
+        item.elements = item.elements.filter(el => !isNodeElement(el) || !freedIds.has(el.nodeId));
       }
     },
     [NodesAction.SET_RUNNING]: (state, action: { payload: { nodeId: number; isRunning: boolean } }) => {
@@ -69,12 +121,19 @@ export const nodesSlice = createSlice({
       const node = state.items.find(n => n.nodeId === action.payload.nodeId);
       if (!node) return;
       if (isSynth(node)) {
-        Object.assign(node.inputs, action.payload.inputs);
+        for (const el of node.elements) {
+          if (isInput(el) && el.id in action.payload.inputs) {
+            el.value = action.payload.inputs[el.id];
+          }
+        }
       } else if (isGroup(node)) {
         const keys = Object.keys(action.payload.inputs);
         for (const synth of getLeaves(state.items, node.nodeId)) {
           for (const key of keys) {
-            if (key in synth.inputs) synth.inputs[key] = action.payload.inputs[key];
+            const el = synth.elements.filter(isInput).find(e => e.id === key);
+            if (el) {
+              el.value = action.payload.inputs[key];
+            }
           }
         }
       }

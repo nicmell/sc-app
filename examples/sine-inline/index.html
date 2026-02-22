@@ -5,25 +5,25 @@
 </head>
 <body>
   <sc-synth>
-    <sc-ugen id="osc" type="SinOsc" rate="ar" freq="inputs.freq" phase="0"/>
-    <sc-ugen id="pan" type="Pan2" rate="ar" in="ugens.osc" pos="inputs.pan" level="inputs.amp"/>
-    <sc-ugen type="Out" rate="ar" bus="0" in="ugens.pan.0,ugens.pan.1"/>
+    <sc-ugen id="u_osc" type="SinOsc" rate="ar" freq="inputs.freq" phase="0"/>
+    <sc-ugen id="u_pan" type="Pan2" rate="ar" in="ugens.u_osc" pos="inputs.pan" level="inputs.amp"/>
+    <sc-ugen type="Out" rate="ar" bus="0" in="ugens.u_pan.0,ugens.u_pan.1"/>
 
     <label>
       <sc-run width="24" height="24"/>
-      <sc-if prop="running" is-truthy="On" is-falsy="Off"/>
+      <sc-if is-running is-truthy="On" is-falsy="Off"/>
     </label>
     <div>
       <label>
         <sc-knob param="freq" min="20" max="2000" step="1" value="440" diameter="48"/>
-        <span><sc-display prop="inputs.freq" format="%d Hz"/></span>
+        <span><sc-display prop="input.freq" format="%d Hz"/></span>
       </label>
       <label>
         <sc-knob param="amp" min="0" max="1" step="0.01" value="0.2" diameter="48"/>
-        <span><sc-display prop="inputs.amp" format="%.2f"/></span>
+        <span><sc-display prop="input.amp" format="%.2f"/></span>
       </label>
       <label>
-        <span>Pan: <sc-display prop="inputs.pan" format="%.2f"/></span>
+        <span>Pan: <sc-display prop="input.pan" format="%.2f"/></span>
         <sc-slider param="pan" min="-1" max="1" step="0.01" value="0" width="120" height="16"/>
       </label>
     </div>

@@ -1,8 +1,17 @@
 import {LitElement, html, css} from 'lit';
 import {ContextConsumer} from '@lit/context';
-import {nodeContext} from './context.ts';
+import {nodeContext, type NodeContext} from './context.ts';
 import {StoreSubscriber} from './store-subscriber.ts';
 import {get} from '@/lib/utils/get';
+
+function resolveContextProp(ctx: NodeContext | undefined, prop: string): unknown {
+  if (!ctx) return undefined;
+  if (prop.startsWith('input.')) {
+    const id = prop.slice(6);
+    return ctx.inputs.find(e => e.id === id)?.value;
+  }
+  return get(ctx, prop);
+}
 
 export class ScIf extends LitElement {
   static properties = {
@@ -13,6 +22,14 @@ export class ScIf extends LitElement {
     isNotEqual: {type: String, attribute: 'is-not-equal'},
     isGreaterThan: {type: String, attribute: 'is-greater-than'},
     isLesserThan: {type: String, attribute: 'is-lesser-than'},
+    isRunning: {
+      attribute: 'is-running',
+      converter: (v: string | null) => v === null ? undefined : v !== 'false',
+    },
+    isLoaded: {
+      attribute: 'is-loaded',
+      converter: (v: string | null) => v === null ? undefined : v !== 'false',
+    },
   };
 
   declare prop: string;
@@ -22,6 +39,8 @@ export class ScIf extends LitElement {
   declare isNotEqual: string | null;
   declare isGreaterThan: string | null;
   declare isLesserThan: string | null;
+  declare isRunning: boolean | undefined;
+  declare isLoaded: boolean | undefined;
 
   private _node = new ContextConsumer(this, {context: nodeContext, subscribe: true});
 
@@ -38,11 +57,21 @@ export class ScIf extends LitElement {
     this.isNotEqual = null;
     this.isGreaterThan = null;
     this.isLesserThan = null;
-    new StoreSubscriber(this, () => get(this._node.value, this.prop));
+    this.isRunning = undefined;
+    this.isLoaded = undefined;
+    new StoreSubscriber(this, () => resolveContextProp(this._node.value, this.prop));
   }
 
   private _test(): boolean {
-    const value = get(this._node.value, this.prop);
+    if (this.isLoaded !== undefined) {
+      const loaded = this._node.value?.loaded ?? false;
+      return this.isLoaded === loaded;
+    }
+    if (this.isRunning !== undefined) {
+      const running = this._node.value?.running ?? false;
+      return this.isRunning === running;
+    }
+    const value = resolveContextProp(this._node.value, this.prop);
     const num = typeof value === 'number' ? value : Number(value);
     if (this.isEqual !== null) return String(value) === this.isEqual;
     if (this.isNotEqual !== null) return String(value) !== this.isNotEqual;

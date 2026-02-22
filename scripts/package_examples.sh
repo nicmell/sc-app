@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 EXAMPLES_DIR="$(dirname "$SCRIPT_DIR")/examples"
-OUT_DIR="${1:-./tmp}"
+OUT_DIR="${1:-./out}"
 mkdir -p "$OUT_DIR"
 OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 
