@@ -44,8 +44,9 @@ export const layoutSlice = createSlice({
     [LayoutAction.UNLOAD_PLUGIN]: (state, action: { payload: string }) => {
       const box = state.items.find(item => item.i === action.payload);
       if (box) {
-        box.loaded = undefined;
-        box.error = undefined;
+        delete box.plugin;
+        delete box.loaded;
+        delete box.error;
       }
     },
   },

@@ -14,7 +14,6 @@ import {computePlaceholders, isPlaceholder, MARGIN} from "./utils";
 import {Placeholder} from "./Placeholder";
 import "./Dashboard.scss";
 import {BoxItem, PluginInfo} from "@/types/stores";
-import {PluginLoader} from "@/components/Dashboard/PluginLoader/PluginLoader.tsx";
 import {Button} from "@/components/ui/Button";
 import {Modal} from "@/components/ui/Modal";
 import {PluginList} from "@/components/PluginList";
@@ -39,7 +38,7 @@ function computeRowHeight(numRows: number, viewportHeight: number): number {
 
 
 function boxId() {
-    return `box-${Date.now()}`
+    return `${Date.now()}`
 }
 
 export function Dashboard() {
@@ -104,7 +103,7 @@ export function Dashboard() {
             >
                 {
                     plugin
-                        ? <PluginLoader box={item} plugin={plugin}/>
+                        ? <sc-plugin id={item.i}></sc-plugin>
                         : fallback
                 }
             </DashboardPanel>

@@ -1,5 +1,5 @@
 import type {PluginInfo} from "@/types/stores";
-import {pluginsApi} from "@/lib/stores/api";
+import {layoutApi, pluginsApi} from "@/lib/stores/api";
 import {rehydrate} from "@/lib/stores/store";
 import {get, post, del} from "@/lib/http";
 
@@ -26,11 +26,21 @@ export class PluginManager {
     await rehydrate();
   }
 
-  async loadPlugin(pluginId: string): Promise<string> {
-    const plugin = pluginsApi.getById(pluginId);
-    if (!plugin) throw new Error(`Plugin ${pluginId} not found`);
+  async loadPlugin(boxId: string): Promise<string> {
+    const box = layoutApi.getById(boxId);
+    if (!box?.plugin) {
+      throw new Error(`No plugin assigned for ${boxId}`);
+    }
+    const plugin = pluginsApi.getById(box.plugin);
+    if (!plugin) throw new Error(`Plugin ${box.plugin} not found`);
     const resp = await get(`${PLUGINS_URL}/${plugin.id}/${plugin.entry}`);
-    return resp.text();
+    const text = await resp.text();
+    const doc = new DOMParser().parseFromString(text, "text/xml");
+    const error = doc.querySelector("parsererror");
+    if (error) {
+      throw new Error(error.textContent ?? "Invalid XHTML")
+    }
+    return doc.documentElement.innerHTML;
   }
 }
 
