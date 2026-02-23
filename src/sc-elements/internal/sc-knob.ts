@@ -1,9 +1,12 @@
-import {html, css} from 'lit';
-import {ScRange} from './internal/sc-range.ts';
+import {html, css, LitElement} from 'lit';
 
-export class ScKnob extends ScRange {
+export class ScKnob extends LitElement {
   static properties = {
-    ...ScRange.properties,
+    onChange: {attribute: false},
+    value: {type: Number},
+    min: {type: Number},
+    max: {type: Number},
+    step: {type: Number},
     diameter: {type: Number},
     src: {type: String},
     sprites: {type: Number},
@@ -11,6 +14,11 @@ export class ScKnob extends ScRange {
     bgcolor: {type: String},
   };
 
+  declare onChange: (v: number) => void;
+  declare value: number;
+  declare min: number;
+  declare max: number;
+  declare step: number;
   declare diameter: number;
   declare src: string;
   declare sprites: number;
@@ -23,15 +31,6 @@ export class ScKnob extends ScRange {
     svg { display: block; pointer-events: none; }
     img { display: block; pointer-events: none; }
   `;
-
-  constructor() {
-    super();
-    this.diameter = 64;
-    this.src = '';
-    this.sprites = 0;
-    this.fgcolor = 'var(--color-primary, #0a6dc4)';
-    this.bgcolor = 'var(--color-bg-secondary, #e8e8e8)';
-  }
 
   connectedCallback() {
     super.connectedCallback();
@@ -54,6 +53,7 @@ export class ScKnob extends ScRange {
     const startY = ev.clientY;
     const startValue = this.value;
     const range = this.max - this.min;
+    const sensitivity = this.diameter * 1.5;
 
     const onMove = (me: MouseEvent | TouchEvent) => {
       me.preventDefault();
@@ -61,10 +61,9 @@ export class ScKnob extends ScRange {
       const dx = mev.clientX - startX;
       const dy = startY - mev.clientY;
       const d = Math.abs(dx) > Math.abs(dy) ? dx : dy;
-      const sensitivity = this.diameter * 1.5;
       let dv = (d / sensitivity) * range;
       if (me instanceof MouseEvent && me.shiftKey) dv *= 0.2;
-      this._setValue(startValue + dv);
+      this._commit(startValue + dv);
     };
 
     const onUp = () => {
@@ -86,12 +85,20 @@ export class ScKnob extends ScRange {
     e.preventDefault();
     let delta = e.deltaY > 0 ? -this.step : this.step;
     if (!e.shiftKey) delta *= 5;
-    this._setValue(this.value + delta);
+    this._commit(this.value + delta);
   };
 
+  private _commit(v: number) {
+    v = Math.round((v - this.min) / this.step) * this.step + this.min;
+    v = Math.max(this.min, Math.min(this.max, v));
+    this.onChange(v);
+  }
+
   render() {
+    const ratio = (this.value - this.min) / (this.max - this.min);
+
     if (this.src && this.sprites >= 1) {
-      const frame = Math.round(this._ratio() * this.sprites);
+      const frame = Math.round(ratio * this.sprites);
       return html`<img
         width=${this.diameter}
         height=${this.diameter}
@@ -100,9 +107,10 @@ export class ScKnob extends ScRange {
         alt=""
       />`;
     }
+
     const d = this.diameter;
     const r = d / 2;
-    const angle = -135 + 270 * this._ratio();
+    const angle = -135 + 270 * ratio;
     return html`
       <svg width=${d} height=${d} viewBox="0 0 ${d} ${d}">
         <circle cx=${r} cy=${r} r=${r * 0.94} fill=${this.bgcolor} />
@@ -116,3 +124,5 @@ export class ScKnob extends ScRange {
     `;
   }
 }
+
+customElements.define('sc-knob', ScKnob);

@@ -35,9 +35,8 @@
   <!-- sc-* elements -->
   <xs:element name="sc-display" type="scDisplayType"/>
   <xs:element name="sc-if" type="scIfType"/>
-  <xs:element name="sc-knob" type="scKnobType"/>
-  <xs:element name="sc-slider" type="scSliderType"/>
-  <xs:element name="sc-switch" type="scSwitchType"/>
+  <xs:element name="sc-range" type="scRangeType"/>
+  <xs:element name="sc-checkbox" type="scCheckboxType"/>
   <xs:element name="sc-group" type="scGroupType"/>
   <xs:element name="sc-synth" type="scSynthType"/>
   <xs:element name="sc-run" type="scRunType"/>
@@ -67,9 +66,8 @@
     <xs:choice>
       <xs:element ref="sc-display"/>
       <xs:element ref="sc-if"/>
-      <xs:element ref="sc-knob"/>
-      <xs:element ref="sc-slider"/>
-      <xs:element ref="sc-switch"/>
+      <xs:element ref="sc-range"/>
+      <xs:element ref="sc-checkbox"/>
       <xs:element ref="sc-run"/>
     </xs:choice>
   </xs:group>
@@ -168,28 +166,15 @@
     <xs:attributeGroup ref="commonAttrs"/>
   </xs:complexType>
 
-  <!-- sc-knob -->
-  <xs:complexType name="scKnobType">
+  <!-- sc-range -->
+  <xs:complexType name="scRangeType">
+    <xs:attribute name="type" type="xs:string"/>
     <xs:attribute name="param" type="xs:string"/>
     <xs:attribute name="min" type="xs:decimal"/>
     <xs:attribute name="max" type="xs:decimal"/>
     <xs:attribute name="step" type="xs:decimal"/>
     <xs:attribute name="value" type="xs:decimal"/>
     <xs:attribute name="diameter" type="xs:decimal"/>
-    <xs:attribute name="src" type="xs:string"/>
-    <xs:attribute name="sprites" type="xs:integer"/>
-    <xs:attribute name="fgcolor" type="xs:string"/>
-    <xs:attribute name="bgcolor" type="xs:string"/>
-    <xs:attributeGroup ref="commonAttrs"/>
-  </xs:complexType>
-
-  <!-- sc-slider -->
-  <xs:complexType name="scSliderType">
-    <xs:attribute name="param" type="xs:string"/>
-    <xs:attribute name="min" type="xs:decimal"/>
-    <xs:attribute name="max" type="xs:decimal"/>
-    <xs:attribute name="step" type="xs:decimal"/>
-    <xs:attribute name="value" type="xs:decimal"/>
     <xs:attribute name="width" type="xs:decimal"/>
     <xs:attribute name="height" type="xs:decimal"/>
     <xs:attribute name="src" type="xs:string"/>
@@ -199,8 +184,8 @@
     <xs:attributeGroup ref="commonAttrs"/>
   </xs:complexType>
 
-  <!-- sc-switch -->
-  <xs:complexType name="scSwitchType">
+  <!-- sc-checkbox -->
+  <xs:complexType name="scCheckboxType">
     <xs:attribute name="param" type="xs:string"/>
     <xs:attribute name="checked" type="xs:boolean"/>
     <xs:attribute name="width" type="xs:decimal"/>
@@ -214,8 +199,7 @@
   <!-- sc-run -->
   <xs:complexType name="scRunType">
     <xs:attribute name="run" type="xs:boolean"/>
-    <xs:attribute name="width" type="xs:decimal"/>
-    <xs:attribute name="height" type="xs:decimal"/>
+    <xs:attribute name="size" type="xs:decimal"/>
     <xs:attribute name="src" type="xs:string"/>
     <xs:attribute name="fgcolor" type="xs:string"/>
     <xs:attribute name="bgcolor" type="xs:string"/>

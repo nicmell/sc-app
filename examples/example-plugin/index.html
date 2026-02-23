@@ -6,27 +6,27 @@
 <body>
   <sc-synth name="sine" class="example-plugin">
     <label>
-      <sc-run width="24" height="24"/>
+      <sc-run size="24"/>
       <sc-if prop="running" is-truthy="On" is-falsy="Off"/>
     </label>
     <div class="controls">
       <div class="knobs">
         <label>
-          <sc-knob param="freq" min="20" max="2000" step="1" value="440" diameter="48"/>
+          <sc-range type="knob" param="freq" min="20" max="2000" step="1" value="440" diameter="48"/>
           <span><sc-display prop="params.freq" format="%d Hz"/></span>
         </label>
         <label>
-          <sc-knob param="amp" min="0" max="1" step="0.01" value="0.2" diameter="48"/>
+          <sc-range type="knob" param="amp" min="0" max="1" step="0.01" value="0.2" diameter="48"/>
           <span><sc-display prop="params.amp" format="%.2f"/></span>
         </label>
       </div>
       <div class="sliders">
         <label>
           <span>Pan: <sc-display prop="params.pan" format="%.2f"/></span>
-          <sc-slider param="pan" min="-1" max="1" step="0.01" value="0" width="120" height="16"/>
+          <sc-range type="slider" param="pan" min="-1" max="1" step="0.01" value="0" width="120" height="16"/>
         </label>
         <label>
-          <sc-switch param="mute" width="24" height="24"/>
+          <sc-checkbox param="mute" width="24" height="24"/>
           <span>Mute</span>
         </label>
       </div>

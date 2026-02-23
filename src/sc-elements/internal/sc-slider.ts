@@ -1,9 +1,12 @@
-import {html, css} from 'lit';
-import {ScRange} from './internal/sc-range.ts';
+import {html, css, LitElement} from 'lit';
 
-export class ScSlider extends ScRange {
+export class ScSlider extends LitElement {
   static properties = {
-    ...ScRange.properties,
+    onChange: {attribute: false},
+    value: {type: Number},
+    min: {type: Number},
+    max: {type: Number},
+    step: {type: Number},
     width: {type: Number, attribute: 'width'},
     height: {type: Number, attribute: 'height'},
     src: {type: String},
@@ -12,6 +15,11 @@ export class ScSlider extends ScRange {
     bgcolor: {type: String},
   };
 
+  declare onChange: (v: number) => void;
+  declare value: number;
+  declare min: number;
+  declare max: number;
+  declare step: number;
   declare width: number;
   declare height: number;
   declare src: string;
@@ -25,20 +33,6 @@ export class ScSlider extends ScRange {
     svg { display: block; pointer-events: none; }
     img { display: block; pointer-events: none; }
   `;
-
-  constructor() {
-    super();
-    this.width = 128;
-    this.height = 20;
-    this.src = '';
-    this.sprites = 0;
-    this.fgcolor = 'var(--color-primary, #0a6dc4)';
-    this.bgcolor = 'var(--color-bg-secondary, #e8e8e8)';
-  }
-
-  private _isVertical(): boolean {
-    return this.height > this.width;
-  }
 
   connectedCallback() {
     super.connectedCallback();
@@ -60,7 +54,8 @@ export class ScSlider extends ScRange {
     const startX = ev.clientX;
     const startY = ev.clientY;
     const startValue = this.value;
-    const vertical = this._isVertical();
+    const range = this.max - this.min;
+    const vertical = this.height > this.width;
     const sensitivity = vertical ? this.height - this.width : this.width - this.height;
 
     const onMove = (me: MouseEvent | TouchEvent) => {
@@ -69,9 +64,9 @@ export class ScSlider extends ScRange {
       const dx = mev.clientX - startX;
       const dy = startY - mev.clientY;
       const d = vertical ? dy : dx;
-      let dv = (d / sensitivity) * (this.max - this.min);
+      let dv = (d / sensitivity) * range;
       if (me instanceof MouseEvent && me.shiftKey) dv *= 0.2;
-      this._setValue(startValue + dv);
+      this._commit(startValue + dv);
     };
 
     const onUp = () => {
@@ -93,13 +88,20 @@ export class ScSlider extends ScRange {
     e.preventDefault();
     let delta = e.deltaY > 0 ? -this.step : this.step;
     if (!e.shiftKey) delta *= 5;
-    this._setValue(this.value + delta);
+    this._commit(this.value + delta);
   };
+
+  private _commit(v: number) {
+    v = Math.round((v - this.min) / this.step) * this.step + this.min;
+    v = Math.max(this.min, Math.min(this.max, v));
+    this.onChange(v);
+  }
 
   render() {
     const w = this.width;
     const h = this.height;
-    const ratio = this._ratio();
+    const ratio = (this.value - this.min) / (this.max - this.min);
+    const vertical = h > w;
 
     if (this.src && this.sprites >= 1) {
       const frame = Math.round(ratio * this.sprites);
@@ -112,7 +114,7 @@ export class ScSlider extends ScRange {
       />`;
     }
 
-    if (this._isVertical()) {
+    if (vertical) {
       const r = w / 2;
       const trackH = h - w;
       const cy = h - r - trackH * ratio;
@@ -135,3 +137,5 @@ export class ScSlider extends ScRange {
     `;
   }
 }
+
+customElements.define('sc-slider', ScSlider);

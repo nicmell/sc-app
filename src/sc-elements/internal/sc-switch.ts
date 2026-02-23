@@ -1,7 +1,8 @@
 import {LitElement, html, svg, css} from 'lit';
 
-export class ScCheckbox extends LitElement {
+export class ScSwitch extends LitElement {
   static properties = {
+    onChange: {attribute: false},
     checked: {type: Boolean, reflect: true},
     width: {type: Number, attribute: 'width'},
     height: {type: Number, attribute: 'height'},
@@ -10,6 +11,7 @@ export class ScCheckbox extends LitElement {
     bgcolor: {type: String},
   };
 
+  declare onChange: (checked: boolean) => void;
   declare checked: boolean;
   declare width: number;
   declare height: number;
@@ -23,16 +25,6 @@ export class ScCheckbox extends LitElement {
     img { display: block; pointer-events: none; }
   `;
 
-  constructor() {
-    super();
-    this.checked = false;
-    this.width = 24;
-    this.height = 24;
-    this.src = '';
-    this.fgcolor = 'var(--color-primary, #0a6dc4)';
-    this.bgcolor = 'var(--color-bg-secondary, #e8e8e8)';
-  }
-
   connectedCallback() {
     super.connectedCallback();
     this.addEventListener('click', this._onClick);
@@ -44,11 +36,8 @@ export class ScCheckbox extends LitElement {
   }
 
   private _onClick = () => {
-    this.checked = !this.checked;
-    this._onToggle(this.checked);
+    this.onChange(!this.checked);
   };
-
-  protected _onToggle(_checked: boolean) {}
 
   render() {
     const w = this.width;
@@ -77,3 +66,5 @@ export class ScCheckbox extends LitElement {
     `;
   }
 }
+
+customElements.define('sc-switch', ScSwitch);
