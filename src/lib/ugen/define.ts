@@ -1,4 +1,5 @@
 import { UGen, UGenOutput, type UGenInput, type Rate, Rate as R } from './ugen';
+import { registerUGen } from './registry';
 
 // ---------------------------------------------------------------------------
 // UGen spec & definition types
@@ -94,6 +95,7 @@ function unsupported(name: string, method: string): () => never {
 }
 
 export function defineUGen(spec: UGenSpec): UGenDef {
+  registerUGen(spec);
   return {
     ar: spec.rates.includes(R.Audio) ? makeMethod(spec, R.Audio) : unsupported(spec.name, 'ar'),
     kr: spec.rates.includes(R.Control) ? makeMethod(spec, R.Control) : unsupported(spec.name, 'kr'),
@@ -115,6 +117,7 @@ function makeMultiOutMethod(spec: UGenSpec, rate: Rate): MultiOutFactory {
 }
 
 export function defineMultiOutUGen(spec: UGenSpec): MultiOutUGenDef {
+  registerUGen({ ...spec, multiOut: true });
   return {
     ar: spec.rates.includes(R.Audio) ? makeMultiOutMethod(spec, R.Audio) : unsupported(spec.name, 'ar') as never,
     kr: spec.rates.includes(R.Control) ? makeMultiOutMethod(spec, R.Control) : unsupported(spec.name, 'kr') as never,

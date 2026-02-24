@@ -25,6 +25,9 @@ export { ByteWriter } from './encode';
 // UGen registry (for declarative lookup)
 export { ugenRegistry, type UGenRegistryEntry } from './registry';
 
+// Declarative builder (for <sc-synthdef> / <sc-ugen>)
+export { buildSynthDefFromSpecs, type UGenElementSpec } from './declarative';
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Built-in UGens
 // ═══════════════════════════════════════════════════════════════════════════

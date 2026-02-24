@@ -7,6 +7,8 @@ import {ScGroup} from './sc-group.ts';
 import {ScSynth} from './sc-synth.ts';
 import {ScRun} from './sc-run.ts';
 import {ScPlugin} from './sc-plugin.ts';
+import {ScSynthDef} from './sc-synthdef.ts';
+import {ScUgen} from './sc-ugen.ts';
 
 export default {
   [ELEMENTS.SC_DISPLAY]: ScDisplay,
@@ -17,4 +19,6 @@ export default {
   [ELEMENTS.SC_SYNTH]: ScSynth,
   [ELEMENTS.SC_RUN]: ScRun,
   [ELEMENTS.SC_PLUGIN]: ScPlugin,
+  [ELEMENTS.SC_SYNTHDEF]: ScSynthDef,
+  [ELEMENTS.SC_UGEN]: ScUgen,
 };

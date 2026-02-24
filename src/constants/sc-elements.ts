@@ -7,4 +7,6 @@ export const ELEMENTS = {
   SC_SYNTH: 'sc-synth',
   SC_RUN: 'sc-run',
   SC_PLUGIN: 'sc-plugin',
+  SC_SYNTHDEF: 'sc-synthdef',
+  SC_UGEN: 'sc-ugen',
 } as const;

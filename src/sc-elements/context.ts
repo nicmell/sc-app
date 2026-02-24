@@ -24,3 +24,21 @@ export interface NodeContext {
 }
 
 export const nodeContext = createContext<NodeContext>('node');
+
+// ---------------------------------------------------------------------------
+// SynthDef context — for declarative <sc-synthdef> / <sc-ugen>
+// ---------------------------------------------------------------------------
+
+export interface UGenElementSpec {
+  id: string;
+  type: string;
+  rate: string;
+  inputs: Record<string, string>;
+}
+
+export interface SynthDefContext {
+  registerUGen(spec: UGenElementSpec): void;
+  unregisterUGen(id: string): void;
+}
+
+export const synthdefContext = createContext<SynthDefContext>('synthdef');
