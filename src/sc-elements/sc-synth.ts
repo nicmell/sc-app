@@ -9,6 +9,8 @@ import {nodesApi} from '@/lib/stores/api';
 import {isSynth} from '@/lib/stores/nodes/slice';
 import {ScNode} from './internal/sc-node.ts';
 
+const SKIP_ATTRS = new Set(['id', 'name', 'class', 'style', 'slot', 'title']);
+
 export class ScSynth extends ScNode {
   static properties = {
     id: {type: String, reflect: true},
@@ -29,31 +31,36 @@ export class ScSynth extends ScNode {
     return n && isSynth(n) ? n.params : {};
   }
 
+  private _collectParams(): Record<string, number> {
+    const params: Record<string, number> = {};
+    for (const attr of this.attributes) {
+      if (SKIP_ATTRS.has(attr.name)) continue;
+      const val = Number(attr.value);
+      if (!isNaN(val)) {
+        params[attr.name] = val;
+      }
+    }
+    return params;
+  }
+
   constructor() {
     super();
     this.name = 'default';
   }
 
   protected firstUpdated() {
-    const params: Record<string, number> = {};
-    for (const el of this.registeredElements) {
-      Object.assign(params, el.getParams());
-    }
+    const params = this._collectParams();
 
-    const group = this._group.value;
-    const groupId = group?.nodeId ?? oscService.defaultGroupId();
-    group?.registerNode(this);
-    nodesApi.newSynth({id: this.id, nodeId: this.nodeId, groupId, params});
+    nodesApi.newSynth({id: this.id, nodeId: this.nodeId, groupId: this.groupId, params});
     oscService.send(
       newSynthMessage(this.name, this.nodeId, 0, 0, params),
       nodeRunMessage(-1, 0),
-      groupTailMessage(groupId, -1),
+      groupTailMessage(this.groupId, -1),
     );
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this._group.value?.unregisterNode(this);
     if (this.loaded) {
       nodesApi.freeNode(this.nodeId);
       oscService.send(freeNodeMessage(this.nodeId));

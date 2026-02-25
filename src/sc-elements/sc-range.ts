@@ -1,17 +1,17 @@
 import {css, html, LitElement} from 'lit';
 import {ContextConsumer} from '@lit/context';
-import {nodeContext, type ScElement} from './context.ts';
+import {nodeContext} from './context.ts';
+import {StoreSubscriber} from './internal/store-subscriber.ts';
 import './internal/sc-knob.ts';
 import './internal/sc-slider.ts';
 
-export class ScRange extends LitElement implements ScElement {
+export class ScRange extends LitElement {
     static properties = {
         type: {type: String},
-        param: {type: String},
+        bind: {type: String},
         min: {type: Number},
         max: {type: Number},
         step: {type: Number},
-        value: {type: Number},
         diameter: {type: Number},
         width: {type: Number, attribute: 'width'},
         height: {type: Number, attribute: 'height'},
@@ -22,11 +22,10 @@ export class ScRange extends LitElement implements ScElement {
     };
 
     declare type: 'knob' | 'slider';
-    declare param: string;
+    declare bind: string;
     declare min: number;
     declare max: number;
     declare step: number;
-    declare value: number;
     declare diameter: number;
     declare width: number;
     declare height: number;
@@ -35,10 +34,7 @@ export class ScRange extends LitElement implements ScElement {
     declare fgcolor: string;
     declare bgcolor: string;
 
-    private _node = new ContextConsumer(this, {
-        context: nodeContext, subscribe: true,
-        callback: (ctx) => ctx?.registerElement(this),
-    });
+    private _node = new ContextConsumer(this, {context: nodeContext, subscribe: true});
 
     static styles = css`
         :host {
@@ -46,14 +42,17 @@ export class ScRange extends LitElement implements ScElement {
         }
     `;
 
+    get value(): number {
+        return this._node.value?.params[this.bind] ?? 0;
+    }
+
     constructor() {
         super();
         this.type = 'knob';
-        this.param = '';
+        this.bind = '';
         this.min = 0;
         this.max = 1;
         this.step = 0.01;
-        this.value = 0;
         this.diameter = 64;
         this.width = 128;
         this.height = 20;
@@ -61,21 +60,12 @@ export class ScRange extends LitElement implements ScElement {
         this.sprites = 0;
         this.fgcolor = 'var(--color-primary, #0a6dc4)';
         this.bgcolor = 'var(--color-bg-secondary, #e8e8e8)';
-    }
-
-    disconnectedCallback() {
-        super.disconnectedCallback();
-        this._node.value?.unregisterElement(this);
-    }
-
-    getParams(): Record<string, number> {
-        return this.param ? {[this.param]: this.value} : {};
+        new StoreSubscriber(this, () => this._node.value?.params[this.bind]);
     }
 
     onChange = (v: number) => {
-        if (v !== this.value) {
-            this.value = v;
-            this._node.value?.onChange(this);
+        if (v !== this.value && this.bind) {
+            this._node.value?.onChange({[this.bind]: v});
         }
     };
 

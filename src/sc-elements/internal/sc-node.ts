@@ -39,12 +39,7 @@ export abstract class ScNode extends LitElement implements IScNode {
     this.registeredElements.delete(el);
   }
 
-  registerNode(_node: IScNode) {}
-
-  unregisterNode(_node: IScNode) {}
-
-  onChange(el: ScElement) {
-    const params = el.getParams();
+  onChange(params: Record<string, number>) {
     nodesApi.setParams({nodeId: this.nodeId, params});
     oscService.send(nodeSetMessage(this.nodeId, params));
   }
@@ -54,10 +49,22 @@ export abstract class ScNode extends LitElement implements IScNode {
     oscService.send(nodeRunMessage(this.nodeId, isRunning ? 1 : 0));
   }
 
+  protected get groupId(): number {
+    return this._group.value?.nodeId ?? oscService.defaultGroupId();
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this._group.value?.unregisterElement(this);
+  }
+
   constructor() {
     super();
     this.nodeId = oscService.nextNodeId();
-    this._group = new ContextConsumer(this, {context: nodeContext, subscribe: false});
+    this._group = new ContextConsumer(this, {
+      context: nodeContext, subscribe: false,
+      callback: (ctx) => ctx?.registerElement(this),
+    });
 
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
@@ -71,9 +78,7 @@ export abstract class ScNode extends LitElement implements IScNode {
       get params() { return self.params; },
       registerElement: (el) => this.registerElement(el),
       unregisterElement: (el) => this.unregisterElement(el),
-      registerNode: (node) => this.registerNode(node),
-      unregisterNode: (node) => this.unregisterNode(node),
-      onChange: (el) => this.onChange(el),
+      onChange: (params) => this.onChange(params),
       onRun: (isRunning) => this.onRun(isRunning),
     };
     new ContextProvider(this, {context: nodeContext, initialValue: ctx});

@@ -153,7 +153,7 @@
 
   <!-- sc-display -->
   <xs:complexType name="scDisplayType">
-    <xs:attribute name="prop" type="xs:string"/>
+    <xs:attribute name="bind" type="xs:string"/>
     <xs:attribute name="format" type="xs:string"/>
     <xs:attributeGroup ref="commonAttrs"/>
   </xs:complexType>
@@ -163,7 +163,7 @@
     <xs:choice minOccurs="0" maxOccurs="unbounded">
       <xs:group ref="blockContent"/>
     </xs:choice>
-    <xs:attribute name="prop" type="xs:string"/>
+    <xs:attribute name="bind" type="xs:string"/>
     <xs:attribute name="is-truthy" type="xs:string"/>
     <xs:attribute name="is-falsy" type="xs:string"/>
     <xs:attribute name="is-equal" type="xs:string"/>
@@ -176,11 +176,10 @@
   <!-- sc-range -->
   <xs:complexType name="scRangeType">
     <xs:attribute name="type" type="xs:string"/>
-    <xs:attribute name="param" type="xs:string"/>
+    <xs:attribute name="bind" type="xs:string"/>
     <xs:attribute name="min" type="xs:decimal"/>
     <xs:attribute name="max" type="xs:decimal"/>
     <xs:attribute name="step" type="xs:decimal"/>
-    <xs:attribute name="value" type="xs:decimal"/>
     <xs:attribute name="diameter" type="xs:decimal"/>
     <xs:attribute name="width" type="xs:decimal"/>
     <xs:attribute name="height" type="xs:decimal"/>
@@ -193,8 +192,7 @@
 
   <!-- sc-checkbox -->
   <xs:complexType name="scCheckboxType">
-    <xs:attribute name="param" type="xs:string"/>
-    <xs:attribute name="checked" type="xs:boolean"/>
+    <xs:attribute name="bind" type="xs:string"/>
     <xs:attribute name="width" type="xs:decimal"/>
     <xs:attribute name="height" type="xs:decimal"/>
     <xs:attribute name="src" type="xs:string"/>
@@ -232,6 +230,7 @@
     <xs:attribute name="id" type="xs:string" use="required"/>
     <xs:attribute name="name" type="xs:string"/>
     <xs:attributeGroup ref="commonAttrsNoId"/>
+    <xs:anyAttribute processContents="skip"/>
   </xs:complexType>
 
 </xs:schema>

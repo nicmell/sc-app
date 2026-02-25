@@ -1,12 +1,12 @@
 import {html, css, LitElement} from 'lit';
 import {ContextConsumer} from '@lit/context';
-import {nodeContext, type ScElement} from './context.ts';
+import {nodeContext} from './context.ts';
+import {StoreSubscriber} from './internal/store-subscriber.ts';
 import './internal/sc-switch.ts';
 
-export class ScCheckbox extends LitElement implements ScElement {
+export class ScCheckbox extends LitElement {
     static properties = {
-        param: {type: String},
-        checked: {type: Boolean, reflect: true},
+        bind: {type: String},
         width: {type: Number, attribute: 'width'},
         height: {type: Number, attribute: 'height'},
         src: {type: String},
@@ -14,47 +14,37 @@ export class ScCheckbox extends LitElement implements ScElement {
         bgcolor: {type: String},
     };
 
-    declare param: string;
-    declare checked: boolean;
+    declare bind: string;
     declare width: number;
     declare height: number;
     declare src: string;
     declare fgcolor: string;
     declare bgcolor: string;
 
-    private _node = new ContextConsumer(this, {
-        context: nodeContext, subscribe: true,
-        callback: (ctx) => ctx?.registerElement(this),
-    });
+    private _node = new ContextConsumer(this, {context: nodeContext, subscribe: true});
 
     static styles = css`
         :host { display: inline-block; }
     `;
 
+    get checked(): boolean {
+        return (this._node.value?.params[this.bind] ?? 0) !== 0;
+    }
+
     constructor() {
         super();
-        this.param = '';
-        this.checked = false;
+        this.bind = '';
         this.width = 24;
         this.height = 24;
         this.src = '';
         this.fgcolor = 'var(--color-primary, #0a6dc4)';
         this.bgcolor = 'var(--color-bg-secondary, #e8e8e8)';
-    }
-
-    disconnectedCallback() {
-        super.disconnectedCallback();
-        this._node.value?.unregisterElement(this);
-    }
-
-    getParams(): Record<string, number> {
-        return this.param ? {[this.param]: this.checked ? 1 : 0} : {};
+        new StoreSubscriber(this, () => this._node.value?.params[this.bind]);
     }
 
     onChange = (checked: boolean) => {
-        if (checked !== this.checked) {
-            this.checked = checked;
-            this._node.value?.onChange(this);
+        if (checked !== this.checked && this.bind) {
+            this._node.value?.onChange({[this.bind]: checked ? 1 : 0});
         }
     };
 

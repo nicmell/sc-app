@@ -2,7 +2,6 @@ import {createContext} from '@lit/context';
 
 export interface ScElement {
   tagName: string;
-  getParams(): Record<string, number>;
 }
 
 export interface ScNode {
@@ -19,9 +18,7 @@ export interface NodeContext {
   params: Record<string, number>;
   registerElement(el: ScElement): void;
   unregisterElement(el: ScElement): void;
-  onChange(el: ScElement): void;
-  registerNode(node: ScNode): void;
-  unregisterNode(node: ScNode): void;
+  onChange(params: Record<string, number>): void;
   onRun(isRunning: boolean): void;
 }
 

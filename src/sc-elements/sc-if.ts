@@ -1,12 +1,12 @@
 import {LitElement, html, css} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
-import {StoreSubscriber} from './store-subscriber.ts';
+import {StoreSubscriber} from './internal/store-subscriber.ts';
 import {get} from '@/lib/utils/get';
 
 export class ScIf extends LitElement {
   static properties = {
-    prop: {type: String},
+    bind: {type: String},
     isTruthy: {type: String, attribute: 'is-truthy'},
     isFalsy: {type: String, attribute: 'is-falsy'},
     isEqual: {type: String, attribute: 'is-equal'},
@@ -15,7 +15,7 @@ export class ScIf extends LitElement {
     isLesserThan: {type: String, attribute: 'is-lesser-than'},
   };
 
-  declare prop: string;
+  declare bind: string;
   declare isTruthy: string | null;
   declare isFalsy: string | null;
   declare isEqual: string | null;
@@ -31,18 +31,18 @@ export class ScIf extends LitElement {
 
   constructor() {
     super();
-    this.prop = '';
+    this.bind = '';
     this.isTruthy = null;
     this.isFalsy = null;
     this.isEqual = null;
     this.isNotEqual = null;
     this.isGreaterThan = null;
     this.isLesserThan = null;
-    new StoreSubscriber(this, () => get(this._node.value, this.prop));
+    new StoreSubscriber(this, () => get(this._node.value?.params, this.bind));
   }
 
   private _test(): boolean {
-    const value = get(this._node.value, this.prop);
+    const value = get(this._node.value?.params, this.bind);
     const num = typeof value === 'number' ? value : Number(value);
     if (this.isEqual !== null) return String(value) === this.isEqual;
     if (this.isNotEqual !== null) return String(value) !== this.isNotEqual;

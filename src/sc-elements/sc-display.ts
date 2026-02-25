@@ -1,7 +1,7 @@
 import {LitElement, html, css} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
-import {StoreSubscriber} from './store-subscriber.ts';
+import {StoreSubscriber} from './internal/store-subscriber.ts';
 import {get} from '@/lib/utils/get';
 
 function formatValue(template: string, value: unknown): string {
@@ -19,11 +19,11 @@ function formatValue(template: string, value: unknown): string {
 
 export class ScDisplay extends LitElement {
   static properties = {
-    prop: {type: String},
+    bind: {type: String},
     format: {type: String},
   };
 
-  declare prop: string;
+  declare bind: string;
   declare format: string;
 
   private _node = new ContextConsumer(this, {context: nodeContext, subscribe: true});
@@ -39,13 +39,13 @@ export class ScDisplay extends LitElement {
 
   constructor() {
     super();
-    this.prop = '';
+    this.bind = '';
     this.format = '';
-    new StoreSubscriber(this, () => get(this._node.value, this.prop));
+    new StoreSubscriber(this, () => get(this._node.value?.params, this.bind));
   }
 
   render() {
-    const value = get(this._node.value, this.prop);
+    const value = get(this._node.value?.params, this.bind);
     const text = this.format ? formatValue(this.format, value) : String(value ?? '');
     return html`${text}`;
   }
