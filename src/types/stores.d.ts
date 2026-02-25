@@ -98,7 +98,6 @@ export interface SynthItem {
   nodeId: number;
   groupId: number;
   isRunning: boolean;
-  params: Record<string, number>;
 }
 
 export interface GroupItem {
@@ -112,6 +111,7 @@ export type NodeItem = SynthItem | GroupItem;
 
 export interface NodesState {
   items: NodeItem[];
+  controls: Record<string, number>;
 }
 
 export interface PluginsState {

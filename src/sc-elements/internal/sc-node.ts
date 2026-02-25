@@ -7,6 +7,10 @@ import {store, type RootState} from '@/lib/stores/store';
 import {nodeContext, type NodeContext, type ScNode as IScNode, type ScElement} from '../context.ts';
 
 export abstract class ScNode extends LitElement implements IScNode {
+  static properties = {
+    id: {type: String, reflect: true},
+  };
+
   readonly nodeId: number;
   protected registeredElements = new Set<ScElement>();
   protected _parent!: ContextConsumer<{__context__: NodeContext}, this>;
@@ -41,7 +45,7 @@ export abstract class ScNode extends LitElement implements IScNode {
   }
 
   onChange(params: Record<string, number>) {
-    nodesApi.setParams({nodeId: this.nodeId, params});
+    nodesApi.setControl({nodeId: this.nodeId, params});
     oscService.send(nodeSetMessage(this.nodeId, params));
   }
 
@@ -84,9 +88,11 @@ export abstract class ScNode extends LitElement implements IScNode {
     };
     const provider = new ContextProvider(this, {context: nodeContext, initialValue: ctx});
     store.subscribe((state: RootState, prevState: RootState) => {
-      const next = state.scsynth.nodes.items.find(n => n.nodeId === this.nodeId);
-      const prev = prevState.scsynth.nodes.items.find(n => n.nodeId === this.nodeId);
-      if (next !== prev) {
+      const nextNodes = state.scsynth.nodes;
+      const prevNodes = prevState.scsynth.nodes;
+      const next = nextNodes.items.find(n => n.nodeId === this.nodeId);
+      const prev = prevNodes.items.find(n => n.nodeId === this.nodeId);
+      if (next !== prev || nextNodes.controls !== prevNodes.controls) {
         provider.setValue(ctx, true);
       }
     });

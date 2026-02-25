@@ -6,4 +6,5 @@ const createNodesSelector: SliceSelector<typeof scsynth.nodes> = (fn) =>
 
 export default {
   items: createNodesSelector(s => s.items),
+  controls: createNodesSelector(s => s.controls),
 };

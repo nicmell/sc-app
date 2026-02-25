@@ -29,8 +29,18 @@ function getLeaves(items: NodeItem[], groupId: number): SynthItem[] {
   return getDescendants(items, groupId).filter(isSynth);
 }
 
+function removeControlsForIds(controls: Record<string, number>, ids: Set<string>) {
+  for (const key of Object.keys(controls)) {
+    const dotIdx = key.indexOf('.');
+    if (dotIdx !== -1 && ids.has(key.slice(0, dotIdx))) {
+      delete controls[key];
+    }
+  }
+}
+
 const initialState: NodesState = {
   items: [],
+  controls: {},
 };
 
 export const nodesSlice = createSlice({
@@ -38,7 +48,10 @@ export const nodesSlice = createSlice({
   initialState,
   reducers: {
     [NodesAction.NEW_SYNTH]: (state, action: { payload: { id: string; nodeId: number; groupId: number; params: Record<string, number> } }) => {
-      state.items.push({type: 'synth', id: action.payload.id, nodeId: action.payload.nodeId, groupId: action.payload.groupId, isRunning: false, params: action.payload.params});
+      state.items.push({type: 'synth', id: action.payload.id, nodeId: action.payload.nodeId, groupId: action.payload.groupId, isRunning: false});
+      for (const [key, value] of Object.entries(action.payload.params)) {
+        state.controls[`${action.payload.id}.${key}`] = value;
+      }
     },
     [NodesAction.NEW_GROUP]: (state, action: { payload: { id: string; nodeId: number; groupId: number } }) => {
       state.items.push({type: 'group', id: action.payload.id, nodeId: action.payload.nodeId, groupId: action.payload.groupId});
@@ -47,10 +60,14 @@ export const nodesSlice = createSlice({
       const node = state.items.find(n => n.nodeId === action.payload);
       if (!node) return;
       if (isGroup(node)) {
-        const ids = new Set(getDescendants(state.items, node.nodeId).map(n => n.nodeId));
-        ids.add(node.nodeId);
-        state.items = state.items.filter(n => !ids.has(n.nodeId));
+        const descendants = getDescendants(state.items, node.nodeId);
+        const nodeIds = new Set(descendants.map(n => n.nodeId));
+        nodeIds.add(node.nodeId);
+        const ids = new Set(descendants.filter(isSynth).map(n => n.id));
+        removeControlsForIds(state.controls, ids);
+        state.items = state.items.filter(n => !nodeIds.has(n.nodeId));
       } else {
+        removeControlsForIds(state.controls, new Set([node.id]));
         state.items = state.items.filter(n => n.nodeId !== action.payload);
       }
     },
@@ -65,16 +82,21 @@ export const nodesSlice = createSlice({
         }
       }
     },
-    [NodesAction.SET_PARAMS]: (state, action: { payload: { nodeId: number; params: Record<string, number> } }) => {
+    [NodesAction.SET_CONTROL]: (state, action: { payload: { nodeId: number; params: Record<string, number> } }) => {
       const node = state.items.find(n => n.nodeId === action.payload.nodeId);
       if (!node) return;
       if (isSynth(node)) {
-        Object.assign(node.params, action.payload.params);
+        for (const [key, value] of Object.entries(action.payload.params)) {
+          state.controls[`${node.id}.${key}`] = value;
+        }
       } else if (isGroup(node)) {
         const keys = Object.keys(action.payload.params);
         for (const synth of getLeaves(state.items, node.nodeId)) {
           for (const key of keys) {
-            if (key in synth.params) synth.params[key] = action.payload.params[key];
+            const controlKey = `${synth.id}.${key}`;
+            if (controlKey in state.controls) {
+              state.controls[controlKey] = action.payload.params[key];
+            }
           }
         }
       }

@@ -6,14 +6,13 @@ import {
   groupTailMessage
 } from '@/lib/osc/messages.ts';
 import {nodesApi} from '@/lib/stores/api';
-import {isSynth} from '@/lib/stores/nodes/slice';
 import {ScNode} from './internal/sc-node.ts';
 
 const SKIP_ATTRS = new Set(['id', 'name', 'class', 'style', 'slot', 'title']);
 
 export class ScSynth extends ScNode {
   static properties = {
-    id: {type: String, reflect: true},
+    ...ScNode.properties,
     name: {type: String},
   };
 
@@ -28,12 +27,19 @@ export class ScSynth extends ScNode {
 
   get isRunning() {
     const n = nodesApi.items.find(n => n.nodeId === this.nodeId);
-    return n && isSynth(n) ? n.isRunning : false;
+    return n !== undefined && n.type === 'synth' ? n.isRunning : false;
   }
 
   get params() {
-    const n = nodesApi.items.find(n => n.nodeId === this.nodeId);
-    return n && isSynth(n) ? n.params : {};
+    const controls = nodesApi.controls;
+    const prefix = this.id + '.';
+    const result: Record<string, number> = {};
+    for (const key of Object.keys(controls)) {
+      if (key.startsWith(prefix)) {
+        result[key.slice(prefix.length)] = controls[key];
+      }
+    }
+    return result;
   }
 
   private _collectParams(): Record<string, number> {
