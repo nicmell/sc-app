@@ -19,6 +19,11 @@ export class ScSynth extends ScNode {
 
   declare name: string;
 
+  constructor() {
+    super();
+    this.name = 'default';
+  }
+
   protected get type() { return 'synth' as const; }
 
   get isRunning() {
@@ -41,11 +46,6 @@ export class ScSynth extends ScNode {
       }
     }
     return params;
-  }
-
-  constructor() {
-    super();
-    this.name = 'default';
   }
 
   protected firstUpdated() {

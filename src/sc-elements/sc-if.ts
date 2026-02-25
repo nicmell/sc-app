@@ -1,7 +1,6 @@
 import {LitElement, html, css} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
-import {StoreSubscriber} from './internal/store-subscriber.ts';
 import {get} from '@/lib/utils/get';
 
 export class ScIf extends LitElement {
@@ -38,7 +37,6 @@ export class ScIf extends LitElement {
     this.isNotEqual = null;
     this.isGreaterThan = null;
     this.isLesserThan = null;
-    new StoreSubscriber(this, () => get(this._node.value?.params, this.bind));
   }
 
   private _test(): boolean {

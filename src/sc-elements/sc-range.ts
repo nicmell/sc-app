@@ -1,7 +1,6 @@
 import {css, html, LitElement} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
-import {StoreSubscriber} from './internal/store-subscriber.ts';
 import './internal/sc-knob.ts';
 import './internal/sc-slider.ts';
 
@@ -60,7 +59,6 @@ export class ScRange extends LitElement {
         this.sprites = 0;
         this.fgcolor = 'var(--color-primary, #0a6dc4)';
         this.bgcolor = 'var(--color-bg-secondary, #e8e8e8)';
-        new StoreSubscriber(this, () => this._node.value?.params[this.bind]);
     }
 
     onChange = (v: number) => {

@@ -1,7 +1,6 @@
 import {LitElement, html, css} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
-import {StoreSubscriber} from './internal/store-subscriber.ts';
 import {get} from '@/lib/utils/get';
 
 function formatValue(template: string, value: unknown): string {
@@ -41,7 +40,6 @@ export class ScDisplay extends LitElement {
     super();
     this.bind = '';
     this.format = '';
-    new StoreSubscriber(this, () => get(this._node.value?.params, this.bind));
   }
 
   render() {

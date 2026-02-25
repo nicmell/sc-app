@@ -3,19 +3,20 @@ import {ContextProvider, ContextConsumer} from '@lit/context';
 import {oscService} from '@/lib/osc';
 import {nodeRunMessage, nodeSetMessage} from '@/lib/osc/messages.ts';
 import {nodesApi} from '@/lib/stores/api';
+import {store, type RootState} from '@/lib/stores/store';
 import {nodeContext, type NodeContext, type ScNode as IScNode, type ScElement} from '../context.ts';
 
 export abstract class ScNode extends LitElement implements IScNode {
   readonly nodeId: number;
   protected registeredElements = new Set<ScElement>();
-  protected _group!: ContextConsumer<{__context__: NodeContext}, this>;
+  protected _parent!: ContextConsumer<{__context__: NodeContext}, this>;
 
   protected abstract get type(): 'synth' | 'group';
   abstract get isRunning(): boolean;
   abstract get params(): Record<string, number>;
 
   override get id(): string {
-    const parentId = this._group.value?.id;
+    const parentId = this._parent.value?.id;
     return parentId ? `${parentId}.${super.id}` : super.id;
   }
 
@@ -28,7 +29,7 @@ export abstract class ScNode extends LitElement implements IScNode {
   }
 
   get parent(): NodeContext | undefined {
-    return this._group.value;
+    return this._parent.value;
   }
 
   registerElement(el: ScElement) {
@@ -50,18 +51,18 @@ export abstract class ScNode extends LitElement implements IScNode {
   }
 
   protected get groupId(): number {
-    return this._group.value?.nodeId ?? oscService.defaultGroupId();
+    return this._parent.value?.nodeId ?? oscService.defaultGroupId();
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this._group.value?.unregisterElement(this);
+    this._parent.value?.unregisterElement(this);
   }
 
   constructor() {
     super();
     this.nodeId = oscService.nextNodeId();
-    this._group = new ContextConsumer(this, {
+    this._parent = new ContextConsumer(this, {
       context: nodeContext, subscribe: false,
       callback: (ctx) => ctx?.registerElement(this),
     });
@@ -81,7 +82,14 @@ export abstract class ScNode extends LitElement implements IScNode {
       onChange: (params) => this.onChange(params),
       onRun: (isRunning) => this.onRun(isRunning),
     };
-    new ContextProvider(this, {context: nodeContext, initialValue: ctx});
+    const provider = new ContextProvider(this, {context: nodeContext, initialValue: ctx});
+    store.subscribe((state: RootState, prevState: RootState) => {
+      const next = state.scsynth.nodes.items.find(n => n.nodeId === this.nodeId);
+      const prev = prevState.scsynth.nodes.items.find(n => n.nodeId === this.nodeId);
+      if (next !== prev) {
+        provider.setValue(ctx, true);
+      }
+    });
   }
 
 
