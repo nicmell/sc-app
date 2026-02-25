@@ -37,11 +37,11 @@ export const nodesSlice = createSlice({
   name: SliceName.NODES,
   initialState,
   reducers: {
-    [NodesAction.NEW_SYNTH]: (state, action: { payload: { nodeId: number; groupId: number; params: Record<string, number> } }) => {
-      state.items.push({type: 'synth', nodeId: action.payload.nodeId, groupId: action.payload.groupId, isRunning: false, params: action.payload.params});
+    [NodesAction.NEW_SYNTH]: (state, action: { payload: { id: string; nodeId: number; groupId: number; params: Record<string, number> } }) => {
+      state.items.push({type: 'synth', id: action.payload.id, nodeId: action.payload.nodeId, groupId: action.payload.groupId, isRunning: false, params: action.payload.params});
     },
-    [NodesAction.NEW_GROUP]: (state, action: { payload: { nodeId: number; groupId: number } }) => {
-      state.items.push({type: 'group', nodeId: action.payload.nodeId, groupId: action.payload.groupId});
+    [NodesAction.NEW_GROUP]: (state, action: { payload: { id: string; nodeId: number; groupId: number } }) => {
+      state.items.push({type: 'group', id: action.payload.id, nodeId: action.payload.nodeId, groupId: action.payload.groupId});
     },
     [NodesAction.FREE_NODE]: (state, action: { payload: number }) => {
       const node = state.items.find(n => n.nodeId === action.payload);

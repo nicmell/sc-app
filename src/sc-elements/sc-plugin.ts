@@ -5,12 +5,11 @@ import {ScGroup} from './sc-group.ts';
 
 export class ScPlugin extends ScGroup {
   static properties = {
-    id: {type: String},
+    id: {type: String, reflect: true},
     _loading: {state: true},
     _error: {state: true},
   };
 
-  declare id: string;
   declare _loading: boolean;
   declare _error: string;
 

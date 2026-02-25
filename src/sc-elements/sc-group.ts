@@ -10,6 +10,10 @@ import {type ScNode as IScNode} from './context.ts';
 import {ScNode} from './internal/sc-node.ts';
 
 export class ScGroup extends ScNode {
+  static properties = {
+    id: {type: String, reflect: true},
+  };
+
   private registeredNodes = new Set<IScNode>();
 
   protected get type() { return 'group' as const; }
@@ -30,7 +34,7 @@ export class ScGroup extends ScNode {
     const group = this._group.value;
     const groupId = group?.nodeId ?? oscService.defaultGroupId();
     group?.registerNode(this);
-    nodesApi.newGroup({nodeId: this.nodeId, groupId});
+    nodesApi.newGroup({id: this.id, nodeId: this.nodeId, groupId});
     oscService.send(
       newGroupMessage(this.nodeId),
       groupTailMessage(groupId, -1),

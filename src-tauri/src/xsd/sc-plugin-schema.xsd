@@ -11,6 +11,13 @@
     <xs:attribute name="style" type="xs:string" use="optional"/>
   </xs:attributeGroup>
 
+  <!-- commonAttrs without id, for types that declare id separately -->
+  <xs:attributeGroup name="commonAttrsNoId">
+    <xs:attribute name="class" type="xs:string" use="optional"/>
+    <xs:attribute name="title" type="xs:string" use="optional"/>
+    <xs:attribute name="style" type="xs:string" use="optional"/>
+  </xs:attributeGroup>
+
   <!-- ==================== Global element declarations ==================== -->
 
   <!-- HTML elements -->
@@ -212,7 +219,8 @@
       <xs:element ref="sc-synth"/>
       <xs:element ref="sc-group"/>
     </xs:choice>
-    <xs:attributeGroup ref="commonAttrs"/>
+    <xs:attribute name="id" type="xs:string" use="required"/>
+    <xs:attributeGroup ref="commonAttrsNoId"/>
   </xs:complexType>
 
   <!-- sc-synth (container: accepts HTML + control sc-* elements, no sc-group/sc-synth) -->
@@ -221,8 +229,9 @@
       <xs:group ref="htmlElements"/>
       <xs:group ref="scControls"/>
     </xs:choice>
+    <xs:attribute name="id" type="xs:string" use="required"/>
     <xs:attribute name="name" type="xs:string"/>
-    <xs:attributeGroup ref="commonAttrs"/>
+    <xs:attributeGroup ref="commonAttrsNoId"/>
   </xs:complexType>
 
 </xs:schema>

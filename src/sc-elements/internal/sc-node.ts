@@ -14,8 +14,21 @@ export abstract class ScNode extends LitElement implements IScNode {
   abstract get isRunning(): boolean;
   abstract get params(): Record<string, number>;
 
+  override get id(): string {
+    const parentId = this._group.value?.id;
+    return parentId ? `${parentId}.${super.id}` : super.id;
+  }
+
+  override set id(value: string) {
+    super.id = value;
+  }
+
   get loaded() {
     return nodesApi.items.some(n => n.nodeId === this.nodeId);
+  }
+
+  get parent(): NodeContext | undefined {
+    return this._group.value;
   }
 
   registerElement(el: ScElement) {
@@ -49,8 +62,10 @@ export abstract class ScNode extends LitElement implements IScNode {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
     const ctx: NodeContext = {
-      get type() { return self.type; },
       nodeId: this.nodeId,
+      get id() { return self.id; },
+      get type() { return self.type; },
+      get parent() { return self.parent; },
       get loaded() { return self.loaded; },
       get running() { return self.isRunning; },
       get params() { return self.params; },

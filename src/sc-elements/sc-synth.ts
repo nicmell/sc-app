@@ -11,6 +11,7 @@ import {ScNode} from './internal/sc-node.ts';
 
 export class ScSynth extends ScNode {
   static properties = {
+    id: {type: String, reflect: true},
     name: {type: String},
   };
 
@@ -42,7 +43,7 @@ export class ScSynth extends ScNode {
     const group = this._group.value;
     const groupId = group?.nodeId ?? oscService.defaultGroupId();
     group?.registerNode(this);
-    nodesApi.newSynth({nodeId: this.nodeId, groupId, params});
+    nodesApi.newSynth({id: this.id, nodeId: this.nodeId, groupId, params});
     oscService.send(
       newSynthMessage(this.name, this.nodeId, 0, 0, params),
       nodeRunMessage(-1, 0),

@@ -10,16 +10,18 @@ export interface ScNode {
 }
 
 export interface NodeContext {
+  id: string;
   type: 'synth' | 'group';
   nodeId: number;
+  parent: NodeContext | undefined;
   loaded: boolean;
   running: boolean;
   params: Record<string, number>;
   registerElement(el: ScElement): void;
   unregisterElement(el: ScElement): void;
+  onChange(el: ScElement): void;
   registerNode(node: ScNode): void;
   unregisterNode(node: ScNode): void;
-  onChange(el: ScElement): void;
   onRun(isRunning: boolean): void;
 }
 

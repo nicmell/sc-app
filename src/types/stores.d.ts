@@ -94,6 +94,7 @@ export interface ConfigFile {
 
 export interface SynthItem {
   type: 'synth';
+  id: string;
   nodeId: number;
   groupId: number;
   isRunning: boolean;
@@ -102,6 +103,7 @@ export interface SynthItem {
 
 export interface GroupItem {
   type: 'group';
+  id: string;
   nodeId: number;
   groupId: number;
 }
