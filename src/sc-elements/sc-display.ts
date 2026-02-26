@@ -43,7 +43,7 @@ export class ScDisplay extends LitElement {
   }
 
   render() {
-    const value = get(this._node.value?.params, this.bind);
+    const value = get(this._node.value?.state, this.bind);
     const text = this.format ? formatValue(this.format, value) : String(value ?? '');
     return html`${text}`;
   }

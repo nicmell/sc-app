@@ -9,18 +9,11 @@ import {nodesApi} from '@/lib/stores/api';
 import {ScNode} from './internal/sc-node.ts';
 
 export class ScGroup extends ScNode {
-  static properties = {
-    id: {type: String, reflect: true},
-  };
-
-  protected get type() { return 'group' as const; }
 
   get isRunning() { return false; }
 
-  get params(): Record<string, number> { return {}; }
-
   protected firstUpdated() {
-    nodesApi.newGroup({id: this.id, nodeId: this.nodeId, groupId: this.groupId});
+    nodesApi.newGroup({id: this.id, path: this.path, nodeId: this.nodeId, groupId: this.groupId});
     oscService.send(
       newGroupMessage(this.nodeId),
       groupTailMessage(this.groupId, -1),

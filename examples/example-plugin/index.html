@@ -1,35 +1,34 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
-  <title>Example Plugin</title>
+    <title>Example Plugin</title>
 </head>
 <body>
-  <sc-synth id="sine" name="sine" freq="440" amp="0.2" pan="0" mute="0" class="example-plugin">
-    <label>
-      <sc-run size="24"/>
-    </label>
-    <div class="controls">
-      <div class="knobs">
+<sc-synth id="sine" name="sine" freq="440" amp="0.2" pan="0" mute="0" class="example-plugin"/>
+<label>
+    <sc-run size="24"/>
+</label>
+<div class="controls">
+    <div class="knobs">
         <label>
-          <sc-range type="knob" bind="freq" min="20" max="2000" step="1" diameter="48"/>
-          <span><sc-display bind="freq" format="%d Hz"/></span>
+            <sc-range type="knob" bind="sine.freq" min="20" max="2000" step="1" diameter="48"/>
+            <span><sc-display bind="sine.freq" format="%d Hz"/></span>
         </label>
         <label>
-          <sc-range type="knob" bind="amp" min="0" max="1" step="0.01" diameter="48"/>
-          <span><sc-display bind="amp" format="%.2f"/></span>
+            <sc-range type="knob" bind="sine.amp" min="0" max="1" step="0.01" diameter="48"/>
+            <span><sc-display bind="sine.amp" format="%.2f"/></span>
         </label>
-      </div>
-      <div class="sliders">
-        <label>
-          <span>Pan: <sc-display bind="pan" format="%.2f"/></span>
-          <sc-range type="slider" bind="pan" min="-1" max="1" step="0.01" width="120" height="16"/>
-        </label>
-        <label>
-          <sc-checkbox bind="mute" width="24" height="24"/>
-          <span>Mute</span>
-        </label>
-      </div>
     </div>
-  </sc-synth>
+    <div class="sliders">
+        <label>
+            <span>Pan: <sc-display bind="sine.pan" format="%.2f"/></span>
+            <sc-range type="slider" bind="sine.pan" min="-1" max="1" step="0.01" width="120" height="16"/>
+        </label>
+        <label>
+            <sc-checkbox bind="sine.mute" width="24" height="24"/>
+            <span>Mute</span>
+        </label>
+    </div>
+</div>
 </body>
 </html>

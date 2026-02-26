@@ -2,6 +2,7 @@ import {html, css, LitElement} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
 import './internal/sc-switch.ts';
+import {get} from "@/lib/utils/get.ts";
 
 export class ScCheckbox extends LitElement {
     static properties = {
@@ -27,7 +28,7 @@ export class ScCheckbox extends LitElement {
     `;
 
     get checked(): boolean {
-        return (this._node.value?.params[this.bind] ?? 0) !== 0;
+        return (get(this._node.value?.state, this.bind) ?? 0) !== 0;
     }
 
     constructor() {

@@ -3,6 +3,8 @@ import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
 import './internal/sc-knob.ts';
 import './internal/sc-slider.ts';
+import {get} from "@/lib/utils/get.ts";
+import {nodesApi} from "@/lib/stores/api.ts";
 
 export class ScRange extends LitElement {
     static properties = {
@@ -42,7 +44,7 @@ export class ScRange extends LitElement {
     `;
 
     get value(): number {
-        return this._node.value?.params[this.bind] ?? 0;
+        return get(this._node.value?.state, this.bind) as number ?? 0;
     }
 
     constructor() {
@@ -63,7 +65,10 @@ export class ScRange extends LitElement {
 
     onChange = (v: number) => {
         if (v !== this.value && this.bind) {
-            this._node.value?.onChange({[this.bind]: v});
+            nodesApi.setControl({
+                path: [this._node.value?.path, this.bind].join("."),
+                control: v
+            })
         }
     };
 

@@ -94,24 +94,26 @@ export interface ConfigFile {
 
 export interface SynthItem {
   type: 'synth';
-  id: string;
   nodeId: number;
   groupId: number;
   isRunning: boolean;
+  controls: Record<string, number>;
+  id: string;
+  path: string;
 }
 
 export interface GroupItem {
   type: 'group';
-  id: string;
   nodeId: number;
   groupId: number;
+  id: string;
+  path: string;
 }
 
 export type NodeItem = SynthItem | GroupItem;
 
 export interface NodesState {
   items: NodeItem[];
-  controls: Record<string, number>;
 }
 
 export interface PluginsState {

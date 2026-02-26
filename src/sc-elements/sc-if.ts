@@ -40,7 +40,7 @@ export class ScIf extends LitElement {
   }
 
   private _test(): boolean {
-    const value = get(this._node.value?.params, this.bind);
+    const value = get(this._node.value?.state, this.bind);
     const num = typeof value === 'number' ? value : Number(value);
     if (this.isEqual !== null) return String(value) === this.isEqual;
     if (this.isNotEqual !== null) return String(value) !== this.isNotEqual;

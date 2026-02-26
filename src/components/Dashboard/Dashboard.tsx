@@ -3,7 +3,7 @@ import type {Layout} from "react-grid-layout";
 import {GridLayout, noCompactor, useContainerWidth} from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
-import {useSelector} from "@/lib/stores/store";
+import {store, useSelector} from "@/lib/stores/store";
 import layoutStore from "@/lib/stores/layout";
 import {layoutApi, pluginsApi} from "@/lib/stores/api";
 import {DashboardPanel} from "./DashboardPanel";
@@ -127,6 +127,11 @@ export function Dashboard() {
         <div className="dashboard">
             <header className="header">
                 <span className="header-title">SC-App</span>
+                <IconButton size="md" onClick={() => console.log(store.getState())} aria-label="Log store">
+                    <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M4 4h12v2H4zm0 5h12v2H4zm0 5h8v2H4z"/>
+                    </svg>
+                </IconButton>
                 <IconButton size="md" onClick={() => setSettingsOpen(true)} aria-label="Menu">
                     <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor">
                         <rect y="3" width="20" height="2" rx="1"/>

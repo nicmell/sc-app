@@ -7,7 +7,7 @@ import {
   newGroupMessage,
   notifyMessage,
   statusMessage,
-  versionMessage
+  versionMessage, nodeRunMessage
 } from './messages';
 import type {ScsynthOptions} from '@/types/stores';
 import {OSC_MESSAGES, OSC_REPLIES} from '@/constants/osc.ts';
@@ -95,6 +95,7 @@ export class OscService {
     this.currentNodeId = this.defaultGroupId();
     this.send(
         newGroupMessage(this.currentNodeId),
+        nodeRunMessage(this.currentNodeId, 0),
         statusMessage(),
         versionMessage()
     )

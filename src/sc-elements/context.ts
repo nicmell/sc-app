@@ -9,13 +9,11 @@ export interface ScNode {
 }
 
 export interface NodeContext {
-  id: string;
-  type: 'synth' | 'group';
   nodeId: number;
-  parent: NodeContext | undefined;
+  path: string;
   loaded: boolean;
   running: boolean;
-  params: Record<string, number>;
+  state: Record<string, any>;
   registerElement(el: ScElement): void;
   unregisterElement(el: ScElement): void;
   onChange(params: Record<string, number>): void;

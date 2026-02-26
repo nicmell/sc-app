@@ -23,23 +23,9 @@ export class ScSynth extends ScNode {
     this.name = 'default';
   }
 
-  protected get type() { return 'synth' as const; }
-
   get isRunning() {
     const n = nodesApi.items.find(n => n.nodeId === this.nodeId);
     return n !== undefined && n.type === 'synth' ? n.isRunning : false;
-  }
-
-  get params() {
-    const controls = nodesApi.controls;
-    const prefix = this.id + '.';
-    const result: Record<string, number> = {};
-    for (const key of Object.keys(controls)) {
-      if (key.startsWith(prefix)) {
-        result[key.slice(prefix.length)] = controls[key];
-      }
-    }
-    return result;
   }
 
   private _collectParams(): Record<string, number> {
@@ -57,10 +43,10 @@ export class ScSynth extends ScNode {
   protected firstUpdated() {
     const params = this._collectParams();
 
-    nodesApi.newSynth({id: this.id, nodeId: this.nodeId, groupId: this.groupId, params});
+    nodesApi.newSynth({id: this.id, path: this.path, nodeId: this.nodeId, groupId: this.groupId, params});
     oscService.send(
       newSynthMessage(this.name, this.nodeId, 0, 0, params),
-      nodeRunMessage(-1, 0),
+      // nodeRunMessage(-1, 0),
       groupTailMessage(this.groupId, -1),
     );
   }
