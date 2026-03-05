@@ -48,9 +48,11 @@ export const nodesSlice = createSlice({
       const node = state.items.find(n => n.nodeId === action.payload);
       if (!node) return;
       if (isGroup(node)) {
-        const ids = new Set(getDescendants(state.items, node.nodeId).map(n => n.nodeId));
-        ids.add(node.nodeId);
-        state.items = state.items.filter(n => !ids.has(n.nodeId));
+        const ids = [
+            node.nodeId,
+            getDescendants(state.items, node.nodeId).map(n => n.nodeId)
+        ];
+        state.items = state.items.filter(n => !ids.includes(n.nodeId));
       } else {
         state.items = state.items.filter(n => n.nodeId !== action.payload);
       }
@@ -66,19 +68,14 @@ export const nodesSlice = createSlice({
         }
       }
     },
-    [NodesAction.SET_CONTROL]: (state, action: { payload: { path: string; control: number} }) => {
-      const segments = action.payload.path.split(".")
-      const nodePath = segments.slice(0, segments.length - 1).join(".")
-      const control = segments[segments.length - 1]
-        console.log({nodePath, control})
-      const node = state.items.find(n => n.path === nodePath);
-        console.log(segments.slice(0, segments.length - 1).join("."), control)
+    [NodesAction.SET_CONTROL]: (state, action: { payload: { path: string; controls: Record<string, number>} }) => {
+      const node = state.items.find(n => n.path === action.payload.path);
       if (!node) return;
       if (isSynth(node)) {
-        Object.assign(node.controls, {[control]: action.payload.control});
+        Object.assign(node.controls, action.payload.controls);
       } else if (isGroup(node)) {
         for (const synth of getLeaves(state.items, node.nodeId)) {
-            Object.assign(synth.controls, {[control]: action.payload.control});
+            Object.assign(synth.controls, action.payload.controls);
         }
       }
     },

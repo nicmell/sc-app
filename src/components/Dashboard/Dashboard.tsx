@@ -3,14 +3,14 @@ import type {Layout} from "react-grid-layout";
 import {GridLayout, noCompactor, useContainerWidth} from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
-import {store, useSelector} from "@/lib/stores/store";
+import {useSelector} from "@/lib/stores/store";
 import layoutStore from "@/lib/stores/layout";
 import {layoutApi, pluginsApi} from "@/lib/stores/api";
 import {DashboardPanel} from "./DashboardPanel";
 import {deepEqual} from "@/lib/utils/deepEqual";
-import {SettingsDrawer} from "@/components/SettingsDrawer";
-import {IconButton} from "@/components/ui/IconButton";
 import {computePlaceholders, isPlaceholder, MARGIN} from "./utils";
+import {DashboardHeader} from "./DashboardHeader";
+import {DashboardFooter} from "./DashboardFooter";
 import {Placeholder} from "./Placeholder";
 import "./Dashboard.scss";
 import {BoxItem, PluginInfo} from "@/types/stores";
@@ -42,7 +42,6 @@ function boxId() {
 }
 
 export function Dashboard() {
-    const [settingsOpen, setSettingsOpen] = useState(false);
     const layout = useSelector(layoutStore.selectors.items);
     const {numRows, numColumns} = useSelector(layoutStore.selectors.options);
     const {width: containerWidth, containerRef, mounted} = useContainerWidth({measureBeforeMount: true});
@@ -125,24 +124,7 @@ export function Dashboard() {
 
     return (
         <div className="dashboard">
-            <header className="header">
-                <span className="header-title">SC-App</span>
-                <IconButton size="md" onClick={() => console.log(store.getState())} aria-label="Log store">
-                    <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor">
-                        <path d="M4 4h12v2H4zm0 5h12v2H4zm0 5h8v2H4z"/>
-                    </svg>
-                </IconButton>
-                <IconButton size="md" onClick={() => setSettingsOpen(true)} aria-label="Menu">
-                    <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor">
-                        <rect y="3" width="20" height="2" rx="1"/>
-                        <rect y="9" width="20" height="2" rx="1"/>
-                        <rect y="15" width="20" height="2" rx="1"/>
-                    </svg>
-                </IconButton>
-            </header>
-
-            <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)}/>
-
+            <DashboardHeader/>
             <div className="dashboard-grid-wrapper" ref={containerRef as React.RefObject<HTMLDivElement>}>
                 {mounted && (
                     <div className="dashboard-grid-container">
@@ -162,9 +144,7 @@ export function Dashboard() {
                     </div>
                 )}
             </div>
-            <footer className="footer">
-                <span className="server-status">Empty Box Grid</span>
-            </footer>
+            <DashboardFooter/>
             <Modal open={!!modalOpen} title="Select plugin" onClose={() => setModalOpen(undefined)}>
                 <PluginList onSelect={handleSelectPlugin}/>
             </Modal>

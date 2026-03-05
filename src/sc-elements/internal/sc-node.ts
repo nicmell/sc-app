@@ -3,7 +3,7 @@ import {ContextProvider, ContextConsumer} from '@lit/context';
 import {oscService} from '@/lib/osc';
 import {nodeRunMessage, nodeSetMessage} from '@/lib/osc/messages.ts';
 import {nodesApi} from '@/lib/stores/api';
-import {store, type RootState} from '@/lib/stores/store';
+import {store} from '@/lib/stores/store';
 import {nodeContext, type NodeContext, type ScNode as IScNode, type ScElement} from '../context.ts';
 
 
@@ -25,7 +25,7 @@ export abstract class ScNode extends LitElement implements IScNode {
     }
 
     get state() {
-        return  nodesApi.state(this.nodeId)
+        return nodesApi.state(this.nodeId)
     }
 
     get loaded() {
@@ -40,9 +40,12 @@ export abstract class ScNode extends LitElement implements IScNode {
         this.registeredElements.delete(el);
     }
 
-    onChange(params: Record<string, number>) {
-        nodesApi.setControl({nodeId: this.nodeId, params});
-        oscService.send(nodeSetMessage(this.nodeId, params));
+    onChange(target: string, value: number) {
+        const segments = [...this.path.split("."), ...target.split(".")];
+        const path = segments.slice(0, -1).join(".");
+        const control = segments[segments.length - 1];
+        nodesApi.setControl({path, controls: {[control]: value}});
+        oscService.send(nodeSetMessage(this.nodeId, {[control]: value}));
     }
 
     onRun(isRunning: boolean) {
@@ -72,7 +75,7 @@ export abstract class ScNode extends LitElement implements IScNode {
         const ctx: NodeContext = {
             nodeId: this.nodeId,
             get path() {
-              return self.path
+                return self.path
             },
             get loaded() {
                 return self.loaded;
@@ -85,7 +88,7 @@ export abstract class ScNode extends LitElement implements IScNode {
             },
             registerElement: (el) => this.registerElement(el),
             unregisterElement: (el) => this.unregisterElement(el),
-            onChange: (params) => this.onChange(params),
+            onChange: (target, value) => this.onChange(target, value),
             onRun: (isRunning) => this.onRun(isRunning),
         };
         const provider = new ContextProvider(this, {context: nodeContext, initialValue: ctx});

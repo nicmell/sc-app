@@ -4,7 +4,6 @@ import {nodeContext} from './context.ts';
 import './internal/sc-knob.ts';
 import './internal/sc-slider.ts';
 import {get} from "@/lib/utils/get.ts";
-import {nodesApi} from "@/lib/stores/api.ts";
 
 export class ScRange extends LitElement {
     static properties = {
@@ -63,12 +62,9 @@ export class ScRange extends LitElement {
         this.bgcolor = 'var(--color-bg-secondary, #e8e8e8)';
     }
 
-    onChange = (v: number) => {
-        if (v !== this.value && this.bind) {
-            nodesApi.setControl({
-                path: [this._node.value?.path, this.bind].join("."),
-                control: v
-            })
+    onChange = (value: number) => {
+        if (value !== this.value && this.bind) {
+            this._node.value?.onChange(this.bind, value);
         }
     };
 
