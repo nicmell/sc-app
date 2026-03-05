@@ -2,7 +2,6 @@ import {oscService} from '@/lib/osc';
 import {
   newSynthMessage,
   freeNodeMessage,
-  nodeRunMessage,
   groupTailMessage
 } from '@/lib/osc/messages.ts';
 import {nodesApi} from '@/lib/stores/api';
