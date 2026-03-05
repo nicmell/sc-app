@@ -1,10 +1,10 @@
-import scsynth from "@/lib/stores/scsynth/selectors";
+import root from "@/lib/stores/root/selectors";
 import {createSelector, type SliceSelector} from "@/lib/stores/utils";
 import {NodesState} from "@/types/stores";
 import {getChildren, isGroup, isSynth} from "@/lib/stores/nodes/slice.ts";
 
-const createNodesSelector: SliceSelector<typeof scsynth.nodes> = (fn) =>
-    createSelector(scsynth.nodes, fn);
+const createNodesSelector: SliceSelector<typeof root.nodes> = (fn) =>
+    createSelector(root.nodes, fn);
 
 
 function getState(state: NodesState, nodeId: number): Record<string, any> {

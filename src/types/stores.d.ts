@@ -48,7 +48,6 @@ export interface ScsynthState {
   connectionStatus: ConnectionStatus;
   status: ScsynthStatus;
   version: string;
-  nodes: NodesState
 }
 
 export interface LayoutOptions {
@@ -125,6 +124,7 @@ export interface RootState {
   layout: LayoutState;
   scsynth: ScsynthState;
   plugins: PluginsState;
+  nodes: NodesState;
 }
 
 export type ScsynthAction = SliceActions<typeof scsynthSlice.actions>;

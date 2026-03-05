@@ -30,7 +30,9 @@ export class ScSynth extends ScNode {
   private _collectParams(): Record<string, number> {
     const params: Record<string, number> = {};
     for (const attr of this.attributes) {
-      if (SKIP_ATTRS.has(attr.name)) continue;
+      if (SKIP_ATTRS.has(attr.name)) {
+        continue
+      }
       const val = Number(attr.value);
       if (!isNaN(val)) {
         params[attr.name] = val;
@@ -45,7 +47,6 @@ export class ScSynth extends ScNode {
     nodesApi.newSynth({id: this.id, path: this.path, nodeId: this.nodeId, groupId: this.groupId, params});
     oscService.send(
       newSynthMessage(this.name, this.nodeId, 0, 0, params),
-      // nodeRunMessage(-1, 0),
       groupTailMessage(this.groupId, -1),
     );
   }

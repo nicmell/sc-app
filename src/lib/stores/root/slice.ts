@@ -2,6 +2,7 @@ import scsynth from "../scsynth";
 import layout from "../layout";
 import theme from "../theme";
 import plugins from "../plugins";
+import nodes from "../nodes";
 import {combineReducers, createSlice} from "../utils";
 import {SliceName} from "@/constants/store";
 import type {RootState} from "@/types/stores";
@@ -11,6 +12,7 @@ const initialState: RootState = {
   layout: layout.getInitialState(),
   theme: theme.getInitialState(),
   plugins: plugins.getInitialState(),
+  nodes: nodes.getInitialState(),
 };
 
 export const rootSlice = createSlice({
@@ -22,5 +24,6 @@ export const rootSlice = createSlice({
     layout: layout.reducer,
     theme: theme.reducer,
     plugins: plugins.reducer,
+    nodes: nodes.reducer,
   })
 });

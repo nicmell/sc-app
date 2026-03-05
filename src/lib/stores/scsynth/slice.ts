@@ -3,7 +3,6 @@ import type {ConnectionStatus} from "@/types/stores";
 import {ConnectionStatus as Status, DEFAULT_CLIENT_ID, DEFAULT_OPTIONS, DEFAULT_STATUS, DEFAULT_VERSION} from "@/constants/osc";
 import {createSlice} from "@/lib/stores/utils";
 import {SliceName, ScsynthAction} from "@/constants/store";
-import nodes from "../nodes"
 
 const initialState: ScsynthState = {
   clientId: DEFAULT_CLIENT_ID,
@@ -11,7 +10,6 @@ const initialState: ScsynthState = {
   connectionStatus: Status.DISCONNECTED,
   status: DEFAULT_STATUS,
   version: DEFAULT_VERSION,
-  nodes: nodes.getInitialState()
 };
 
 export const scsynthSlice = createSlice({
@@ -38,7 +36,4 @@ export const scsynthSlice = createSlice({
       state.version = DEFAULT_VERSION;
     },
   },
-  defaultReducer: (state, action) => {
-    nodes.reducer(state.nodes, action);
-  }
 });

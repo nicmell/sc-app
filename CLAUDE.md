@@ -63,12 +63,11 @@ Four top-level slices in `src/lib/stores/`:
 
 | Slice | Purpose |
 |-------|---------|
-| `scsynth` | Connection state, server status, options, live node tree |
+| `scsynth` | Connection state, server status, options |
 | `layout` | Dashboard grid items + grid options |
 | `theme` | Dark/light mode, primary color |
 | `plugins` | Installed plugin registry |
-
-The `nodes` sub-slice (synths, groups) is nested inside `scsynth` — its reducer is delegated via `defaultReducer` and its state lives at `scsynth.nodes`.
+| `nodes` | Live node tree (synths, groups) — not persisted |
 
 Each slice has: `slice.ts` (reducer + actions), `selectors.ts`, `index.ts` (barrel).
 
