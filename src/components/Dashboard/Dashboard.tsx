@@ -19,7 +19,7 @@ import {Modal} from "@/components/ui/Modal";
 import {PluginList} from "@/components/PluginList";
 
 
-const HEADER_HEIGHT = 48;
+const HEADER_HEIGHT = 42;
 const FOOTER_HEIGHT = 42;
 
 function subscribeToResize(cb: () => void) {
