@@ -1,4 +1,4 @@
-$header-height: 48px;
+$header-height: 42px;
 $footer-height: 42px;
 
 .react-grid-item {
@@ -24,11 +24,28 @@ $footer-height: 42px;
 }
 
 .header-title {
-  flex: 1;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   font-weight: 600;
 }
 
+.header-spacer {
+  flex: 1;
+}
+
+.header-log-btn {
+  background: none;
+  border: none;
+  color: var(--color-text);
+  font-size: 0.75rem;
+  font-family: monospace;
+  opacity: 0.6;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+
+  &:hover {
+    opacity: 1;
+  }
+}
 
 .dashboard-grid-wrapper {
   position: relative;
@@ -47,12 +64,17 @@ $footer-height: 42px;
   background: var(--color-panel-header);
 }
 
+.server-address,
 .server-status {
-  margin-left: auto;
   font-size: 0.85rem;
   opacity: 0.6;
   font-family: monospace;
 }
+
+.server-status {
+  margin-left: auto;
+}
+
 
 .dashboard-loading-overlay {
   position: absolute;

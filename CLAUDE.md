@@ -141,7 +141,7 @@ export function Foo({variant = "a", size = "md", className, ...rest}: FooProps) 
 
 - Default scsynth: `127.0.0.1:57110`
 - Default grid: 8 rows x 12 columns
-- Header height: 48px, footer height: 42px
+- Header height: 42px, footer height: 42px
 - Tauri identifier: `com.nicmell.scapp`
 - OSC polling: 1000ms, reply timeout: 3000ms
 

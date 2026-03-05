@@ -2,13 +2,13 @@ import {useSelector} from "@/lib/stores/store";
 import scsynth from "@/lib/stores/scsynth";
 
 export function DashboardFooter() {
-    const status = useSelector(scsynth.selectors.status);
+    const address = useSelector(scsynth.selectors.address);
+    const statusText = useSelector(scsynth.selectors.statusText);
 
     return (
         <footer className="footer">
-            <span className="server-status">
-                UGens: {status.ugens} | Synths: {status.synths} | Groups: {status.groups} | Defs: {status.defs} | CPU: {status.avgCpu.toFixed(1)}% / {status.peakCpu.toFixed(1)}% | SR: {status.sampleRate.toFixed(0)} Hz
-            </span>
+            <span className="server-address">{address}</span>
+            <span className="server-status">{statusText}</span>
         </footer>
     );
 }

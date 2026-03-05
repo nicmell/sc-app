@@ -32,11 +32,8 @@ export function DashboardHeader() {
                             : <polygon points="5,2.5 5,15.5 15,9"/>}
                     </svg>
                 </IconButton>
-                <IconButton size="md" onClick={() => console.log(store.getState())} aria-label="Log store">
-                    <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor">
-                        <path d="M4 4h12v2H4zm0 5h12v2H4zm0 5h8v2H4z"/>
-                    </svg>
-                </IconButton>
+                <span className="header-spacer"/>
+                <button className="header-log-btn" onClick={() => console.log(store.getState())}>Log</button>
                 <IconButton size="md" onClick={() => setSettingsOpen(true)} aria-label="Menu">
                     <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor">
                         <rect y="3" width="20" height="2" rx="1"/>
