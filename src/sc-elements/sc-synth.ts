@@ -7,19 +7,19 @@ import {
 import {nodesApi} from '@/lib/stores/api';
 import {ScNode} from './internal/sc-node.ts';
 
-const SKIP_ATTRS = new Set(['id', 'name', 'class', 'style', 'slot', 'title']);
+const SKIP_ATTRS = new Set(['id', 'synthdef', 'class', 'style', 'slot', 'title']);
 
 export class ScSynth extends ScNode {
   static properties = {
     ...ScNode.properties,
-    name: {type: String},
+    synthdef: {type: String},
   };
 
-  declare name: string;
+  declare synthdef: string;
 
   constructor() {
     super();
-    this.name = 'default';
+    this.synthdef = 'default';
   }
 
   get isRunning() {
@@ -46,7 +46,7 @@ export class ScSynth extends ScNode {
 
     nodesApi.newSynth({id: this.id, path: this.path, nodeId: this.nodeId, groupId: this.groupId, params});
     oscService.send(
-      newSynthMessage(this.name, this.nodeId, 0, 0, params),
+      newSynthMessage(this.synthdef, this.nodeId, 0, 0, params),
       groupTailMessage(this.groupId, -1),
     );
   }

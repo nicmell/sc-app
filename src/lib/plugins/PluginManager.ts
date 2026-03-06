@@ -2,8 +2,18 @@ import type {PluginInfo} from "@/types/stores";
 import {layoutApi, pluginsApi} from "@/lib/stores/api";
 import {rehydrate} from "@/lib/stores/store";
 import {get, post, del} from "@/lib/http";
+import {ELEMENTS} from "@/constants/sc-elements";
 
 export const PLUGINS_URL = "app://plugins";
+
+
+type ScElementNode = {
+  tagName: string;
+  attributes: Record<string, string>;
+  descendants: ScElementNode[];
+}
+
+const tagNames = new Set<string>(Object.values(ELEMENTS));
 
 export class PluginManager {
 
@@ -40,8 +50,28 @@ export class PluginManager {
     if (error) {
       throw new Error(error.textContent ?? "Invalid XHTML")
     }
+    const tree = buildScElementTree(doc.documentElement);
+    console.log("ScElementNode tree:", tree);
+
     return doc.documentElement.innerHTML;
   }
+}
+
+function buildScElementTree(node: Element): ScElementNode[] {
+  const result: ScElementNode[] = [];
+  for (const child of Array.from(node.children)) {
+    const tag = child.tagName.toLowerCase();
+    if (tagNames.has(tag)) {
+      const attributes: Record<string, string> = {};
+      for (const attr of Array.from(child.attributes)) {
+        attributes[attr.name] = attr.value;
+      }
+      result.push({ tagName: tag, attributes, descendants: buildScElementTree(child) });
+    } else {
+      result.push(...buildScElementTree(child));
+    }
+  }
+  return result;
 }
 
 export const pluginManager = new PluginManager();

@@ -211,11 +211,10 @@
     <xs:attributeGroup ref="commonAttrs"/>
   </xs:complexType>
 
-  <!-- sc-group (container: accepts sc-synth and sc-group children) -->
+  <!-- sc-group (container: accepts HTML, sc-controls, sc-synth, and sc-group children) -->
   <xs:complexType name="scGroupType" mixed="true">
     <xs:choice minOccurs="0" maxOccurs="unbounded">
-      <xs:element ref="sc-synth"/>
-      <xs:element ref="sc-group"/>
+      <xs:group ref="blockContent"/>
     </xs:choice>
     <xs:attribute name="id" type="xs:string" use="required"/>
     <xs:attributeGroup ref="commonAttrsNoId"/>
@@ -228,7 +227,7 @@
       <xs:group ref="scControls"/>
     </xs:choice>
     <xs:attribute name="id" type="xs:string" use="required"/>
-    <xs:attribute name="name" type="xs:string"/>
+    <xs:attribute name="synthdef" type="xs:string"/>
     <xs:attributeGroup ref="commonAttrsNoId"/>
     <xs:anyAttribute processContents="skip"/>
   </xs:complexType>
