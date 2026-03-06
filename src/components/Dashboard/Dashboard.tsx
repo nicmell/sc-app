@@ -102,7 +102,7 @@ export function Dashboard() {
             >
                 {
                     plugin
-                        ? <sc-plugin id={item.i}></sc-plugin>
+                        ? <sc-plugin id={item.i} name={item.i}></sc-plugin>
                         : fallback
                 }
             </DashboardPanel>

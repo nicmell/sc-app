@@ -9,9 +9,10 @@ import {nodeContext, type NodeContext, type ScNode as IScNode, type ScElement} f
 
 export abstract class ScNode extends LitElement implements IScNode {
     static properties = {
-        id: {type: String, reflect: true},
+        name: {type: String, reflect: true},
     };
 
+    declare name: string;
     readonly nodeId: number;
     protected registeredElements = new Set<ScElement>();
     protected _parent!: ContextConsumer<{ __context__: NodeContext }, this>;
@@ -19,9 +20,7 @@ export abstract class ScNode extends LitElement implements IScNode {
     abstract get isRunning(): boolean;
 
     get path() {
-        return this._parent.value ?
-            [this._parent.value.path, this.id].join(".") :
-            this.id
+        return this._parent.value ? [this._parent.value.path, this.name].join(".") : this.name
     }
 
     get state() {

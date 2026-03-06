@@ -11,12 +11,6 @@
     <xs:attribute name="style" type="xs:string" use="optional"/>
   </xs:attributeGroup>
 
-  <!-- commonAttrs without id, for types that declare id separately -->
-  <xs:attributeGroup name="commonAttrsNoId">
-    <xs:attribute name="class" type="xs:string" use="optional"/>
-    <xs:attribute name="title" type="xs:string" use="optional"/>
-    <xs:attribute name="style" type="xs:string" use="optional"/>
-  </xs:attributeGroup>
 
   <!-- ==================== Global element declarations ==================== -->
 
@@ -216,8 +210,8 @@
     <xs:choice minOccurs="0" maxOccurs="unbounded">
       <xs:group ref="blockContent"/>
     </xs:choice>
-    <xs:attribute name="id" type="xs:string" use="required"/>
-    <xs:attributeGroup ref="commonAttrsNoId"/>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attributeGroup ref="commonAttrs"/>
   </xs:complexType>
 
   <!-- sc-synth (container: accepts HTML + control sc-* elements, no sc-group/sc-synth) -->
@@ -226,9 +220,9 @@
       <xs:group ref="htmlElements"/>
       <xs:group ref="scControls"/>
     </xs:choice>
-    <xs:attribute name="id" type="xs:string" use="required"/>
+    <xs:attribute name="name" type="xs:string" use="required"/>
     <xs:attribute name="synthdef" type="xs:string"/>
-    <xs:attributeGroup ref="commonAttrsNoId"/>
+    <xs:attributeGroup ref="commonAttrs"/>
     <xs:anyAttribute processContents="skip"/>
   </xs:complexType>
 

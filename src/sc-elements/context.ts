@@ -27,7 +27,7 @@ export const nodeContext = createContext<NodeContext>('node');
 // ---------------------------------------------------------------------------
 
 export interface UGenElementSpec {
-  id: string;
+  name: string;
   type: string;
   rate: string;
   inputs: Record<string, string>;
@@ -35,7 +35,7 @@ export interface UGenElementSpec {
 
 export interface SynthDefContext {
   registerUGen(spec: UGenElementSpec): void;
-  unregisterUGen(id: string): void;
+  unregisterUGen(name: string): void;
 }
 
 export const synthdefContext = createContext<SynthDefContext>('synthdef');

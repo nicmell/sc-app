@@ -9,7 +9,7 @@ import { binOp, unaryOp, binaryOps, unaryOps } from './operators';
 // ---------------------------------------------------------------------------
 
 export interface UGenElementSpec {
-  id: string;
+  name: string;
   type: string;
   rate: string;
   inputs: Record<string, string>;
@@ -127,7 +127,7 @@ function resolveInputValue(
 /**
  * Build a SynthDef from declarative specs collected from `<sc-ugen>` elements.
  *
- * @param name   SynthDef name (from `<sc-synthdef id="...">`)
+ * @param name   SynthDef name (from `<sc-synthdef name="...">`)
  * @param params Named parameters with default values (from sc-synthdef attributes)
  * @param specs  UGen element specs collected from children
  */
@@ -158,35 +158,35 @@ export function buildSynthDefFromSpecs(
       // Special handling for BinaryOpUGen / UnaryOpUGen
       if (spec.type === 'BinaryOpUGen') {
         const op = spec.inputs['op'];
-        if (!op) throw new Error(`BinaryOpUGen "${spec.id}" requires an "op" attribute`);
+        if (!op) throw new Error(`BinaryOpUGen "${spec.name}" requires an "op" attribute`);
         if (!(op in binaryOps)) throw new Error(`Unknown binary operator: "${op}"`);
         const a = resolveInputValue(spec.inputs['a'], ugenMap, controlMap);
         const b = resolveInputValue(spec.inputs['b'], ugenMap, controlMap);
         const result = binOp(op, a, b);
         // binOp may return a number (constant folding) — wrap in DC if needed
         if (typeof result === 'number') {
-          ugenMap.set(spec.id, new UGen('DC', rate, [result], 1));
+          ugenMap.set(spec.name, new UGen('DC', rate, [result], 1));
         } else if (result instanceof UGen) {
-          ugenMap.set(spec.id, result);
+          ugenMap.set(spec.name, result);
         } else {
           // UGenOutput — get source
-          ugenMap.set(spec.id, result.source);
+          ugenMap.set(spec.name, result.source);
         }
         continue;
       }
 
       if (spec.type === 'UnaryOpUGen') {
         const op = spec.inputs['op'];
-        if (!op) throw new Error(`UnaryOpUGen "${spec.id}" requires an "op" attribute`);
+        if (!op) throw new Error(`UnaryOpUGen "${spec.name}" requires an "op" attribute`);
         if (!(op in unaryOps)) throw new Error(`Unknown unary operator: "${op}"`);
         const a = resolveInputValue(spec.inputs['a'], ugenMap, controlMap);
         const result = unaryOp(op, a);
         if (typeof result === 'number') {
-          ugenMap.set(spec.id, new UGen('DC', rate, [result], 1));
+          ugenMap.set(spec.name, new UGen('DC', rate, [result], 1));
         } else if (result instanceof UGen) {
-          ugenMap.set(spec.id, result);
+          ugenMap.set(spec.name, result);
         } else {
-          ugenMap.set(spec.id, result.source);
+          ugenMap.set(spec.name, result.source);
         }
         continue;
       }
@@ -219,14 +219,14 @@ export function buildSynthDefFromSpecs(
           resolvedInputs.push(defValue);
         } else {
           throw new Error(
-            `UGen "${spec.id}" (${spec.type}): missing required input "${defName}"`,
+            `UGen "${spec.name}" (${spec.type}): missing required input "${defName}"`,
           );
         }
       }
 
       const numOutputs = entry.numOutputs ?? 1;
       const ugen = new UGen(spec.type, rate, resolvedInputs, numOutputs);
-      ugenMap.set(spec.id, ugen);
+      ugenMap.set(spec.name, ugen);
     }
   });
 }

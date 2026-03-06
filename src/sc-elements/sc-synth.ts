@@ -7,7 +7,7 @@ import {
 import {nodesApi} from '@/lib/stores/api';
 import {ScNode} from './internal/sc-node.ts';
 
-const SKIP_ATTRS = new Set(['id', 'synthdef', 'class', 'style', 'slot', 'title']);
+const SKIP_ATTRS = new Set(['name', 'synthdef', 'class', 'style', 'slot', 'title']);
 
 export class ScSynth extends ScNode {
   static properties = {
@@ -44,7 +44,7 @@ export class ScSynth extends ScNode {
   protected firstUpdated() {
     const params = this._collectParams();
 
-    nodesApi.newSynth({id: this.id, path: this.path, nodeId: this.nodeId, groupId: this.groupId, params});
+    nodesApi.newSynth({name: this.name, path: this.path, nodeId: this.nodeId, groupId: this.groupId, params});
     oscService.send(
       newSynthMessage(this.synthdef, this.nodeId, 0, 0, params),
       groupTailMessage(this.groupId, -1),

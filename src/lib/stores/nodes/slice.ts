@@ -38,11 +38,11 @@ export const nodesSlice = createSlice({
   name: SliceName.NODES,
   initialState,
   reducers: {
-    [NodesAction.NEW_SYNTH]: (state, action: { payload: { id: string; path: string; nodeId: number; groupId: number; params: Record<string, number> } }) => {
-      state.items.push({type: 'synth', id: action.payload.id, path: action.payload.path, nodeId: action.payload.nodeId, groupId: action.payload.groupId, isRunning: false, controls: action.payload.params});
+    [NodesAction.NEW_SYNTH]: (state, action: { payload: { name: string; path: string; nodeId: number; groupId: number; params: Record<string, number> } }) => {
+      state.items.push({type: 'synth', name: action.payload.name, path: action.payload.path, nodeId: action.payload.nodeId, groupId: action.payload.groupId, isRunning: false, controls: action.payload.params});
     },
-    [NodesAction.NEW_GROUP]: (state, action: { payload: { id: string; path: string; nodeId: number; groupId: number } }) => {
-      state.items.push({type: 'group', id: action.payload.id, path: action.payload.path, nodeId: action.payload.nodeId, groupId: action.payload.groupId});
+    [NodesAction.NEW_GROUP]: (state, action: { payload: { name: string; path: string; nodeId: number; groupId: number } }) => {
+      state.items.push({type: 'group', name: action.payload.name, path: action.payload.path, nodeId: action.payload.nodeId, groupId: action.payload.groupId});
     },
     [NodesAction.FREE_NODE]: (state, action: { payload: number }) => {
       const node = state.items.find(n => n.nodeId === action.payload);

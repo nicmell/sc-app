@@ -19,7 +19,7 @@ function getState(state: NodesState, nodeId: number): Record<string, any> {
         return getChildren(state.items, node.nodeId)
             .reduce<Record<string, any>>((acc, n) => ({
                 ...acc,
-                [n.id]: getState(state, n.nodeId)
+                [n.name]: getState(state, n.nodeId)
             }), {});
     }
     return {};

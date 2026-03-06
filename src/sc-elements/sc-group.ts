@@ -13,7 +13,7 @@ export class ScGroup extends ScNode {
   get isRunning() { return false; }
 
   protected firstUpdated() {
-    nodesApi.newGroup({id: this.id, path: this.path, nodeId: this.nodeId, groupId: this.groupId});
+    nodesApi.newGroup({name: this.name, path: this.path, nodeId: this.nodeId, groupId: this.groupId});
     oscService.send(
       newGroupMessage(this.nodeId),
       groupTailMessage(this.groupId, -1),

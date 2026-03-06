@@ -5,7 +5,7 @@ import {ScGroup} from './sc-group.ts';
 
 export class ScPlugin extends ScGroup {
   static properties = {
-    id: {type: String, reflect: true},
+    ...ScGroup.properties,
     _loading: {state: true},
     _error: {state: true},
   };
@@ -22,8 +22,7 @@ export class ScPlugin extends ScGroup {
   protected async firstUpdated() {
     super.firstUpdated();
     try {
-      const content = await pluginManager.loadPlugin(this.id);
-      this.innerHTML = content;
+      this.innerHTML = await pluginManager.loadPlugin(this.id);;
       this._loading = false;
       layoutApi.loadPlugin({id: this.id, loaded: true});
     } catch (e) {

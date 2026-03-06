@@ -2,7 +2,7 @@ import {LitElement} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {synthdefContext, type SynthDefContext, type UGenElementSpec} from './context.ts';
 
-const SKIP_ATTRS = new Set(['id', 'type', 'rate', 'class', 'style', 'slot']);
+const SKIP_ATTRS = new Set(['name', 'type', 'rate', 'class', 'style', 'slot']);
 
 export class ScUgen extends LitElement {
   static properties = {
@@ -35,7 +35,7 @@ export class ScUgen extends LitElement {
       }
     }
     return {
-      id: this.id,
+      name: this.getAttribute('name') ?? '',
       type: this.type,
       rate: this.rate,
       inputs,
@@ -44,7 +44,7 @@ export class ScUgen extends LitElement {
 
   private _tryRegister() {
     const ctx = this._parentCtx.value;
-    if (!ctx || !this.id || !this.type) return;
+    if (!ctx || !this.getAttribute('name') || !this.type) return;
     ctx.registerUGen(this._buildSpec());
     this._registered = true;
   }
@@ -56,7 +56,7 @@ export class ScUgen extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this._registered && this._parentCtx.value) {
-      this._parentCtx.value.unregisterUGen(this.id);
+      this._parentCtx.value.unregisterUGen(this.getAttribute('name') ?? '');
       this._registered = false;
     }
   }

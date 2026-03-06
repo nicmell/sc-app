@@ -97,7 +97,7 @@ export interface SynthItem {
   groupId: number;
   isRunning: boolean;
   controls: Record<string, number>;
-  id: string;
+  name: string;
   path: string;
 }
 
@@ -105,7 +105,7 @@ export interface GroupItem {
   type: 'group';
   nodeId: number;
   groupId: number;
-  id: string;
+  name: string;
   path: string;
 }
 

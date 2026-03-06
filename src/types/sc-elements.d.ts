@@ -3,8 +3,12 @@ import 'react';
 
 export type ScElementTagNames = (typeof ELEMENTS)[keyof typeof ELEMENTS];
 
+interface ScElementHTMLAttributes extends React.HTMLAttributes<HTMLElement> {
+  name?: string;
+}
+
 type ScElementIntrinsicElements = {
-  [K in ScElementTagNames]: React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+  [K in ScElementTagNames]: React.DetailedHTMLProps<ScElementHTMLAttributes, HTMLElement>;
 };
 
 declare module 'react' {
