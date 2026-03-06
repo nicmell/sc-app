@@ -17,17 +17,17 @@ type ScElementNode = {
 const tagNames = new Set<string>(Object.values(ELEMENTS));
 const STORAGE_KEY = 'sc-plugin-trees';
 
-function loadTreeStore(): Record<string, ScElementNode[]> {
+function loadSavedTree(boxId: string): ScElementNode[] | undefined {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
+    const raw = localStorage.getItem(`${STORAGE_KEY}:${boxId}`);
+    return raw ? JSON.parse(raw) : undefined;
   } catch {
-    return {};
+    return undefined;
   }
 }
 
-function saveTreeStore(store: Record<string, ScElementNode[]>): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+function saveSavedTree(boxId: string, tree: ScElementNode[]): void {
+  localStorage.setItem(`${STORAGE_KEY}:${boxId}`, JSON.stringify(tree));
 }
 
 export class PluginManager {
@@ -65,11 +65,8 @@ export class PluginManager {
     if (error) {
       throw new Error(error.textContent ?? "Invalid XHTML")
     }
-    const store = loadTreeStore();
-    const tree = buildScElementTree(doc.documentElement, store[boxId]);
-
-    store[boxId] = tree;
-    saveTreeStore(store);
+    const tree = buildScElementTree(doc.documentElement, loadSavedTree(boxId));
+    saveSavedTree(boxId, tree);
     console.log("ScElementNode tree:", tree);
 
     return doc.documentElement.innerHTML;
@@ -80,19 +77,19 @@ function generateId(): string {
   return crypto.randomUUID();
 }
 
-function buildScElementTree(node: Element, saved?: ScElementNode[]): ScElementNode[] {
+function buildScElementTree(node: Element, saved?: ScElementNode[], offset = 0): ScElementNode[] {
   const result: ScElementNode[] = [];
-  let savedIndex = 0;
   for (const child of Array.from(node.children)) {
     const tag = child.tagName.toLowerCase();
     if (!tagNames.has(tag)) {
-      result.push(...buildScElementTree(child));
+      result.push(...buildScElementTree(child, saved, offset + result.length));
       continue;
     }
-    const prev = saved?.[savedIndex++];
+    const idx = offset + result.length;
+    const prev = saved?.[idx];
     const rehydrated = prev?.tagName === tag;
     if (prev && !rehydrated) {
-      console.warn(`[plugin hydration] mismatch at index ${savedIndex - 1}: <${tag}> vs saved <${prev.tagName}>`);
+      console.warn(`[plugin hydration] mismatch at index ${idx}: <${tag}> vs saved <${prev.tagName}>`);
     }
 
     const id = rehydrated ? prev.id : generateId();
@@ -105,8 +102,8 @@ function buildScElementTree(node: Element, saved?: ScElementNode[]): ScElementNo
     const descendants = buildScElementTree(child, rehydrated ? prev.descendants : undefined);
     result.push({ id, tagName: tag, attributes, descendants });
   }
-  if (saved && savedIndex < saved.length) {
-    console.warn(`[plugin hydration] ${saved.length - savedIndex} saved node(s) no longer present`);
+  if (offset === 0 && saved && result.length < saved.length) {
+    console.warn(`[plugin hydration] ${saved.length - result.length} saved node(s) no longer present`);
   }
   return result;
 }
