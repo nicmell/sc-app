@@ -8,6 +8,7 @@ import layoutStore from "@/lib/stores/layout";
 import {layoutApi, pluginsApi} from "@/lib/stores/api";
 import {DashboardPanel} from "./DashboardPanel";
 import {deepEqual} from "@/lib/utils/deepEqual";
+import {generateId} from "@/lib/utils/generateId";
 import {computePlaceholders, isPlaceholder, MARGIN} from "./utils";
 import {DashboardHeader} from "./DashboardHeader";
 import {DashboardFooter} from "./DashboardFooter";
@@ -38,7 +39,7 @@ function computeRowHeight(numRows: number, viewportHeight: number): number {
 
 
 function boxId() {
-    return `${Date.now()}`
+    return generateId();
 }
 
 export function Dashboard() {

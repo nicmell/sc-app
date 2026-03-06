@@ -3,6 +3,7 @@ import {layoutApi, pluginsApi} from "@/lib/stores/api";
 import {rehydrate} from "@/lib/stores/store";
 import {get, post, del} from "@/lib/http";
 import {ELEMENTS} from "@/constants/sc-elements";
+import {generateId} from "@/lib/utils/generateId";
 
 export const PLUGINS_URL = "app://plugins";
 
@@ -71,10 +72,6 @@ export class PluginManager {
 
     return doc.documentElement.innerHTML;
   }
-}
-
-function generateId(): string {
-  return crypto.randomUUID();
 }
 
 function buildScElementTree(node: Element, saved?: ScElementNode[], offset = 0): ScElementNode[] {
