@@ -8,12 +8,27 @@ export const PLUGINS_URL = "app://plugins";
 
 
 type ScElementNode = {
+  id: string;
   tagName: string;
   attributes: Record<string, string>;
   descendants: ScElementNode[];
 }
 
 const tagNames = new Set<string>(Object.values(ELEMENTS));
+const STORAGE_KEY = 'sc-plugin-trees';
+
+function loadTreeStore(): Record<string, ScElementNode[]> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveTreeStore(store: Record<string, ScElementNode[]>): void {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+}
 
 export class PluginManager {
 
@@ -50,26 +65,48 @@ export class PluginManager {
     if (error) {
       throw new Error(error.textContent ?? "Invalid XHTML")
     }
-    const tree = buildScElementTree(doc.documentElement);
+    const store = loadTreeStore();
+    const tree = buildScElementTree(doc.documentElement, store[boxId]);
+
+    store[boxId] = tree;
+    saveTreeStore(store);
     console.log("ScElementNode tree:", tree);
 
     return doc.documentElement.innerHTML;
   }
 }
 
-function buildScElementTree(node: Element): ScElementNode[] {
+function generateId(): string {
+  return crypto.randomUUID();
+}
+
+function buildScElementTree(node: Element, saved?: ScElementNode[]): ScElementNode[] {
   const result: ScElementNode[] = [];
+  let savedIndex = 0;
   for (const child of Array.from(node.children)) {
     const tag = child.tagName.toLowerCase();
-    if (tagNames.has(tag)) {
-      const attributes: Record<string, string> = {};
-      for (const attr of Array.from(child.attributes)) {
-        attributes[attr.name] = attr.value;
-      }
-      result.push({ tagName: tag, attributes, descendants: buildScElementTree(child) });
-    } else {
+    if (!tagNames.has(tag)) {
       result.push(...buildScElementTree(child));
+      continue;
     }
+    const prev = saved?.[savedIndex++];
+    const rehydrated = prev?.tagName === tag;
+    if (prev && !rehydrated) {
+      console.warn(`[plugin hydration] mismatch at index ${savedIndex - 1}: <${tag}> vs saved <${prev.tagName}>`);
+    }
+
+    const id = rehydrated ? prev.id : generateId();
+    child.setAttribute('id', id);
+
+    const attributes: Record<string, string> = {};
+    for (const attr of Array.from(child.attributes)) {
+      attributes[attr.name] = attr.value;
+    }
+    const descendants = buildScElementTree(child, rehydrated ? prev.descendants : undefined);
+    result.push({ id, tagName: tag, attributes, descendants });
+  }
+  if (saved && savedIndex < saved.length) {
+    console.warn(`[plugin hydration] ${saved.length - savedIndex} saved node(s) no longer present`);
   }
   return result;
 }
