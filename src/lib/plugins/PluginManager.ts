@@ -32,6 +32,10 @@ export class PluginManager {
     await rehydrate();
   }
 
+  getCompiledSynthDef(name: string): Uint8Array | undefined {
+    return this.treeParser.getCompiledSynthDef(name);
+  }
+
   async loadPlugin(boxId: string): Promise<PluginTreeEntry> {
     const box = layoutApi.getById(boxId);
     if (!box?.plugin) {
