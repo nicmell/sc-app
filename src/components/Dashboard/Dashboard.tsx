@@ -1,4 +1,4 @@
-import {useCallback, useMemo, useState, useSyncExternalStore} from "react";
+import {useCallback, useEffect, useMemo, useState, useSyncExternalStore} from "react";
 import type {Layout} from "react-grid-layout";
 import {GridLayout, noCompactor, useContainerWidth} from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
@@ -15,6 +15,7 @@ import {DashboardFooter} from "./DashboardFooter";
 import {Placeholder} from "./Placeholder";
 import "./Dashboard.scss";
 import {BoxItem, PluginInfo} from "@/types/stores";
+import {pluginManager} from "@/lib/plugins/PluginManager";
 import {Button} from "@/components/ui/Button";
 import {Modal} from "@/components/ui/Modal";
 import {PluginList} from "@/components/PluginList";
@@ -50,6 +51,8 @@ export function Dashboard() {
     const rowHeight = computeRowHeight(numRows, viewportHeight);
 
     const [modalOpen, setModalOpen] = useState<BoxItem>();
+
+    useEffect(() => { pluginManager.init(); }, []);
 
     const actualNumRows = useMemo(() => {
         return layout.reduce((max, item) => Math.max(max, item.y + item.h), 1);

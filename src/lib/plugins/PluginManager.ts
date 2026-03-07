@@ -2,11 +2,16 @@ import type {PluginInfo} from "@/types/stores";
 import {layoutApi, pluginsApi} from "@/lib/stores/api";
 import {rehydrate} from "@/lib/stores/store";
 import {get, post, del} from "@/lib/http";
-import {buildScElementTree, loadSavedTree, saveSavedTree} from "./elementTree";
+import {ElementTreeParser, type PluginTreeEntry} from "./elementTree";
 
 export const PLUGINS_URL = "app://plugins";
 
 export class PluginManager {
+  private readonly treeParser = new ElementTreeParser();
+
+  init(): void {
+    this.treeParser.init();
+  }
 
   async listPlugins(): Promise<PluginInfo[]> {
     const resp = await get(PLUGINS_URL);
@@ -27,7 +32,7 @@ export class PluginManager {
     await rehydrate();
   }
 
-  async loadPlugin(boxId: string): Promise<string> {
+  async loadPlugin(boxId: string): Promise<PluginTreeEntry> {
     const box = layoutApi.getById(boxId);
     if (!box?.plugin) {
       throw new Error(`No plugin assigned for ${boxId}`);
@@ -41,11 +46,7 @@ export class PluginManager {
     if (error) {
       throw new Error(error.textContent ?? "Invalid XHTML")
     }
-    const tree = buildScElementTree(doc.documentElement, loadSavedTree(boxId));
-    saveSavedTree(boxId, tree);
-    console.log("ScElementNode tree:", tree);
-
-    return doc.documentElement.innerHTML;
+    return this.treeParser.parse(boxId, doc.documentElement);
   }
 }
 

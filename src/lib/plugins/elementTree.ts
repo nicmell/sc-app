@@ -8,49 +8,127 @@ export type ScElementNode = {
   descendants: ScElementNode[];
 }
 
+export interface PluginTreeEntry {
+  tree: ScElementNode[];
+  state: Record<string, any>;
+  html: string;
+}
+
+const SYNTH_SKIP_ATTRS = new Set(['id', 'name', 'synthdef', 'class', 'style', 'slot', 'title']);
+
+interface ParseContext {
+  state: Record<string, any>;
+  saved?: ScElementNode[];
+  offset: number;
+}
+
+type TagHandler = (current: ScElementNode, state: Record<string, any>) => Record<string, any>;
+
+function handleGroup(current: ScElementNode, state: Record<string, any>): Record<string, any> {
+  const name = current.attributes.name;
+  if (!name) return state;
+  const groupState: Record<string, any> = {};
+  state[name] = groupState;
+  return groupState;
+}
+
+function handleSynth(current: ScElementNode, state: Record<string, any>): Record<string, any> {
+  const name = current.attributes.name;
+  if (name) {
+    const params: Record<string, number> = {};
+    for (const [key, value] of Object.entries(current.attributes)) {
+      if (SYNTH_SKIP_ATTRS.has(key)) continue;
+      const val = Number(value);
+      if (!isNaN(val)) {
+        params[key] = val
+      }
+    }
+    state[name] = params;
+  }
+  return state;
+}
+
 const tagNames = new Set<string>(Object.values(ELEMENTS));
+
+const tagHandlers: Partial<Record<string, TagHandler>> = {
+  [ELEMENTS.SC_GROUP]: handleGroup,
+  [ELEMENTS.SC_SYNTH]: handleSynth,
+};
+
 const STORAGE_KEY = 'sc-plugin-trees';
 
-export function loadSavedTree(boxId: string): ScElementNode[] | undefined {
-  try {
-    const raw = localStorage.getItem(`${STORAGE_KEY}:${boxId}`);
-    return raw ? JSON.parse(raw) : undefined;
-  } catch {
-    return undefined;
-  }
-}
+export class ElementTreeParser {
+  private store: Record<string, PluginTreeEntry> = {};
 
-export function saveSavedTree(boxId: string, tree: ScElementNode[]): void {
-  localStorage.setItem(`${STORAGE_KEY}:${boxId}`, JSON.stringify(tree));
-}
-
-export function buildScElementTree(node: Element, saved?: ScElementNode[], offset = 0): ScElementNode[] {
-  const result: ScElementNode[] = [];
-  for (const child of Array.from(node.children)) {
-    const tag = child.tagName.toLowerCase();
-    if (!tagNames.has(tag)) {
-      result.push(...buildScElementTree(child, saved, offset + result.length));
-      continue;
+  init(): void {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      this.store = raw ? JSON.parse(raw) : {};
+    } catch {
+      this.store = {};
     }
-    const idx = offset + result.length;
-    const prev = saved?.[idx];
+  }
+
+  parse(boxId: string, node: Element): PluginTreeEntry {
+    const ctx: ParseContext = {
+      state: {},
+      offset: 0,
+      saved: this.store[boxId]?.tree,
+    };
+    const tree = this.buildTree(node, ctx);
+    const html = node.innerHTML;
+    const entry: PluginTreeEntry = { tree, state: ctx.state, html };
+    this.store[boxId] = entry;
+    this.persist();
+    return entry;
+  }
+
+  private persist(): void {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.store));
+  }
+
+  private buildTree(node: Element, ctx: ParseContext): ScElementNode[] {
+    const result: ScElementNode[] = [];
+    for (const child of Array.from(node.children)) {
+      const tag = child.tagName.toLowerCase();
+      if (!tagNames.has(tag)) {
+        result.push(...this.buildTree(child, ctx));
+        continue;
+      }
+      result.push(this.processElement(child, tag, ctx));
+    }
+    if (ctx.saved && ctx.offset < ctx.saved.length) {
+      console.warn(`[plugin hydration] ${ctx.saved.length - ctx.offset} saved node(s) no longer present`);
+    }
+    return result;
+  }
+
+  private processElement(el: Element, tag: string, ctx: ParseContext): ScElementNode {
+    const prev = ctx.saved?.[ctx.offset];
     const rehydrated = prev?.tagName === tag;
     if (prev && !rehydrated) {
-      console.warn(`[plugin hydration] mismatch at index ${idx}: <${tag}> vs saved <${prev.tagName}>`);
+      console.warn(`[plugin hydration] mismatch at index ${ctx.offset}: <${tag}> vs saved <${prev.tagName}>`);
     }
+    ctx.offset++;
 
-    const id = rehydrated ? prev.id : generateId();
-    child.setAttribute('id', id);
-
+    const existingId = el.getAttribute('id');
+    const id = existingId || (rehydrated ? prev.id : generateId());
+    if (!existingId) {
+      el.setAttribute('id', id)
+    }
     const attributes: Record<string, string> = {};
-    for (const attr of Array.from(child.attributes)) {
+    for (const attr of Array.from(el.attributes)) {
       attributes[attr.name] = attr.value;
     }
-    const descendants = buildScElementTree(child, rehydrated ? prev.descendants : undefined);
-    result.push({ id, tagName: tag, attributes, descendants });
+
+    const current: ScElementNode = { id, tagName: tag, attributes, descendants: [] };
+    const handler = tagHandlers[tag] ?? ((_current, state) => state);
+    const childState = handler(current, ctx.state);
+    current.descendants = this.buildTree(el, {
+      state: childState,
+      saved: rehydrated ? prev.descendants : undefined,
+      offset: 0,
+    });
+    return current;
   }
-  if (offset === 0 && saved && result.length < saved.length) {
-    console.warn(`[plugin hydration] ${saved.length - result.length} saved node(s) no longer present`);
-  }
-  return result;
 }

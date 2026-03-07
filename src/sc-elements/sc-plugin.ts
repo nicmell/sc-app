@@ -22,7 +22,8 @@ export class ScPlugin extends ScGroup {
   protected async firstUpdated() {
     super.firstUpdated();
     try {
-      this.innerHTML = await pluginManager.loadPlugin(this.id);;
+      const result = await pluginManager.loadPlugin(this.id);
+      this.innerHTML = result.html;
       this._loading = false;
       layoutApi.loadPlugin({id: this.id, loaded: true});
     } catch (e) {
