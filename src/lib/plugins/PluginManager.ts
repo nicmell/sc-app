@@ -2,12 +2,12 @@ import type {PluginInfo} from "@/types/stores";
 import {layoutApi, pluginsApi} from "@/lib/stores/api";
 import {rehydrate} from "@/lib/stores/store";
 import {get, post, del} from "@/lib/http";
-import {ElementTreeParser, type PluginTreeEntry} from "./elementTree";
+import {PluginParser, type PluginTreeEntry} from "@/lib/parsers";
 
 export const PLUGINS_URL = "app://plugins";
 
 export class PluginManager {
-  private readonly treeParser = new ElementTreeParser();
+  private readonly treeParser = new PluginParser();
 
   init(): void {
     this.treeParser.init();
