@@ -1,5 +1,5 @@
 import {ELEMENTS} from "@/constants/sc-elements";
-import {generateId} from "@/lib/utils/generateId";
+import {randomId} from "@/lib/utils/randomId.ts";
 import type {ScElementNode, PluginTreeEntry} from "./types";
 import {compileSynthDef} from "./SynthDefCompiler";
 
@@ -41,7 +41,8 @@ export class PluginParser {
     const ctx: WalkContext = { state: {}, offset: 0, saved: this.store[boxId]?.tree };
     const tree = this.walkChildren(node, ctx);
     const html = node.innerHTML;
-    const entry: PluginTreeEntry = { tree, state: ctx.state, html };
+    const title = node.querySelector('title')?.textContent ?? undefined;
+    const entry: PluginTreeEntry = { tree, state: ctx.state, html, title };
     this.store[boxId] = entry;
     this.persist();
     return entry;
@@ -117,8 +118,10 @@ export class PluginParser {
 
   private hydrateId(el: Element, saved?: ScElementNode): string {
     const existingId = el.getAttribute('id');
-    const id = existingId || (saved ? saved.id : generateId());
-    if (!existingId) el.setAttribute('id', id);
+    const id = existingId || (saved ? saved.id : randomId());
+    if (!existingId) {
+      el.setAttribute('id', id)
+    }
     return id;
   }
 

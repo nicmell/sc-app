@@ -4,7 +4,7 @@ import cn from "classnames";
 import "./Dashboard.scss";
 
 interface DashboardPanelProps {
-  title: string;
+  title?: string;
   boxId: string;
   pluginId?: string;
   children?: ReactNode;

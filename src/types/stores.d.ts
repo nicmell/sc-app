@@ -15,9 +15,10 @@ export interface BoxItem {
   // Runtime-only (not persisted)
   loaded?: boolean;
   error?: string;
+  title?: string;
 }
 
-export type PersistedBoxItem = Omit<BoxItem, 'loaded' | 'error'>;
+export type PersistedBoxItem = Omit<BoxItem, 'loaded' | 'error' | 'title'>;
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected";
 

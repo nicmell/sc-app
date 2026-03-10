@@ -11,7 +11,7 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
   partialize: ({theme, layout, scsynth, plugins}: RootState): ConfigFile => ({
     theme: {mode: theme.mode, primaryColor: theme.primaryColor},
     layout: {
-      items: layout.items.map(({loaded: _l, error: _e, ...box}) => ({...box})),
+      items: layout.items.map(({loaded: _l, error: _e, title: _t, ...box}) => ({...box})),
       options: layout.options,
     },
     scsynth: {options: scsynth.options},

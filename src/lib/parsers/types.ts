@@ -9,4 +9,5 @@ export interface PluginTreeEntry {
   tree: ScElementNode[];
   state: Record<string, any>;
   html: string;
+  title?: string;
 }

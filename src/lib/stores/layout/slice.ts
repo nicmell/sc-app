@@ -34,11 +34,12 @@ export const layoutSlice = createSlice({
         box.plugin = action.payload.plugin;
       }
     },
-    [LayoutAction.LOAD_PLUGIN]: (state, action: { payload: { id: string; loaded: boolean; error?: string } }) => {
+    [LayoutAction.LOAD_PLUGIN]: (state, action: { payload: { id: string; loaded: boolean; error?: string; title?: string } }) => {
       const box = state.items.find(item => item.i === action.payload.id);
       if (box) {
         box.loaded = action.payload.loaded;
         box.error = action.payload.error;
+        box.title = action.payload.title;
       }
     },
     [LayoutAction.UNLOAD_PLUGIN]: (state, action: { payload: string }) => {
@@ -47,6 +48,7 @@ export const layoutSlice = createSlice({
         delete box.plugin;
         delete box.loaded;
         delete box.error;
+        delete box.title;
       }
     },
   },

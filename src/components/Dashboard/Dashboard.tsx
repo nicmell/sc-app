@@ -8,7 +8,7 @@ import layoutStore from "@/lib/stores/layout";
 import {layoutApi, pluginsApi} from "@/lib/stores/api";
 import {DashboardPanel} from "./DashboardPanel";
 import {deepEqual} from "@/lib/utils/deepEqual";
-import {generateId} from "@/lib/utils/generateId";
+import {randomId} from "@/lib/utils/randomId.ts";
 import {computePlaceholders, isPlaceholder, MARGIN} from "./utils";
 import {DashboardHeader} from "./DashboardHeader";
 import {DashboardFooter} from "./DashboardFooter";
@@ -40,7 +40,7 @@ function computeRowHeight(numRows: number, viewportHeight: number): number {
 
 
 function boxId() {
-    return generateId();
+    return randomId();
 }
 
 export function Dashboard() {
@@ -68,7 +68,7 @@ export function Dashboard() {
             .filter((item) => !isPlaceholder(item))
             .map(({i, x, y, w, h}) => {
                 const prev = boxMap.get(i);
-                return {i, x, y, w, h, plugin: prev?.plugin, loaded: prev?.loaded, error: prev?.error};
+                return {i, x, y, w, h, plugin: prev?.plugin, loaded: prev?.loaded, error: prev?.error, title: prev?.title};
             });
         if (!deepEqual(active, layout)) {
             layoutApi.setLayout(active);
@@ -98,7 +98,7 @@ export function Dashboard() {
         return (
             <DashboardPanel
                 key={item.i}
-                title={item.i}
+                title={item.loaded ? item.title : undefined}
                 boxId={item.i}
                 pluginId={item.plugin}
                 onClose={() => layoutApi.removeBox(item.i)}
