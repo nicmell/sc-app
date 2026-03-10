@@ -38,11 +38,6 @@ function computeRowHeight(numRows: number, viewportHeight: number): number {
     return Math.floor((available - MARGIN[1] * (numRows + 1)) / numRows);
 }
 
-
-function boxId() {
-    return randomId();
-}
-
 export function Dashboard() {
     const layout = useSelector(layoutStore.selectors.items);
     const {numRows, numColumns} = useSelector(layoutStore.selectors.options);
@@ -78,7 +73,7 @@ export function Dashboard() {
     const handleSelectPlugin = useCallback((plugin: PluginInfo) => {
         const item = modalOpen!;
         if (isPlaceholder(item)) {
-            layoutApi.addBox({i: boxId(), x: item.x, y: item.y, w: item.w, h: item.h, plugin: plugin.id})
+            layoutApi.addBox({i: randomId(), x: item.x, y: item.y, w: item.w, h: item.h, plugin: plugin.id})
         } else {
             layoutApi.setBoxPlugin({id: item.i, plugin: plugin.id});
         }
@@ -87,14 +82,6 @@ export function Dashboard() {
 
     const renderDashboardPanel = (item: BoxItem) => {
         const plugin = item.plugin ? pluginsApi.getById(item.plugin) : undefined;
-        const fallback = (
-            <div className="dashboard-panel-empty">
-                Plugin not found
-                <Button size="sm" onClick={() => setModalOpen(item)}>
-                    Select plugin
-                </Button>
-            </div>
-        );
         return (
             <DashboardPanel
                 key={item.i}
@@ -106,8 +93,15 @@ export function Dashboard() {
             >
                 {
                     plugin
-                        ? <sc-plugin id={item.i} name={item.i}></sc-plugin>
-                        : fallback
+                        ? <sc-plugin id={item.i} name={item.i}/>
+                        : (
+                            <div className="dashboard-panel-empty">
+                                Plugin not found
+                                <Button size="sm" onClick={() => setModalOpen(item)}>
+                                    Select plugin
+                                </Button>
+                            </div>
+                        )
                 }
             </DashboardPanel>
         )
@@ -129,7 +123,7 @@ export function Dashboard() {
     return (
         <div className="dashboard">
             <DashboardHeader/>
-            <div className="dashboard-grid-wrapper" ref={containerRef as React.RefObject<HTMLDivElement>}>
+            <div className="dashboard-grid-wrapper" ref={containerRef}>
                 {mounted && (
                     <div className="dashboard-grid-container">
                         <GridLayout
