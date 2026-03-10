@@ -5,8 +5,6 @@ import "./Dashboard.scss";
 
 interface DashboardPanelProps {
   title?: string;
-  boxId: string;
-  pluginId?: string;
   children?: ReactNode;
   onClose?: () => void;
   onEdit?: () => void;
@@ -15,7 +13,8 @@ interface DashboardPanelProps {
   className?: string;
 }
 
-export function DashboardPanel({title, boxId: _boxId, pluginId: _pluginId, children, onClose, onEdit, ref, style, className, ...rest}: DashboardPanelProps) {
+export function DashboardPanel(props: DashboardPanelProps) {
+  const {title, children, onClose, onEdit, ref, style, className, ...rest} = props;
   return (
     <div ref={ref} style={style} className={cn("dashboard-panel", className)} {...rest}>
       <div className="dashboard-panel-header">
