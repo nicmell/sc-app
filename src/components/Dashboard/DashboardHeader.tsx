@@ -1,6 +1,6 @@
 import {useCallback, useState} from "react";
 import {store} from "@/lib/stores/store";
-import {nodesApi} from "@/lib/stores/api";
+import {rootApi} from "@/lib/stores/api";
 import {IconButton} from "@/components/ui/IconButton";
 import {SettingsDrawer} from "@/components/SettingsDrawer";
 import {oscService} from "@/lib/osc";
@@ -14,8 +14,8 @@ export function DashboardHeader() {
         const next = !running;
         setRunning(next);
         const groupId = oscService.defaultGroupId();
-        nodesApi.setRunning({nodeId: groupId, isRunning: next});
         oscService.send(nodeRunMessage(groupId, next ? 1 : 0));
+        rootApi.setRunning({isRunning: next});
     }, [running]);
 
     return (

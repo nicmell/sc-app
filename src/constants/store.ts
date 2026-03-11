@@ -4,15 +4,6 @@ export const SliceName = {
   LAYOUT: "layout",
   THEME: "theme",
   PLUGINS: "plugins",
-  NODES: "nodes",
-} as const;
-
-export const NodesAction = {
-  NEW_SYNTH: "newSynth",
-  NEW_GROUP: "newGroup",
-  FREE_NODE: "freeNode",
-  SET_RUNNING: "setRunning",
-  SET_CONTROL: "setControl",
 } as const;
 
 export const ScsynthAction = {
@@ -33,6 +24,12 @@ export const LayoutAction = {
   SET_BOX_PLUGIN: "setBoxPlugin",
   LOAD_PLUGIN: "loadPlugin",
   UNLOAD_PLUGIN: "unloadPlugin",
+  SET_CONTROL: "setControl",
+  SET_RUNNING: "setRunning",
+} as const;
+
+export const RootAction = {
+  SET_RUNNING: "setRunning",
 } as const;
 
 export const ThemeAction = {

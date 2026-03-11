@@ -4,7 +4,8 @@ import {
   freeNodeMessage,
   groupTailMessage
 } from '@/lib/osc/messages.ts';
-import {nodesApi} from '@/lib/stores/api';
+import {layoutApi} from '@/lib/stores/api';
+import {findElementByPath} from '@/lib/parsers';
 import {ScNode} from './internal/sc-node.ts';
 
 const SKIP_ATTRS = new Set(['name', 'synthdef', 'class', 'style', 'slot', 'title']);
@@ -23,8 +24,10 @@ export class ScSynth extends ScNode {
   }
 
   get isRunning() {
-    const n = nodesApi.items.find(n => n.nodeId === this.nodeId);
-    return n !== undefined && n.type === 'synth' ? n.isRunning : false;
+    const box = layoutApi.getById(this.boxId);
+    if (!box?.elements) return false;
+    const el = findElementByPath(box.elements, this.pathSegments);
+    return el?.type === 'sc-synth' ? (el.isRunning ?? false) : false;
   }
 
   private _collectParams(): Record<string, number> {
@@ -43,18 +46,16 @@ export class ScSynth extends ScNode {
 
   protected firstUpdated() {
     const params = this._collectParams();
-
-    nodesApi.newSynth({name: this.name, path: this.path, nodeId: this.nodeId, groupId: this.groupId, params});
     oscService.send(
       newSynthMessage(this.synthdef, this.nodeId, 0, 0, params),
       groupTailMessage(this.groupId, -1),
     );
+    this._oscCreated = true;
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    if (this.loaded) {
-      nodesApi.freeNode(this.nodeId);
+    if (this._oscCreated) {
       oscService.send(freeNodeMessage(this.nodeId));
     }
   }

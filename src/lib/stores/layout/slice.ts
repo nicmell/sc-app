@@ -1,5 +1,6 @@
 import type {LayoutState, LayoutOptions, BoxItem} from "@/types/stores";
 import type {ScElementNode} from "@/lib/parsers";
+import {findElementByPath, setControls, setRunning} from "@/lib/parsers";
 import {createSlice} from "@/lib/stores/utils";
 import {SliceName, LayoutAction} from "@/constants/store";
 import {DEFAULT_LAYOUT, DEFAULT_OPTIONS} from "@/constants/layout.ts";
@@ -52,6 +53,18 @@ export const layoutSlice = createSlice({
         delete box.error;
         delete box.title;
       }
+    },
+    [LayoutAction.SET_CONTROL]: (state, action: { payload: { boxId: string; path: string[]; controls: Record<string, number> } }) => {
+      const box = state.items.find(item => item.i === action.payload.boxId);
+      if (!box?.elements) return;
+      const el = findElementByPath(box.elements, action.payload.path);
+      if (el) setControls(el, action.payload.controls);
+    },
+    [LayoutAction.SET_RUNNING]: (state, action: { payload: { boxId: string; path: string[]; isRunning: boolean } }) => {
+      const box = state.items.find(item => item.i === action.payload.boxId);
+      if (!box?.elements) return;
+      const el = findElementByPath(box.elements, action.payload.path);
+      if (el) setRunning(el, action.payload.isRunning);
     },
   },
 });

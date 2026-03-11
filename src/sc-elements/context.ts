@@ -9,6 +9,7 @@ export interface ScNode {
 }
 
 export interface NodeContext {
+  boxId: string;
   nodeId: number;
   path: string;
   loaded: boolean;

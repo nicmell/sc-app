@@ -9,7 +9,7 @@
     <sc-ugen name="mod-scaled" type="MulAdd" rate="kr" in="mod" mul="mod-depth" add="freq"/>
     <sc-ugen name="osc" type="SinOsc" freq="mod-scaled"/>
     <sc-ugen name="sig" type="BinaryOpUGen" op="*" a="osc" b="amp"/>
-    <sc-ugen name="out" type="Out" bus="0" in="sig"/>
+    <sc-ugen name="out" type="Out" bus="0" channelsarray="sig"/>
 </sc-synthdef>
 <sc-synth name="fm" synthdef="fm-sine" freq="440" amp="0.2" mod-freq="2" mod-depth="200"/>
 <label>

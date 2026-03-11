@@ -58,14 +58,14 @@ export class PluginParser {
           saved: groupSaved?.children,
           offset: 0,
         });
-        return { type: 'sc-group', id, name, children };
+        return { type: 'sc-group', id, name, children, isRunning: true };
       }
       case ELEMENTS.SC_SYNTH: {
         const name = el.getAttribute('name') ?? '';
         const synthdef = el.getAttribute('synthdef') ?? undefined;
         const controls = this.collectNumericAttrs(el);
         if (name) ctx.state[name] = controls;
-        return { type: 'sc-synth', id, name, synthdef, controls };
+        return { type: 'sc-synth', id, name, synthdef, controls, isRunning: true };
       }
       case ELEMENTS.SC_SYNTHDEF: {
         const name = el.getAttribute('name') ?? '';

@@ -61,7 +61,7 @@ export function Dashboard() {
             .filter((item) => !isPlaceholder(item))
             .map(({i, x, y, w, h}) => {
                 const prev = boxMap.get(i);
-                return {i, x, y, w, h, plugin: prev?.plugin, elements: prev?.elements, loaded: prev?.loaded, error: prev?.error, title: prev?.title};
+                return {i, x, y, w, h, plugin: prev?.plugin, elements: prev?.elements, loaded: prev?.loaded, error: prev?.error, title: prev?.title} as BoxItem;
             });
         if (!deepEqual(active, layout)) {
             layoutApi.setLayout(active);

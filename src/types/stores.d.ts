@@ -1,9 +1,9 @@
 import type {SliceActions} from "@/lib/stores/utils";
+import type {rootSlice} from "@/lib/stores/root/slice";
 import type {scsynthSlice} from "@/lib/stores/scsynth/slice";
 import type {layoutSlice} from "@/lib/stores/layout/slice";
 import type {themeSlice} from "@/lib/stores/theme/slice";
 import type {pluginsSlice} from "@/lib/stores/plugins/slice";
-import type {nodesSlice} from "@/lib/stores/nodes/slice";
 import type {ScElementNode} from "@/lib/parsers";
 
 export interface BoxItem {
@@ -94,45 +94,21 @@ export interface ConfigFile {
   plugins: PersistedPlugin[];
 }
 
-export interface SynthItem {
-  type: 'synth';
-  nodeId: number;
-  groupId: number;
-  isRunning: boolean;
-  controls: Record<string, number>;
-  name: string;
-  path: string;
-}
-
-export interface GroupItem {
-  type: 'group';
-  nodeId: number;
-  groupId: number;
-  name: string;
-  path: string;
-}
-
-export type NodeItem = SynthItem | GroupItem;
-
-export interface NodesState {
-  items: NodeItem[];
-}
-
 export interface PluginsState {
   items: PluginInfo[];
 }
 
 export interface RootState {
+  isRunning: boolean;
   theme: ThemeState;
   layout: LayoutState;
   scsynth: ScsynthState;
   plugins: PluginsState;
-  nodes: NodesState;
 }
 
+export type RootOwnAction = SliceActions<typeof rootSlice.actions>;
 export type ScsynthAction = SliceActions<typeof scsynthSlice.actions>;
 export type LayoutAction = SliceActions<typeof layoutSlice.actions>;
 export type ThemeAction = SliceActions<typeof themeSlice.actions>;
 export type PluginsAction = SliceActions<typeof pluginsSlice.actions>;
-export type NodesAction = SliceActions<typeof nodesSlice.actions>;
-export type RootAction = ScsynthAction | LayoutAction | ThemeAction | PluginsAction | NodesAction;
+export type RootAction = RootOwnAction | ScsynthAction | LayoutAction | ThemeAction | PluginsAction;

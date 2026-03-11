@@ -3,6 +3,7 @@ export interface ScGroupNode {
   id: string;
   name: string;
   children: ScElementNode[];
+  isRunning?: boolean;
 }
 
 export interface ScSynthNode {
@@ -11,6 +12,7 @@ export interface ScSynthNode {
   name: string;
   synthdef?: string;
   controls: Record<string, number>;
+  isRunning?: boolean;
 }
 
 export interface ScSynthDefNode {

@@ -213,8 +213,7 @@ class UGenGraphBuilder {
 export function compileSynthDef(el: Element): number[] {
   const name = el.getAttribute('name');
   if (!name) {
-    console.error('[PluginParser] <sc-synthdef> requires a name attribute');
-    return [];
+    throw new Error('<sc-synthdef> requires a name attribute');
   }
 
   const params: Record<string, number> = {};
@@ -226,15 +225,9 @@ export function compileSynthDef(el: Element): number[] {
 
   const specs = collectUGenSpecs(el);
   if (specs.size === 0) {
-    console.warn(`[PluginParser] <sc-synthdef name="${name}"> has no <sc-ugen> children`);
-    return [];
+    throw new Error(`<sc-synthdef name="${name}"> has no <sc-ugen> children`);
   }
 
-  try {
-    const def = synthDef(name, () => new UGenGraphBuilder(params).build(specs));
-    return Array.from(def.toBytes());
-  } catch (err) {
-    console.error(`[PluginParser] <sc-synthdef name="${name}"> compilation failed:`, err);
-    return [];
-  }
+  const def = synthDef(name, () => new UGenGraphBuilder(params).build(specs));
+  return Array.from(def.toBytes());
 }
