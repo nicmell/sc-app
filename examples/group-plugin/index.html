@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>Group Plugin</title>
+</head>
+<body>
+<sc-group name="oscillators">
+    <sc-synth name="osc1" synthdef="sine" freq="261" amp="0.15" pan="-0.5" mute="0"/>
+    <sc-synth name="osc2" synthdef="sine" freq="329" amp="0.15" pan="0.5" mute="0"/>
+
+    <label>
+        <sc-run size="24"/>
+    </label>
+    <div class="controls">
+        <h3>Oscillator 1</h3>
+        <div class="knobs">
+            <label>
+                <sc-range type="knob" bind="oscillators.osc1.freq" min="20" max="2000" step="1" diameter="48"/>
+                <span><sc-display bind="oscillators.osc1.freq" format="%d Hz"/></span>
+            </label>
+            <label>
+                <sc-range type="knob" bind="oscillators.osc1.amp" min="0" max="1" step="0.01" diameter="48"/>
+                <span><sc-display bind="oscillators.osc1.amp" format="%.2f"/></span>
+            </label>
+            <label>
+                <sc-range type="slider" bind="oscillators.osc1.pan" min="-1" max="1" step="0.01" width="120" height="16"/>
+                <span>Pan: <sc-display bind="oscillators.osc1.pan" format="%.2f"/></span>
+            </label>
+        </div>
+        <h3>Oscillator 2</h3>
+        <div class="knobs">
+            <label>
+                <sc-range type="knob" bind="oscillators.osc2.freq" min="20" max="2000" step="1" diameter="48"/>
+                <span><sc-display bind="oscillators.osc2.freq" format="%d Hz"/></span>
+            </label>
+            <label>
+                <sc-range type="knob" bind="oscillators.osc2.amp" min="0" max="1" step="0.01" diameter="48"/>
+                <span><sc-display bind="oscillators.osc2.amp" format="%.2f"/></span>
+            </label>
+            <label>
+                <sc-range type="slider" bind="oscillators.osc2.pan" min="-1" max="1" step="0.01" width="120" height="16"/>
+                <span>Pan: <sc-display bind="oscillators.osc2.pan" format="%.2f"/></span>
+            </label>
+        </div>
+    </div>
+</sc-group>
+</body>
+</html>

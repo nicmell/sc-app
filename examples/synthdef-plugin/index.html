@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>SynthDef Plugin</title>
+</head>
+<body>
+<sc-synthdef name="fm-sine" freq="440" amp="0.2" mod-freq="2" mod-depth="200">
+    <sc-ugen name="mod" type="SinOsc" rate="kr" freq="mod-freq"/>
+    <sc-ugen name="mod-scaled" type="MulAdd" rate="kr" in="mod" mul="mod-depth" add="freq"/>
+    <sc-ugen name="osc" type="SinOsc" freq="mod-scaled"/>
+    <sc-ugen name="sig" type="BinaryOpUGen" op="*" a="osc" b="amp"/>
+    <sc-ugen name="out" type="Out" bus="0" in="sig"/>
+</sc-synthdef>
+<sc-synth name="fm" synthdef="fm-sine" freq="440" amp="0.2" mod-freq="2" mod-depth="200"/>
+<label>
+    <sc-run size="24"/>
+</label>
+<div class="controls">
+    <div class="knobs">
+        <label>
+            <sc-range type="knob" bind="fm.freq" min="20" max="2000" step="1" diameter="48"/>
+            <span><sc-display bind="fm.freq" format="%d Hz"/></span>
+        </label>
+        <label>
+            <sc-range type="knob" bind="fm.amp" min="0" max="1" step="0.01" diameter="48"/>
+            <span><sc-display bind="fm.amp" format="%.2f"/></span>
+        </label>
+    </div>
+    <div class="knobs">
+        <label>
+            <sc-range type="knob" bind="fm.mod-freq" min="0.1" max="20" step="0.1" diameter="48"/>
+            <span>Mod: <sc-display bind="fm.mod-freq" format="%.1f Hz"/></span>
+        </label>
+        <label>
+            <sc-range type="knob" bind="fm.mod-depth" min="0" max="1000" step="1" diameter="48"/>
+            <span>Depth: <sc-display bind="fm.mod-depth" format="%d"/></span>
+        </label>
+    </div>
+</div>
+</body>
+</html>

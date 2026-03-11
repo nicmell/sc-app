@@ -40,6 +40,8 @@
   <xs:element name="sc-checkbox" type="scCheckboxType"/>
   <xs:element name="sc-group" type="scGroupType"/>
   <xs:element name="sc-synth" type="scSynthType"/>
+  <xs:element name="sc-synthdef" type="scSynthDefType"/>
+  <xs:element name="sc-ugen" type="scUGenType"/>
   <xs:element name="sc-run" type="scRunType"/>
 
   <!-- ==================== Content model groups ==================== -->
@@ -79,6 +81,7 @@
       <xs:group ref="scControls"/>
       <xs:element ref="sc-group"/>
       <xs:element ref="sc-synth"/>
+      <xs:element ref="sc-synthdef"/>
     </xs:choice>
   </xs:group>
 
@@ -222,6 +225,25 @@
     </xs:choice>
     <xs:attribute name="name" type="xs:string" use="required"/>
     <xs:attribute name="synthdef" type="xs:string"/>
+    <xs:attributeGroup ref="commonAttrs"/>
+    <xs:anyAttribute processContents="skip"/>
+  </xs:complexType>
+
+  <!-- sc-synthdef (container for sc-ugen elements, defines a synth graph) -->
+  <xs:complexType name="scSynthDefType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element ref="sc-ugen"/>
+    </xs:choice>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attributeGroup ref="commonAttrs"/>
+    <xs:anyAttribute processContents="skip"/>
+  </xs:complexType>
+
+  <!-- sc-ugen (a single UGen node within a sc-synthdef) -->
+  <xs:complexType name="scUGenType">
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="type" type="xs:string" use="required"/>
+    <xs:attribute name="rate" type="xs:string"/>
     <xs:attributeGroup ref="commonAttrs"/>
     <xs:anyAttribute processContents="skip"/>
   </xs:complexType>

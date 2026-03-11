@@ -1,4 +1,4 @@
-import {useCallback, useEffect, useMemo, useState, useSyncExternalStore} from "react";
+import {useCallback, useMemo, useState, useSyncExternalStore} from "react";
 import type {Layout} from "react-grid-layout";
 import {GridLayout, noCompactor, useContainerWidth} from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
@@ -15,7 +15,6 @@ import {DashboardFooter} from "./DashboardFooter";
 import {Placeholder} from "./Placeholder";
 import "./Dashboard.scss";
 import {BoxItem, PluginInfo} from "@/types/stores";
-import {pluginManager} from "@/lib/plugins/PluginManager";
 import {Button} from "@/components/ui/Button";
 import {Modal} from "@/components/ui/Modal";
 import {PluginList} from "@/components/PluginList";
@@ -47,7 +46,6 @@ export function Dashboard() {
 
     const [modalOpen, setModalOpen] = useState<BoxItem>();
 
-    useEffect(() => { pluginManager.init(); }, []);
 
     const actualNumRows = useMemo(() => {
         return layout.reduce((max, item) => Math.max(max, item.y + item.h), 1);
@@ -63,7 +61,7 @@ export function Dashboard() {
             .filter((item) => !isPlaceholder(item))
             .map(({i, x, y, w, h}) => {
                 const prev = boxMap.get(i);
-                return {i, x, y, w, h, plugin: prev?.plugin, loaded: prev?.loaded, error: prev?.error, title: prev?.title};
+                return {i, x, y, w, h, plugin: prev?.plugin, elements: prev?.elements, loaded: prev?.loaded, error: prev?.error, title: prev?.title};
             });
         if (!deepEqual(active, layout)) {
             layoutApi.setLayout(active);
@@ -86,8 +84,6 @@ export function Dashboard() {
             <DashboardPanel
                 key={item.i}
                 title={item.loaded ? item.title : undefined}
-                boxId={item.i}
-                pluginId={item.plugin}
                 onClose={() => layoutApi.removeBox(item.i)}
                 onEdit={() => setModalOpen(item)}
             >

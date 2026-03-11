@@ -210,34 +210,31 @@ class UGenGraphBuilder {
 // Public API
 // ---------------------------------------------------------------------------
 
-export function compileSynthDef(
-  el: Element,
-  attributes: Record<string, string>,
-  synthDefs: Record<string, number[]>,
-): void {
-  const name = attributes.name;
+export function compileSynthDef(el: Element): number[] {
+  const name = el.getAttribute('name');
   if (!name) {
     console.error('[PluginParser] <sc-synthdef> requires a name attribute');
-    return;
+    return [];
   }
 
   const params: Record<string, number> = {};
-  for (const [key, value] of Object.entries(attributes)) {
-    if (SYNTHDEF_SKIP_ATTRS.has(key)) continue;
-    const val = Number(value);
-    if (!isNaN(val)) params[key] = val;
+  for (const attr of Array.from(el.attributes)) {
+    if (SYNTHDEF_SKIP_ATTRS.has(attr.name)) continue;
+    const val = Number(attr.value);
+    if (!isNaN(val)) params[attr.name] = val;
   }
 
   const specs = collectUGenSpecs(el);
   if (specs.size === 0) {
     console.warn(`[PluginParser] <sc-synthdef name="${name}"> has no <sc-ugen> children`);
-    return;
+    return [];
   }
 
   try {
     const def = synthDef(name, () => new UGenGraphBuilder(params).build(specs));
-    synthDefs[name] = Array.from(def.toBytes());
+    return Array.from(def.toBytes());
   } catch (err) {
     console.error(`[PluginParser] <sc-synthdef name="${name}"> compilation failed:`, err);
+    return [];
   }
 }

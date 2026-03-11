@@ -1,4 +1,5 @@
 import type {LayoutState, LayoutOptions, BoxItem} from "@/types/stores";
+import type {ScElementNode} from "@/lib/parsers";
 import {createSlice} from "@/lib/stores/utils";
 import {SliceName, LayoutAction} from "@/constants/store";
 import {DEFAULT_LAYOUT, DEFAULT_OPTIONS} from "@/constants/layout.ts";
@@ -34,12 +35,13 @@ export const layoutSlice = createSlice({
         box.plugin = action.payload.plugin;
       }
     },
-    [LayoutAction.LOAD_PLUGIN]: (state, action: { payload: { id: string; loaded: boolean; error?: string; title?: string } }) => {
+    [LayoutAction.LOAD_PLUGIN]: (state, action: { payload: { id: string; loaded: boolean; error?: string; title?: string; elements?: ScElementNode[] } }) => {
       const box = state.items.find(item => item.i === action.payload.id);
       if (box) {
         box.loaded = action.payload.loaded;
         box.error = action.payload.error;
         box.title = action.payload.title;
+        box.elements = action.payload.elements;
       }
     },
     [LayoutAction.UNLOAD_PLUGIN]: (state, action: { payload: string }) => {

@@ -2,16 +2,23 @@ import type {PluginInfo} from "@/types/stores";
 import {layoutApi, pluginsApi} from "@/lib/stores/api";
 import {rehydrate} from "@/lib/stores/store";
 import {get, post, del} from "@/lib/http";
-import {PluginParser, type PluginTreeEntry} from "@/lib/parsers";
+import {PluginParser, type PluginTreeEntry, type ScElementNode} from "@/lib/parsers";
 
 export const PLUGINS_URL = "app://plugins";
 
+function findSynthDefBytes(elements: ScElementNode[], name: string): number[] | undefined {
+  for (const el of elements) {
+    if (el.type === 'sc-synthdef' && el.name === name) return el.bytes;
+    if (el.type === 'sc-group') {
+      const found = findSynthDefBytes(el.children, name);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
+
 export class PluginManager {
   private readonly treeParser = new PluginParser();
-
-  init(): void {
-    this.treeParser.init();
-  }
 
   async listPlugins(): Promise<PluginInfo[]> {
     const resp = await get(PLUGINS_URL);
@@ -33,7 +40,12 @@ export class PluginManager {
   }
 
   getCompiledSynthDef(name: string): Uint8Array | undefined {
-    return this.treeParser.getCompiledSynthDef(name);
+    for (const box of layoutApi.items) {
+      if (!box.elements) continue;
+      const bytes = findSynthDefBytes(box.elements, name);
+      if (bytes) return new Uint8Array(bytes);
+    }
+    return undefined;
   }
 
   async loadPlugin(boxId: string): Promise<PluginTreeEntry> {
@@ -50,9 +62,7 @@ export class PluginManager {
     if (error) {
       throw new Error(error.textContent ?? "Invalid XHTML")
     }
-    const x = this.treeParser.parse(boxId, doc.documentElement);
-    console.log(x)
-    return x
+    return this.treeParser.parse(doc.documentElement, box.elements);
   }
 }
 

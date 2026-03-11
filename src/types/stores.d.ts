@@ -4,6 +4,7 @@ import type {layoutSlice} from "@/lib/stores/layout/slice";
 import type {themeSlice} from "@/lib/stores/theme/slice";
 import type {pluginsSlice} from "@/lib/stores/plugins/slice";
 import type {nodesSlice} from "@/lib/stores/nodes/slice";
+import type {ScElementNode} from "@/lib/parsers";
 
 export interface BoxItem {
   i: string;
@@ -12,6 +13,7 @@ export interface BoxItem {
   w: number;
   h: number;
   plugin?: string;
+  elements?: ScElementNode[];
   // Runtime-only (not persisted)
   loaded?: boolean;
   error?: string;
