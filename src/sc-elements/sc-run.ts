@@ -4,7 +4,6 @@ import {nodeContext} from './context.ts';
 
 export class ScRun extends LitElement {
     static properties = {
-        run: {type: Boolean, reflect: true},
         size: {type: Number},
         src: {type: String},
         bind: {type: String},
@@ -12,7 +11,6 @@ export class ScRun extends LitElement {
         bgcolor: {type: String},
     };
 
-    declare run: boolean;
     declare size: number;
     declare src: string;
     declare bind: string;
@@ -34,7 +32,6 @@ export class ScRun extends LitElement {
 
     constructor() {
         super();
-        this.run = false;
         this.size = 24;
         this.src = '';
         this.bind = '';
@@ -42,16 +39,20 @@ export class ScRun extends LitElement {
         this.bgcolor = 'var(--color-bg-secondary, #e8e8e8)';
     }
 
+    get run(): boolean {
+        return this._node.value?.isTargetRunning(this.bind) ?? false;
+    }
+
     private _onClick = () => {
-        this.run = !this.run;
-        this._node.value?.onRun(this.run);
+        this._node.value?.onRun(this.bind, !this.run);
     };
 
     render() {
         const s = this.size;
+        const run = this.run;
 
         if (this.src) {
-            const yOff = this.run ? -s : 0;
+            const yOff = run ? -s : 0;
             return html`<button @click=${this._onClick}>
                 <img
                     width=${s}
@@ -64,7 +65,7 @@ export class ScRun extends LitElement {
         }
 
         const r = s * 0.15;
-        const icon = this.run
+        const icon = run
             ? svg`<rect x=${s * 0.3} y=${s * 0.25} width=${s * 0.15} height=${s * 0.5} rx="1" fill=${this.fgcolor} />
                   <rect x=${s * 0.55} y=${s * 0.25} width=${s * 0.15} height=${s * 0.5} rx="1" fill=${this.fgcolor} />`
             : svg`<polygon points="${s * 0.35},${s * 0.25} ${s * 0.35},${s * 0.75} ${s * 0.72},${s * 0.5}" fill=${this.fgcolor} />`;

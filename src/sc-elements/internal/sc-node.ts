@@ -52,9 +52,30 @@ export abstract class ScNode extends LitElement implements IScNode {
         oscService.send(nodeSetMessage(this.nodeId, {[control]: value}));
     }
 
-    onRun(isRunning: boolean) {
+    onRun(target: string, isRunning: boolean) {
+        if (target) {
+            const child = this.findChildNode(target);
+            if (child) {
+                layoutApi.setRunning({boxId: this.boxId, path: [...this.pathSegments, target], isRunning});
+                oscService.send(nodeRunMessage(child.nodeId, isRunning ? 1 : 0));
+                return;
+            }
+        }
         layoutApi.setRunning({boxId: this.boxId, path: this.pathSegments, isRunning});
         oscService.send(nodeRunMessage(this.nodeId, isRunning ? 1 : 0));
+    }
+
+    isTargetRunning(target: string): boolean {
+        if (!target) return this.isRunning;
+        const child = this.findChildNode(target);
+        return child ? child.isRunning : false;
+    }
+
+    private findChildNode(name: string): ScNode | undefined {
+        for (const el of this.registeredElements) {
+            if (el instanceof ScNode && el.name === name) return el;
+        }
+        return undefined;
     }
 
     protected get groupId(): number {
@@ -96,7 +117,8 @@ export abstract class ScNode extends LitElement implements IScNode {
             registerElement: (el) => this.registerElement(el),
             unregisterElement: (el) => this.unregisterElement(el),
             onChange: (target, value) => this.onChange(target, value),
-            onRun: (isRunning) => this.onRun(isRunning),
+            onRun: (target, isRunning) => this.onRun(target, isRunning),
+            isTargetRunning: (target) => this.isTargetRunning(target),
         };
         const provider = new ContextProvider(this, {context: nodeContext, initialValue: ctx});
         store.subscribe(() => {

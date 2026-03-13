@@ -18,7 +18,8 @@ export interface NodeContext {
   registerElement(el: ScElement): void;
   unregisterElement(el: ScElement): void;
   onChange(target: string, value: number): void;
-  onRun(isRunning: boolean): void;
+  onRun(target: string, isRunning: boolean): void;
+  isTargetRunning(target: string): boolean;
 }
 
 export const nodeContext = createContext<NodeContext>('node');
