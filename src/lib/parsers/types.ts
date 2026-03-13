@@ -52,7 +52,16 @@ export interface ScRunNode {
   value: number;
 }
 
-export type ScElementNode = ScGroupNode | ScSynthNode | ScSynthDefNode | ScRangeNode | ScCheckboxNode | ScRunNode;
+export interface ScMidiNode {
+  type: 'sc-midi';
+  id: string;
+  bind: string;
+  value: number;
+  octaves: number;
+  octave: number;
+}
+
+export type ScElementNode = ScGroupNode | ScSynthNode | ScSynthDefNode | ScRangeNode | ScCheckboxNode | ScRunNode | ScMidiNode;
 
 export interface PluginTreeEntry {
   tree: ScElementNode[];

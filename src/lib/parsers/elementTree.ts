@@ -52,7 +52,7 @@ export function setRunning(element: ScElementNode, isRunning: boolean): void {
 export function syncInputValues(elements: ScElementNode[]): void {
   const state = computeState(elements);
   for (const el of elements) {
-    if (el.type === 'sc-range' || el.type === 'sc-checkbox') {
+    if (el.type === 'sc-range' || el.type === 'sc-checkbox' || el.type === 'sc-midi') {
       const resolved = get(state, el.bind);
       if (typeof resolved === 'number') el.value = resolved;
     } else if (el.type === 'sc-group') {

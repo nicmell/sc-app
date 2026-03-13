@@ -83,7 +83,7 @@ export abstract class ScNode extends LitElement implements IScNode {
         if (!box?.elements) return undefined;
         const el = findElementById(box.elements, elementId);
         if (!el) return undefined;
-        if (el.type === 'sc-range' || el.type === 'sc-checkbox' || el.type === 'sc-run') return el.value;
+        if (el.type === 'sc-range' || el.type === 'sc-checkbox' || el.type === 'sc-run' || el.type === 'sc-midi') return el.value;
         return undefined;
     }
 

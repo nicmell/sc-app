@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>MIDI Keyboard</title>
+</head>
+<body>
+<sc-synthdef name="mono" freq="440" amp="0.3">
+    <sc-ugen name="osc" type="SinOsc" freq="freq"/>
+    <sc-ugen name="env" type="BinaryOpUGen" a="osc" b="amp" op="*"/>
+    <sc-ugen name="out" type="Out" bus="0" in="env"/>
+</sc-synthdef>
+<sc-synth name="synth" bind="mono" freq="440" amp="0.3">
+    <div>
+        <label>
+            <sc-run size="24"/>
+        </label>
+        <sc-midi bind="synth.freq" octaves="2" octave="4"/>
+        <label>
+            <sc-range type="knob" bind="synth.amp" min="0" max="1" step="0.01" diameter="48"/>
+            <span><sc-display bind="synth.amp" format="%.2f"/></span>
+        </label>
+    </div>
+</sc-synth>
+</body>
+</html>

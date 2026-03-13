@@ -58,7 +58,7 @@ export const layoutSlice = createSlice({
       const box = state.items.find(item => item.i === action.payload.boxId);
       if (!box?.elements) return;
       const input = findElementById(box.elements, action.payload.elementId);
-      if (!input || (input.type !== 'sc-range' && input.type !== 'sc-checkbox')) return;
+      if (!input || (input.type !== 'sc-range' && input.type !== 'sc-checkbox' && input.type !== 'sc-midi')) return;
       const segments = input.bind.split('.');
       const path = segments.slice(0, -1);
       const control = segments[segments.length - 1];

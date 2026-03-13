@@ -43,6 +43,7 @@
   <xs:element name="sc-synthdef" type="scSynthDefType"/>
   <xs:element name="sc-ugen" type="scUGenType"/>
   <xs:element name="sc-run" type="scRunType"/>
+  <xs:element name="sc-midi" type="scMidiType"/>
 
   <!-- ==================== Content model groups ==================== -->
 
@@ -72,6 +73,7 @@
       <xs:element ref="sc-range"/>
       <xs:element ref="sc-checkbox"/>
       <xs:element ref="sc-run"/>
+      <xs:element ref="sc-midi"/>
     </xs:choice>
   </xs:group>
 
@@ -195,6 +197,16 @@
     <xs:attribute name="src" type="xs:string"/>
     <xs:attribute name="fgcolor" type="xs:string"/>
     <xs:attribute name="bgcolor" type="xs:string"/>
+    <xs:attributeGroup ref="commonAttrs"/>
+  </xs:complexType>
+
+  <!-- sc-midi -->
+  <xs:complexType name="scMidiType">
+    <xs:attribute name="bind" type="xs:string"/>
+    <xs:attribute name="octaves" type="xs:integer"/>
+    <xs:attribute name="octave" type="xs:integer"/>
+    <xs:attribute name="width" type="xs:decimal"/>
+    <xs:attribute name="key-height" type="xs:decimal"/>
     <xs:attributeGroup ref="commonAttrs"/>
   </xs:complexType>
 

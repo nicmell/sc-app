@@ -2,7 +2,7 @@ import {ELEMENTS} from "@/constants/sc-elements";
 import {randomId} from "@/lib/utils/randomId.ts";
 import {deepEqual} from "@/lib/utils/deepEqual";
 import {get} from "@/lib/utils/get";
-import type {ScElementNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScRangeNode, ScCheckboxNode, ScRunNode, UGenSpec, PluginTreeEntry} from "./types";
+import type {ScElementNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScRangeNode, ScCheckboxNode, ScRunNode, ScMidiNode, UGenSpec, PluginTreeEntry} from "./types";
 import {compileSynthDef} from "./SynthDefCompiler";
 import {computeState} from "./elementTree";
 
@@ -33,6 +33,7 @@ export class PluginParser {
     [ELEMENTS.SC_RANGE]: (ectx, ctx) => this.processRange(ectx, ctx),
     [ELEMENTS.SC_CHECKBOX]: (ectx, ctx) => this.processCheckbox(ectx, ctx),
     [ELEMENTS.SC_RUN]: (ectx, ctx) => this.processRun(ectx, ctx),
+    [ELEMENTS.SC_MIDI]: (ectx, ctx) => this.processMidi(ectx, ctx),
   };
 
   private static readonly BIND_ONLY_TAGS: Set<string> = new Set([ELEMENTS.SC_DISPLAY, ELEMENTS.SC_IF]);
@@ -159,6 +160,16 @@ export class PluginParser {
     }
     const value = 1;
     return { type: 'sc-run', id, bind, value };
+  }
+
+  private processMidi({ el, id }: ElementContext, ctx: WalkContext): ScMidiNode {
+    const bind = el.getAttribute('bind') ?? '';
+    this.validateBindPath(el, bind, ctx);
+    const octaves = Number(el.getAttribute('octaves')) || 2;
+    const octave = Number(el.getAttribute('octave')) || 4;
+    const state = computeState(ctx.scope);
+    const value = (get(state, bind) as number) ?? 0;
+    return { type: 'sc-midi', id, bind, value, octaves, octave };
   }
 
   private validateBind(el: Element, ctx: WalkContext): void {
