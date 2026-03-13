@@ -21,19 +21,15 @@ export class ScSynth extends ScNode {
     this.bind = 'default';
   }
 
-  get isRunning() {
+  private getParams(): Record<string, number> {
     const box = layoutApi.getById(this.boxId);
-    if (!box?.elements) return false;
-    const el = findElementById(box.elements, this.id);
-    return el?.type === 'sc-synth' ? (el.isRunning ?? false) : false;
+    const el = box?.elements ? findElementById(box.elements, this.id) : undefined;
+    return el?.type === 'sc-synth' ? el.controls : {};
   }
 
   protected firstUpdated() {
-    const box = layoutApi.getById(this.boxId);
-    const el = box?.elements ? findElementById(box.elements, this.id) : undefined;
-    const params = el?.type === 'sc-synth' ? el.controls : {};
     oscService.send(
-      newSynthMessage(this.bind, this.nodeId, 0, 0, params),
+      newSynthMessage(this.bind, this.nodeId, 0, 0, this.getParams()),
       groupTailMessage(this.groupId, -1),
     );
     this._oscCreated = true;

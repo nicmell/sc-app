@@ -19,7 +19,13 @@ export abstract class ScNode extends LitElement implements IScNode {
     protected registeredElements = new Set<ScElement>();
     protected _parent!: ContextConsumer<{ __context__: NodeContext }, this>;
 
-    abstract get isRunning(): boolean;
+    get isRunning(): boolean {
+        const box = layoutApi.getById(this.boxId);
+        if (!box?.elements) return false;
+        const el = findElementById(box.elements, this.id);
+        if (el && (el.type === 'sc-synth' || el.type === 'sc-group')) return el.isRunning ?? false;
+        return false;
+    }
 
     get boxId(): string {
         return this._parent.value?.boxId ?? this.id;
@@ -60,6 +66,7 @@ export abstract class ScNode extends LitElement implements IScNode {
     }
 
     private resolveNodeId(segments: string[]): number {
+        // eslint-disable-next-line @typescript-eslint/no-this-alias
         let current: ScNode = this;
         for (const name of segments) {
             const child = [...current.registeredElements].find(
