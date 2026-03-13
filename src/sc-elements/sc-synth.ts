@@ -8,19 +8,19 @@ import {layoutApi} from '@/lib/stores/api';
 import {findElementByPath} from '@/lib/parsers';
 import {ScNode} from './internal/sc-node.ts';
 
-const SKIP_ATTRS = new Set(['name', 'synthdef', 'class', 'style', 'slot', 'title']);
+const SKIP_ATTRS = new Set(['name', 'bind', 'class', 'style', 'slot', 'title']);
 
 export class ScSynth extends ScNode {
   static properties = {
     ...ScNode.properties,
-    synthdef: {type: String},
+    bind: {type: String},
   };
 
-  declare synthdef: string;
+  declare bind: string;
 
   constructor() {
     super();
-    this.synthdef = 'default';
+    this.bind = 'default';
   }
 
   get isRunning() {
@@ -47,7 +47,7 @@ export class ScSynth extends ScNode {
   protected firstUpdated() {
     const params = this._collectParams();
     oscService.send(
-      newSynthMessage(this.synthdef, this.nodeId, 0, 0, params),
+      newSynthMessage(this.bind, this.nodeId, 0, 0, params),
       groupTailMessage(this.groupId, -1),
     );
     this._oscCreated = true;

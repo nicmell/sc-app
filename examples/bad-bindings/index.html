@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>Bad Bindings (intentional errors)</title>
+</head>
+<body>
+<sc-synthdef name="sine" freq="440" amp="0.2">
+    <sc-ugen name="osc" type="SinOsc" freq="freq"/>
+    <sc-ugen name="sig" type="BinaryOpUGen" op="*" a="osc" b="amp"/>
+    <sc-ugen name="out" type="Out" bus="0" channelsarray="sig"/>
+</sc-synthdef>
+<sc-synth name="sine" bind="sine" freq="440" amp="0.2"/>
+
+<!-- Typo in bind path: "freqq" instead of "freq" -->
+<sc-range type="knob" bind="sine.freqq" min="20" max="2000" step="1" diameter="48"/>
+
+<!-- References non-existent synth -->
+<sc-checkbox bind="nonexistent.mute" width="24" height="24"/>
+
+<!-- Invalid display path -->
+<sc-display bind="sine.volume"/>
+
+<!-- Broken sc-if bind -->
+<sc-if bind="sine.active">
+    <span>Active</span>
+</sc-if>
+</body>
+</html>

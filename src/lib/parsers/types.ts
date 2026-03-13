@@ -1,3 +1,10 @@
+export interface UGenSpec {
+  name: string;
+  type: string;
+  rate: string;
+  inputs: Record<string, string>;
+}
+
 export interface ScGroupNode {
   type: 'sc-group';
   id: string;
@@ -10,7 +17,7 @@ export interface ScSynthNode {
   type: 'sc-synth';
   id: string;
   name: string;
-  synthdef?: string;
+  bind?: string;
   controls: Record<string, number>;
   isRunning?: boolean;
 }
@@ -19,6 +26,8 @@ export interface ScSynthDefNode {
   type: 'sc-synthdef';
   id: string;
   name: string;
+  params: Record<string, number>;
+  ugens: UGenSpec[];
   bytes: number[];
 }
 
@@ -36,7 +45,14 @@ export interface ScCheckboxNode {
   value: number;
 }
 
-export type ScElementNode = ScGroupNode | ScSynthNode | ScSynthDefNode | ScRangeNode | ScCheckboxNode;
+export interface ScRunNode {
+  type: 'sc-run';
+  id: string;
+  bind: string;
+  value: number;
+}
+
+export type ScElementNode = ScGroupNode | ScSynthNode | ScSynthDefNode | ScRangeNode | ScCheckboxNode | ScRunNode;
 
 export interface PluginTreeEntry {
   tree: ScElementNode[];

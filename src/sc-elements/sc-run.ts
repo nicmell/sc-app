@@ -7,6 +7,7 @@ export class ScRun extends LitElement {
         run: {type: Boolean, reflect: true},
         size: {type: Number},
         src: {type: String},
+        bind: {type: String},
         fgcolor: {type: String},
         bgcolor: {type: String},
     };
@@ -14,6 +15,7 @@ export class ScRun extends LitElement {
     declare run: boolean;
     declare size: number;
     declare src: string;
+    declare bind: string;
     declare fgcolor: string;
     declare bgcolor: string;
 
@@ -35,6 +37,7 @@ export class ScRun extends LitElement {
         this.run = false;
         this.size = 24;
         this.src = '';
+        this.bind = '';
         this.fgcolor = 'var(--color-primary, #0a6dc4)';
         this.bgcolor = 'var(--color-bg-secondary, #e8e8e8)';
     }

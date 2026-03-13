@@ -1,24 +1,10 @@
-import {ELEMENTS} from "@/constants/sc-elements";
 import {UGen, type UGenInput, Rate} from "@/lib/ugen/ugen";
 import {synthDef} from "@/lib/ugen/synthdef";
 import {control} from "@/lib/ugen/control";
 import {ugenRegistry, type UGenRegistryEntry} from "@/lib/ugen/registry";
 import {binOp, unaryOp, binaryOps, unaryOps} from "@/lib/ugen/operators";
 import "@/lib/ugen/ugens"; // side-effect: populates registry
-
-const SYNTHDEF_SKIP_ATTRS = new Set(['id', 'name', 'class', 'style', 'slot']);
-const UGEN_SKIP_ATTRS = new Set(['id', 'name', 'type', 'rate', 'class', 'style', 'slot']);
-
-// ---------------------------------------------------------------------------
-// UGen element spec — parsed from DOM attributes
-// ---------------------------------------------------------------------------
-
-interface UGenElementSpec {
-  name: string;
-  type: string;
-  rate: string;
-  inputs: Record<string, string>;
-}
+import type {UGenSpec} from "./types";
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -35,8 +21,8 @@ function parseRate(s: string): Rate {
   return r;
 }
 
-function topoSort(specs: Map<string, UGenElementSpec>): UGenElementSpec[] {
-  const sorted: UGenElementSpec[] = [];
+function topoSort(specs: Map<string, UGenSpec>): UGenSpec[] {
+  const sorted: UGenSpec[] = [];
   const visited = new Set<string>();
   const visiting = new Set<string>();
 
@@ -62,31 +48,6 @@ function topoSort(specs: Map<string, UGenElementSpec>): UGenElementSpec[] {
   return sorted;
 }
 
-function collectUGenSpecs(el: Element): Map<string, UGenElementSpec> {
-  const specs = new Map<string, UGenElementSpec>();
-
-  function walk(node: Element): void {
-    for (const child of Array.from(node.children)) {
-      if (child.tagName.toLowerCase() === ELEMENTS.SC_UGEN) {
-        const name = child.getAttribute('name');
-        const type = child.getAttribute('type');
-        if (name && type) {
-          const rate = child.getAttribute('rate') ?? 'ar';
-          const inputs: Record<string, string> = {};
-          for (const attr of Array.from(child.attributes)) {
-            if (!UGEN_SKIP_ATTRS.has(attr.name)) inputs[attr.name] = attr.value;
-          }
-          specs.set(name, { name, type, rate, inputs });
-        }
-      }
-      walk(child);
-    }
-  }
-
-  walk(el);
-  return specs;
-}
-
 // ---------------------------------------------------------------------------
 // UGen graph builder — resolves specs into a UGen graph inside synthDef()
 // ---------------------------------------------------------------------------
@@ -101,7 +62,7 @@ class UGenGraphBuilder {
     }
   }
 
-  build(specs: Map<string, UGenElementSpec>): void {
+  build(specs: Map<string, UGenSpec>): void {
     for (const spec of topoSort(specs)) {
       const entry = ugenRegistry.lookup(spec.type);
       if (!entry) throw new Error(`Unknown UGen type: "${spec.type}"`);
@@ -115,7 +76,7 @@ class UGenGraphBuilder {
     }
   }
 
-  private buildBinaryOp(spec: UGenElementSpec, rate: Rate): void {
+  private buildBinaryOp(spec: UGenSpec, rate: Rate): void {
     const op = this.requireInput(spec, 'op');
     if (!(op in binaryOps)) throw new Error(`Unknown binary operator: "${op}"`);
     const a = this.resolveInput(spec.inputs['a']);
@@ -123,21 +84,21 @@ class UGenGraphBuilder {
     this.storeOpResult(spec.name, binOp(op, a, b), rate);
   }
 
-  private buildUnaryOp(spec: UGenElementSpec, rate: Rate): void {
+  private buildUnaryOp(spec: UGenSpec, rate: Rate): void {
     const op = this.requireInput(spec, 'op');
     if (!(op in unaryOps)) throw new Error(`Unknown unary operator: "${op}"`);
     const a = this.resolveInput(spec.inputs['a']);
     this.storeOpResult(spec.name, unaryOp(op, a), rate);
   }
 
-  private buildStandardUGen(spec: UGenElementSpec, entry: UGenRegistryEntry, rate: Rate): void {
+  private buildStandardUGen(spec: UGenSpec, entry: UGenRegistryEntry, rate: Rate): void {
     const inputs = this.resolveStandardInputs(spec, entry.defaults);
     const numOutputs = entry.numOutputs ?? 1;
     this.ugenMap.set(spec.name, new UGen(spec.type, rate, inputs, numOutputs));
   }
 
   private resolveStandardInputs(
-    spec: UGenElementSpec,
+    spec: UGenSpec,
     defaults: [string, number | undefined][],
   ): UGenInput[] {
     const result: UGenInput[] = [];
@@ -169,7 +130,7 @@ class UGenGraphBuilder {
     return undefined;
   }
 
-  private requireInput(spec: UGenElementSpec, key: string): string {
+  private requireInput(spec: UGenSpec, key: string): string {
     const value = spec.inputs[key];
     if (!value) throw new Error(`${spec.type} "${spec.name}" requires an "${key}" attribute`);
     return value;
@@ -210,20 +171,15 @@ class UGenGraphBuilder {
 // Public API
 // ---------------------------------------------------------------------------
 
-export function compileSynthDef(el: Element): number[] {
-  const name = el.getAttribute('name');
+export function compileSynthDef(
+  name: string,
+  params: Record<string, number>,
+  specs: Map<string, UGenSpec>,
+): number[] {
   if (!name) {
     throw new Error('<sc-synthdef> requires a name attribute');
   }
 
-  const params: Record<string, number> = {};
-  for (const attr of Array.from(el.attributes)) {
-    if (SYNTHDEF_SKIP_ATTRS.has(attr.name)) continue;
-    const val = Number(attr.value);
-    if (!isNaN(val)) params[attr.name] = val;
-  }
-
-  const specs = collectUGenSpecs(el);
   if (specs.size === 0) {
     throw new Error(`<sc-synthdef name="${name}"> has no <sc-ugen> children`);
   }

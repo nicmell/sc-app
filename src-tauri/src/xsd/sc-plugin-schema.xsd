@@ -203,6 +203,7 @@
     <xs:attribute name="run" type="xs:boolean"/>
     <xs:attribute name="size" type="xs:decimal"/>
     <xs:attribute name="src" type="xs:string"/>
+    <xs:attribute name="bind" type="xs:string"/>
     <xs:attribute name="fgcolor" type="xs:string"/>
     <xs:attribute name="bgcolor" type="xs:string"/>
     <xs:attributeGroup ref="commonAttrs"/>
@@ -224,7 +225,7 @@
       <xs:group ref="scControls"/>
     </xs:choice>
     <xs:attribute name="name" type="xs:string" use="required"/>
-    <xs:attribute name="synthdef" type="xs:string"/>
+    <xs:attribute name="bind" type="xs:string"/>
     <xs:attributeGroup ref="commonAttrs"/>
     <xs:anyAttribute processContents="skip"/>
   </xs:complexType>

@@ -4,9 +4,16 @@
     <title>Group Plugin</title>
 </head>
 <body>
+<sc-synthdef name="sine" freq="440" amp="0.2" pan="0" mute="0">
+    <sc-ugen name="osc" type="SinOsc" freq="freq"/>
+    <sc-ugen name="sig" type="BinaryOpUGen" op="*" a="osc" b="amp"/>
+    <sc-ugen name="panned" type="Pan2" in="sig" pos="pan"/>
+    <sc-ugen name="muted" type="BinaryOpUGen" op="*" a="panned" b="mute"/>
+    <sc-ugen name="out" type="Out" bus="0" channelsarray="muted"/>
+</sc-synthdef>
 <sc-group name="oscillators">
-    <sc-synth name="osc1" synthdef="sine" freq="261" amp="0.15" pan="-0.5" mute="0"/>
-    <sc-synth name="osc2" synthdef="sine" freq="329" amp="0.15" pan="0.5" mute="0"/>
+    <sc-synth name="osc1" bind="sine" freq="261" amp="0.15" pan="-0.5" mute="0"/>
+    <sc-synth name="osc2" bind="sine" freq="329" amp="0.15" pan="0.5" mute="0"/>
 
     <label>
         <sc-run size="24"/>

@@ -4,7 +4,14 @@
     <title>Example Plugin</title>
 </head>
 <body>
-<sc-synth name="sine" synthdef="sine" freq="440" amp="0.2" pan="0" mute="0" class="example-plugin"/>
+<sc-synthdef name="sine" freq="440" amp="0.2" pan="0" mute="0">
+    <sc-ugen name="osc" type="SinOsc" freq="freq"/>
+    <sc-ugen name="sig" type="BinaryOpUGen" op="*" a="osc" b="amp"/>
+    <sc-ugen name="panned" type="Pan2" in="sig" pos="pan"/>
+    <sc-ugen name="muted" type="BinaryOpUGen" op="*" a="panned" b="mute"/>
+    <sc-ugen name="out" type="Out" bus="0" channelsarray="muted"/>
+</sc-synthdef>
+<sc-synth name="sine" bind="sine" freq="440" amp="0.2" pan="0" mute="0" class="example-plugin"/>
 <label>
     <sc-run size="24"/>
 </label>
