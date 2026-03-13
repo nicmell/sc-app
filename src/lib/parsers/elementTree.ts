@@ -3,7 +3,7 @@ import type {ScElementNode} from "./types";
 export function findElementByPath(elements: ScElementNode[], path: string[]): ScElementNode | undefined {
   if (path.length === 0) return undefined;
   const [name, ...rest] = path;
-  const el = elements.find(e => e.name === name);
+  const el = elements.find(e => 'name' in e && e.name === name);
   if (!el || rest.length === 0) return el;
   if (el.type === 'sc-group') return findElementByPath(el.children, rest);
   return undefined;

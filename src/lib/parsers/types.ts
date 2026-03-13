@@ -22,7 +22,21 @@ export interface ScSynthDefNode {
   bytes: number[];
 }
 
-export type ScElementNode = ScGroupNode | ScSynthNode | ScSynthDefNode;
+export interface ScRangeNode {
+  type: 'sc-range';
+  id: string;
+  bind: string;
+  value: number;
+}
+
+export interface ScCheckboxNode {
+  type: 'sc-checkbox';
+  id: string;
+  bind: string;
+  value: number;
+}
+
+export type ScElementNode = ScGroupNode | ScSynthNode | ScSynthDefNode | ScRangeNode | ScCheckboxNode;
 
 export interface PluginTreeEntry {
   tree: ScElementNode[];

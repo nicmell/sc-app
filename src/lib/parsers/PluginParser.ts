@@ -1,12 +1,15 @@
 import {ELEMENTS} from "@/constants/sc-elements";
 import {randomId} from "@/lib/utils/randomId.ts";
-import type {ScElementNode, ScGroupNode, PluginTreeEntry} from "./types";
+import {get} from "@/lib/utils/get";
+import type {ScElementNode, ScGroupNode, ScRangeNode, ScCheckboxNode, PluginTreeEntry} from "./types";
 import {compileSynthDef} from "./SynthDefCompiler";
+import {computeState} from "./elementTree";
 
 const SYNTH_SKIP_ATTRS = new Set(['id', 'name', 'synthdef', 'class', 'style', 'slot', 'title']);
 interface WalkContext {
   saved?: ScElementNode[];
   offset: number;
+  scope: ScElementNode[];
 }
 
 interface ElementContext {
@@ -15,17 +18,19 @@ interface ElementContext {
   matched?: ScElementNode;
 }
 
-type ElementHandler = (ectx: ElementContext) => ScElementNode;
+type ElementHandler = (ectx: ElementContext, ctx: WalkContext) => ScElementNode;
 
 export class PluginParser {
   private readonly handlers: Record<string, ElementHandler> = {
-    [ELEMENTS.SC_GROUP]: (ectx) => this.processGroup(ectx),
+    [ELEMENTS.SC_GROUP]: (ectx, ctx) => this.processGroup(ectx, ctx),
     [ELEMENTS.SC_SYNTH]: (ectx) => this.processSynth(ectx),
     [ELEMENTS.SC_SYNTHDEF]: (ectx) => this.processSynthDef(ectx),
+    [ELEMENTS.SC_RANGE]: (ectx, ctx) => this.processRange(ectx, ctx),
+    [ELEMENTS.SC_CHECKBOX]: (ectx, ctx) => this.processCheckbox(ectx, ctx),
   };
 
   parse(node: Element, saved?: ScElementNode[]): PluginTreeEntry {
-    const ctx: WalkContext = { offset: 0, saved };
+    const ctx: WalkContext = { offset: 0, saved, scope: [] };
     const tree = this.walkChildren(node, ctx);
     const html = node.innerHTML;
     const title = node.querySelector('title')?.textContent ?? undefined;
@@ -54,13 +59,15 @@ export class PluginParser {
     ctx.offset++;
 
     const id = this.hydrateId(el, matched);
-    return this.handlers[tag]({ el, id, matched });
+    const node = this.handlers[tag]({ el, id, matched }, ctx);
+    ctx.scope.push(node);
+    return node;
   }
 
-  private processGroup({ el, id, matched }: ElementContext): ScGroupNode {
+  private processGroup({ el, id, matched }: ElementContext, _ctx: WalkContext): ScGroupNode {
     const name = el.getAttribute('name') ?? '';
     const groupSaved = matched as ScGroupNode | undefined;
-    const children = this.walkChildren(el, { saved: groupSaved?.children, offset: 0 });
+    const children = this.walkChildren(el, { saved: groupSaved?.children, offset: 0, scope: [] });
     return { type: 'sc-group', id, name, children, isRunning: true };
   }
 
@@ -75,6 +82,20 @@ export class PluginParser {
     const name = el.getAttribute('name') ?? '';
     const bytes = compileSynthDef(el);
     return { type: 'sc-synthdef', id, name, bytes };
+  }
+
+  private processRange({ el, id }: ElementContext, ctx: WalkContext): ScRangeNode {
+    const bind = el.getAttribute('bind') ?? '';
+    const state = computeState(ctx.scope);
+    const value = (get(state, bind) as number) ?? 0;
+    return { type: 'sc-range', id, bind, value };
+  }
+
+  private processCheckbox({ el, id }: ElementContext, ctx: WalkContext): ScCheckboxNode {
+    const bind = el.getAttribute('bind') ?? '';
+    const state = computeState(ctx.scope);
+    const value = (get(state, bind) as number) ?? 0;
+    return { type: 'sc-checkbox', id, bind, value };
   }
 
   private hydrateId(el: Element, saved?: ScElementNode): string {
