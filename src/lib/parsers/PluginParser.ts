@@ -12,8 +12,8 @@ const UGEN_SKIP_ATTRS = new Set(['id', 'name', 'type', 'rate', 'class', 'style',
 
 interface WalkContext {
   saved?: ScElementNode[];
-  offset: number;
   scope: ScElementNode[];
+  offset: number;
 }
 
 interface ElementContext {

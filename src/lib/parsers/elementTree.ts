@@ -1,3 +1,4 @@
+import {get} from "@/lib/utils/get";
 import type {ScElementNode} from "./types";
 
 export function findElementByPath(elements: ScElementNode[], path: string[]): ScElementNode | undefined {
@@ -34,6 +35,33 @@ export function setControls(element: ScElementNode, controls: Record<string, num
 export function setRunning(element: ScElementNode, isRunning: boolean): void {
   if (element.type === 'sc-synth' || element.type === 'sc-group') {
     element.isRunning = isRunning;
+  }
+}
+
+export function syncInputValues(elements: ScElementNode[]): void {
+  const state = computeState(elements);
+  for (const el of elements) {
+    if (el.type === 'sc-range' || el.type === 'sc-checkbox') {
+      const resolved = get(state, el.bind);
+      if (typeof resolved === 'number') el.value = resolved;
+    } else if (el.type === 'sc-group') {
+      syncInputValues(el.children);
+    }
+  }
+}
+
+export function syncRunValues(elements: ScElementNode[]): void {
+  for (const el of elements) {
+    if (el.type === 'sc-run') {
+      if (el.bind) {
+        const target = elements.find(n => 'name' in n && n.name === el.bind);
+        if (target && (target.type === 'sc-synth' || target.type === 'sc-group')) {
+          el.value = target.isRunning ? 1 : 0;
+        }
+      }
+    } else if (el.type === 'sc-group') {
+      syncRunValues(el.children);
+    }
   }
 }
 
