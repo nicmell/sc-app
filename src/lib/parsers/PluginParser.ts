@@ -99,7 +99,7 @@ export class PluginParser {
     const savedChildren = groupSaved?.type === 'sc-group' && groupSaved.name === name
       ? groupSaved.children
       : undefined;
-    const children = this.walkChildren(el, { saved: savedChildren, offset: 0, scope: [] });
+    const children = this.walkChildren(el, { saved: savedChildren, offset: 0, scope: [..._ctx.scope] });
     return { type: 'sc-group', id, name, children, isRunning: true };
   }
 
