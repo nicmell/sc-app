@@ -31,10 +31,12 @@ bash scripts/package_examples.sh tmp
 
 ### Frontend (`src/`)
 
-- **React** for layout, panels, settings UI
-- **Lit web components** (`src/sc-elements/`) for plugin content (sc-synth, sc-knob, sc-slider, etc.)
+- **React** for layout, panels, settings UI (`src/components/`)
+- **Lit web components** (`src/sc-elements/`) for plugin content (sc-synth, sc-group, sc-range, sc-checkbox, sc-run, sc-display, sc-if, sc-synthdef)
 - **Zustand** store with Redux-style slices + Immer (`src/lib/stores/`)
 - **OSC communication** via `osc-js` + custom Tauri UDP plugin (`src/lib/osc/`)
+- **Plugin parser** (`src/lib/parsers/`) — walks plugin HTML, builds typed element tree, validates bindings, compiles synthdefs
+- **UGen system** (`src/lib/ugen/`) — SuperCollider UGen graph builder, binary SCgf encoder, operator support
 
 ### Backend (`src-tauri/src/`)
 
@@ -59,21 +61,101 @@ bash scripts/package_examples.sh tmp
 
 ## Store Architecture
 
-Four top-level slices in `src/lib/stores/`:
+Five top-level slices in `src/lib/stores/`:
 
 | Slice | Purpose |
 |-------|---------|
-| `scsynth` | Connection state, server status, options |
-| `layout` | Dashboard grid items + grid options |
-| `theme` | Dark/light mode, primary color |
-| `plugins` | Installed plugin registry |
-| `nodes` | Live node tree (synths, groups) — not persisted |
+| `root` | App-level state (`isRunning` flag) |
+| `scsynth` | Connection state, server status, options (host/port/polling/timeout/latency) |
+| `layout` | Dashboard grid items (BoxItem[]) + grid options (rows/columns). Each BoxItem holds plugin ref, element tree, runtime state |
+| `theme` | Dark/light/adaptive mode, primary color |
+| `plugins` | Installed plugin registry (PluginInfo[]) |
 
 Each slice has: `slice.ts` (reducer + actions), `selectors.ts`, `index.ts` (barrel).
 
 API layer (`src/lib/stores/api.ts`) wraps each slice for ergonomic dispatch: `layoutApi.setLayout(...)`, `scsynthApi.isConnected`, etc.
 
-Persisted to `config.json` via Zustand persist middleware with custom `tauriStorage` adapter.
+Persisted to `config.json` via Zustand persist middleware with custom `tauriStorage` adapter. Runtime-only fields (`isRunning`, `loaded`, `error`) are stripped before persistence via `stripRuntime()`.
+
+## Parser & Element Tree System
+
+Located in `src/lib/parsers/`. This is the core system that converts plugin HTML into a typed element tree.
+
+### Node Types (`types.ts`)
+
+| Type | Key Fields | Description |
+|------|-----------|-------------|
+| `ScGroupNode` | name, children, isRunning | Group container |
+| `ScSynthNode` | name, bind?, controls, isRunning | Synth instance; `bind` references an `sc-synthdef` by name |
+| `ScSynthDefNode` | name, params, ugens, bytes | SynthDef template with compiled SCgf bytes |
+| `ScRangeNode` | bind, value | Slider/knob input bound to a synth control |
+| `ScCheckboxNode` | bind, value | Toggle input bound to a synth control |
+| `ScRunNode` | bind, value | Play/pause control; bind references a synth or group |
+| `UGenSpec` | name, type, rate, inputs | UGen declaration parsed from `<sc-ugen>` elements |
+
+### PluginParser (`PluginParser.ts`)
+
+- Walks plugin HTML, dispatches to per-tag handlers
+- **Two-phase hydration**: generates fresh node → compares with saved node via `propsMatch()` → reuses saved id only if props match (prevents stale state on changed nodes)
+- **Bind validation**: `sc-range`, `sc-checkbox`, `sc-display`, `sc-if` throw if bind path doesn't resolve against `computeState(scope)`
+- **sc-synth bind validation**: throws if `bind` doesn't reference an `sc-synthdef` in scope
+- **sc-run bind validation**: throws if `bind` doesn't reference an `sc-synth` or `sc-group` in scope
+- **SynthDef recompilation skip**: reuses saved bytes when params and ugens are unchanged
+
+### SynthDefCompiler (`SynthDefCompiler.ts`)
+
+- `compileSynthDef(name, params, specs)` — accepts data, not DOM elements
+- Topologically sorts UGen specs, builds UGen graph via `UGenGraphBuilder`
+- Supports standard UGens, `BinaryOpUGen`, `UnaryOpUGen`
+- Returns SCgf binary bytes as `number[]`
+
+### elementTree (`elementTree.ts`)
+
+- `findElementByPath(elements, path)` — dot-path navigation through groups
+- `computeState(elements)` — builds `{synthName: controls}` state object for bind resolution
+- `setControls()`, `setRunning()` — runtime mutations
+- `stripRuntime()` — removes `isRunning` before persistence
+
+## UGen System
+
+Located in `src/lib/ugen/`. Full SuperCollider UGen graph builder and SCgf binary encoder.
+
+- `ugen.ts` — `UGen` class, `Rate` enum (Scalar/Control/Audio), context stack for graph building
+- `synthdef.ts` — `SynthDef` class, collects UGens/constants, validates graph, encodes to binary
+- `define.ts` — `defineUGen()` / `defineMultiOutUGen()` factories with multi-channel expansion
+- `registry.ts` — Runtime lookup table for UGen class specs
+- `ugens.ts` — Registers oscillators, noise, filters, envelopes, I/O, analysis
+- `operators.ts` — Binary ops (`+`, `*`, etc.) and unary ops (`neg`, `abs`, etc.)
+- `control.ts` — `control(name, default)` for named synth parameters
+- `encode.ts` — `ByteWriter` for SCgf v2 binary format (big-endian)
+
+## Web Components (`src/sc-elements/`)
+
+Lit-based custom elements for plugin authoring. All registered in `index.ts`.
+
+| Element | Key Properties | Behavior |
+|---------|---------------|----------|
+| `sc-plugin` | — | Plugin entry point (extends sc-group). Loads HTML, parses tree, updates layout |
+| `sc-group` | name | Group container. Sends `/g_new` on create, `/g_freeAll` + `/n_free` on disconnect |
+| `sc-synth` | name, bind | Synth instance. `bind` references synthdef name. Sends `/s_new` on create, `/n_free` on disconnect |
+| `sc-synthdef` | name | SynthDef template. Looks up compiled bytes from PluginManager, sends `/d_recv` |
+| `sc-range` | bind, type (knob/slider), min, max, step | Slider or knob. Renders `sc-knob` or `sc-slider` internally |
+| `sc-checkbox` | bind | Toggle switch. Renders `sc-switch` internally |
+| `sc-run` | bind, run, size, src | Play/pause button. SVG icon or sprite sheet |
+| `sc-display` | bind, format | Read-only value display. Printf-style format (`%d`, `%.2f`, `%b`, `%s`) |
+| `sc-if` | bind, is-truthy/is-falsy/is-equal/etc. | Conditional rendering |
+
+Internal components in `sc-elements/internal/`:
+- `sc-node.ts` — Abstract base for sc-synth/sc-group. Manages nodeId, provides `NodeContext` (via Lit context)
+- `sc-knob.ts`, `sc-slider.ts`, `sc-switch.ts` — Low-level UI controls
+
+### Bind Model
+
+All element-to-data references use `bind`:
+- **sc-synth** `bind="synthdefName"` — references an `<sc-synthdef>` by name
+- **sc-range/sc-checkbox** `bind="synthName.controlName"` — dot-path to a synth control
+- **sc-display/sc-if** `bind="synthName.controlName"` — read-only dot-path reference
+- **sc-run** `bind="synthOrGroupName"` — references a synth or group (empty = parent context)
 
 ## Plugin System
 
@@ -87,8 +169,36 @@ Persisted to `config.json` via Zustand persist middleware with custom `tauriStor
 
 **Frontend loading** (`src/lib/plugins/PluginManager.ts`):
 - Fetches via `app://plugins/{id}/{entry}` URI scheme
+- Parses XHTML via DOMParser, runs through PluginParser to build element tree
 - Sanitizes with DOMPurify (forbids script/iframe/object/embed/form)
 - Caches as TrustedHTML, renders inside shadow DOM
+
+**Plugin HTML elements** (validated by XSD):
+- `<sc-synthdef name="..." param="value">` with `<sc-ugen>` children — defines a synth graph
+- `<sc-synth name="..." bind="synthdefName" control="value">` — creates a synth instance
+- `<sc-group name="...">` — groups synths/controls
+- `<sc-range>`, `<sc-checkbox>`, `<sc-run>`, `<sc-display>`, `<sc-if>` — UI controls
+
+## OSC Communication (`src/lib/osc/`)
+
+- `OscService.ts` — Singleton managing osc-js connection. Polls `/status` at configurable interval. Dispatches replies to store
+- `TauriUdpPlugin.ts` — osc-js plugin adapter wrapping `TauriDatagramSocket`
+- `TauriDatagramSocket.ts` — Bridges to Tauri `udp_bind`/`udp_send`/`udp_close` commands
+- `messages.ts` — OSC message factories: `/status`, `/s_new`, `/g_new`, `/n_set`, `/n_run`, `/n_free`, `/d_recv`, etc.
+
+## Example Plugins (`examples/`)
+
+| Example | Purpose |
+|---------|---------|
+| `example-plugin` | Basic synth with local synthdef, knobs, sliders, checkbox |
+| `group-plugin` | Two synths in a group with local synthdef, per-oscillator controls |
+| `synthdef-plugin` | FM synthesis with custom synthdef (SinOsc + MulAdd modulation) |
+| `bad-bindings` | Intentional binding errors (typos, missing synths) for testing validation |
+| `bad-asset-type` | Invalid asset format for testing validation |
+| `bad-asset-mismatch` | Declared vs actual asset type mismatch |
+| `bad-entry-xhtml` | Invalid XML for testing validation |
+| `bad-entry-schema` | XSD schema violations for testing validation |
+| `bad-metadata` | Invalid metadata.json for testing validation |
 
 ## Conventions
 
@@ -120,7 +230,7 @@ export function Foo({variant = "a", size = "md", className, ...rest}: FooProps) 
 
 ### CSS/SCSS
 
-- CSS custom properties for all colors (`--color-bg`, `--color-text`, `--color-surface`, `--color-border`, `--color-panel-header`, `--color-primary`)
+- CSS custom properties for all colors (`--color-bg`, `--color-text`, `--color-surface`, `--color-surface-active`, `--color-border`, `--color-panel-header`, `--color-primary`)
 - SCSS variables for local constants (`$header-height`)
 - BEM-inspired class naming: `.component-element` or `.component--modifier`
 - No CSS modules — global class names, scoped by naming convention
@@ -135,7 +245,8 @@ export function Foo({variant = "a", size = "md", className, ...rest}: FooProps) 
 
 - Never mutate store directly — always dispatch actions via API layer
 - Selectors are memoized (`createSelector`) — use them for derived state
-- Runtime-only fields (loaded, error, violations on PluginInfo) are excluded from persistence
+- Runtime-only fields (isRunning, loaded, error) are excluded from persistence via `stripRuntime()`
+- Element trees live on `BoxItem.elements` in the layout slice — no separate nodes slice
 
 ## Key Constants
 
