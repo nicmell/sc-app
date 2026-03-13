@@ -4,6 +4,7 @@
     <title>SynthDef Plugin</title>
 </head>
 <body>
+
 <sc-synthdef name="fm-sine" freq="440" amp="0.2" mod-freq="2" mod-depth="200">
     <sc-ugen name="mod" type="SinOsc" rate="kr" freq="mod-freq"/>
     <sc-ugen name="mod-scaled" type="MulAdd" rate="kr" in="mod" mul="mod-depth" add="freq"/>
@@ -11,6 +12,7 @@
     <sc-ugen name="sig" type="BinaryOpUGen" op="*" a="osc" b="amp"/>
     <sc-ugen name="out" type="Out" bus="0" channelsarray="sig"/>
 </sc-synthdef>
+
 <sc-synth name="fm" synthdef="fm-sine" freq="440" amp="0.2" mod-freq="2" mod-depth="200"/>
 <label>
     <sc-run size="24"/>

@@ -4,28 +4,39 @@ import type {ScElementNode, ScGroupNode, PluginTreeEntry} from "./types";
 import {compileSynthDef} from "./SynthDefCompiler";
 
 const SYNTH_SKIP_ATTRS = new Set(['id', 'name', 'synthdef', 'class', 'style', 'slot', 'title']);
-const PARSED_TAGS: Set<string> = new Set([ELEMENTS.SC_GROUP, ELEMENTS.SC_SYNTH, ELEMENTS.SC_SYNTHDEF]);
-
 interface WalkContext {
-  state: Record<string, any>;
   saved?: ScElementNode[];
   offset: number;
 }
 
+interface ElementContext {
+  el: Element;
+  id: string;
+  matched?: ScElementNode;
+}
+
+type ElementHandler = (ectx: ElementContext) => ScElementNode;
+
 export class PluginParser {
+  private readonly handlers: Record<string, ElementHandler> = {
+    [ELEMENTS.SC_GROUP]: (ectx) => this.processGroup(ectx),
+    [ELEMENTS.SC_SYNTH]: (ectx) => this.processSynth(ectx),
+    [ELEMENTS.SC_SYNTHDEF]: (ectx) => this.processSynthDef(ectx),
+  };
+
   parse(node: Element, saved?: ScElementNode[]): PluginTreeEntry {
-    const ctx: WalkContext = { state: {}, offset: 0, saved };
+    const ctx: WalkContext = { offset: 0, saved };
     const tree = this.walkChildren(node, ctx);
     const html = node.innerHTML;
     const title = node.querySelector('title')?.textContent ?? undefined;
-    return { tree, state: ctx.state, html, title };
+    return { tree, html, title };
   }
 
   private walkChildren(node: Element, ctx: WalkContext): ScElementNode[] {
     const result: ScElementNode[] = [];
     for (const child of Array.from(node.children)) {
       const tag = child.tagName.toLowerCase();
-      if (PARSED_TAGS.has(tag)) {
+      if (tag in this.handlers) {
         result.push(this.processElement(child, tag, ctx));
       } else {
         result.push(...this.walkChildren(child, ctx));
@@ -43,38 +54,27 @@ export class PluginParser {
     ctx.offset++;
 
     const id = this.hydrateId(el, matched);
+    return this.handlers[tag]({ el, id, matched });
+  }
 
-    switch (tag) {
-      case ELEMENTS.SC_GROUP: {
-        const name = el.getAttribute('name') ?? '';
-        let childState = ctx.state;
-        if (name) {
-          childState = {};
-          ctx.state[name] = childState;
-        }
-        const groupSaved = matched as ScGroupNode | undefined;
-        const children = this.walkChildren(el, {
-          state: childState,
-          saved: groupSaved?.children,
-          offset: 0,
-        });
-        return { type: 'sc-group', id, name, children, isRunning: true };
-      }
-      case ELEMENTS.SC_SYNTH: {
-        const name = el.getAttribute('name') ?? '';
-        const synthdef = el.getAttribute('synthdef') ?? undefined;
-        const controls = this.collectNumericAttrs(el);
-        if (name) ctx.state[name] = controls;
-        return { type: 'sc-synth', id, name, synthdef, controls, isRunning: true };
-      }
-      case ELEMENTS.SC_SYNTHDEF: {
-        const name = el.getAttribute('name') ?? '';
-        const bytes = compileSynthDef(el);
-        return { type: 'sc-synthdef', id, name, bytes };
-      }
-      default:
-        throw new Error(`Unexpected element: ${tag}`);
-    }
+  private processGroup({ el, id, matched }: ElementContext): ScGroupNode {
+    const name = el.getAttribute('name') ?? '';
+    const groupSaved = matched as ScGroupNode | undefined;
+    const children = this.walkChildren(el, { saved: groupSaved?.children, offset: 0 });
+    return { type: 'sc-group', id, name, children, isRunning: true };
+  }
+
+  private processSynth({ el, id }: ElementContext): ScElementNode {
+    const name = el.getAttribute('name') ?? '';
+    const synthdef = el.getAttribute('synthdef') ?? undefined;
+    const controls = this.collectNumericAttrs(el);
+    return { type: 'sc-synth', id, name, synthdef, controls, isRunning: true };
+  }
+
+  private processSynthDef({ el, id }: ElementContext): ScElementNode {
+    const name = el.getAttribute('name') ?? '';
+    const bytes = compileSynthDef(el);
+    return { type: 'sc-synthdef', id, name, bytes };
   }
 
   private hydrateId(el: Element, saved?: ScElementNode): string {
