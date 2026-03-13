@@ -40,11 +40,11 @@ export class ScRun extends LitElement {
     }
 
     get run(): boolean {
-        return this._node.value?.isTargetRunning(this.bind) ?? false;
+        return (this._node.value?.getNodeValue(this.id) ?? 1) !== 0;
     }
 
     private _onClick = () => {
-        this._node.value?.onRun(this.bind, !this.run);
+        this._node.value?.onRun(this.id, this.bind, this.run ? 0 : 1);
     };
 
     render() {

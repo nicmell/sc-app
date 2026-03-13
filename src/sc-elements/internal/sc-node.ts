@@ -3,6 +3,7 @@ import {ContextProvider, ContextConsumer} from '@lit/context';
 import {oscService} from '@/lib/osc';
 import {nodeRunMessage, nodeSetMessage} from '@/lib/osc/messages.ts';
 import {layoutApi} from '@/lib/stores/api';
+import {findElementById} from '@/lib/parsers';
 import {store} from '@/lib/stores/store';
 import {nodeContext, type NodeContext, type ScNode as IScNode, type ScElement} from '../context.ts';
 
@@ -52,29 +53,26 @@ export abstract class ScNode extends LitElement implements IScNode {
         oscService.send(nodeSetMessage(this.nodeId, {[control]: value}));
     }
 
-    onRun(target: string, isRunning: boolean) {
+    onRun(elementId: string, target: string, value: number) {
+        layoutApi.setRunning({boxId: this.boxId, elementId, value});
         if (target) {
-            const child = this.findChildNode(target);
+            const child = [...this.registeredElements].find(
+                (el): el is ScNode => el instanceof ScNode && el.name === target
+            );
             if (child) {
-                layoutApi.setRunning({boxId: this.boxId, path: [...this.pathSegments, target], isRunning});
-                oscService.send(nodeRunMessage(child.nodeId, isRunning ? 1 : 0));
+                oscService.send(nodeRunMessage(child.nodeId, value));
                 return;
             }
         }
-        layoutApi.setRunning({boxId: this.boxId, path: this.pathSegments, isRunning});
-        oscService.send(nodeRunMessage(this.nodeId, isRunning ? 1 : 0));
+        oscService.send(nodeRunMessage(this.nodeId, value));
     }
 
-    isTargetRunning(target: string): boolean {
-        if (!target) return this.isRunning;
-        const child = this.findChildNode(target);
-        return child ? child.isRunning : false;
-    }
-
-    private findChildNode(name: string): ScNode | undefined {
-        for (const el of this.registeredElements) {
-            if (el instanceof ScNode && el.name === name) return el;
-        }
+    getNodeValue(elementId: string): number | undefined {
+        const box = layoutApi.getById(this.boxId);
+        if (!box?.elements) return undefined;
+        const el = findElementById(box.elements, elementId);
+        if (!el) return undefined;
+        if (el.type === 'sc-range' || el.type === 'sc-checkbox' || el.type === 'sc-run') return el.value;
         return undefined;
     }
 
@@ -117,8 +115,8 @@ export abstract class ScNode extends LitElement implements IScNode {
             registerElement: (el) => this.registerElement(el),
             unregisterElement: (el) => this.unregisterElement(el),
             onChange: (target, value) => this.onChange(target, value),
-            onRun: (target, isRunning) => this.onRun(target, isRunning),
-            isTargetRunning: (target) => this.isTargetRunning(target),
+            onRun: (elementId, target, value) => this.onRun(elementId, target, value),
+            getNodeValue: (elementId) => this.getNodeValue(elementId),
         };
         const provider = new ContextProvider(this, {context: nodeContext, initialValue: ctx});
         store.subscribe(() => {

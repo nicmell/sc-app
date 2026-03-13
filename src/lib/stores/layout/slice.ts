@@ -1,6 +1,6 @@
 import type {LayoutState, LayoutOptions, BoxItem} from "@/types/stores";
 import type {ScElementNode} from "@/lib/parsers";
-import {findElementByPath, setControls, setRunning, syncInputValues, syncRunValues} from "@/lib/parsers";
+import {findElementById, findElementByPath, setControls, syncInputValues, syncIsRunning} from "@/lib/parsers";
 import {createSlice} from "@/lib/stores/utils";
 import {SliceName, LayoutAction} from "@/constants/store";
 import {DEFAULT_LAYOUT, DEFAULT_OPTIONS} from "@/constants/layout.ts";
@@ -63,13 +63,13 @@ export const layoutSlice = createSlice({
         syncInputValues(box.elements);
       }
     },
-    [LayoutAction.SET_RUNNING]: (state, action: { payload: { boxId: string; path: string[]; isRunning: boolean } }) => {
+    [LayoutAction.SET_RUNNING]: (state, action: { payload: { boxId: string; elementId: string; value: number } }) => {
       const box = state.items.find(item => item.i === action.payload.boxId);
       if (!box?.elements) return;
-      const el = findElementByPath(box.elements, action.payload.path);
-      if (el) {
-        setRunning(el, action.payload.isRunning);
-        syncRunValues(box.elements);
+      const el = findElementById(box.elements, action.payload.elementId);
+      if (el && el.type === 'sc-run') {
+        el.value = action.payload.value;
+        syncIsRunning(box.elements);
       }
     },
   },

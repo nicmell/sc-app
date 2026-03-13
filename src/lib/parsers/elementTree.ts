@@ -1,6 +1,17 @@
 import {get} from "@/lib/utils/get";
 import type {ScElementNode} from "./types";
 
+export function findElementById(elements: ScElementNode[], id: string): ScElementNode | undefined {
+  for (const el of elements) {
+    if (el.id === id) return el;
+    if (el.type === 'sc-group') {
+      const found = findElementById(el.children, id);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
+
 export function findElementByPath(elements: ScElementNode[], path: string[]): ScElementNode | undefined {
   if (path.length === 0) return undefined;
   const [name, ...rest] = path;
@@ -50,17 +61,15 @@ export function syncInputValues(elements: ScElementNode[]): void {
   }
 }
 
-export function syncRunValues(elements: ScElementNode[]): void {
+export function syncIsRunning(elements: ScElementNode[]): void {
   for (const el of elements) {
-    if (el.type === 'sc-run') {
-      if (el.bind) {
-        const target = elements.find(n => 'name' in n && n.name === el.bind);
-        if (target && (target.type === 'sc-synth' || target.type === 'sc-group')) {
-          el.value = target.isRunning ? 1 : 0;
-        }
+    if (el.type === 'sc-run' && el.bind) {
+      const target = elements.find(n => 'name' in n && n.name === el.bind);
+      if (target && (target.type === 'sc-synth' || target.type === 'sc-group')) {
+        target.isRunning = el.value !== 0;
       }
     } else if (el.type === 'sc-group') {
-      syncRunValues(el.children);
+      syncIsRunning(el.children);
     }
   }
 }
