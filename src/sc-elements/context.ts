@@ -17,7 +17,7 @@ export interface NodeContext {
   state: Record<string, any>;
   registerElement(el: ScElement): void;
   unregisterElement(el: ScElement): void;
-  onChange(target: string, value: number): void;
+  onChange(elementId: string, target: string, value: number): void;
   onRun(elementId: string, target: string, value: number): void;
   getNodeValue(elementId: string): number | undefined;
 }

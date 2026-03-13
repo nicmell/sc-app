@@ -5,10 +5,8 @@ import {
   groupTailMessage
 } from '@/lib/osc/messages.ts';
 import {layoutApi} from '@/lib/stores/api';
-import {findElementByPath} from '@/lib/parsers';
+import {findElementById} from '@/lib/parsers';
 import {ScNode} from './internal/sc-node.ts';
-
-const SKIP_ATTRS = new Set(['name', 'bind', 'class', 'style', 'slot', 'title']);
 
 export class ScSynth extends ScNode {
   static properties = {
@@ -26,26 +24,14 @@ export class ScSynth extends ScNode {
   get isRunning() {
     const box = layoutApi.getById(this.boxId);
     if (!box?.elements) return false;
-    const el = findElementByPath(box.elements, this.pathSegments);
+    const el = findElementById(box.elements, this.id);
     return el?.type === 'sc-synth' ? (el.isRunning ?? false) : false;
   }
 
-  private _collectParams(): Record<string, number> {
-    const params: Record<string, number> = {};
-    for (const attr of this.attributes) {
-      if (SKIP_ATTRS.has(attr.name)) {
-        continue
-      }
-      const val = Number(attr.value);
-      if (!isNaN(val)) {
-        params[attr.name] = val;
-      }
-    }
-    return params;
-  }
-
   protected firstUpdated() {
-    const params = this._collectParams();
+    const box = layoutApi.getById(this.boxId);
+    const el = box?.elements ? findElementById(box.elements, this.id) : undefined;
+    const params = el?.type === 'sc-synth' ? el.controls : {};
     oscService.send(
       newSynthMessage(this.bind, this.nodeId, 0, 0, params),
       groupTailMessage(this.groupId, -1),

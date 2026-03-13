@@ -42,7 +42,7 @@ export class ScCheckbox extends LitElement {
 
     onChange = (checked: boolean) => {
         if (checked !== this.checked && this.bind) {
-            this._node.value?.onChange(this.bind, checked ? 1 : 0);
+            this._node.value?.onChange(this.id, this.bind, checked ? 1 : 0);
         }
     };
 

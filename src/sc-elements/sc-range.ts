@@ -63,7 +63,7 @@ export class ScRange extends LitElement {
 
     onChange = (value: number) => {
         if (value !== this.value && this.bind) {
-            this._node.value?.onChange(this.bind, value);
+            this._node.value?.onChange(this.id, this.bind, value);
         }
     };
 

@@ -54,12 +54,17 @@ export const layoutSlice = createSlice({
         delete box.title;
       }
     },
-    [LayoutAction.SET_CONTROL]: (state, action: { payload: { boxId: string; path: string[]; controls: Record<string, number> } }) => {
+    [LayoutAction.SET_CONTROL]: (state, action: { payload: { boxId: string; elementId: string; value: number } }) => {
       const box = state.items.find(item => item.i === action.payload.boxId);
       if (!box?.elements) return;
-      const el = findElementByPath(box.elements, action.payload.path);
-      if (el) {
-        setControls(el, action.payload.controls);
+      const input = findElementById(box.elements, action.payload.elementId);
+      if (!input || (input.type !== 'sc-range' && input.type !== 'sc-checkbox')) return;
+      const segments = input.bind.split('.');
+      const path = segments.slice(0, -1);
+      const control = segments[segments.length - 1];
+      const target = findElementByPath(box.elements, path);
+      if (target) {
+        setControls(target, {[control]: action.payload.value});
         syncInputValues(box.elements);
       }
     },

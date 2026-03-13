@@ -45,26 +45,30 @@ export abstract class ScNode extends LitElement implements IScNode {
         this.registeredElements.delete(el);
     }
 
-    onChange(target: string, value: number) {
-        const segments = [...this.pathSegments, ...target.split(".")];
-        const path = segments.slice(0, -1);
-        const control = segments[segments.length - 1];
-        layoutApi.setControl({boxId: this.boxId, path, controls: {[control]: value}});
-        oscService.send(nodeSetMessage(this.nodeId, {[control]: value}));
+    onChange(elementId: string, target: string, value: number) {
+        layoutApi.setControl({boxId: this.boxId, elementId, value});
+        const segments = target.split('.');
+        const control = segments.pop()!;
+        const nodeId = this.resolveNodeId(segments);
+        oscService.send(nodeSetMessage(nodeId, {[control]: value}));
     }
 
     onRun(elementId: string, target: string, value: number) {
         layoutApi.setRunning({boxId: this.boxId, elementId, value});
-        if (target) {
-            const child = [...this.registeredElements].find(
-                (el): el is ScNode => el instanceof ScNode && el.name === target
+        const nodeId = this.resolveNodeId(target ? target.split('.') : []);
+        oscService.send(nodeRunMessage(nodeId, value));
+    }
+
+    private resolveNodeId(segments: string[]): number {
+        let current: ScNode = this;
+        for (const name of segments) {
+            const child = [...current.registeredElements].find(
+                (el): el is ScNode => el instanceof ScNode && el.name === name
             );
-            if (child) {
-                oscService.send(nodeRunMessage(child.nodeId, value));
-                return;
-            }
+            if (!child) return current.nodeId;
+            current = child;
         }
-        oscService.send(nodeRunMessage(this.nodeId, value));
+        return current.nodeId;
     }
 
     getNodeValue(elementId: string): number | undefined {
@@ -114,7 +118,7 @@ export abstract class ScNode extends LitElement implements IScNode {
             },
             registerElement: (el) => this.registerElement(el),
             unregisterElement: (el) => this.unregisterElement(el),
-            onChange: (target, value) => this.onChange(target, value),
+            onChange: (elementId, target, value) => this.onChange(elementId, target, value),
             onRun: (elementId, target, value) => this.onRun(elementId, target, value),
             getNodeValue: (elementId) => this.getNodeValue(elementId),
         };
