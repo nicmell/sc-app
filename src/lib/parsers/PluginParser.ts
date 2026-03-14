@@ -1,10 +1,10 @@
 import {ELEMENTS} from "@/constants/sc-elements";
 import {randomId} from "@/lib/utils/randomId.ts";
 import {deepEqual} from "@/lib/utils/deepEqual";
-import {get} from "@/lib/utils/get";
 import type {ScElementNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScRangeNode, ScCheckboxNode, ScRunNode, ScMidiNode, UGenSpec, PluginTreeEntry} from "./types";
 import {compileSynthDef} from "./SynthDefCompiler";
-import {computeState} from "./elementTree";
+import {findElementByPath} from "./elementTree";
+import {isSynth, isGroup, isNode} from "./guards";
 
 const SYNTH_SKIP_ATTRS = new Set(['id', 'name', 'bind', 'class', 'style', 'slot', 'title']);
 const SYNTHDEF_SKIP_ATTRS = new Set(['id', 'name', 'class', 'style', 'slot']);
@@ -100,8 +100,10 @@ export class PluginParser {
     const savedChildren = groupSaved?.type === 'sc-group' && groupSaved.name === name
       ? groupSaved.children
       : undefined;
-    const children = this.walkChildren(el, { saved: savedChildren, offset: 0, scope: [..._ctx.scope] });
-    return { type: 'sc-group', id, name, children, isRunning: true };
+    const groupNode: ScGroupNode = { type: 'sc-group', id, name, children: [], isRunning: true };
+    const children = this.walkChildren(el, { saved: savedChildren, offset: 0, scope: [..._ctx.scope, groupNode] });
+    groupNode.children = children;
+    return groupNode;
   }
 
   private processSynth({ el, id }: ElementContext, ctx: WalkContext): ScSynthNode {
@@ -148,7 +150,7 @@ export class PluginParser {
     const bind = el.getAttribute('bind') ?? '';
     if (bind) {
       const target = ctx.scope.find(n => 'name' in n && n.name === bind);
-      if (!target || (target.type !== 'sc-synth' && target.type !== 'sc-group')) {
+      if (!target || !isNode(target)) {
         throw new Error(`<sc-run>: bind "${bind}" does not reference a valid sc-synth or sc-group`);
       }
     }
@@ -165,12 +167,26 @@ export class PluginParser {
   private resolveBindValue(el: Element, ctx: WalkContext): { bind: string; value: number } {
     const bind = el.getAttribute('bind') ?? '';
     if (!bind) return { bind, value: 0 };
-    const state = computeState(ctx.scope);
-    const resolved = get(state, bind);
-    if (resolved === undefined) {
+    const segments = bind.split('.');
+    const control = segments.pop()!;
+    const target = findElementByPath(ctx.scope, segments);
+    if (!target) {
       throw new Error(`<${el.tagName.toLowerCase()}>: bind path "${bind}" does not resolve`);
     }
-    return { bind, value: (resolved as number) ?? 0 };
+    if (isSynth(target)) {
+      if (!(control in target.controls)) {
+        throw new Error(`<${el.tagName.toLowerCase()}>: bind path "${bind}" does not resolve`);
+      }
+      return { bind, value: target.controls[control] };
+    }
+    if (isGroup(target)) {
+      const synth = ctx.scope.find(n => isSynth(n) && control in n.controls);
+      if (!synth || !isSynth(synth)) {
+        throw new Error(`<${el.tagName.toLowerCase()}>: no synth in scope has control "${control}"`);
+      }
+      return { bind, value: synth.controls[control] };
+    }
+    throw new Error(`<${el.tagName.toLowerCase()}>: bind path "${bind}" does not resolve`);
   }
 
   private collectUGenSpecs(el: Element): UGenSpec[] {

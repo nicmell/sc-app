@@ -2,6 +2,10 @@
 
 A desktop application for controlling SuperCollider (scsynth) via a plugin-based dashboard UI. Built with Tauri 2 (Rust backend) + React 19 + Lit 3 web components.
 
+## Workflow
+
+- After editing any file in `examples/`, run `bash scripts/package_examples.sh tmp` to repackage the zips.
+
 ## Quick Reference
 
 ```bash

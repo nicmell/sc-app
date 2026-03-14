@@ -1,6 +1,6 @@
 import type {LayoutState, LayoutOptions, BoxItem} from "@/types/stores";
 import type {ScElementNode} from "@/lib/parsers";
-import {isInput, isRun, findElementById, findElementByPath, setControls, syncInputValues, syncIsRunning} from "@/lib/parsers";
+import {isInput, isRun, findElementById, findElementByPath, setControls, syncInputValues, syncIsRunning, syncRunValues} from "@/lib/parsers";
 import {createSlice} from "@/lib/stores/utils";
 import {SliceName, LayoutAction} from "@/constants/store";
 import {DEFAULT_LAYOUT, DEFAULT_OPTIONS} from "@/constants/layout.ts";
@@ -64,6 +64,7 @@ export const layoutSlice = createSlice({
       const control = segments[segments.length - 1];
       const target = findElementByPath(box.elements, path);
       if (target) {
+        input.value = action.payload.value;
         setControls(target, {[control]: action.payload.value});
         syncInputValues(box.elements);
       }
@@ -75,6 +76,7 @@ export const layoutSlice = createSlice({
       if (el && isRun(el)) {
         el.value = action.payload.value;
         syncIsRunning(box.elements);
+        syncRunValues(box.elements);
       }
     },
   },

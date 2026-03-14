@@ -1,5 +1,4 @@
-import {get} from "@/lib/utils/get";
-import type {ScElementNode} from "./types";
+import type {ScElementNode, ScGroupNode} from "./types";
 import {isGroup, isSynth, isNode, isInput, isRun} from "./guards";
 
 export function findElementById(elements: ScElementNode[], id: string): ScElementNode | undefined {
@@ -17,21 +16,39 @@ export function findElementByPath(elements: ScElementNode[], path: string[]): Sc
   if (path.length === 0) return undefined;
   const [name, ...rest] = path;
   const el = elements.find(e => 'name' in e && e.name === name);
-  if (!el || rest.length === 0) return el;
-  if (isGroup(el)) return findElementByPath(el.children, rest);
+  if (el) {
+    if (rest.length === 0) return el;
+    if (isGroup(el)) return findElementByPath(el.children, rest);
+    return undefined;
+  }
+  for (const child of elements) {
+    if (isGroup(child)) {
+      const found = findElementByPath(child.children, path);
+      if (found) return found;
+    }
+  }
   return undefined;
 }
 
-export function computeState(elements: ScElementNode[]): Record<string, any> {
-  const result: Record<string, any> = {};
-  for (const el of elements) {
-    if (isSynth(el)) {
-      result[el.name] = el.controls;
-    } else if (isGroup(el)) {
-      result[el.name] = computeState(el.children);
+export function resolveControl(elements: ScElementNode[], bind: string): number | undefined {
+  const segments = bind.split('.');
+  const control = segments.pop()!;
+  const target = findElementByPath(elements, segments);
+  if (!target) return undefined;
+  if (isSynth(target)) return target.controls[control];
+  if (isGroup(target)) return findDescendantControl(target, control);
+  return undefined;
+}
+
+function findDescendantControl(group: ScGroupNode, control: string): number | undefined {
+  for (const child of group.children) {
+    if (isSynth(child) && control in child.controls) return child.controls[control];
+    if (isGroup(child)) {
+      const val = findDescendantControl(child, control);
+      if (val !== undefined) return val;
     }
   }
-  return result;
+  return undefined;
 }
 
 export function setControls(element: ScElementNode, controls: Record<string, number>): void {
@@ -44,27 +61,49 @@ export function setControls(element: ScElementNode, controls: Record<string, num
   }
 }
 
-export function syncInputValues(elements: ScElementNode[]): void {
-  const state = computeState(elements);
+export function syncInputValues(elements: ScElementNode[], root?: ScElementNode[]): void {
+  if (!root) root = elements;
   for (const el of elements) {
     if (isInput(el)) {
-      const resolved = get(state, el.bind);
-      if (typeof resolved === 'number') el.value = resolved;
+      const segments = el.bind.split('.');
+      const target = findElementByPath(root, segments.slice(0, -1));
+      if (target && isGroup(target)) continue;
+      const value = resolveControl(root, el.bind);
+      if (typeof value === 'number') el.value = value;
     } else if (isGroup(el)) {
-      syncInputValues(el.children);
+      syncInputValues(el.children, root);
     }
   }
 }
 
-export function syncIsRunning(elements: ScElementNode[]): void {
+export function syncIsRunning(elements: ScElementNode[], root?: ScElementNode[], parent?: ScElementNode): void {
+  if (!root) root = elements;
   for (const el of elements) {
-    if (isRun(el) && el.bind) {
-      const target = elements.find(n => 'name' in n && n.name === el.bind);
+    if (isRun(el)) {
+      const target = el.bind
+        ? findElementByPath(root, [el.bind])
+        : parent;
       if (target && isNode(target)) {
         target.isRunning = el.value !== 0;
       }
     } else if (isGroup(el)) {
-      syncIsRunning(el.children);
+      syncIsRunning(el.children, root, el);
+    }
+  }
+}
+
+export function syncRunValues(elements: ScElementNode[], root?: ScElementNode[], parent?: ScElementNode): void {
+  if (!root) root = elements;
+  for (const el of elements) {
+    if (isRun(el)) {
+      const target = el.bind
+        ? findElementByPath(root, [el.bind])
+        : parent;
+      if (target && isNode(target)) {
+        el.value = target.isRunning ? 1 : 0;
+      }
+    } else if (isGroup(el)) {
+      syncRunValues(el.children, root, el);
     }
   }
 }

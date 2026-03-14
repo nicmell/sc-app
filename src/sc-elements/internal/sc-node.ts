@@ -3,7 +3,7 @@ import {ContextProvider, ContextConsumer} from '@lit/context';
 import {oscService} from '@/lib/osc';
 import {nodeRunMessage, nodeSetMessage} from '@/lib/osc/messages.ts';
 import {layoutApi} from '@/lib/stores/api';
-import {isSynth, isNode, findElementById, findElementByPath} from '@/lib/parsers';
+import {isSynth, isInput, isRun, findElementById, resolveControl} from '@/lib/parsers';
 import {store} from '@/lib/stores/store';
 import {nodeContext, type NodeContext, type ScNode as IScNode, type ScElement} from '../context.ts';
 
@@ -67,26 +67,19 @@ export abstract class ScNode extends LitElement implements IScNode {
     }
 
     getBindValue(bind: string): number | undefined {
+        if (!bind) return undefined;
         const box = layoutApi.getById(this.boxId());
         if (!box?.elements) return undefined;
-        const segments = bind.split('.');
-        const control = segments.pop()!;
-        const target = bind
-            ? findElementByPath(box.elements, segments)
-            : findElementById(box.elements, this.id);
-        if (!target || !isSynth(target)) return undefined;
-        return target.controls[control];
+        return resolveControl(box.elements, bind);
     }
 
-    getRunState(bind: string): number | undefined {
+    getInputValue(elementId: string): number | undefined {
         const box = layoutApi.getById(this.boxId());
         if (!box?.elements) return undefined;
-        const target = bind
-            ? findElementByPath(box.elements, [bind])
-            : findElementById(box.elements, this.id);
-        if (!target) return undefined;
-        if (!isNode(target)) return undefined;
-        return target.isRunning ? 1 : 0;
+        const el = findElementById(box.elements, elementId);
+        if (!el) return undefined;
+        if (isInput(el) || isRun(el)) return el.value;
+        return undefined;
     }
 
     protected get groupId(): number {
@@ -114,7 +107,7 @@ export abstract class ScNode extends LitElement implements IScNode {
             onChange: (elementId, target, value) => this.onChange(elementId, target, value),
             onRun: (elementId, target, value) => this.onRun(elementId, target, value),
             getBindValue: (bind) => this.getBindValue(bind),
-            getRunState: (bind) => this.getRunState(bind),
+            getInputValue: (elementId) => this.getInputValue(elementId),
         };
         const provider = new ContextProvider(this, {context: nodeContext, initialValue: ctx});
         this._unsubscribe = store.subscribe(() => {
