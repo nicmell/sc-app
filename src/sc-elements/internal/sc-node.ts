@@ -3,7 +3,7 @@ import {ContextProvider, ContextConsumer} from '@lit/context';
 import {oscService} from '@/lib/osc';
 import {nodeRunMessage, nodeSetMessage} from '@/lib/osc/messages.ts';
 import {layoutApi} from '@/lib/stores/api';
-import {findElementById, findElementByPath} from '@/lib/parsers';
+import {isSynth, isNode, findElementById, findElementByPath} from '@/lib/parsers';
 import {store} from '@/lib/stores/store';
 import {nodeContext, type NodeContext, type ScNode as IScNode, type ScElement} from '../context.ts';
 
@@ -27,7 +27,7 @@ export abstract class ScNode extends LitElement implements IScNode {
         const box = layoutApi.getById(this.boxId());
         if (!box?.elements) return {};
         const el = findElementById(box.elements, this.id);
-        return el?.type === 'sc-synth' ? el.controls : {};
+        return el && isSynth(el) ? el.controls : {};
     }
 
     registerElement(el: ScElement) {
@@ -70,8 +70,10 @@ export abstract class ScNode extends LitElement implements IScNode {
         if (!box?.elements) return undefined;
         const segments = bind.split('.');
         const control = segments.pop()!;
-        const target = findElementByPath(box.elements, segments);
-        if (!target || target.type !== 'sc-synth') return undefined;
+        const target = bind
+            ? findElementByPath(box.elements, segments)
+            : findElementById(box.elements, this.id);
+        if (!target || !isSynth(target)) return undefined;
         return target.controls[control];
     }
 
@@ -82,10 +84,8 @@ export abstract class ScNode extends LitElement implements IScNode {
             ? findElementByPath(box.elements, [bind])
             : findElementById(box.elements, this.id);
         if (!target) return undefined;
-        if (target.type === 'sc-synth' || target.type === 'sc-group') {
-            return target.isRunning ? 1 : 0;
-        }
-        return undefined;
+        if (!isNode(target)) return undefined;
+        return target.isRunning ? 1 : 0;
     }
 
     protected get groupId(): number {

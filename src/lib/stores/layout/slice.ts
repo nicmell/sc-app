@@ -1,6 +1,6 @@
 import type {LayoutState, LayoutOptions, BoxItem} from "@/types/stores";
 import type {ScElementNode} from "@/lib/parsers";
-import {findElementById, findElementByPath, setControls, syncInputValues, syncIsRunning} from "@/lib/parsers";
+import {isInput, isRun, findElementById, findElementByPath, setControls, syncInputValues, syncIsRunning} from "@/lib/parsers";
 import {createSlice} from "@/lib/stores/utils";
 import {SliceName, LayoutAction} from "@/constants/store";
 import {DEFAULT_LAYOUT, DEFAULT_OPTIONS} from "@/constants/layout.ts";
@@ -58,7 +58,7 @@ export const layoutSlice = createSlice({
       const box = state.items.find(item => item.i === action.payload.boxId);
       if (!box?.elements) return;
       const input = findElementById(box.elements, action.payload.elementId);
-      if (!input || (input.type !== 'sc-range' && input.type !== 'sc-checkbox' && input.type !== 'sc-midi')) return;
+      if (!input || !isInput(input)) return;
       const segments = input.bind.split('.');
       const path = segments.slice(0, -1);
       const control = segments[segments.length - 1];
@@ -72,7 +72,7 @@ export const layoutSlice = createSlice({
       const box = state.items.find(item => item.i === action.payload.boxId);
       if (!box?.elements) return;
       const el = findElementById(box.elements, action.payload.elementId);
-      if (el && el.type === 'sc-run') {
+      if (el && isRun(el)) {
         el.value = action.payload.value;
         syncIsRunning(box.elements);
       }
