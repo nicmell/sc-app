@@ -230,12 +230,8 @@
     <xs:attributeGroup ref="commonAttrs"/>
   </xs:complexType>
 
-  <!-- sc-synth (container: accepts HTML + control sc-* elements, no sc-group/sc-synth) -->
-  <xs:complexType name="scSynthType" mixed="true">
-    <xs:choice minOccurs="0" maxOccurs="unbounded">
-      <xs:group ref="htmlElements"/>
-      <xs:group ref="scControls"/>
-    </xs:choice>
+  <!-- sc-synth (empty element: no children, dynamic controls via attributes) -->
+  <xs:complexType name="scSynthType">
     <xs:attribute name="name" type="xs:string" use="required"/>
     <xs:attribute name="bind" type="xs:string"/>
     <xs:attributeGroup ref="commonAttrs"/>

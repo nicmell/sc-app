@@ -31,3 +31,6 @@ dist-ssr
 *.sln
 *.sw?
 /tmp/
+/.agents/skills/tauri-v2/references/capabilities-reference.md
+/.agents/skills/tauri-v2/references/ipc-patterns.md
+/.agents/skills/tauri-v2/SKILL.md
