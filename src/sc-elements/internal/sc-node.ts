@@ -3,7 +3,7 @@ import {ContextProvider, ContextConsumer} from '@lit/context';
 import {oscService} from '@/lib/osc';
 import {nodeRunMessage, nodeSetMessage} from '@/lib/osc/messages.ts';
 import {layoutApi} from '@/lib/stores/api';
-import {findElementById} from '@/lib/parsers';
+import {findElementById, findElementByPath} from '@/lib/parsers';
 import {store} from '@/lib/stores/store';
 import {nodeContext, type NodeContext, type ScNode as IScNode, type ScElement} from '../context.ts';
 
@@ -14,33 +14,20 @@ export abstract class ScNode extends LitElement implements IScNode {
     };
 
     declare name: string;
-    readonly nodeId: number;
-    protected _oscCreated = false;
+    readonly nodeId = oscService.nextNodeId();
+    protected _loaded = false;
     protected registeredElements = new Set<ScElement>();
     protected _parent!: ContextConsumer<{ __context__: NodeContext }, this>;
 
-    get isRunning(): boolean {
-        const box = layoutApi.getById(this.boxId);
-        if (!box?.elements) return false;
+    boxId(): string {
+        return this._parent.value?.boxId() ?? this.id;
+    }
+
+    getParams(): Record<string, number> {
+        const box = layoutApi.getById(this.boxId());
+        if (!box?.elements) return {};
         const el = findElementById(box.elements, this.id);
-        if (el && (el.type === 'sc-synth' || el.type === 'sc-group')) return el.isRunning ?? false;
-        return false;
-    }
-
-    get boxId(): string {
-        return this._parent.value?.boxId ?? this.id;
-    }
-
-    get path() {
-        return this._parent.value ? [this._parent.value.path, this.name].join(".") : this.name
-    }
-
-    get pathSegments(): string[] {
-        return this.path.split(".").slice(1);
-    }
-
-    get state() {
-        return layoutApi.elementState(this.boxId, this.pathSegments);
+        return el?.type === 'sc-synth' ? el.controls : {};
     }
 
     registerElement(el: ScElement) {
@@ -52,7 +39,7 @@ export abstract class ScNode extends LitElement implements IScNode {
     }
 
     onChange(elementId: string, target: string, value: number) {
-        layoutApi.setControl({boxId: this.boxId, elementId, value});
+        layoutApi.setControl({boxId: this.boxId(), elementId, value});
         const segments = target.split('.');
         const control = segments.pop()!;
         const nodeId = this.resolveNodeId(segments);
@@ -60,7 +47,7 @@ export abstract class ScNode extends LitElement implements IScNode {
     }
 
     onRun(elementId: string, target: string, value: number) {
-        layoutApi.setRunning({boxId: this.boxId, elementId, value});
+        layoutApi.setRunning({boxId: this.boxId(), elementId, value});
         const nodeId = this.resolveNodeId(target ? target.split('.') : []);
         oscService.send(nodeRunMessage(nodeId, value));
     }
@@ -78,12 +65,26 @@ export abstract class ScNode extends LitElement implements IScNode {
         return current.nodeId;
     }
 
-    getNodeValue(elementId: string): number | undefined {
-        const box = layoutApi.getById(this.boxId);
+    getBindValue(bind: string): number | undefined {
+        const box = layoutApi.getById(this.boxId());
         if (!box?.elements) return undefined;
-        const el = findElementById(box.elements, elementId);
-        if (!el) return undefined;
-        if (el.type === 'sc-range' || el.type === 'sc-checkbox' || el.type === 'sc-run' || el.type === 'sc-midi') return el.value;
+        const segments = bind.split('.');
+        const control = segments.pop()!;
+        const target = findElementByPath(box.elements, segments);
+        if (!target || target.type !== 'sc-synth') return undefined;
+        return target.controls[control];
+    }
+
+    getRunState(bind: string): number | undefined {
+        const box = layoutApi.getById(this.boxId());
+        if (!box?.elements) return undefined;
+        const target = bind
+            ? findElementByPath(box.elements, [bind])
+            : findElementById(box.elements, this.id);
+        if (!target) return undefined;
+        if (target.type === 'sc-synth' || target.type === 'sc-group') {
+            return target.isRunning ? 1 : 0;
+        }
         return undefined;
     }
 
@@ -98,36 +99,20 @@ export abstract class ScNode extends LitElement implements IScNode {
 
     constructor() {
         super();
-        this.nodeId = oscService.nextNodeId();
         this._parent = new ContextConsumer(this, {
             context: nodeContext, subscribe: false,
             callback: (ctx) => ctx?.registerElement(this),
         });
 
-        // eslint-disable-next-line @typescript-eslint/no-this-alias
-        const self = this;
         const ctx: NodeContext = {
-            get boxId() {
-                return self.boxId;
-            },
             nodeId: this.nodeId,
-            get path() {
-                return self.path
-            },
-            get loaded() {
-                return self._oscCreated;
-            },
-            get running() {
-                return self.isRunning;
-            },
-            get state() {
-                return self.state;
-            },
+            boxId: () => this.boxId(),
             registerElement: (el) => this.registerElement(el),
             unregisterElement: (el) => this.unregisterElement(el),
             onChange: (elementId, target, value) => this.onChange(elementId, target, value),
             onRun: (elementId, target, value) => this.onRun(elementId, target, value),
-            getNodeValue: (elementId) => this.getNodeValue(elementId),
+            getBindValue: (bind) => this.getBindValue(bind),
+            getRunState: (bind) => this.getRunState(bind),
         };
         const provider = new ContextProvider(this, {context: nodeContext, initialValue: ctx});
         store.subscribe(() => {

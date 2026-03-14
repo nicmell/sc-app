@@ -42,7 +42,7 @@ export class ScRange extends LitElement {
     `;
 
     get value(): number {
-        return this._node.value?.getNodeValue(this.id) ?? 0;
+        return this._node.value?.getBindValue(this.bind) ?? 0;
     }
 
     constructor() {

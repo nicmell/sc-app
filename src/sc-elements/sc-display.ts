@@ -1,7 +1,6 @@
 import {LitElement, html, css} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
-import {get} from '@/lib/utils/get';
 
 function formatValue(template: string, value: unknown): string {
   if (typeof value === 'boolean') return template.replace('%b', value ? 'true' : 'false');
@@ -43,7 +42,7 @@ export class ScDisplay extends LitElement {
   }
 
   render() {
-    const value = get(this._node.value?.state, this.bind);
+    const value = this._node.value?.getBindValue(this.bind);
     const text = this.format ? formatValue(this.format, value) : String(value ?? '');
     return html`${text}`;
   }

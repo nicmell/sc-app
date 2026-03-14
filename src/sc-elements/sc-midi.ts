@@ -23,7 +23,7 @@ export class ScMidi extends LitElement {
     static styles = css`:host { display: inline-block; }`;
 
     get value(): number {
-        return this._node.value?.getNodeValue(this.id) ?? 0;
+        return this._node.value?.getBindValue(this.bind) ?? 0;
     }
 
     constructor() {

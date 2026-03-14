@@ -27,7 +27,7 @@ export class ScCheckbox extends LitElement {
     `;
 
     get checked(): boolean {
-        return (this._node.value?.getNodeValue(this.id) ?? 0) !== 0;
+        return (this._node.value?.getBindValue(this.bind) ?? 0) !== 0;
     }
 
     constructor() {

@@ -40,7 +40,7 @@ export class ScRun extends LitElement {
     }
 
     get run(): boolean {
-        return (this._node.value?.getNodeValue(this.id) ?? 1) !== 0;
+        return (this._node.value?.getRunState(this.bind) ?? 1) !== 0;
     }
 
     private _onClick = () => {

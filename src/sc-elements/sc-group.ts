@@ -14,12 +14,12 @@ export class ScGroup extends ScNode {
       newGroupMessage(this.nodeId),
       groupTailMessage(this.groupId, -1),
     );
-    this._oscCreated = true;
+    this._loaded = true;
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    if (this._oscCreated) {
+    if (this._loaded) {
       oscService.send(
         groupFreeAllMessage(this.nodeId),
         freeNodeMessage(this.nodeId),

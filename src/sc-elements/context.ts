@@ -9,17 +9,14 @@ export interface ScNode {
 }
 
 export interface NodeContext {
-  boxId: string;
   nodeId: number;
-  path: string;
-  loaded: boolean;
-  running: boolean;
-  state: Record<string, any>;
+  boxId(): string;
   registerElement(el: ScElement): void;
   unregisterElement(el: ScElement): void;
   onChange(elementId: string, target: string, value: number): void;
   onRun(elementId: string, target: string, value: number): void;
-  getNodeValue(elementId: string): number | undefined;
+  getBindValue(bind: string): number | undefined;
+  getRunState(bind: string): number | undefined;
 }
 
 export const nodeContext = createContext<NodeContext>('node');

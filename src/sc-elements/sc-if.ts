@@ -1,7 +1,6 @@
 import {LitElement, html, css} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
-import {get} from '@/lib/utils/get';
 
 export class ScIf extends LitElement {
   static properties = {
@@ -40,7 +39,7 @@ export class ScIf extends LitElement {
   }
 
   private _test(): boolean {
-    const value = get(this._node.value?.state, this.bind);
+    const value = this._node.value?.getBindValue(this.bind);
     const num = typeof value === 'number' ? value : Number(value);
     if (this.isEqual !== null) return String(value) === this.isEqual;
     if (this.isNotEqual !== null) return String(value) !== this.isNotEqual;
