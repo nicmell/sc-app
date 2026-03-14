@@ -44,12 +44,6 @@ export function setControls(element: ScElementNode, controls: Record<string, num
   }
 }
 
-export function setRunning(element: ScElementNode, isRunning: boolean): void {
-  if (isNode(element)) {
-    element.isRunning = isRunning;
-  }
-}
-
 export function syncInputValues(elements: ScElementNode[]): void {
   const state = computeState(elements);
   for (const el of elements) {

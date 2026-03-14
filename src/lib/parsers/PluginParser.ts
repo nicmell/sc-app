@@ -53,7 +53,7 @@ export class PluginParser {
       if (tag in this.handlers) {
         result.push(this.processElement(child, tag, ctx));
       } else if (PluginParser.BIND_ONLY_TAGS.has(tag)) {
-        this.validateBind(child, ctx);
+        this.resolveBindValue(child, ctx);
         result.push(...this.walkChildren(child, ctx));
       } else {
         result.push(...this.walkChildren(child, ctx));
@@ -135,18 +135,12 @@ export class PluginParser {
   }
 
   private processRange({ el, id }: ElementContext, ctx: WalkContext): ScRangeNode {
-    const bind = el.getAttribute('bind') ?? '';
-    this.validateBindPath(el, bind, ctx);
-    const state = computeState(ctx.scope);
-    const value = (get(state, bind) as number) ?? 0;
+    const { bind, value } = this.resolveBindValue(el, ctx);
     return { type: 'sc-range', id, bind, value };
   }
 
   private processCheckbox({ el, id }: ElementContext, ctx: WalkContext): ScCheckboxNode {
-    const bind = el.getAttribute('bind') ?? '';
-    this.validateBindPath(el, bind, ctx);
-    const state = computeState(ctx.scope);
-    const value = (get(state, bind) as number) ?? 0;
+    const { bind, value } = this.resolveBindValue(el, ctx);
     return { type: 'sc-checkbox', id, bind, value };
   }
 
@@ -158,35 +152,25 @@ export class PluginParser {
         throw new Error(`<sc-run>: bind "${bind}" does not reference a valid sc-synth or sc-group`);
       }
     }
-    const value = 1;
-    return { type: 'sc-run', id, bind, value };
+    return { type: 'sc-run', id, bind, value: 1 };
   }
 
   private processMidi({ el, id }: ElementContext, ctx: WalkContext): ScMidiNode {
-    const bind = el.getAttribute('bind') ?? '';
-    this.validateBindPath(el, bind, ctx);
+    const { bind, value } = this.resolveBindValue(el, ctx);
     const octaves = Number(el.getAttribute('octaves')) || 2;
     const octave = Number(el.getAttribute('octave')) || 4;
-    const state = computeState(ctx.scope);
-    const value = (get(state, bind) as number) ?? 0;
     return { type: 'sc-midi', id, bind, value, octaves, octave };
   }
 
-  private validateBind(el: Element, ctx: WalkContext): void {
-    const bind = el.getAttribute('bind');
-    if (!bind) return;
+  private resolveBindValue(el: Element, ctx: WalkContext): { bind: string; value: number } {
+    const bind = el.getAttribute('bind') ?? '';
+    if (!bind) return { bind, value: 0 };
     const state = computeState(ctx.scope);
-    if (get(state, bind) === undefined) {
+    const resolved = get(state, bind);
+    if (resolved === undefined) {
       throw new Error(`<${el.tagName.toLowerCase()}>: bind path "${bind}" does not resolve`);
     }
-  }
-
-  private validateBindPath(el: Element, bind: string, ctx: WalkContext): void {
-    if (!bind) return;
-    const state = computeState(ctx.scope);
-    if (get(state, bind) === undefined) {
-      throw new Error(`<${el.tagName.toLowerCase()}>: bind path "${bind}" does not resolve`);
-    }
+    return { bind, value: (resolved as number) ?? 0 };
   }
 
   private collectUGenSpecs(el: Element): UGenSpec[] {

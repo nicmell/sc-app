@@ -18,6 +18,7 @@ export abstract class ScNode extends LitElement implements IScNode {
     protected _loaded = false;
     protected registeredElements = new Set<ScElement>();
     protected _parent!: ContextConsumer<{ __context__: NodeContext }, this>;
+    private _unsubscribe!: () => void;
 
     boxId(): string {
         return this._parent.value?.boxId() ?? this.id;
@@ -94,6 +95,7 @@ export abstract class ScNode extends LitElement implements IScNode {
 
     disconnectedCallback() {
         super.disconnectedCallback();
+        this._unsubscribe();
         this._parent.value?.unregisterElement(this);
     }
 
@@ -115,7 +117,7 @@ export abstract class ScNode extends LitElement implements IScNode {
             getRunState: (bind) => this.getRunState(bind),
         };
         const provider = new ContextProvider(this, {context: nodeContext, initialValue: ctx});
-        store.subscribe(() => {
+        this._unsubscribe = store.subscribe(() => {
             provider.setValue(ctx, true);
         });
     }
