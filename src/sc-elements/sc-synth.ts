@@ -21,7 +21,7 @@ export class ScSynth extends ScNode {
 
   protected firstUpdated() {
     oscService.send(
-      newSynthMessage(this.bind, this.nodeId, 0, 0, this.getParams()),
+      newSynthMessage(this.bind, this.nodeId, 0, 0, this.getControls()),
       groupTailMessage(this.groupId, -1),
     );
     this._loaded = true;

@@ -12,7 +12,7 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
   partialize: ({theme, layout, scsynth, plugins}: RootState): ConfigFile => ({ // isRunning excluded
     theme: {mode: theme.mode, primaryColor: theme.primaryColor},
     layout: {
-      items: layout.items.map(({loaded: _l, error: _e, title: _t, ...box}) => ({
+      items: layout.items.map(({loaded: _l, error: _e, title: _t, runtime: _r, ...box}) => ({
         ...box,
         elements: box.elements ? stripRuntime(box.elements) : undefined,
       })),

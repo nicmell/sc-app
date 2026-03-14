@@ -4,7 +4,7 @@ import type {scsynthSlice} from "@/lib/stores/scsynth/slice";
 import type {layoutSlice} from "@/lib/stores/layout/slice";
 import type {themeSlice} from "@/lib/stores/theme/slice";
 import type {pluginsSlice} from "@/lib/stores/plugins/slice";
-import type {ScElementNode} from "@/lib/parsers";
+import type {ScElementNode, RuntimeEntry} from "@/lib/parsers";
 
 export interface BoxItem {
   i: string;
@@ -15,12 +15,13 @@ export interface BoxItem {
   plugin?: string;
   elements?: ScElementNode[];
   // Runtime-only (not persisted)
+  runtime?: RuntimeEntry[];
   loaded?: boolean;
   error?: string;
   title?: string;
 }
 
-export type PersistedBoxItem = Omit<BoxItem, 'loaded' | 'error' | 'title'>;
+export type PersistedBoxItem = Omit<BoxItem, 'loaded' | 'error' | 'title' | 'runtime'>;
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected";
 

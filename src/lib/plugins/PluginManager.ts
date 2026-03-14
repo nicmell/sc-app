@@ -62,7 +62,7 @@ export class PluginManager {
     if (error) {
       throw new Error(error.textContent ?? "Invalid XHTML")
     }
-    return this.treeParser.parse(doc.documentElement, box.elements);
+    return this.treeParser.parse(doc.documentElement, box.elements, box.runtime);
   }
 }
 

@@ -3,7 +3,7 @@ import {ContextProvider, ContextConsumer} from '@lit/context';
 import {oscService} from '@/lib/osc';
 import {nodeRunMessage, nodeSetMessage} from '@/lib/osc/messages.ts';
 import {layoutApi} from '@/lib/stores/api';
-import {isSynth, isInput, isRun, findElementById, resolveControl} from '@/lib/parsers';
+import {isNode, findElementById} from '@/lib/parsers';
 import {store} from '@/lib/stores/store';
 import {nodeContext, type NodeContext, type ScNode as IScNode, type ScElement} from '../context.ts';
 
@@ -24,11 +24,17 @@ export abstract class ScNode extends LitElement implements IScNode {
         return this._parent.value?.boxId() ?? this.id;
     }
 
-    getParams(): Record<string, number> {
+    getControls(): Record<string, number> {
         const box = layoutApi.getById(this.boxId());
-        if (!box?.elements) return {};
+        if (!box?.elements || !box?.runtime) return {};
         const el = findElementById(box.elements, this.id);
-        return el && isSynth(el) ? el.runtime.controls : {};
+        if (!el || !isNode(el)) return {};
+        const result: Record<string, number> = {};
+        for (const [name, entryId] of Object.entries(el.runtime.controls)) {
+            const entry = box.runtime.find(e => e.id === entryId);
+            if (entry) result[name] = entry.value;
+        }
+        return result;
     }
 
     registerElement(el: ScElement) {
@@ -66,22 +72,6 @@ export abstract class ScNode extends LitElement implements IScNode {
         return current.nodeId;
     }
 
-    getBindValue(bind: string): number | undefined {
-        if (!bind) return undefined;
-        const box = layoutApi.getById(this.boxId());
-        if (!box?.elements) return undefined;
-        return resolveControl(box.elements, bind);
-    }
-
-    getInputValue(elementId: string): number | undefined {
-        const box = layoutApi.getById(this.boxId());
-        if (!box?.elements) return undefined;
-        const el = findElementById(box.elements, elementId);
-        if (!el) return undefined;
-        if (isInput(el) || isRun(el)) return el.runtime.value;
-        return undefined;
-    }
-
     protected get groupId(): number {
         return this._parent.value?.nodeId ?? oscService.defaultGroupId();
     }
@@ -106,8 +96,6 @@ export abstract class ScNode extends LitElement implements IScNode {
             unregisterElement: (el) => this.unregisterElement(el),
             onChange: (elementId, target, value) => this.onChange(elementId, target, value),
             onRun: (elementId, target, value) => this.onRun(elementId, target, value),
-            getBindValue: (bind) => this.getBindValue(bind),
-            getInputValue: (elementId) => this.getInputValue(elementId),
         };
         const provider = new ContextProvider(this, {context: nodeContext, initialValue: ctx});
         this._unsubscribe = store.subscribe(() => {

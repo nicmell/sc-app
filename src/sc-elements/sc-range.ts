@@ -1,5 +1,7 @@
 import {css, html, LitElement} from 'lit';
 import {ContextConsumer} from '@lit/context';
+import {getRuntimeValue} from '@/lib/parsers';
+import {layoutApi} from '@/lib/stores/api';
 import {nodeContext} from './context.ts';
 import './internal/sc-knob.ts';
 import './internal/sc-slider.ts';
@@ -42,7 +44,9 @@ export class ScRange extends LitElement {
     `;
 
     get value(): number {
-        return this._node.value?.getInputValue(this.id) ?? 0;
+        const box = layoutApi.getById(this._node.value?.boxId() ?? '');
+        if (!box?.elements || !box?.runtime) return 0;
+        return getRuntimeValue(box.elements, box.runtime, this.id) ?? 0;
     }
 
     constructor() {

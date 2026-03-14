@@ -5,9 +5,16 @@ export interface UGenSpec {
   inputs: Record<string, string>;
 }
 
+export interface RuntimeEntry {
+  id: string;
+  type: "control" | "run";
+  targetNode: string;
+  value: number;
+}
+
 export interface NodeRuntime {
-  isRunning: boolean;
-  controls: Record<string, number>;
+  run: string;                        // entry ID for isRunning state
+  controls: Record<string, string>;   // control name → entry ID
 }
 
 export interface ScGroupNode {
@@ -39,7 +46,7 @@ export interface ScSynthDefNode {
 }
 
 export interface InputRuntime {
-  value: number;
+  value: string;  // entry ID
 }
 
 export interface ScRangeNode {
@@ -80,6 +87,7 @@ export type ScElementNode = ScGroupNode | ScSynthNode | ScSynthDefNode | ScRange
 
 export interface PluginTreeEntry {
   tree: ScElementNode[];
+  runtime: RuntimeEntry[];
   html: string;
   title?: string;
 }

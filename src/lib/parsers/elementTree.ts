@@ -1,4 +1,4 @@
-import type {ScElementNode} from "./types";
+import type {ScElementNode, RuntimeEntry} from "./types";
 import {isGroup, isSynth, isNode, isInput, isRun} from "./guards";
 
 export function findElementById(elements: ScElementNode[], id: string): ScElementNode | undefined {
@@ -30,72 +30,43 @@ export function findElementByPath(elements: ScElementNode[], path: string[]): Sc
   return undefined;
 }
 
-export function resolveControl(elements: ScElementNode[], bind: string): number | undefined {
+export function resolveControl(elements: ScElementNode[], runtime: RuntimeEntry[], bind: string): number | undefined {
   const segments = bind.split('.');
   const control = segments.pop()!;
   const target = findElementByPath(elements, segments);
-  if (!target) return undefined;
-  if (isSynth(target)) return target.runtime.controls[control];
-  if (isGroup(target)) return target.runtime.controls[control];
-  return undefined;
+  if (!target || !isNode(target)) return undefined;
+  const entryId = target.runtime.controls[control];
+  if (!entryId) return undefined;
+  return runtime.find(e => e.id === entryId)?.value;
 }
 
-export function setControls(element: ScElementNode, controls: Record<string, number>): void {
+export function setControls(element: ScElementNode, runtime: RuntimeEntry[], controls: Record<string, number>): void {
   if (isSynth(element)) {
-    Object.assign(element.runtime.controls, controls);
+    for (const [name, value] of Object.entries(controls)) {
+      const entryId = element.runtime.controls[name];
+      if (entryId) {
+        const entry = runtime.find(e => e.id === entryId);
+        if (entry) entry.value = value;
+      }
+    }
   } else if (isGroup(element)) {
-    Object.assign(element.runtime.controls, controls);
+    for (const [name, value] of Object.entries(controls)) {
+      const entryId = element.runtime.controls[name];
+      if (entryId) {
+        const entry = runtime.find(e => e.id === entryId);
+        if (entry) entry.value = value;
+      }
+    }
     for (const child of element.children) {
-      setControls(child, controls);
+      setControls(child, runtime, controls);
     }
   }
 }
 
-export function syncInputValues(elements: ScElementNode[], root?: ScElementNode[]): void {
-  if (!root) root = elements;
-  for (const el of elements) {
-    if (isInput(el)) {
-      const segments = el.bind.split('.');
-      const target = findElementByPath(root, segments.slice(0, -1));
-      if (target && isGroup(target)) continue;
-      const value = resolveControl(root, el.bind);
-      if (typeof value === 'number') el.runtime.value = value;
-    } else if (isGroup(el)) {
-      syncInputValues(el.children, root);
-    }
-  }
-}
-
-export function syncIsRunning(elements: ScElementNode[], root?: ScElementNode[], parent?: ScElementNode): void {
-  if (!root) root = elements;
-  for (const el of elements) {
-    if (isRun(el)) {
-      const target = el.bind
-        ? findElementByPath(root, [el.bind])
-        : parent;
-      if (target && isNode(target)) {
-        target.runtime.isRunning = el.runtime.value !== 0;
-      }
-    } else if (isGroup(el)) {
-      syncIsRunning(el.children, root, el);
-    }
-  }
-}
-
-export function syncRunValues(elements: ScElementNode[], root?: ScElementNode[], parent?: ScElementNode): void {
-  if (!root) root = elements;
-  for (const el of elements) {
-    if (isRun(el)) {
-      const target = el.bind
-        ? findElementByPath(root, [el.bind])
-        : parent;
-      if (target && isNode(target)) {
-        el.runtime.value = target.runtime.isRunning ? 1 : 0;
-      }
-    } else if (isGroup(el)) {
-      syncRunValues(el.children, root, el);
-    }
-  }
+export function getRuntimeValue(elements: ScElementNode[], runtime: RuntimeEntry[], elementId: string): number | undefined {
+  const el = findElementById(elements, elementId);
+  if (!el || !(isInput(el) || isRun(el))) return undefined;
+  return runtime.find(e => e.id === el.runtime.value)?.value;
 }
 
 export function stripRuntime(elements: ScElementNode[]): ScElementNode[] {

@@ -1,5 +1,7 @@
 import {LitElement, html, css} from 'lit';
 import {ContextConsumer} from '@lit/context';
+import {resolveControl} from '@/lib/parsers';
+import {layoutApi} from '@/lib/stores/api';
 import {nodeContext} from './context.ts';
 
 function formatValue(template: string, value: unknown): string {
@@ -42,7 +44,8 @@ export class ScDisplay extends LitElement {
   }
 
   render() {
-    const value = this._node.value?.getBindValue(this.bind);
+    const box = layoutApi.getById(this._node.value?.boxId() ?? '');
+    const value = box?.elements && box?.runtime ? resolveControl(box.elements, box.runtime, this.bind) : undefined;
     const text = this.format ? formatValue(this.format, value) : String(value ?? '');
     return html`${text}`;
   }

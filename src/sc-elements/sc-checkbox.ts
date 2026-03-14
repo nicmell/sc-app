@@ -1,5 +1,7 @@
 import {html, css, LitElement} from 'lit';
 import {ContextConsumer} from '@lit/context';
+import {getRuntimeValue} from '@/lib/parsers';
+import {layoutApi} from '@/lib/stores/api';
 import {nodeContext} from './context.ts';
 import './internal/sc-switch.ts';
 
@@ -27,7 +29,9 @@ export class ScCheckbox extends LitElement {
     `;
 
     get checked(): boolean {
-        return (this._node.value?.getInputValue(this.id) ?? 0) !== 0;
+        const box = layoutApi.getById(this._node.value?.boxId() ?? '');
+        if (!box?.elements || !box?.runtime) return false;
+        return (getRuntimeValue(box.elements, box.runtime, this.id) ?? 0) !== 0;
     }
 
     constructor() {
