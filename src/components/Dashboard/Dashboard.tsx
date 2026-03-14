@@ -86,6 +86,7 @@ export function Dashboard() {
                 title={item.loaded ? item.title : undefined}
                 onClose={() => layoutApi.removeBox(item.i)}
                 onEdit={() => setModalOpen(item)}
+                onLog={item.plugin ? () => console.log(layoutApi.getById(item.i)) : undefined}
             >
                 {
                     plugin

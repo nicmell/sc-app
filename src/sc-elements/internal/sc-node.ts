@@ -28,7 +28,7 @@ export abstract class ScNode extends LitElement implements IScNode {
         const box = layoutApi.getById(this.boxId());
         if (!box?.elements) return {};
         const el = findElementById(box.elements, this.id);
-        return el && isSynth(el) ? el.controls : {};
+        return el && isSynth(el) ? el.runtime.controls : {};
     }
 
     registerElement(el: ScElement) {
@@ -78,7 +78,7 @@ export abstract class ScNode extends LitElement implements IScNode {
         if (!box?.elements) return undefined;
         const el = findElementById(box.elements, elementId);
         if (!el) return undefined;
-        if (isInput(el) || isRun(el)) return el.value;
+        if (isInput(el) || isRun(el)) return el.runtime.value;
         return undefined;
     }
 

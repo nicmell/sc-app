@@ -64,7 +64,7 @@ export const layoutSlice = createSlice({
       const control = segments[segments.length - 1];
       const target = findElementByPath(box.elements, path);
       if (target) {
-        input.value = action.payload.value;
+        input.runtime.value = action.payload.value;
         setControls(target, {[control]: action.payload.value});
         syncInputValues(box.elements);
       }
@@ -74,7 +74,7 @@ export const layoutSlice = createSlice({
       if (!box?.elements) return;
       const el = findElementById(box.elements, action.payload.elementId);
       if (el && isRun(el)) {
-        el.value = action.payload.value;
+        el.runtime.value = action.payload.value;
         syncIsRunning(box.elements);
         syncRunValues(box.elements);
       }

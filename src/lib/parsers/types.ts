@@ -5,12 +5,18 @@ export interface UGenSpec {
   inputs: Record<string, string>;
 }
 
+export interface NodeRuntime {
+  isRunning: boolean;
+  controls: Record<string, number>;
+}
+
 export interface ScGroupNode {
   type: 'sc-group';
   id: string;
   name: string;
+  isRunning: boolean;
   children: ScElementNode[];
-  isRunning?: boolean;
+  runtime: NodeRuntime;
 }
 
 export interface ScSynthNode {
@@ -19,7 +25,8 @@ export interface ScSynthNode {
   name: string;
   bind?: string;
   controls: Record<string, number>;
-  isRunning?: boolean;
+  isRunning: boolean;
+  runtime: NodeRuntime;
 }
 
 export interface ScSynthDefNode {
@@ -31,11 +38,16 @@ export interface ScSynthDefNode {
   bytes: number[];
 }
 
+export interface InputRuntime {
+  value: number;
+}
+
 export interface ScRangeNode {
   type: 'sc-range';
   id: string;
   bind: string;
   value: number;
+  runtime: InputRuntime;
 }
 
 export interface ScCheckboxNode {
@@ -43,6 +55,7 @@ export interface ScCheckboxNode {
   id: string;
   bind: string;
   value: number;
+  runtime: InputRuntime;
 }
 
 export interface ScRunNode {
@@ -50,6 +63,7 @@ export interface ScRunNode {
   id: string;
   bind: string;
   value: number;
+  runtime: InputRuntime;
 }
 
 export interface ScMidiNode {
@@ -59,6 +73,7 @@ export interface ScMidiNode {
   value: number;
   octaves: number;
   octave: number;
+  runtime: InputRuntime;
 }
 
 export type ScElementNode = ScGroupNode | ScSynthNode | ScSynthDefNode | ScRangeNode | ScCheckboxNode | ScRunNode | ScMidiNode;

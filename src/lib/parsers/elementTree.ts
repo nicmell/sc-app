@@ -1,4 +1,4 @@
-import type {ScElementNode, ScGroupNode} from "./types";
+import type {ScElementNode} from "./types";
 import {isGroup, isSynth, isNode, isInput, isRun} from "./guards";
 
 export function findElementById(elements: ScElementNode[], id: string): ScElementNode | undefined {
@@ -35,26 +35,16 @@ export function resolveControl(elements: ScElementNode[], bind: string): number 
   const control = segments.pop()!;
   const target = findElementByPath(elements, segments);
   if (!target) return undefined;
-  if (isSynth(target)) return target.controls[control];
-  if (isGroup(target)) return findDescendantControl(target, control);
-  return undefined;
-}
-
-function findDescendantControl(group: ScGroupNode, control: string): number | undefined {
-  for (const child of group.children) {
-    if (isSynth(child) && control in child.controls) return child.controls[control];
-    if (isGroup(child)) {
-      const val = findDescendantControl(child, control);
-      if (val !== undefined) return val;
-    }
-  }
+  if (isSynth(target)) return target.runtime.controls[control];
+  if (isGroup(target)) return target.runtime.controls[control];
   return undefined;
 }
 
 export function setControls(element: ScElementNode, controls: Record<string, number>): void {
   if (isSynth(element)) {
-    Object.assign(element.controls, controls);
+    Object.assign(element.runtime.controls, controls);
   } else if (isGroup(element)) {
+    Object.assign(element.runtime.controls, controls);
     for (const child of element.children) {
       setControls(child, controls);
     }
@@ -69,7 +59,7 @@ export function syncInputValues(elements: ScElementNode[], root?: ScElementNode[
       const target = findElementByPath(root, segments.slice(0, -1));
       if (target && isGroup(target)) continue;
       const value = resolveControl(root, el.bind);
-      if (typeof value === 'number') el.value = value;
+      if (typeof value === 'number') el.runtime.value = value;
     } else if (isGroup(el)) {
       syncInputValues(el.children, root);
     }
@@ -84,7 +74,7 @@ export function syncIsRunning(elements: ScElementNode[], root?: ScElementNode[],
         ? findElementByPath(root, [el.bind])
         : parent;
       if (target && isNode(target)) {
-        target.isRunning = el.value !== 0;
+        target.runtime.isRunning = el.runtime.value !== 0;
       }
     } else if (isGroup(el)) {
       syncIsRunning(el.children, root, el);
@@ -100,7 +90,7 @@ export function syncRunValues(elements: ScElementNode[], root?: ScElementNode[],
         ? findElementByPath(root, [el.bind])
         : parent;
       if (target && isNode(target)) {
-        el.value = target.isRunning ? 1 : 0;
+        el.runtime.value = target.runtime.isRunning ? 1 : 0;
       }
     } else if (isGroup(el)) {
       syncRunValues(el.children, root, el);
@@ -110,13 +100,13 @@ export function syncRunValues(elements: ScElementNode[], root?: ScElementNode[],
 
 export function stripRuntime(elements: ScElementNode[]): ScElementNode[] {
   return elements.map(el => {
-    if (isSynth(el)) {
-      const {isRunning: _, ...rest} = el;
-      return rest;
-    }
     if (isGroup(el)) {
-      const {isRunning: _, ...rest} = el;
-      return {...rest, children: stripRuntime(el.children)};
+      const {runtime: _, ...rest} = el;
+      return {...rest, children: stripRuntime(el.children)} as ScElementNode;
+    }
+    if ('runtime' in el) {
+      const {runtime: _, ...rest} = el;
+      return rest as ScElementNode;
     }
     return el;
   });

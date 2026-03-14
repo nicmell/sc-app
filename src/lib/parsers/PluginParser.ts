@@ -6,7 +6,7 @@ import {compileSynthDef} from "./SynthDefCompiler";
 import {findElementByPath} from "./elementTree";
 import {isSynth, isGroup, isNode} from "./guards";
 
-const SYNTH_SKIP_ATTRS = new Set(['id', 'name', 'bind', 'class', 'style', 'slot', 'title']);
+const SYNTH_SKIP_ATTRS = new Set(['id', 'name', 'bind', 'is-running', 'class', 'style', 'slot', 'title']);
 const SYNTHDEF_SKIP_ATTRS = new Set(['id', 'name', 'class', 'style', 'slot']);
 const UGEN_SKIP_ATTRS = new Set(['id', 'name', 'type', 'rate', 'class', 'style', 'slot']);
 
@@ -24,7 +24,7 @@ interface ElementContext {
 type ElementHandler = (ectx: ElementContext, ctx: WalkContext) => ScElementNode;
 
 export class PluginParser {
-  private static readonly EXCLUDE_KEYS = new Set(['id', 'isRunning', 'children', 'bytes']);
+  private static readonly EXCLUDE_KEYS = new Set(['id', 'runtime', 'children', 'bytes']);
 
   private readonly handlers: Record<string, ElementHandler> = {
     [ELEMENTS.SC_GROUP]: (ectx, ctx) => this.processGroup(ectx, ctx),
@@ -100,7 +100,8 @@ export class PluginParser {
     const savedChildren = groupSaved?.type === 'sc-group' && groupSaved.name === name
       ? groupSaved.children
       : undefined;
-    const groupNode: ScGroupNode = { type: 'sc-group', id, name, children: [], isRunning: true };
+    const isRunning = el.getAttribute('is-running') !== 'false';
+    const groupNode: ScGroupNode = { type: 'sc-group', id, name, isRunning, children: [], runtime: { isRunning, controls: {} } };
     const children = this.walkChildren(el, { saved: savedChildren, offset: 0, scope: [..._ctx.scope, groupNode] });
     groupNode.children = children;
     return groupNode;
@@ -113,7 +114,8 @@ export class PluginParser {
     if (bind && !ctx.scope.some(n => n.type === 'sc-synthdef' && n.name === bind)) {
       throw new Error(`<sc-synth name="${name}">: bind "${bind}" does not match any <sc-synthdef> in scope`);
     }
-    return { type: 'sc-synth', id, name, bind, controls, isRunning: true };
+    const isRunning = el.getAttribute('is-running') !== 'false';
+    return { type: 'sc-synth', id, name, bind, controls, isRunning, runtime: { isRunning, controls: {...controls} } };
   }
 
   private processSynthDef({ el, id }: ElementContext, ctx: WalkContext): ScSynthDefNode {
@@ -138,12 +140,12 @@ export class PluginParser {
 
   private processRange({ el, id }: ElementContext, ctx: WalkContext): ScRangeNode {
     const { bind, value } = this.resolveBindValue(el, ctx);
-    return { type: 'sc-range', id, bind, value };
+    return { type: 'sc-range', id, bind, value, runtime: { value } };
   }
 
   private processCheckbox({ el, id }: ElementContext, ctx: WalkContext): ScCheckboxNode {
     const { bind, value } = this.resolveBindValue(el, ctx);
-    return { type: 'sc-checkbox', id, bind, value };
+    return { type: 'sc-checkbox', id, bind, value, runtime: { value } };
   }
 
   private processRun({ el, id }: ElementContext, ctx: WalkContext): ScRunNode {
@@ -154,14 +156,14 @@ export class PluginParser {
         throw new Error(`<sc-run>: bind "${bind}" does not reference a valid sc-synth or sc-group`);
       }
     }
-    return { type: 'sc-run', id, bind, value: 1 };
+    return { type: 'sc-run', id, bind, value: 1, runtime: { value: 1 } };
   }
 
   private processMidi({ el, id }: ElementContext, ctx: WalkContext): ScMidiNode {
     const { bind, value } = this.resolveBindValue(el, ctx);
     const octaves = Number(el.getAttribute('octaves')) || 2;
     const octave = Number(el.getAttribute('octave')) || 4;
-    return { type: 'sc-midi', id, bind, value, octaves, octave };
+    return { type: 'sc-midi', id, bind, value, octaves, octave, runtime: { value } };
   }
 
   private resolveBindValue(el: Element, ctx: WalkContext): { bind: string; value: number } {
