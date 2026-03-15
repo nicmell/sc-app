@@ -1,7 +1,8 @@
 import type {PersistOptions} from "zustand/middleware";
 import {tauriStorage} from "@/lib/storage/tauriStorage";
 import {stripRuntime} from "@/lib/parsers";
-import type {RootState, ConfigFile, BoxRuntime} from "@/types/stores";
+import type {ScPluginNode} from "@/lib/parsers";
+import type {RootState, ConfigFile} from "@/types/stores";
 
 // State generic uses `any` because the redux middleware adds `dispatch` to the
 // actual store state, which isn't part of RootState.  The partialize/merge
@@ -13,10 +14,10 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
     theme: {mode: theme.mode, primaryColor: theme.primaryColor},
     layout: {
       items: layout.items.map(box => {
-        const boxRuntime = runtime.layout[box.i];
+        const plugin = runtime.layout.find(p => p.id === box.i);
         return {
           ...box,
-          elements: boxRuntime?.elements ? stripRuntime(boxRuntime.elements) : undefined,
+          elements: plugin?.children ? stripRuntime(plugin.children) : undefined,
         };
       }),
       options: layout.options,
@@ -27,10 +28,10 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
   }),
   merge: (persisted, current: RootState): RootState => {
     const p = persisted as ConfigFile | undefined;
-    const runtimeLayout: Record<string, BoxRuntime> = {};
+    const runtimeLayout: ScPluginNode[] = [];
     const items = p?.layout?.items?.map(({elements, ...box}) => {
       if (elements) {
-        runtimeLayout[box.i] = {loaded: false, elements};
+        runtimeLayout.push({type: 'sc-plugin', id: box.i, boxId: box.i, children: elements, runtime: {loaded: false}});
       }
       return box;
     });

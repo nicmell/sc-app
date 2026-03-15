@@ -40,10 +40,8 @@ export class PluginManager {
   }
 
   getCompiledSynthDef(name: string): Uint8Array | undefined {
-    const layout = runtimeApi.layout;
-    for (const boxRuntime of Object.values(layout)) {
-      if (!boxRuntime.elements) continue;
-      const bytes = findSynthDefBytes(boxRuntime.elements, name);
+    for (const plugin of runtimeApi.layout) {
+      const bytes = findSynthDefBytes(plugin.children, name);
       if (bytes) return new Uint8Array(bytes);
     }
     return undefined;
@@ -64,7 +62,7 @@ export class PluginManager {
       throw new Error(error.textContent ?? "Invalid XHTML")
     }
     const saved = runtimeApi.getBox(boxId);
-    return this.treeParser.parse(doc.documentElement, boxId, saved?.elements);
+    return this.treeParser.parse(doc.documentElement, boxId, saved?.children);
   }
 }
 

@@ -9,22 +9,22 @@ const createRuntimeSelector: SliceSelector<typeof root.runtime> = (fn) =>
 export default {
   entries: createRuntimeSelector(s => s.entries),
   layout: createRuntimeSelector(s => s.layout),
-  getBox: (id: string) => createRuntimeSelector(s => s.layout[id]),
+  getBox: (id: string) => createRuntimeSelector(s => s.layout.find(p => p.id === id)),
 
   getValue: (boxId: string, elementId: string) => createRuntimeSelector(s => {
-    const box = s.layout[boxId];
-    if (!box?.elements) return undefined;
-    const el = findElementById(box.elements, elementId);
+    const plugin = s.layout.find(p => p.id === boxId);
+    if (!plugin) return undefined;
+    const el = findElementById(plugin.children, elementId);
     if (!el || !(isInput(el) || isRun(el))) return undefined;
     return s.entries.find(e => e.id === el.runtime.value)?.value;
   }),
 
   resolveControl: (boxId: string, bind: string) => createRuntimeSelector(s => {
-    const box = s.layout[boxId];
-    if (!box?.elements) return undefined;
+    const plugin = s.layout.find(p => p.id === boxId);
+    if (!plugin) return undefined;
     const segments = bind.split('.');
     const control = segments.pop()!;
-    const target = findElementByPath(box.elements, segments);
+    const target = findElementByPath(plugin.children, segments);
     if (!target || !isNode(target)) return undefined;
     const entryId = target.runtime.controls[control];
     if (!entryId) return undefined;
@@ -32,9 +32,9 @@ export default {
   }),
 
   getControls: (boxId: string, elementId: string) => createRuntimeSelector(s => {
-    const box = s.layout[boxId];
-    if (!box?.elements) return {};
-    const el = findElementById(box.elements, elementId);
+    const plugin = s.layout.find(p => p.id === boxId);
+    if (!plugin) return {};
+    const el = findElementById(plugin.children, elementId);
     if (!el || !isNode(el)) return {};
     const result: Record<string, number> = {};
     for (const [name, entryId] of Object.entries(el.runtime.controls)) {

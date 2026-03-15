@@ -26,13 +26,13 @@ export class ScPlugin extends ScGroup {
       const result = await pluginManager.loadPlugin(this.id);
       this.innerHTML = result.html;
       this._loading = false;
-      const merged = mergeRuntime(result.runtime, runtimeApi.entries);
-      runtimeApi.loadPlugin({id: this.id, loaded: true, title: result.title, elements: result.tree, entries: merged});
+      const merged = mergeRuntime(result.entries, runtimeApi.entries);
+      runtimeApi.loadPlugin({plugin: result.plugin, entries: merged});
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);
       this._loading = false;
       this._error = error;
-      runtimeApi.loadPlugin({id: this.id, loaded: false, error});
+      runtimeApi.loadPlugin({plugin: {type: 'sc-plugin', id: this.id, boxId: this.id, children: [], runtime: {loaded: false, error}}});
     }
   }
 

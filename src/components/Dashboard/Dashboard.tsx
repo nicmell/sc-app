@@ -63,7 +63,7 @@ export function Dashboard() {
             .filter((item) => !isPlaceholder(item))
             .map(({i, x, y, w, h}) => {
                 const prev = boxMap.get(i);
-                return {i, x, y, w, h, plugin: prev?.plugin} as BoxItem;
+                return {i, x, y, w, h, plugin: prev?.plugin};
             });
         if (!deepEqual(active, layout)) {
             layoutApi.setLayout(active);
@@ -82,11 +82,11 @@ export function Dashboard() {
 
     const renderDashboardPanel = (item: BoxItem) => {
         const plugin = item.plugin ? pluginsApi.getById(item.plugin) : undefined;
-        const boxRuntime = runtimeLayout[item.i];
+        const pluginNode = runtimeLayout.find(p => p.id === item.i);
         return (
             <DashboardPanel
                 key={item.i}
-                title={boxRuntime?.loaded ? boxRuntime.title : undefined}
+                title={pluginNode?.runtime.loaded ? pluginNode.runtime.title : undefined}
                 onClose={() => layoutApi.removeBox(item.i)}
                 onEdit={() => setModalOpen(item)}
                 onLog={item.plugin ? () => console.log(runtimeApi.getBox(item.i)) : undefined}

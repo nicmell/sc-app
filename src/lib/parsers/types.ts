@@ -85,11 +85,24 @@ export interface ScMidiNode {
   runtime: InputRuntime;
 }
 
-export type ScElementNode = ScGroupNode | ScSynthNode | ScSynthDefNode | ScRangeNode | ScCheckboxNode | ScRunNode | ScMidiNode;
+export interface PluginRuntime {
+  loaded: boolean;
+  error?: string;
+  title?: string;
+}
+
+export interface ScPluginNode {
+  type: 'sc-plugin';
+  id: string;
+  boxId: string;
+  children: ScElementNode[];
+  runtime: PluginRuntime;
+}
+
+export type ScElementNode = ScPluginNode | ScGroupNode | ScSynthNode | ScSynthDefNode | ScRangeNode | ScCheckboxNode | ScRunNode | ScMidiNode;
 
 export interface PluginTreeEntry {
-  tree: ScElementNode[];
-  runtime: RuntimeEntry[];
+  plugin: ScPluginNode;
+  entries: RuntimeEntry[];
   html: string;
-  title?: string;
 }

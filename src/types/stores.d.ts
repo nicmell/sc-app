@@ -5,7 +5,7 @@ import type {layoutSlice} from "@/lib/stores/layout/slice";
 import type {themeSlice} from "@/lib/stores/theme/slice";
 import type {pluginsSlice} from "@/lib/stores/plugins/slice";
 import type {runtimeSlice} from "@/lib/stores/runtime/slice";
-import type {ScElementNode} from "@/lib/parsers";
+import type {ScElementNode, ScPluginNode} from "@/lib/parsers";
 import type {RuntimeEntry} from "@/lib/runtime/types";
 
 export interface BoxItem {
@@ -18,13 +18,6 @@ export interface BoxItem {
 }
 
 export interface PersistedBoxItem extends BoxItem {
-  elements?: ScElementNode[];
-}
-
-export interface BoxRuntime {
-  loaded: boolean;
-  error?: string;
-  title?: string;
   elements?: ScElementNode[];
 }
 
@@ -106,7 +99,7 @@ export interface PluginsState {
 
 export interface RuntimeState {
   entries: RuntimeEntry[];
-  layout: Record<string, BoxRuntime>;
+  layout: ScPluginNode[];
 }
 
 export interface RootState {

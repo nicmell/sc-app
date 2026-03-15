@@ -1,7 +1,7 @@
 import {ELEMENTS} from "@/constants/sc-elements";
 import {randomId} from "@/lib/utils/randomId.ts";
 import {deepEqual} from "@/lib/utils/deepEqual";
-import type {ScElementNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScRangeNode, ScCheckboxNode, ScRunNode, ScMidiNode, UGenSpec, PluginTreeEntry} from "./types";
+import type {ScElementNode, ScPluginNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScRangeNode, ScCheckboxNode, ScRunNode, ScMidiNode, UGenSpec, PluginTreeEntry} from "./types";
 import type {RuntimeEntry} from "@/lib/runtime/types";
 import {compileSynthDef} from "./SynthDefCompiler";
 import {findElementByPath} from "./elementTree";
@@ -41,11 +41,12 @@ export class PluginParser {
 
   parse(node: Element, boxId: string, saved?: ScElementNode[]): PluginTreeEntry {
     const ctx: WalkContext = { offset: 0, saved, scope: [], boxId, runtime: [] };
-    const tree = this.walkChildren(node, ctx);
+    const children = this.walkChildren(node, ctx);
     const html = node.innerHTML;
     const title = node.querySelector('title')?.textContent ?? undefined;
+    const plugin: ScPluginNode = { type: 'sc-plugin', id: boxId, boxId, children, runtime: { loaded: true, title } };
 
-    return { tree, runtime: ctx.runtime, html, title };
+    return { plugin, entries: ctx.runtime, html };
   }
 
   private walkChildren(node: Element, ctx: WalkContext): ScElementNode[] {
