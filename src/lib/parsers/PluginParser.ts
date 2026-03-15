@@ -3,6 +3,7 @@ import {randomId} from "@/lib/utils/randomId.ts";
 import {deepEqual} from "@/lib/utils/deepEqual";
 import type {
     ScElementNode,
+    ScPluginNode,
     ScGroupNode,
     ScSynthNode,
     ScSynthDefNode,
@@ -40,6 +41,7 @@ type ElementHandler = (ectx: ElementContext, ctx: WalkContext) => ScElementNode;
 
 export class PluginParser {
     private readonly handlers: Record<string, ElementHandler> = {
+        [ELEMENTS.SC_PLUGIN]: (ectx, ctx) => this.processPlugin(ectx, ctx),
         [ELEMENTS.SC_GROUP]: (ectx, ctx) => this.processGroup(ectx, ctx),
         [ELEMENTS.SC_SYNTH]: (ectx, ctx) => this.processSynth(ectx, ctx),
         [ELEMENTS.SC_SYNTHDEF]: (ectx, ctx) => this.processSynthDef(ectx, ctx),
@@ -52,13 +54,10 @@ export class PluginParser {
     private static readonly BIND_ONLY_TAGS: Set<string> = new Set([ELEMENTS.SC_DISPLAY, ELEMENTS.SC_IF]);
 
     parse(node: Element, boxId: string): PluginTreeEntry {
-        const saved = runtimeApi.getBox(boxId);
-        const ctx: WalkContext = {offset: 0, saved: saved?.children, scope: [], boxId, runtime: []};
-        const elements = this.walkChildren(node, ctx);
-        const html = node.innerHTML;
-        const title = node.querySelector('title')?.textContent ?? undefined;
+        const ctx: WalkContext = {offset: 0, scope: [], boxId, runtime: []};
+        const plugin = this.processPlugin({el: node, id: boxId}, ctx) as ScPluginNode;
 
-        return {elements, entries: ctx.runtime, html, title};
+        return {elements: plugin.children, entries: ctx.runtime, html: node.innerHTML, title: plugin.runtime.title};
     }
 
     private walkChildren(node: Element, ctx: WalkContext): ScElementNode[] {
@@ -84,6 +83,13 @@ export class PluginParser {
         el.setAttribute('id', node.id);
         ctx.scope.push(node);
         return node;
+    }
+
+    private processPlugin({el, id}: ElementContext, ctx: WalkContext): ScPluginNode {
+        const saved = runtimeApi.getBox(id);
+        const children = this.walkChildren(el, {...ctx, saved: saved?.children});
+        const title = el.querySelector('title')?.textContent ?? undefined;
+        return {type: 'sc-plugin', id, children, runtime: {loaded: true, title}};
     }
 
     private processGroup({el, id}: ElementContext, _ctx: WalkContext): ScGroupNode {
@@ -139,7 +145,10 @@ export class PluginParser {
         const savedDef = saved?.type === 'sc-synthdef' ? saved as ScSynthDefNode : undefined;
 
         let bytes: number[];
-        if (savedDef && savedDef.runtime && deepEqual(params, savedDef.params) && deepEqual(ugens, savedDef.ugens)) {
+        if (savedDef && savedDef.runtime &&
+            deepEqual(params, savedDef.params) &&
+            deepEqual(ugens, savedDef.ugens)
+        ) {
             // Reuse saved bytes entry
             const savedEntry = runtimeApi.entries.find(e => e.id === savedDef.runtime.bytes);
             bytes = savedEntry?.type === 'synthdef' ? savedEntry.value : compileSynthDef(name, params, new Map(ugens.map(s => [s.name, s])));
