@@ -9,7 +9,7 @@ import {SliceName, RuntimeAction} from "@/constants/store";
 
 const initialState: RuntimeState = {
   entries: [],
-  layout: [],
+  elements: [],
 };
 
 export const runtimeSlice = createSlice({
@@ -18,11 +18,11 @@ export const runtimeSlice = createSlice({
   reducers: {
     [RuntimeAction.LOAD_PLUGIN]: (state, action: { payload: { plugin: ScPluginNode; entries?: RuntimeEntry[] } }) => {
       const {plugin, entries} = action.payload;
-      const idx = state.layout.findIndex(p => p.id === plugin.id);
+      const idx = state.elements.findIndex(p => p.id === plugin.id);
       if (idx >= 0) {
-        state.layout[idx] = plugin;
+        state.elements[idx] = plugin;
       } else {
-        state.layout.push(plugin);
+        state.elements.push(plugin);
       }
       if (entries) {
         state.entries = state.entries.filter(e => e.boxId !== plugin.id).concat(entries);
@@ -30,11 +30,11 @@ export const runtimeSlice = createSlice({
     },
     [RuntimeAction.UNLOAD_PLUGIN]: (state, action: { payload: string }) => {
       const boxId = action.payload;
-      state.layout = state.layout.filter(p => p.id !== boxId);
+      state.elements = state.elements.filter(p => p.id !== boxId);
       state.entries = state.entries.filter(e => e.boxId !== boxId);
     },
     [RuntimeAction.SET_CONTROL]: (state, action: { payload: { boxId: string; elementId: string; value: number } }) => {
-      const plugin = state.layout.find(p => p.id === action.payload.boxId);
+      const plugin = state.elements.find(p => p.id === action.payload.boxId);
       if (!plugin) return;
       const input = findElementById(plugin.children, action.payload.elementId);
       if (!input || !isInput(input)) return;
@@ -53,7 +53,7 @@ export const runtimeSlice = createSlice({
       }
     },
     [RuntimeAction.SET_RUNNING]: (state, action: { payload: { boxId: string; elementId: string; value: number } }) => {
-      const plugin = state.layout.find(p => p.id === action.payload.boxId);
+      const plugin = state.elements.find(p => p.id === action.payload.boxId);
       if (!plugin) return;
       const el = findElementById(plugin.children, action.payload.elementId);
       if (!el || !isRun(el)) return;

@@ -99,7 +99,7 @@ export interface PluginsState {
 
 export interface RuntimeState {
   entries: RuntimeEntry[];
-  layout: ScPluginNode[];
+  elements: ScPluginNode[];
 }
 
 export interface RootState {

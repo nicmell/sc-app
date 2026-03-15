@@ -14,7 +14,7 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
     theme: {mode: theme.mode, primaryColor: theme.primaryColor},
     layout: {
       items: layout.items.map(box => {
-        const plugin = runtime.layout.find(p => p.id === box.i);
+        const plugin = runtime.elements.find(p => p.id === box.i);
         return {
           ...box,
           elements: plugin?.children ? stripRuntime(plugin.children) : undefined,
@@ -51,7 +51,7 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
             })
           : current.plugins.items,
       },
-      runtime: {...current.runtime, layout: runtimeLayout},
+      runtime: {...current.runtime, elements: runtimeLayout},
     };
   },
 };

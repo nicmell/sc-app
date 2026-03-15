@@ -40,7 +40,7 @@ export class PluginManager {
   }
 
   getCompiledSynthDef(name: string): Uint8Array | undefined {
-    for (const plugin of runtimeApi.layout) {
+    for (const plugin of runtimeApi.elements) {
       const bytes = findSynthDefBytes(plugin.children, name);
       if (bytes) return new Uint8Array(bytes);
     }

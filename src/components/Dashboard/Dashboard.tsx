@@ -40,7 +40,7 @@ function computeRowHeight(numRows: number, viewportHeight: number): number {
 
 export function Dashboard() {
     const layout = useSelector(layoutStore.selectors.items);
-    const runtimeLayout = useSelector(runtimeStore.selectors.layout);
+    const runtimeElements = useSelector(runtimeStore.selectors.elements);
     const {numRows, numColumns} = useSelector(layoutStore.selectors.options);
     const {width: containerWidth, containerRef, mounted} = useContainerWidth({measureBeforeMount: true});
     const viewportHeight = useSyncExternalStore(subscribeToResize, getViewportHeight);
@@ -82,7 +82,7 @@ export function Dashboard() {
 
     const renderDashboardPanel = (item: BoxItem) => {
         const plugin = item.plugin ? pluginsApi.getById(item.plugin) : undefined;
-        const pluginNode = runtimeLayout.find(p => p.id === item.i);
+        const pluginNode = runtimeElements.find(p => p.id === item.i);
         return (
             <DashboardPanel
                 key={item.i}

@@ -8,11 +8,11 @@ const createRuntimeSelector: SliceSelector<typeof root.runtime> = (fn) =>
 
 export default {
   entries: createRuntimeSelector(s => s.entries),
-  layout: createRuntimeSelector(s => s.layout),
-  getBox: (id: string) => createRuntimeSelector(s => s.layout.find(p => p.id === id)),
+  elements: createRuntimeSelector(s => s.elements),
+  getBox: (id: string) => createRuntimeSelector(s => s.elements.find(p => p.id === id)),
 
   getValue: (boxId: string, elementId: string) => createRuntimeSelector(s => {
-    const plugin = s.layout.find(p => p.id === boxId);
+    const plugin = s.elements.find(p => p.id === boxId);
     if (!plugin) return undefined;
     const el = findElementById(plugin.children, elementId);
     if (!el || !(isInput(el) || isRun(el))) return undefined;
@@ -20,7 +20,7 @@ export default {
   }),
 
   resolveControl: (boxId: string, bind: string) => createRuntimeSelector(s => {
-    const plugin = s.layout.find(p => p.id === boxId);
+    const plugin = s.elements.find(p => p.id === boxId);
     if (!plugin) return undefined;
     const segments = bind.split('.');
     const control = segments.pop()!;
@@ -32,7 +32,7 @@ export default {
   }),
 
   getControls: (boxId: string, elementId: string) => createRuntimeSelector(s => {
-    const plugin = s.layout.find(p => p.id === boxId);
+    const plugin = s.elements.find(p => p.id === boxId);
     if (!plugin) return {};
     const el = findElementById(plugin.children, elementId);
     if (!el || !isNode(el)) return {};
