@@ -1,6 +1,7 @@
 import {html} from 'lit';
 import {pluginManager} from '@/lib/plugins/PluginManager';
-import {layoutApi} from '@/lib/stores/api';
+import {layoutApi, runtimeApi} from '@/lib/stores/api';
+import {mergeRuntime} from '@/lib/runtime';
 import {ScGroup} from './sc-group.ts';
 
 export class ScPlugin extends ScGroup {
@@ -25,7 +26,9 @@ export class ScPlugin extends ScGroup {
       const result = await pluginManager.loadPlugin(this.id);
       this.innerHTML = result.html;
       this._loading = false;
-      layoutApi.loadPlugin({id: this.id, loaded: true, title: result.title, elements: result.tree, runtime: result.runtime});
+      const merged = mergeRuntime(result.runtime, runtimeApi.entries);
+      layoutApi.loadPlugin({id: this.id, loaded: true, title: result.title, elements: result.tree});
+      runtimeApi.loadEntries({entries: merged});
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);
       this._loading = false;
@@ -36,6 +39,7 @@ export class ScPlugin extends ScGroup {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    runtimeApi.unloadEntries({boxId: this.id});
     layoutApi.unloadPlugin(this.id);
   }
 

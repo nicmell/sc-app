@@ -7,4 +7,5 @@ export default {
   layout: (s: RootState) => s.layout,
   theme: (s: RootState) => s.theme,
   plugins: (s: RootState) => s.plugins,
+  runtime: (s: RootState) => s.runtime,
 };

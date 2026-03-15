@@ -9,10 +9,10 @@ import type {RootState, ConfigFile} from "@/types/stores";
 export const persistConfig: PersistOptions<any, ConfigFile> = {
   name: "config",
   storage: tauriStorage,
-  partialize: ({theme, layout, scsynth, plugins}: RootState): ConfigFile => ({ // isRunning excluded
+  partialize: ({theme, layout, scsynth, plugins}: RootState): ConfigFile => ({ // isRunning, runtime excluded
     theme: {mode: theme.mode, primaryColor: theme.primaryColor},
     layout: {
-      items: layout.items.map(({loaded: _l, error: _e, title: _t, runtime: _r, ...box}) => ({
+      items: layout.items.map(({loaded: _l, error: _e, title: _t, ...box}) => ({
         ...box,
         elements: box.elements ? stripRuntime(box.elements) : undefined,
       })),

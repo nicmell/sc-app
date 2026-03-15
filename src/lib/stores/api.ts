@@ -4,6 +4,7 @@ import scsynth from "./scsynth";
 import layout from "./layout";
 import theme from "./theme";
 import plugins from "./plugins";
+import runtime from "./runtime";
 import {createApi} from "./utils";
 import {logger} from "@/lib/logger";
 
@@ -39,4 +40,9 @@ export const themeApi = createApi(wrappedStore, {
 export const pluginsApi = createApi(wrappedStore, {
   selectors: plugins.selectors,
   actions: plugins.actions,
+});
+
+export const runtimeApi = createApi(wrappedStore, {
+  selectors: runtime.selectors,
+  actions: runtime.actions,
 });

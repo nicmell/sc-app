@@ -4,7 +4,9 @@ import type {scsynthSlice} from "@/lib/stores/scsynth/slice";
 import type {layoutSlice} from "@/lib/stores/layout/slice";
 import type {themeSlice} from "@/lib/stores/theme/slice";
 import type {pluginsSlice} from "@/lib/stores/plugins/slice";
-import type {ScElementNode, RuntimeEntry} from "@/lib/parsers";
+import type {runtimeSlice} from "@/lib/stores/runtime/slice";
+import type {ScElementNode} from "@/lib/parsers";
+import type {RuntimeEntry} from "@/lib/runtime/types";
 
 export interface BoxItem {
   i: string;
@@ -15,13 +17,12 @@ export interface BoxItem {
   plugin?: string;
   elements?: ScElementNode[];
   // Runtime-only (not persisted)
-  runtime?: RuntimeEntry[];
   loaded?: boolean;
   error?: string;
   title?: string;
 }
 
-export type PersistedBoxItem = Omit<BoxItem, 'loaded' | 'error' | 'title' | 'runtime'>;
+export type PersistedBoxItem = Omit<BoxItem, 'loaded' | 'error' | 'title'>;
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected";
 
@@ -99,12 +100,17 @@ export interface PluginsState {
   items: PluginInfo[];
 }
 
+export interface RuntimeState {
+  entries: RuntimeEntry[];
+}
+
 export interface RootState {
   isRunning: boolean;
   theme: ThemeState;
   layout: LayoutState;
   scsynth: ScsynthState;
   plugins: PluginsState;
+  runtime: RuntimeState;
 }
 
 export type RootOwnAction = SliceActions<typeof rootSlice.actions>;
@@ -112,4 +118,5 @@ export type ScsynthAction = SliceActions<typeof scsynthSlice.actions>;
 export type LayoutAction = SliceActions<typeof layoutSlice.actions>;
 export type ThemeAction = SliceActions<typeof themeSlice.actions>;
 export type PluginsAction = SliceActions<typeof pluginsSlice.actions>;
-export type RootAction = RootOwnAction | ScsynthAction | LayoutAction | ThemeAction | PluginsAction;
+export type RuntimeAction = SliceActions<typeof runtimeSlice.actions>;
+export type RootAction = RootOwnAction | ScsynthAction | LayoutAction | ThemeAction | PluginsAction | RuntimeAction;

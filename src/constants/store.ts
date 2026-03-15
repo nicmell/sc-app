@@ -4,6 +4,7 @@ export const SliceName = {
   LAYOUT: "layout",
   THEME: "theme",
   PLUGINS: "plugins",
+  RUNTIME: "runtime",
 } as const;
 
 export const ScsynthAction = {
@@ -24,8 +25,6 @@ export const LayoutAction = {
   SET_BOX_PLUGIN: "setBoxPlugin",
   LOAD_PLUGIN: "loadPlugin",
   UNLOAD_PLUGIN: "unloadPlugin",
-  SET_CONTROL: "setControl",
-  SET_RUNNING: "setRunning",
 } as const;
 
 export const RootAction = {
@@ -35,6 +34,13 @@ export const RootAction = {
 export const ThemeAction = {
   SET_MODE: "setMode",
   SET_PRIMARY_COLOR: "setPrimaryColor",
+} as const;
+
+export const RuntimeAction = {
+  LOAD_ENTRIES: "loadEntries",
+  UNLOAD_ENTRIES: "unloadEntries",
+  SET_CONTROL: "setControl",
+  SET_RUNNING: "setRunning",
 } as const;
 
 export const PluginsAction = {

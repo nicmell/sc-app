@@ -1,15 +1,10 @@
+import type {RuntimeEntry} from "@/lib/runtime/types";
+
 export interface UGenSpec {
   name: string;
   type: string;
   rate: string;
   inputs: Record<string, string>;
-}
-
-export interface RuntimeEntry {
-  id: string;
-  type: "control" | "run";
-  targetNode: string;
-  value: number;
 }
 
 export interface NodeRuntime {

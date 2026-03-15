@@ -2,7 +2,7 @@ import {LitElement, html} from 'lit';
 import {ContextProvider, ContextConsumer} from '@lit/context';
 import {oscService} from '@/lib/osc';
 import {nodeRunMessage, nodeSetMessage} from '@/lib/osc/messages.ts';
-import {layoutApi} from '@/lib/stores/api';
+import {layoutApi, runtimeApi} from '@/lib/stores/api';
 import {isNode, findElementById} from '@/lib/parsers';
 import {store} from '@/lib/stores/store';
 import {nodeContext, type NodeContext, type ScNode as IScNode, type ScElement} from '../context.ts';
@@ -26,12 +26,13 @@ export abstract class ScNode extends LitElement implements IScNode {
 
     getControls(): Record<string, number> {
         const box = layoutApi.getById(this.boxId());
-        if (!box?.elements || !box?.runtime) return {};
+        if (!box?.elements) return {};
         const el = findElementById(box.elements, this.id);
         if (!el || !isNode(el)) return {};
+        const entries = runtimeApi.entries;
         const result: Record<string, number> = {};
         for (const [name, entryId] of Object.entries(el.runtime.controls)) {
-            const entry = box.runtime.find(e => e.id === entryId);
+            const entry = entries.find(e => e.id === entryId);
             if (entry) result[name] = entry.value;
         }
         return result;
@@ -46,7 +47,9 @@ export abstract class ScNode extends LitElement implements IScNode {
     }
 
     onChange(elementId: string, target: string, value: number) {
-        layoutApi.setControl({boxId: this.boxId(), elementId, value});
+        const box = layoutApi.getById(this.boxId());
+        if (!box?.elements) return;
+        runtimeApi.setControl({boxId: this.boxId(), elementId, value, elements: box.elements});
         const segments = target.split('.');
         const control = segments.pop()!;
         const nodeId = this.resolveNodeId(segments);
@@ -54,7 +57,9 @@ export abstract class ScNode extends LitElement implements IScNode {
     }
 
     onRun(elementId: string, target: string, value: number) {
-        layoutApi.setRunning({boxId: this.boxId(), elementId, value});
+        const box = layoutApi.getById(this.boxId());
+        if (!box?.elements) return;
+        runtimeApi.setRunning({boxId: this.boxId(), elementId, value, elements: box.elements});
         const nodeId = this.resolveNodeId(target ? target.split('.') : []);
         oscService.send(nodeRunMessage(nodeId, value));
     }
