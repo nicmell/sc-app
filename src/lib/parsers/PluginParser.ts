@@ -13,7 +13,7 @@ import type {
     ScMidiNode,
     UGenSpec,
     PluginTreeEntry
-} from "./types";
+} from "../../types/parsers";
 import {compileSynthDef} from "./SynthDefCompiler";
 import {findElementByPath} from "./elementTree";
 import {isSynth, isGroup, isNode} from "./guards";
@@ -141,15 +141,20 @@ export class PluginParser {
         const savedDef = saved?.type === 'sc-synthdef' ? saved as ScSynthDefNode : undefined;
 
         let bytes: number[];
-        if (savedDef && deepEqual(params, savedDef.params) && deepEqual(ugens, savedDef.ugens)) {
-            bytes = savedDef.bytes;
+        if (savedDef && savedDef.runtime && deepEqual(params, savedDef.params) && deepEqual(ugens, savedDef.ugens)) {
+            // Reuse saved bytes entry
+            const savedEntry = runtimeApi.entries.find(e => e.id === savedDef.runtime.bytes);
+            bytes = savedEntry?.type === 'synthdef' ? savedEntry.value : compileSynthDef(name, params, new Map(ugens.map(s => [s.name, s])));
         } else {
             const specsMap = new Map<string, UGenSpec>();
             for (const spec of ugens) specsMap.set(spec.name, spec);
             bytes = compileSynthDef(name, params, specsMap);
         }
 
-        return {type: 'sc-synthdef', id, boxId: ctx.boxId, name, params, ugens, bytes};
+        const entryId = randomId();
+        ctx.runtime.push({id: entryId, type: "synthdef", targetNode: id, boxId: ctx.boxId, value: bytes});
+
+        return {type: 'sc-synthdef', id, boxId: ctx.boxId, name, params, ugens, runtime: {bytes: entryId}};
     }
 
     private processRange({el, id}: ElementContext, ctx: WalkContext): ScRangeNode {
@@ -207,14 +212,16 @@ export class PluginParser {
             }
             const entryId = target.runtime.controls[control];
             const entry = ctx.runtime.find(e => e.id === entryId);
-            return {bind, value: entry?.value ?? target.controls[control], entryId};
+            const value = entry && entry.type === 'control' ? entry.value : target.controls[control];
+            return {bind, value, entryId};
         }
         if (isGroup(target)) {
             // Check if group already has an entry for this control
             const existingEntryId = target.runtime.controls[control];
             if (existingEntryId) {
                 const entry = ctx.runtime.find(e => e.id === existingEntryId);
-                return {bind, value: entry?.value ?? 0, entryId: existingEntryId};
+                const value = entry && entry.type === 'control' ? entry.value : 0;
+                return {bind, value, entryId: existingEntryId};
             }
             // Find a synth in scope that has this control to get default value
             const synth = ctx.scope.find(n => isSynth(n) && control in n.controls);

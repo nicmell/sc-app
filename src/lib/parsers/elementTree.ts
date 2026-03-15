@@ -1,5 +1,5 @@
-import type {ScElementNode} from "./types";
-import {isGroup, isPlugin} from "./guards";
+import type {ScElementNode} from "../../types/parsers";
+import {isGroup, isPlugin, isSynth, isInput, isRun} from "./guards";
 
 export function findElementById(elements: ScElementNode[], id: string): ScElementNode | undefined {
   for (const el of elements) {
@@ -42,7 +42,8 @@ export function stripRuntime(elements: ScElementNode[]): ScElementNode[] {
       const {runtime: _, ...rest} = el;
       return {...rest, children: stripRuntime(el.children)} as ScElementNode;
     }
-    if ('runtime' in el) {
+    // Strip mutable runtime from synth/input/run nodes, keep synthdef runtime (bytes reference)
+    if (isSynth(el) || isInput(el) || isRun(el)) {
       const {runtime: _, ...rest} = el;
       return rest as ScElementNode;
     }

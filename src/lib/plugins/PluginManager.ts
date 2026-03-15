@@ -6,15 +6,15 @@ import {PluginParser, isGroup, isPlugin, type PluginTreeEntry, type ScElementNod
 
 export const PLUGINS_URL = "app://plugins";
 
-function findSynthDefBytes(elements: ScElementNode[], name: string): number[] | undefined {
+function findSynthDefEntryId(elements: ScElementNode[], name: string): string | undefined {
   for (const el of elements) {
-    if (el.type === 'sc-synthdef' && el.name === name) return el.bytes;
+    if (el.type === 'sc-synthdef' && el.name === name) return el.runtime.bytes;
     if (isGroup(el)) {
-      const found = findSynthDefBytes(el.children, name);
+      const found = findSynthDefEntryId(el.children, name);
       if (found) return found;
     }
     if (isPlugin(el)) {
-      const found = findSynthDefBytes(el.children, name);
+      const found = findSynthDefEntryId(el.children, name);
       if (found) return found;
     }
   }
@@ -45,8 +45,11 @@ export class PluginManager {
 
   getCompiledSynthDef(name: string): Uint8Array | undefined {
     for (const plugin of runtimeApi.elements) {
-      const bytes = findSynthDefBytes(plugin.children, name);
-      if (bytes) return new Uint8Array(bytes);
+      const entryId = findSynthDefEntryId(plugin.children, name);
+      if (entryId) {
+        const entry = runtimeApi.entries.find(e => e.id === entryId);
+        if (entry?.type === 'synthdef') return new Uint8Array(entry.value);
+      }
     }
     return undefined;
   }

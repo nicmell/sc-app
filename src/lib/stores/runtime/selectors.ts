@@ -16,7 +16,8 @@ export default {
     if (!plugin) return undefined;
     const el = findElementById(plugin.children, elementId);
     if (!el || !(isInput(el) || isRun(el))) return undefined;
-    return s.entries.find(e => e.id === el.runtime.value)?.value;
+    const entry = s.entries.find(e => e.id === el.runtime.value);
+    return entry && entry.type !== 'synthdef' ? entry.value : undefined;
   }),
 
   resolveControl: (boxId: string, bind: string) => createRuntimeSelector(s => {
@@ -28,7 +29,8 @@ export default {
     if (!target || !isNode(target)) return undefined;
     const entryId = target.runtime.controls[control];
     if (!entryId) return undefined;
-    return s.entries.find(e => e.id === entryId)?.value;
+    const entry = s.entries.find(e => e.id === entryId);
+    return entry && entry.type !== 'synthdef' ? entry.value : undefined;
   }),
 
   getControls: (boxId: string, elementId: string) => createRuntimeSelector(s => {
@@ -39,7 +41,7 @@ export default {
     const result: Record<string, number> = {};
     for (const [name, entryId] of Object.entries(el.runtime.controls)) {
       const entry = s.entries.find(e => e.id === entryId);
-      if (entry) result[name] = entry.value;
+      if (entry && entry.type !== 'synthdef') result[name] = entry.value;
     }
     return result;
   }),

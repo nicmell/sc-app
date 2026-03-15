@@ -1,5 +1,5 @@
 import type {RuntimeEntry, RuntimeState} from "@/types/stores";
-import type {ScElementNode, ScPluginNode} from "@/lib/parsers/types";
+import type {ScElementNode, ScPluginNode} from "@/types/parsers";
 import {isInput, isRun, isNode, isGroup, isSynth} from "@/lib/parsers/guards";
 import {findElementById, findElementByPath} from "@/lib/parsers/elementTree";
 import {createSlice} from "@/lib/stores/utils";
@@ -12,7 +12,8 @@ function mergeRuntime(defaults: RuntimeEntry[], existing: RuntimeEntry[]): Runti
   }
   return defaults.map(def => {
     const prev = existingById.get(def.id);
-    return prev ? {...def, value: prev.value} : def;
+    if (!prev || prev.type !== def.type) return def;
+    return {...def, value: prev.value} as RuntimeEntry;
   });
 }
 
@@ -22,7 +23,7 @@ function setControls(element: ScElementNode, runtime: RuntimeEntry[], controls: 
       const entryId = element.runtime.controls[name];
       if (entryId) {
         const entry = runtime.find(e => e.id === entryId);
-        if (entry) entry.value = value;
+        if (entry && entry.type === 'control') entry.value = value;
       }
     }
   } else if (isGroup(element)) {
@@ -30,7 +31,7 @@ function setControls(element: ScElementNode, runtime: RuntimeEntry[], controls: 
       const entryId = element.runtime.controls[name];
       if (entryId) {
         const entry = runtime.find(e => e.id === entryId);
-        if (entry) entry.value = value;
+        if (entry && entry.type === 'control') entry.value = value;
       }
     }
     for (const child of element.children) {
@@ -73,7 +74,7 @@ export const runtimeSlice = createSlice({
       if (!input || !isInput(input)) return;
       const entryId = input.runtime.value;
       const entry = state.entries.find(e => e.id === entryId);
-      if (!entry) return;
+      if (!entry || entry.type === 'synthdef') return;
       entry.value = action.payload.value;
 
       // If target is a group, fan out to descendant synths
@@ -92,7 +93,7 @@ export const runtimeSlice = createSlice({
       if (!el || !isRun(el)) return;
       const entryId = el.runtime.value;
       const entry = state.entries.find(e => e.id === entryId);
-      if (entry) entry.value = action.payload.value;
+      if (entry && entry.type === 'run') entry.value = action.payload.value;
     },
   },
 });

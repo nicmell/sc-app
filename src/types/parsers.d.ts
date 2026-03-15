@@ -33,6 +33,10 @@ export interface ScSynthNode {
   runtime: NodeRuntime;
 }
 
+export interface SynthDefRuntime {
+  bytes: string;  // entry ID for compiled synthdef bytes
+}
+
 export interface ScSynthDefNode {
   type: 'sc-synthdef';
   id: string;
@@ -40,7 +44,7 @@ export interface ScSynthDefNode {
   name: string;
   params: Record<string, number>;
   ugens: UGenSpec[];
-  bytes: number[];
+  runtime: SynthDefRuntime;
 }
 
 export interface InputRuntime {

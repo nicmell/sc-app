@@ -93,13 +93,10 @@ export interface PluginsState {
   items: PluginInfo[];
 }
 
-export interface RuntimeEntry {
-  id: string;
-  type: "control" | "run";
-  targetNode: string;
-  boxId: string;
-  value: number;
-}
+export type RuntimeEntry =
+  | { id: string; type: "control"; targetNode: string; boxId: string; value: number }
+  | { id: string; type: "run"; targetNode: string; boxId: string; value: number }
+  | { id: string; type: "synthdef"; targetNode: string; boxId: string; value: number[] };
 
 export interface RuntimeState {
   entries: RuntimeEntry[];
