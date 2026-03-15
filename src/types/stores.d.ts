@@ -4,7 +4,8 @@ import type {scsynthSlice} from "@/lib/stores/scsynth/slice";
 import type {layoutSlice} from "@/lib/stores/layout/slice";
 import type {themeSlice} from "@/lib/stores/theme/slice";
 import type {pluginsSlice} from "@/lib/stores/plugins/slice";
-import type {ScElementNode} from "@/lib/parsers";
+import type {runtimeSlice} from "@/lib/stores/runtime/slice";
+import type {ScPluginNode} from "@/types/parsers";
 
 export interface BoxItem {
   i: string;
@@ -13,14 +14,7 @@ export interface BoxItem {
   w: number;
   h: number;
   plugin?: string;
-  elements?: ScElementNode[];
-  // Runtime-only (not persisted)
-  loaded?: boolean;
-  error?: string;
-  title?: string;
 }
-
-export type PersistedBoxItem = Omit<BoxItem, 'loaded' | 'error' | 'title'>;
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected";
 
@@ -89,7 +83,7 @@ export type PersistedPlugin = Omit<PluginInfo, 'loaded' | 'error'>;
 
 export interface ConfigFile {
   theme: Pick<ThemeState, 'mode' | 'primaryColor'>;
-  layout: { items: PersistedBoxItem[]; options: LayoutOptions };
+  layout: { items: BoxItem[]; options: LayoutOptions };
   scsynth: Pick<ScsynthState, 'options'>;
   plugins: PersistedPlugin[];
 }
@@ -98,12 +92,17 @@ export interface PluginsState {
   items: PluginInfo[];
 }
 
+export interface RuntimeState {
+  items: ScPluginNode[];
+}
+
 export interface RootState {
   isRunning: boolean;
   theme: ThemeState;
   layout: LayoutState;
   scsynth: ScsynthState;
   plugins: PluginsState;
+  runtime: RuntimeState;
 }
 
 export type RootOwnAction = SliceActions<typeof rootSlice.actions>;
@@ -111,4 +110,5 @@ export type ScsynthAction = SliceActions<typeof scsynthSlice.actions>;
 export type LayoutAction = SliceActions<typeof layoutSlice.actions>;
 export type ThemeAction = SliceActions<typeof themeSlice.actions>;
 export type PluginsAction = SliceActions<typeof pluginsSlice.actions>;
-export type RootAction = RootOwnAction | ScsynthAction | LayoutAction | ThemeAction | PluginsAction;
+export type RuntimeAction = SliceActions<typeof runtimeSlice.actions>;
+export type RootAction = RootOwnAction | ScsynthAction | LayoutAction | ThemeAction | PluginsAction | RuntimeAction;

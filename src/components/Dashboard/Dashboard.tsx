@@ -5,7 +5,8 @@ import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import {useSelector} from "@/lib/stores/store";
 import layoutStore from "@/lib/stores/layout";
-import {layoutApi, pluginsApi} from "@/lib/stores/api";
+import runtimeStore from "@/lib/stores/runtime";
+import {layoutApi, pluginsApi, runtimeApi} from "@/lib/stores/api";
 import {DashboardPanel} from "./DashboardPanel";
 import {deepEqual} from "@/lib/utils/deepEqual";
 import {randomId} from "@/lib/utils/randomId.ts";
@@ -61,7 +62,7 @@ export function Dashboard() {
             .filter((item) => !isPlaceholder(item))
             .map(({i, x, y, w, h}) => {
                 const prev = boxMap.get(i);
-                return {i, x, y, w, h, plugin: prev?.plugin, elements: prev?.elements, loaded: prev?.loaded, error: prev?.error, title: prev?.title} as BoxItem;
+                return {i, x, y, w, h, plugin: prev?.plugin} as BoxItem;
             });
         if (!deepEqual(active, layout)) {
             layoutApi.setLayout(active);
@@ -78,15 +79,18 @@ export function Dashboard() {
         setModalOpen(undefined);
     }, [modalOpen])
 
+    const runtimeItems = useSelector(runtimeStore.selectors.items);
+
     const renderDashboardPanel = (item: BoxItem) => {
         const plugin = item.plugin ? pluginsApi.getById(item.plugin) : undefined;
+        const rt = runtimeItems.find(r => r.id === item.i);
         return (
             <DashboardPanel
                 key={item.i}
-                title={item.loaded ? item.title : undefined}
+                title={rt?.loaded ? rt.title : undefined}
                 onClose={() => layoutApi.removeBox(item.i)}
                 onEdit={() => setModalOpen(item)}
-                onLog={item.plugin ? () => console.log(layoutApi.getById(item.i)) : undefined}
+                onLog={item.plugin ? () => console.log(runtimeApi.getById(item.i)) : undefined}
             >
                 {
                     plugin

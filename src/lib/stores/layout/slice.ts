@@ -1,6 +1,4 @@
 import type {LayoutState, LayoutOptions, BoxItem} from "@/types/stores";
-import type {ScElementNode} from "@/lib/parsers";
-import {isInput, isRun, findElementById, findElementByPath, setControls, syncInputValues, syncIsRunning, syncRunValues} from "@/lib/parsers";
 import {createSlice} from "@/lib/stores/utils";
 import {SliceName, LayoutAction} from "@/constants/store";
 import {DEFAULT_LAYOUT, DEFAULT_OPTIONS} from "@/constants/layout.ts";
@@ -34,49 +32,6 @@ export const layoutSlice = createSlice({
       const box = state.items.find(item => item.i === action.payload.id);
       if (box) {
         box.plugin = action.payload.plugin;
-      }
-    },
-    [LayoutAction.LOAD_PLUGIN]: (state, action: { payload: { id: string; loaded: boolean; error?: string; title?: string; elements?: ScElementNode[] } }) => {
-      const box = state.items.find(item => item.i === action.payload.id);
-      if (box) {
-        box.loaded = action.payload.loaded;
-        box.error = action.payload.error;
-        box.title = action.payload.title;
-        box.elements = action.payload.elements;
-      }
-    },
-    [LayoutAction.UNLOAD_PLUGIN]: (state, action: { payload: string }) => {
-      const box = state.items.find(item => item.i === action.payload);
-      if (box) {
-        delete box.plugin;
-        delete box.loaded;
-        delete box.error;
-        delete box.title;
-      }
-    },
-    [LayoutAction.SET_CONTROL]: (state, action: { payload: { boxId: string; elementId: string; value: number } }) => {
-      const box = state.items.find(item => item.i === action.payload.boxId);
-      if (!box?.elements) return;
-      const input = findElementById(box.elements, action.payload.elementId);
-      if (!input || !isInput(input)) return;
-      const segments = input.bind.split('.');
-      const path = segments.slice(0, -1);
-      const control = segments[segments.length - 1];
-      const target = findElementByPath(box.elements, path);
-      if (target) {
-        input.runtime.value = action.payload.value;
-        setControls(target, {[control]: action.payload.value});
-        syncInputValues(box.elements);
-      }
-    },
-    [LayoutAction.SET_RUNNING]: (state, action: { payload: { boxId: string; elementId: string; value: number } }) => {
-      const box = state.items.find(item => item.i === action.payload.boxId);
-      if (!box?.elements) return;
-      const el = findElementById(box.elements, action.payload.elementId);
-      if (el && isRun(el)) {
-        el.runtime.value = action.payload.value;
-        syncIsRunning(box.elements);
-        syncRunValues(box.elements);
       }
     },
   },

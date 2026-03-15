@@ -86,7 +86,9 @@ export interface ScPluginNode {
   type: 'sc-plugin';
   id: string;
   children: cElementNode[];
-  runtime: PluginRuntime;
+  loaded: boolean;
+  error?: string;
+  title?: string;
 }
 
 

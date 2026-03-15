@@ -2,7 +2,7 @@ import {LitElement, html} from 'lit';
 import {ContextProvider, ContextConsumer} from '@lit/context';
 import {oscService} from '@/lib/osc';
 import {nodeRunMessage, nodeSetMessage} from '@/lib/osc/messages.ts';
-import {layoutApi} from '@/lib/stores/api';
+import {runtimeApi} from '@/lib/stores/api';
 import {isSynth, isInput, isRun, findElementById, resolveControl} from '@/lib/parsers';
 import {store} from '@/lib/stores/store';
 import {nodeContext, type NodeContext, type ScNode as IScNode, type ScElement} from '../context.ts';
@@ -25,9 +25,9 @@ export abstract class ScNode extends LitElement implements IScNode {
     }
 
     getParams(): Record<string, number> {
-        const box = layoutApi.getById(this.boxId());
-        if (!box?.elements) return {};
-        const el = findElementById(box.elements, this.id);
+        const plugin = runtimeApi.getById(this.boxId());
+        if (!plugin) return {};
+        const el = findElementById(plugin.children, this.id);
         return el && isSynth(el) ? el.runtime.controls : {};
     }
 
@@ -40,7 +40,7 @@ export abstract class ScNode extends LitElement implements IScNode {
     }
 
     onChange(elementId: string, target: string, value: number) {
-        layoutApi.setControl({boxId: this.boxId(), elementId, value});
+        runtimeApi.setControl({boxId: this.boxId(), elementId, value});
         const segments = target.split('.');
         const control = segments.pop()!;
         const nodeId = this.resolveNodeId(segments);
@@ -48,7 +48,7 @@ export abstract class ScNode extends LitElement implements IScNode {
     }
 
     onRun(elementId: string, target: string, value: number) {
-        layoutApi.setRunning({boxId: this.boxId(), elementId, value});
+        runtimeApi.setRunning({boxId: this.boxId(), elementId, value});
         const nodeId = this.resolveNodeId(target ? target.split('.') : []);
         oscService.send(nodeRunMessage(nodeId, value));
     }
@@ -68,15 +68,15 @@ export abstract class ScNode extends LitElement implements IScNode {
 
     getBindValue(bind: string): number | undefined {
         if (!bind) return undefined;
-        const box = layoutApi.getById(this.boxId());
-        if (!box?.elements) return undefined;
-        return resolveControl(box.elements, bind);
+        const plugin = runtimeApi.getById(this.boxId());
+        if (!plugin) return undefined;
+        return resolveControl(plugin.children, bind);
     }
 
     getInputValue(elementId: string): number | undefined {
-        const box = layoutApi.getById(this.boxId());
-        if (!box?.elements) return undefined;
-        const el = findElementById(box.elements, elementId);
+        const plugin = runtimeApi.getById(this.boxId());
+        if (!plugin) return undefined;
+        const el = findElementById(plugin.children, elementId);
         if (!el) return undefined;
         if (isInput(el) || isRun(el)) return el.runtime.value;
         return undefined;

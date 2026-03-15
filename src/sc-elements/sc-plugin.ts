@@ -1,6 +1,6 @@
 import {html} from 'lit';
 import {pluginManager} from '@/lib/plugins/PluginManager';
-import {layoutApi} from '@/lib/stores/api';
+import {runtimeApi} from '@/lib/stores/api';
 import {ScGroup} from './sc-group.ts';
 
 export class ScPlugin extends ScGroup {
@@ -25,18 +25,18 @@ export class ScPlugin extends ScGroup {
       const result = await pluginManager.loadPlugin(this.id);
       this.innerHTML = result.html;
       this._loading = false;
-      layoutApi.loadPlugin({id: this.id, loaded: true, title: result.title, elements: result.tree});
+      runtimeApi.loadPlugin({id: this.id, loaded: true, title: result.title, elements: result.tree});
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);
       this._loading = false;
       this._error = error;
-      layoutApi.loadPlugin({id: this.id, loaded: false, error});
+      runtimeApi.loadPlugin({id: this.id, loaded: false, error});
     }
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    layoutApi.unloadPlugin(this.id);
+    runtimeApi.unloadPlugin(this.id);
   }
 
   render() {

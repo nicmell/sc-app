@@ -4,6 +4,7 @@ export const SliceName = {
   LAYOUT: "layout",
   THEME: "theme",
   PLUGINS: "plugins",
+  RUNTIME: "runtime",
 } as const;
 
 export const ScsynthAction = {
@@ -22,6 +23,9 @@ export const LayoutAction = {
   ADD_BOX: "addBox",
   SET_OPTIONS: "setOptions",
   SET_BOX_PLUGIN: "setBoxPlugin",
+} as const;
+
+export const RuntimeAction = {
   LOAD_PLUGIN: "loadPlugin",
   UNLOAD_PLUGIN: "unloadPlugin",
   SET_CONTROL: "setControl",

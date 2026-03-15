@@ -1,7 +1,7 @@
 import {LitElement, html} from 'lit';
 import {defRecvMessage} from '@/lib/osc/messages.ts';
 import {oscService} from '@/lib/osc';
-import {layoutApi} from '@/lib/stores/api';
+import {runtimeApi} from '@/lib/stores/api';
 import {isGroup, type ScElementNode} from '@/lib/parsers';
 
 function findSynthDefBytes(elements: ScElementNode[], name: string): number[] | undefined {
@@ -16,9 +16,8 @@ function findSynthDefBytes(elements: ScElementNode[], name: string): number[] | 
 }
 
 function getCompiledSynthDef(name: string): Uint8Array | undefined {
-  for (const box of layoutApi.items) {
-    if (!box.elements) continue;
-    const bytes = findSynthDefBytes(box.elements, name);
+  for (const plugin of runtimeApi.items) {
+    const bytes = findSynthDefBytes(plugin.children, name);
     if (bytes) return new Uint8Array(bytes);
   }
   return undefined;
