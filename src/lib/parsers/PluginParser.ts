@@ -1,7 +1,7 @@
 import {ELEMENTS} from "@/constants/sc-elements";
 import {randomId} from "@/lib/utils/randomId.ts";
 import {deepEqual} from "@/lib/utils/deepEqual";
-import type {ScElementNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScRangeNode, ScCheckboxNode, ScRunNode, ScMidiNode, UGenSpec, PluginTreeEntry} from "./types";
+import type {ScElementNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScRangeNode, ScCheckboxNode, ScRunNode, ScMidiNode, UGenSpec, PluginTreeEntry} from "../../types/parsers";
 import {compileSynthDef} from "./SynthDefCompiler";
 import {findElementByPath} from "./elementTree";
 import {isSynth, isGroup, isNode} from "./guards";
@@ -128,14 +128,14 @@ export class PluginParser {
 
     let bytes: number[];
     if (savedDef && deepEqual(params, savedDef.params) && deepEqual(ugens, savedDef.ugens)) {
-      bytes = savedDef.bytes;
+      bytes = savedDef.runtime.bytes;
     } else {
       const specsMap = new Map<string, UGenSpec>();
       for (const spec of ugens) specsMap.set(spec.name, spec);
       bytes = compileSynthDef(name, params, specsMap);
     }
 
-    return { type: 'sc-synthdef', id, name, params, ugens, bytes };
+    return { type: 'sc-synthdef', id, name, params, ugens, runtime: { bytes } };
   }
 
   private processRange({ el, id }: ElementContext, ctx: WalkContext): ScRangeNode {

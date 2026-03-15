@@ -4,7 +4,7 @@ import {control} from "@/lib/ugen/control";
 import {ugenRegistry, type UGenRegistryEntry} from "@/lib/ugen/registry";
 import {binOp, unaryOp, binaryOps, unaryOps} from "@/lib/ugen/operators";
 import "@/lib/ugen/ugens"; // side-effect: populates registry
-import type {UGenSpec} from "./types";
+import type {UGenSpec} from "../../types/parsers";
 
 // ---------------------------------------------------------------------------
 // Pure helpers

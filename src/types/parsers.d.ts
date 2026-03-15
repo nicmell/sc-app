@@ -29,13 +29,17 @@ export interface ScSynthNode {
   runtime: NodeRuntime;
 }
 
+export interface SynthDefRuntime {
+  bytes: number[];
+}
+
 export interface ScSynthDefNode {
   type: 'sc-synthdef';
   id: string;
   name: string;
   params: Record<string, number>;
   ugens: UGenSpec[];
-  bytes: number[];
+  runtime: SynthDefRuntime;
 }
 
 export interface InputRuntime {

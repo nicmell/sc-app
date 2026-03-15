@@ -8,7 +8,7 @@ export const PLUGINS_URL = "app://plugins";
 
 function findSynthDefBytes(elements: ScElementNode[], name: string): number[] | undefined {
   for (const el of elements) {
-    if (el.type === 'sc-synthdef' && el.name === name) return el.bytes;
+    if (el.type === 'sc-synthdef' && el.name === name) return el.runtime.bytes;
     if (isGroup(el)) {
       const found = findSynthDefBytes(el.children, name);
       if (found) return found;

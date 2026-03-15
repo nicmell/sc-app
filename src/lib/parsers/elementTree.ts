@@ -1,4 +1,4 @@
-import type {ScElementNode} from "./types";
+import type {ScElementNode} from "../../types/parsers";
 import {isGroup, isSynth, isNode, isInput, isRun} from "./guards";
 
 export function findElementById(elements: ScElementNode[], id: string): ScElementNode | undefined {

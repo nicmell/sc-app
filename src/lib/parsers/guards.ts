@@ -1,4 +1,4 @@
-import type {ScElementNode, ScGroupNode, ScSynthNode, ScRangeNode, ScCheckboxNode, ScMidiNode, ScRunNode} from "./types";
+import type {ScElementNode, ScGroupNode, ScSynthNode, ScRangeNode, ScCheckboxNode, ScMidiNode, ScRunNode} from "../../types/parsers";
 
 export function isGroup(el: ScElementNode): el is ScGroupNode {
   return el.type === 'sc-group';
