@@ -2,14 +2,14 @@ import type {PluginInfo} from "@/types/stores";
 import {layoutApi, pluginsApi, runtimeApi} from "@/lib/stores/api";
 import {rehydrate} from "@/lib/stores/store";
 import {get, post, del} from "@/lib/http";
-import {PluginParser, isGroup, type PluginTreeEntry, type ScElementNode} from "@/lib/parsers";
+import {PluginParser, isGroup, isPlugin, type PluginTreeEntry, type ScElementNode} from "@/lib/parsers";
 
 export const PLUGINS_URL = "app://plugins";
 
 function findSynthDefBytes(elements: ScElementNode[], name: string): number[] | undefined {
   for (const el of elements) {
     if (el.type === 'sc-synthdef' && el.name === name) return el.bytes;
-    if (isGroup(el)) {
+    if (isGroup(el) || isPlugin(el)) {
       const found = findSynthDefBytes(el.children, name);
       if (found) return found;
     }
