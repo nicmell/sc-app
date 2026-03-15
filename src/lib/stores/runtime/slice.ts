@@ -3,7 +3,7 @@ import type {ScPluginNode} from "@/lib/parsers/types";
 import type {RuntimeEntry} from "@/lib/runtime/types";
 import {isInput, isRun, isNode} from "@/lib/parsers/guards";
 import {findElementById, findElementByPath} from "@/lib/parsers/elementTree";
-import {setControls} from "@/lib/runtime";
+import {setControls, mergeRuntime} from "@/lib/runtime";
 import {createSlice} from "@/lib/stores/utils";
 import {SliceName, RuntimeAction} from "@/constants/store";
 
@@ -25,7 +25,8 @@ export const runtimeSlice = createSlice({
         state.elements.push(plugin);
       }
       if (entries) {
-        state.entries = state.entries.filter(e => e.boxId !== plugin.id).concat(entries);
+        const merged = mergeRuntime(entries, state.entries);
+        state.entries = state.entries.filter(e => e.boxId !== plugin.id).concat(merged);
       }
     },
     [RuntimeAction.UNLOAD_PLUGIN]: (state, action: { payload: string }) => {
