@@ -1,11 +1,43 @@
-import type {RuntimeState} from "@/types/stores";
-import type {ScPluginNode} from "@/lib/parsers/types";
-import type {RuntimeEntry} from "@/lib/runtime/types";
-import {isInput, isRun, isNode} from "@/lib/parsers/guards";
+import type {RuntimeEntry, RuntimeState} from "@/types/stores";
+import type {ScElementNode, ScPluginNode} from "@/lib/parsers/types";
+import {isInput, isRun, isNode, isGroup, isSynth} from "@/lib/parsers/guards";
 import {findElementById, findElementByPath} from "@/lib/parsers/elementTree";
-import {setControls, mergeRuntime} from "@/lib/runtime";
 import {createSlice} from "@/lib/stores/utils";
 import {SliceName, RuntimeAction} from "@/constants/store";
+
+function mergeRuntime(defaults: RuntimeEntry[], existing: RuntimeEntry[]): RuntimeEntry[] {
+  const existingById = new Map<string, RuntimeEntry>();
+  for (const entry of existing) {
+    existingById.set(entry.id, entry);
+  }
+  return defaults.map(def => {
+    const prev = existingById.get(def.id);
+    return prev ? {...def, value: prev.value} : def;
+  });
+}
+
+function setControls(element: ScElementNode, runtime: RuntimeEntry[], controls: Record<string, number>): void {
+  if (isSynth(element)) {
+    for (const [name, value] of Object.entries(controls)) {
+      const entryId = element.runtime.controls[name];
+      if (entryId) {
+        const entry = runtime.find(e => e.id === entryId);
+        if (entry) entry.value = value;
+      }
+    }
+  } else if (isGroup(element)) {
+    for (const [name, value] of Object.entries(controls)) {
+      const entryId = element.runtime.controls[name];
+      if (entryId) {
+        const entry = runtime.find(e => e.id === entryId);
+        if (entry) entry.value = value;
+      }
+    }
+    for (const child of element.children) {
+      setControls(child, runtime, controls);
+    }
+  }
+}
 
 const initialState: RuntimeState = {
   entries: [],
