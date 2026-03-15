@@ -24,7 +24,7 @@ interface ElementContext {
 type ElementHandler = (ectx: ElementContext, ctx: WalkContext) => ScElementNode;
 
 export class PluginParser {
-  private static readonly EXCLUDE_KEYS = new Set(['id', 'runtime', 'children', 'bytes']);
+  private static readonly EXCLUDE_KEYS = new Set(['id', 'runtime', 'children']);
 
   private readonly handlers: Record<string, ElementHandler> = {
     [ELEMENTS.SC_GROUP]: (ectx, ctx) => this.processGroup(ectx, ctx),
@@ -39,11 +39,81 @@ export class PluginParser {
   private static readonly BIND_ONLY_TAGS: Set<string> = new Set([ELEMENTS.SC_DISPLAY, ELEMENTS.SC_IF]);
 
   parse(node: Element, saved?: ScElementNode[]): PluginTreeEntry {
+    this.hydrateIds(node, saved);
     const ctx: WalkContext = { offset: 0, saved, scope: [] };
     const tree = this.walkChildren(node, ctx);
     const html = node.innerHTML;
     const title = node.querySelector('title')?.textContent ?? undefined;
     return { tree, html, title };
+  }
+
+  private hydrateIds(node: Element, saved?: ScElementNode[]): void {
+    let offset = 0;
+    const walk = (parent: Element) => {
+      for (const child of Array.from(parent.children)) {
+        const tag = child.tagName.toLowerCase();
+        if (tag in this.handlers) {
+          const prev = saved?.[offset];
+          const matched = prev?.type === tag && this.propsMatch(child, tag, prev) ? prev : undefined;
+          if (prev && !matched) {
+            console.warn(`[plugin hydration] mismatch at index ${offset}: <${tag}> vs saved <${prev.type}>`);
+          }
+          const id = matched ? matched.id : (child.getAttribute('id') || randomId());
+          child.setAttribute('id', id);
+          offset++;
+          if (tag === ELEMENTS.SC_GROUP) {
+            const savedGroup = matched?.type === 'sc-group' ? matched as ScGroupNode : undefined;
+            this.hydrateIds(child, savedGroup?.children);
+          }
+        } else {
+          walk(child);
+        }
+      }
+    };
+    walk(node);
+  }
+
+  private propsMatch(el: Element, tag: string, saved: ScElementNode): boolean {
+    const fresh = this.extractProps(el, tag);
+    const savedProps: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(saved)) {
+      if (!PluginParser.EXCLUDE_KEYS.has(key)) savedProps[key] = val;
+    }
+    return deepEqual(fresh, savedProps);
+  }
+
+  private extractProps(el: Element, tag: string): Record<string, unknown> {
+    const props: Record<string, unknown> = { type: tag };
+    switch (tag) {
+      case ELEMENTS.SC_GROUP:
+        props.name = el.getAttribute('name') ?? '';
+        props.running = el.getAttribute('running') !== 'false';
+        break;
+      case ELEMENTS.SC_SYNTH:
+        props.name = el.getAttribute('name') ?? '';
+        props.bind = el.getAttribute('bind') ?? undefined;
+        props.controls = this.collectNumericAttrs(el, SYNTH_SKIP_ATTRS);
+        props.running = el.getAttribute('running') !== 'false';
+        break;
+      case ELEMENTS.SC_SYNTHDEF:
+        props.name = el.getAttribute('name') ?? '';
+        props.params = this.collectNumericAttrs(el, SYNTHDEF_SKIP_ATTRS);
+        props.ugens = this.collectUGenSpecs(el);
+        break;
+      case ELEMENTS.SC_RANGE:
+      case ELEMENTS.SC_CHECKBOX:
+        props.bind = el.getAttribute('bind') ?? '';
+        break;
+      case ELEMENTS.SC_RUN:
+        props.bind = el.getAttribute('bind') ?? '';
+        break;
+      case ELEMENTS.SC_MIDI:
+        props.bind = el.getAttribute('bind') ?? '';
+        props.octaves = Number(el.getAttribute('octaves')) || 2;
+        props.octave = Number(el.getAttribute('octave')) || 4;
+        break;
+    }
+    return props;
   }
 
   private walkChildren(node: Element, ctx: WalkContext): ScElementNode[] {
@@ -63,35 +133,11 @@ export class PluginParser {
   }
 
   private processElement(el: Element, tag: string, ctx: WalkContext): ScElementNode {
-    const prev = ctx.saved?.[ctx.offset];
-    const matched = prev?.type === tag ? prev : undefined;
-    if (prev && !matched) {
-      console.warn(`[plugin hydration] mismatch at index ${ctx.offset}: <${tag}> vs saved <${prev.type}>`);
-    }
     ctx.offset++;
-
-    const id = el.getAttribute('id') || randomId();
+    const id = el.getAttribute('id')!;
     const node = this.handlers[tag]({ el, id }, ctx);
-
-    if (matched && this.propsMatch(node, matched)) {
-      node.id = matched.id;
-    }
-
-    el.setAttribute('id', node.id);
     ctx.scope.push(node);
     return node;
-  }
-
-  private propsMatch(fresh: ScElementNode, saved: ScElementNode): boolean {
-    if (fresh.type !== saved.type) return false;
-    const strip = (node: ScElementNode) => {
-      const result: Record<string, unknown> = {};
-      for (const [key, val] of Object.entries(node)) {
-        if (!PluginParser.EXCLUDE_KEYS.has(key)) result[key] = val;
-      }
-      return result;
-    };
-    return deepEqual(strip(fresh), strip(saved));
   }
 
   private processGroup({ el, id }: ElementContext, _ctx: WalkContext): ScGroupNode {
