@@ -85,7 +85,7 @@ Persisted to `config.json` via Zustand persist middleware with custom `tauriStor
 
 Located in `src/lib/parsers/`. This is the core system that converts plugin HTML into a typed element tree.
 
-### Node Types (`types.ts`)
+### Node Types (`parsers.d.ts`)
 
 | Type | Key Fields | Description |
 |------|-----------|-------------|

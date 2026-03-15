@@ -2,7 +2,7 @@ import type {PluginInfo} from "@/types/stores";
 import {layoutApi, pluginsApi, runtimeApi} from "@/lib/stores/api";
 import {rehydrate} from "@/lib/stores/store";
 import {get, post, del} from "@/lib/http";
-import {PluginParser, isGroup, isPlugin, type ParseContext, type ScElementNode} from "@/lib/parsers";
+import {parse, isGroup, isPlugin, type ParseContext, type ScElementNode} from "@/lib/parsers";
 
 export const PLUGINS_URL = "app://plugins";
 
@@ -22,7 +22,6 @@ function findSynthDefEntryId(elements: ScElementNode[], name: string): string | 
 }
 
 export class PluginManager {
-  private readonly treeParser = new PluginParser();
 
   async listPlugins(): Promise<PluginInfo[]> {
     const resp = await get(PLUGINS_URL);
@@ -68,7 +67,7 @@ export class PluginManager {
     if (error) {
       throw new Error(error.textContent ?? "Invalid XHTML")
     }
-    return this.treeParser.parse(doc.documentElement, boxId);
+    return parse(doc.documentElement, boxId);
   }
 }
 
