@@ -49,16 +49,16 @@ export const runtimeSlice = createSlice({
   name: SliceName.RUNTIME,
   initialState,
   reducers: {
-    [RuntimeAction.LOAD_PLUGIN]: (state, action: { payload: ScPluginNode }) => {
-      const plugin = action.payload;
+    [RuntimeAction.LOAD_PLUGIN]: (state, action: { payload: { plugin: ScPluginNode; entries?: RuntimeEntry[] } }) => {
+      const {plugin, entries} = action.payload;
       const idx = state.elements.findIndex(p => p.id === plugin.id);
       if (idx >= 0) {
         state.elements[idx] = plugin;
       } else {
         state.elements.push(plugin);
       }
-      if (plugin.runtime.entries.length > 0) {
-        const merged = mergeRuntime(plugin.runtime.entries, state.entries);
+      if (entries && entries.length > 0) {
+        const merged = mergeRuntime(entries, state.entries);
         state.entries = state.entries.filter(e => e.boxId !== plugin.id).concat(merged);
       }
     },

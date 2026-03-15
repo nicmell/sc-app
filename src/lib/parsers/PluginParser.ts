@@ -58,9 +58,9 @@ export class PluginParser {
         const children = this.walkChildren(node, ctx);
         const html = node.innerHTML;
         const title = node.querySelector('title')?.textContent ?? undefined;
-        const plugin: ScPluginNode = {type: 'sc-plugin', id: boxId, boxId, children, runtime: {loaded: true, title, entries: ctx.runtime}};
+        const plugin: ScPluginNode = {type: 'sc-plugin', id: boxId, boxId, children, runtime: {loaded: true, title}};
 
-        return {plugin, html};
+        return {plugin, entries: ctx.runtime, html};
     }
 
     private walkChildren(node: Element, ctx: WalkContext): ScElementNode[] {

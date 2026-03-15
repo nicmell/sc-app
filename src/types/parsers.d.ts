@@ -93,7 +93,6 @@ export interface PluginRuntime {
   loaded: boolean;
   error?: string;
   title?: string;
-  entries: RuntimeEntry[];
 }
 
 export interface ScPluginNode {
@@ -108,5 +107,6 @@ export type ScElementNode = ScPluginNode | ScGroupNode | ScSynthNode | ScSynthDe
 
 export interface PluginTreeEntry {
   plugin: ScPluginNode;
+  entries: RuntimeEntry[];
   html: string;
 }
