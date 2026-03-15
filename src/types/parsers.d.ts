@@ -30,7 +30,7 @@ export interface ScSynthNode {
 }
 
 export interface SynthDefRuntime {
-  bytes: number[];
+  value: number[];
 }
 
 export interface ScSynthDefNode {

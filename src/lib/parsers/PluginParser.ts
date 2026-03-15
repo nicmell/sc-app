@@ -128,14 +128,14 @@ export class PluginParser {
 
     let bytes: number[];
     if (savedDef && deepEqual(params, savedDef.params) && deepEqual(ugens, savedDef.ugens)) {
-      bytes = savedDef.runtime.bytes;
+      bytes = savedDef.runtime.value;
     } else {
       const specsMap = new Map<string, UGenSpec>();
       for (const spec of ugens) specsMap.set(spec.name, spec);
       bytes = compileSynthDef(name, params, specsMap);
     }
 
-    return { type: 'sc-synthdef', id, name, params, ugens, runtime: { bytes } };
+    return { type: 'sc-synthdef', id, name, params, ugens, runtime: { value: bytes } };
   }
 
   private processRange({ el, id }: ElementContext, ctx: WalkContext): ScRangeNode {
