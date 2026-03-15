@@ -9,8 +9,12 @@ export const PLUGINS_URL = "app://plugins";
 function findSynthDefBytes(elements: ScElementNode[], name: string): number[] | undefined {
   for (const el of elements) {
     if (el.type === 'sc-synthdef' && el.name === name) return el.bytes;
-    if (isGroup(el) || isPlugin(el)) {
+    if (isGroup(el)) {
       const found = findSynthDefBytes(el.children, name);
+      if (found) return found;
+    }
+    if (isPlugin(el)) {
+      const found = findSynthDefBytes(el.runtime.children, name);
       if (found) return found;
     }
   }
@@ -41,7 +45,7 @@ export class PluginManager {
 
   getCompiledSynthDef(name: string): Uint8Array | undefined {
     for (const plugin of runtimeApi.elements) {
-      const bytes = findSynthDefBytes(plugin.children, name);
+      const bytes = findSynthDefBytes(plugin.runtime.children, name);
       if (bytes) return new Uint8Array(bytes);
     }
     return undefined;

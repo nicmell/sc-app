@@ -53,13 +53,14 @@ export class PluginParser {
     private static readonly BIND_ONLY_TAGS: Set<string> = new Set([ELEMENTS.SC_DISPLAY, ELEMENTS.SC_IF]);
 
     parse(node: Element, boxId: string): PluginTreeEntry {
-        const ctx: WalkContext = {offset: 0, saved: runtimeApi.getBox(boxId)?.children, scope: [], boxId, runtime: []};
+        const saved = runtimeApi.getBox(boxId);
+        const ctx: WalkContext = {offset: 0, saved: saved?.runtime.children, scope: [], boxId, runtime: []};
         const children = this.walkChildren(node, ctx);
         const html = node.innerHTML;
         const title = node.querySelector('title')?.textContent ?? undefined;
-        const plugin: ScPluginNode = {type: 'sc-plugin', id: boxId, boxId, children, runtime: {loaded: true, title}};
+        const plugin: ScPluginNode = {type: 'sc-plugin', id: boxId, boxId, runtime: {loaded: true, title, children, entries: ctx.runtime}};
 
-        return {plugin, entries: ctx.runtime, html};
+        return {plugin, html};
     }
 
     private walkChildren(node: Element, ctx: WalkContext): ScElementNode[] {

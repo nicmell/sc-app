@@ -17,7 +17,7 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
         const plugin = runtime.elements.find(p => p.id === box.i);
         return {
           ...box,
-          elements: plugin?.children ? stripRuntime(plugin.children) : undefined,
+          elements: plugin?.runtime.children.length ? stripRuntime(plugin.runtime.children) : undefined,
         };
       }),
       options: layout.options,
@@ -31,7 +31,7 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
     const items = p?.layout?.items?.map(({elements: _, ...box}) => box);
     const runtimeElements: ScPluginNode[] = (p?.layout?.items ?? [])
       .filter(item => item.elements)
-      .map(item => ({type: 'sc-plugin' as const, id: item.i, boxId: item.i, children: item.elements!, runtime: {loaded: false}}));
+      .map(item => ({type: 'sc-plugin' as const, id: item.i, boxId: item.i, runtime: {loaded: false, children: item.elements!, entries: []}}));
     return {
       ...current,
       theme: {...current.theme, ...p?.theme},

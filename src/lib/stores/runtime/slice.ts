@@ -48,16 +48,16 @@ export const runtimeSlice = createSlice({
   name: SliceName.RUNTIME,
   initialState,
   reducers: {
-    [RuntimeAction.LOAD_PLUGIN]: (state, action: { payload: { plugin: ScPluginNode; entries?: RuntimeEntry[] } }) => {
-      const {plugin, entries} = action.payload;
+    [RuntimeAction.LOAD_PLUGIN]: (state, action: { payload: ScPluginNode }) => {
+      const plugin = action.payload;
       const idx = state.elements.findIndex(p => p.id === plugin.id);
       if (idx >= 0) {
         state.elements[idx] = plugin;
       } else {
         state.elements.push(plugin);
       }
-      if (entries) {
-        const merged = mergeRuntime(entries, state.entries);
+      if (plugin.runtime.entries.length > 0) {
+        const merged = mergeRuntime(plugin.runtime.entries, state.entries);
         state.entries = state.entries.filter(e => e.boxId !== plugin.id).concat(merged);
       }
     },
@@ -69,7 +69,7 @@ export const runtimeSlice = createSlice({
     [RuntimeAction.SET_CONTROL]: (state, action: { payload: { boxId: string; elementId: string; value: number } }) => {
       const plugin = state.elements.find(p => p.id === action.payload.boxId);
       if (!plugin) return;
-      const input = findElementById(plugin.children, action.payload.elementId);
+      const input = findElementById(plugin.runtime.children, action.payload.elementId);
       if (!input || !isInput(input)) return;
       const entryId = input.runtime.value;
       const entry = state.entries.find(e => e.id === entryId);
@@ -80,7 +80,7 @@ export const runtimeSlice = createSlice({
       const segments = input.bind.split('.');
       const path = segments.slice(0, -1);
       const control = segments[segments.length - 1];
-      const target = findElementByPath(plugin.children, path);
+      const target = findElementByPath(plugin.runtime.children, path);
       if (target && isNode(target)) {
         setControls(target, state.entries, {[control]: action.payload.value});
       }
@@ -88,7 +88,7 @@ export const runtimeSlice = createSlice({
     [RuntimeAction.SET_RUNNING]: (state, action: { payload: { boxId: string; elementId: string; value: number } }) => {
       const plugin = state.elements.find(p => p.id === action.payload.boxId);
       if (!plugin) return;
-      const el = findElementById(plugin.children, action.payload.elementId);
+      const el = findElementById(plugin.runtime.children, action.payload.elementId);
       if (!el || !isRun(el)) return;
       const entryId = el.runtime.value;
       const entry = state.entries.find(e => e.id === entryId);
