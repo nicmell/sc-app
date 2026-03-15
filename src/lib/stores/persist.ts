@@ -1,7 +1,6 @@
 import type {PersistOptions} from "zustand/middleware";
 import {tauriStorage} from "@/lib/storage/tauriStorage";
 import {stripRuntime} from "@/lib/parsers";
-import type {ScPluginNode} from "@/lib/parsers";
 import type {RootState, ConfigFile} from "@/types/stores";
 
 // State generic uses `any` because the redux middleware adds `dispatch` to the
@@ -13,32 +12,26 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
   partialize: ({theme, layout, scsynth, plugins, runtime}: RootState): ConfigFile => ({ // isRunning excluded
     theme: {mode: theme.mode, primaryColor: theme.primaryColor},
     layout: {
-      items: layout.items.map(box => {
-        const plugin = runtime.elements.find(p => p.id === box.i);
-        return {
-          ...box,
-          elements: plugin?.children.length ? stripRuntime(plugin.children) : undefined,
-        };
-      }),
+      items: layout.items,
       options: layout.options,
     },
     scsynth: {options: scsynth.options},
     plugins: plugins.items
         .map(({loaded: _loaded, error: _error, ...plugin}) => ({...plugin})),
+    runtime: {
+      entries: runtime.entries,
+      elements: runtime.elements.map(plugin => ({
+        ...plugin,
+        children: stripRuntime(plugin.children),
+      })),
+    },
   }),
   merge: (persisted, current: RootState): RootState => {
     const p = persisted as ConfigFile | undefined;
-    const items = p?.layout?.items?.map(({elements: _, ...box}) => box);
-    const runtimeElements: ScPluginNode[] = (p?.layout?.items ?? [])
-      .filter(item => item.elements)
-      .map(item => ({type: 'sc-plugin' as const, id: item.i, boxId: item.i, children: item.elements!, runtime: {loaded: false, entries: []}}));
     return {
       ...current,
       theme: {...current.theme, ...p?.theme},
-      layout: {
-        items: items ?? current.layout.items,
-        options: p?.layout?.options ?? current.layout.options,
-      },
+      layout: {...current.layout, ...p?.layout},
       scsynth: {...current.scsynth, ...p?.scsynth},
       plugins: {
         items: Array.isArray(p?.plugins)
@@ -48,10 +41,7 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
             })
           : current.plugins.items,
       },
-      runtime: {
-        ...current.runtime,
-        elements: runtimeElements
-      },
+      runtime: p?.runtime ?? current.runtime,
     };
   },
 };

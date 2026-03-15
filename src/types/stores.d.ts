@@ -5,7 +5,7 @@ import type {layoutSlice} from "@/lib/stores/layout/slice";
 import type {themeSlice} from "@/lib/stores/theme/slice";
 import type {pluginsSlice} from "@/lib/stores/plugins/slice";
 import type {runtimeSlice} from "@/lib/stores/runtime/slice";
-import type {ScElementNode, ScPluginNode} from "@/lib/parsers";
+import type {ScPluginNode} from "@/lib/parsers";
 
 export interface BoxItem {
   i: string;
@@ -14,10 +14,6 @@ export interface BoxItem {
   w: number;
   h: number;
   plugin?: string;
-}
-
-export interface PersistedBoxItem extends BoxItem {
-  elements?: ScElementNode[];
 }
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected";
@@ -87,9 +83,10 @@ export type PersistedPlugin = Omit<PluginInfo, 'loaded' | 'error'>;
 
 export interface ConfigFile {
   theme: Pick<ThemeState, 'mode' | 'primaryColor'>;
-  layout: { items: PersistedBoxItem[]; options: LayoutOptions };
+  layout: { items: BoxItem[]; options: LayoutOptions };
   scsynth: Pick<ScsynthState, 'options'>;
   plugins: PersistedPlugin[];
+  runtime: RuntimeState;
 }
 
 export interface PluginsState {
