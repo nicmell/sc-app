@@ -5,4 +5,6 @@ const createRuntimeSelector: SliceSelector<typeof root.runtime> = (fn) =>
 
 export default {
   entries: createRuntimeSelector(s => s.entries),
+  layout: createRuntimeSelector(s => s.layout),
+  getBox: (id: string) => createRuntimeSelector(s => s.layout[id]),
 };

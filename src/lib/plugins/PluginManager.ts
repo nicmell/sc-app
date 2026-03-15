@@ -1,5 +1,5 @@
 import type {PluginInfo} from "@/types/stores";
-import {layoutApi, pluginsApi} from "@/lib/stores/api";
+import {layoutApi, pluginsApi, runtimeApi} from "@/lib/stores/api";
 import {rehydrate} from "@/lib/stores/store";
 import {get, post, del} from "@/lib/http";
 import {PluginParser, isGroup, type PluginTreeEntry, type ScElementNode} from "@/lib/parsers";
@@ -40,9 +40,10 @@ export class PluginManager {
   }
 
   getCompiledSynthDef(name: string): Uint8Array | undefined {
-    for (const box of layoutApi.items) {
-      if (!box.elements) continue;
-      const bytes = findSynthDefBytes(box.elements, name);
+    const layout = runtimeApi.layout;
+    for (const boxRuntime of Object.values(layout)) {
+      if (!boxRuntime.elements) continue;
+      const bytes = findSynthDefBytes(boxRuntime.elements, name);
       if (bytes) return new Uint8Array(bytes);
     }
     return undefined;
@@ -62,7 +63,8 @@ export class PluginManager {
     if (error) {
       throw new Error(error.textContent ?? "Invalid XHTML")
     }
-    return this.treeParser.parse(doc.documentElement, boxId, box.elements);
+    const saved = runtimeApi.getBox(boxId);
+    return this.treeParser.parse(doc.documentElement, boxId, saved?.elements);
   }
 }
 

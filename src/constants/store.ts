@@ -23,8 +23,6 @@ export const LayoutAction = {
   ADD_BOX: "addBox",
   SET_OPTIONS: "setOptions",
   SET_BOX_PLUGIN: "setBoxPlugin",
-  LOAD_PLUGIN: "loadPlugin",
-  UNLOAD_PLUGIN: "unloadPlugin",
 } as const;
 
 export const RootAction = {
@@ -37,8 +35,8 @@ export const ThemeAction = {
 } as const;
 
 export const RuntimeAction = {
-  LOAD_ENTRIES: "loadEntries",
-  UNLOAD_ENTRIES: "unloadEntries",
+  LOAD_PLUGIN: "loadPlugin",
+  UNLOAD_PLUGIN: "unloadPlugin",
   SET_CONTROL: "setControl",
   SET_RUNNING: "setRunning",
 } as const;

@@ -1,7 +1,7 @@
 import {LitElement, html, css} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {resolveControl} from '@/lib/runtime';
-import {layoutApi, runtimeApi} from '@/lib/stores/api';
+import {runtimeApi} from '@/lib/stores/api';
 import {nodeContext} from './context.ts';
 
 export class ScIf extends LitElement {
@@ -41,8 +41,8 @@ export class ScIf extends LitElement {
   }
 
   private _test(): boolean {
-    const box = layoutApi.getById(this._node.value?.boxId() ?? '');
-    const value = box?.elements ? resolveControl(box.elements, runtimeApi.entries, this.bind) : undefined;
+    const boxRuntime = runtimeApi.getBox(this._node.value?.boxId() ?? '');
+    const value = boxRuntime?.elements ? resolveControl(boxRuntime.elements, runtimeApi.entries, this.bind) : undefined;
     const num = typeof value === 'number' ? value : Number(value);
     if (this.isEqual !== null) return String(value) === this.isEqual;
     if (this.isNotEqual !== null) return String(value) !== this.isNotEqual;

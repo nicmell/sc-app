@@ -1,7 +1,7 @@
 import {css, html, LitElement} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {getRuntimeValue} from '@/lib/runtime';
-import {layoutApi, runtimeApi} from '@/lib/stores/api';
+import {runtimeApi} from '@/lib/stores/api';
 import {nodeContext} from './context.ts';
 import './internal/sc-keyboard.ts';
 
@@ -25,9 +25,9 @@ export class ScMidi extends LitElement {
     static styles = css`:host { display: inline-block; }`;
 
     get value(): number {
-        const box = layoutApi.getById(this._node.value?.boxId() ?? '');
-        if (!box?.elements) return 0;
-        return getRuntimeValue(box.elements, runtimeApi.entries, this.id) ?? 0;
+        const boxRuntime = runtimeApi.getBox(this._node.value?.boxId() ?? '');
+        if (!boxRuntime?.elements) return 0;
+        return getRuntimeValue(boxRuntime.elements, runtimeApi.entries, this.id) ?? 0;
     }
 
     constructor() {

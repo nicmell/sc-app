@@ -15,14 +15,18 @@ export interface BoxItem {
   w: number;
   h: number;
   plugin?: string;
-  elements?: ScElementNode[];
-  // Runtime-only (not persisted)
-  loaded?: boolean;
-  error?: string;
-  title?: string;
 }
 
-export type PersistedBoxItem = Omit<BoxItem, 'loaded' | 'error' | 'title'>;
+export interface PersistedBoxItem extends BoxItem {
+  elements?: ScElementNode[];
+}
+
+export interface BoxRuntime {
+  loaded: boolean;
+  error?: string;
+  title?: string;
+  elements?: ScElementNode[];
+}
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected";
 
@@ -102,6 +106,7 @@ export interface PluginsState {
 
 export interface RuntimeState {
   entries: RuntimeEntry[];
+  layout: Record<string, BoxRuntime>;
 }
 
 export interface RootState {
