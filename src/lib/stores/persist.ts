@@ -28,13 +28,10 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
   }),
   merge: (persisted, current: RootState): RootState => {
     const p = persisted as ConfigFile | undefined;
-    const runtimeElements: ScPluginNode[] = [];
-    const items = p?.layout?.items?.map(({elements, ...box}) => {
-      if (elements) {
-        runtimeElements.push({type: 'sc-plugin', id: box.i, boxId: box.i, children: elements, runtime: {loaded: false}});
-      }
-      return box;
-    });
+    const items = p?.layout?.items?.map(({elements: _, ...box}) => box);
+    const runtimeElements: ScPluginNode[] = (p?.layout?.items ?? [])
+      .filter(item => item.elements)
+      .map(item => ({type: 'sc-plugin' as const, id: item.i, boxId: item.i, children: item.elements!, runtime: {loaded: false}}));
     return {
       ...current,
       theme: {...current.theme, ...p?.theme},
@@ -51,7 +48,10 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
             })
           : current.plugins.items,
       },
-      runtime: {...current.runtime, elements: runtimeElements},
+      runtime: {
+        ...current.runtime,
+        elements: runtimeElements
+      },
     };
   },
 };
