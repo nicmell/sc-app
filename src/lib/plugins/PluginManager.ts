@@ -14,7 +14,7 @@ function findSynthDefBytes(elements: ScElementNode[], name: string): number[] | 
       if (found) return found;
     }
     if (isPlugin(el)) {
-      const found = findSynthDefBytes(el.runtime.children, name);
+      const found = findSynthDefBytes(el.children, name);
       if (found) return found;
     }
   }
@@ -45,7 +45,7 @@ export class PluginManager {
 
   getCompiledSynthDef(name: string): Uint8Array | undefined {
     for (const plugin of runtimeApi.elements) {
-      const bytes = findSynthDefBytes(plugin.runtime.children, name);
+      const bytes = findSynthDefBytes(plugin.children, name);
       if (bytes) return new Uint8Array(bytes);
     }
     return undefined;

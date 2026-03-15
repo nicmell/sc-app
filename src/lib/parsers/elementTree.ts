@@ -8,7 +8,7 @@ export function findElementById(elements: ScElementNode[], id: string): ScElemen
       const found = findElementById(el.children, id);
       if (found) return found;
     } else if (isPlugin(el)) {
-      const found = findElementById(el.runtime.children, id);
+      const found = findElementById(el.children, id);
       if (found) return found;
     }
   }
@@ -29,7 +29,7 @@ export function findElementByPath(elements: ScElementNode[], path: string[]): Sc
       const found = findElementByPath(child.children, path);
       if (found) return found;
     } else if (isPlugin(child)) {
-      const found = findElementByPath(child.runtime.children, path);
+      const found = findElementByPath(child.children, path);
       if (found) return found;
     }
   }

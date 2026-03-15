@@ -69,7 +69,7 @@ export const runtimeSlice = createSlice({
     [RuntimeAction.SET_CONTROL]: (state, action: { payload: { boxId: string; elementId: string; value: number } }) => {
       const plugin = state.elements.find(p => p.id === action.payload.boxId);
       if (!plugin) return;
-      const input = findElementById(plugin.runtime.children, action.payload.elementId);
+      const input = findElementById(plugin.children, action.payload.elementId);
       if (!input || !isInput(input)) return;
       const entryId = input.runtime.value;
       const entry = state.entries.find(e => e.id === entryId);
@@ -80,7 +80,7 @@ export const runtimeSlice = createSlice({
       const segments = input.bind.split('.');
       const path = segments.slice(0, -1);
       const control = segments[segments.length - 1];
-      const target = findElementByPath(plugin.runtime.children, path);
+      const target = findElementByPath(plugin.children, path);
       if (target && isNode(target)) {
         setControls(target, state.entries, {[control]: action.payload.value});
       }
@@ -88,7 +88,7 @@ export const runtimeSlice = createSlice({
     [RuntimeAction.SET_RUNNING]: (state, action: { payload: { boxId: string; elementId: string; value: number } }) => {
       const plugin = state.elements.find(p => p.id === action.payload.boxId);
       if (!plugin) return;
-      const el = findElementById(plugin.runtime.children, action.payload.elementId);
+      const el = findElementById(plugin.children, action.payload.elementId);
       if (!el || !isRun(el)) return;
       const entryId = el.runtime.value;
       const entry = state.entries.find(e => e.id === entryId);

@@ -30,7 +30,7 @@ export class ScPlugin extends ScGroup {
       const error = e instanceof Error ? e.message : String(e);
       this._loading = false;
       this._error = error;
-      runtimeApi.loadPlugin({type: 'sc-plugin', id: this.id, boxId: this.id, runtime: {loaded: false, error, children: [], entries: []}});
+      runtimeApi.loadPlugin({type: 'sc-plugin', id: this.id, boxId: this.id, children: [], runtime: {loaded: false, error, entries: []}});
     }
   }
 

@@ -89,7 +89,6 @@ export interface PluginRuntime {
   loaded: boolean;
   error?: string;
   title?: string;
-  children: ScElementNode[];
   entries: RuntimeEntry[];
 }
 
@@ -97,6 +96,7 @@ export interface ScPluginNode {
   type: 'sc-plugin';
   id: string;
   boxId: string;
+  children: ScElementNode[];
   runtime: PluginRuntime;
 }
 

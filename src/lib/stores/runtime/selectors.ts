@@ -14,7 +14,7 @@ export default {
   getValue: (boxId: string, elementId: string) => createRuntimeSelector(s => {
     const plugin = s.elements.find(p => p.id === boxId);
     if (!plugin) return undefined;
-    const el = findElementById(plugin.runtime.children, elementId);
+    const el = findElementById(plugin.children, elementId);
     if (!el || !(isInput(el) || isRun(el))) return undefined;
     return s.entries.find(e => e.id === el.runtime.value)?.value;
   }),
@@ -24,7 +24,7 @@ export default {
     if (!plugin) return undefined;
     const segments = bind.split('.');
     const control = segments.pop()!;
-    const target = findElementByPath(plugin.runtime.children, segments);
+    const target = findElementByPath(plugin.children, segments);
     if (!target || !isNode(target)) return undefined;
     const entryId = target.runtime.controls[control];
     if (!entryId) return undefined;
@@ -34,7 +34,7 @@ export default {
   getControls: (boxId: string, elementId: string) => createRuntimeSelector(s => {
     const plugin = s.elements.find(p => p.id === boxId);
     if (!plugin) return {};
-    const el = findElementById(plugin.runtime.children, elementId);
+    const el = findElementById(plugin.children, elementId);
     if (!el || !isNode(el)) return {};
     const result: Record<string, number> = {};
     for (const [name, entryId] of Object.entries(el.runtime.controls)) {
