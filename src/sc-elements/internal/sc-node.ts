@@ -3,7 +3,6 @@ import {ContextProvider, ContextConsumer} from '@lit/context';
 import {oscService} from '@/lib/osc';
 import {nodeRunMessage, nodeSetMessage} from '@/lib/osc/messages.ts';
 import {runtimeApi} from '@/lib/stores/api';
-import {isNode, findElementById} from '@/lib/parsers';
 import {store} from '@/lib/stores/store';
 import {nodeContext, type NodeContext, type ScNode as IScNode, type ScElement} from '../context.ts';
 
@@ -25,17 +24,7 @@ export abstract class ScNode extends LitElement implements IScNode {
     }
 
     getControls(): Record<string, number> {
-        const boxRuntime = runtimeApi.getBox(this.boxId());
-        if (!boxRuntime?.elements) return {};
-        const el = findElementById(boxRuntime.elements, this.id);
-        if (!el || !isNode(el)) return {};
-        const entries = runtimeApi.entries;
-        const result: Record<string, number> = {};
-        for (const [name, entryId] of Object.entries(el.runtime.controls)) {
-            const entry = entries.find(e => e.id === entryId);
-            if (entry) result[name] = entry.value;
-        }
-        return result;
+        return runtimeApi.getControls(this.boxId(), this.id);
     }
 
     registerElement(el: ScElement) {

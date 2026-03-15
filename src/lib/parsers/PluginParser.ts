@@ -84,7 +84,7 @@ export class PluginParser {
     const rEntryId = randomId();
     _ctx.runtime.push({ id: rEntryId, type: "run", targetNode: id, boxId: _ctx.boxId, value: isRunning ? 1 : 0 });
 
-    const groupNode: ScGroupNode = { type: 'sc-group', id, name, isRunning, children: [], runtime: { run: rEntryId, controls: {} } };
+    const groupNode: ScGroupNode = { type: 'sc-group', id, boxId: _ctx.boxId, name, isRunning, children: [], runtime: { run: rEntryId, controls: {} } };
     const children = this.walkChildren(el, { saved: savedChildren, offset: 0, scope: [..._ctx.scope, groupNode], boxId: _ctx.boxId, runtime: _ctx.runtime });
     groupNode.children = children;
     return groupNode;
@@ -109,7 +109,7 @@ export class PluginParser {
     const rEntryId = randomId();
     ctx.runtime.push({ id: rEntryId, type: "run", targetNode: id, boxId: ctx.boxId, value: isRunning ? 1 : 0 });
 
-    return { type: 'sc-synth', id, name, bind, controls, isRunning, runtime: { run: rEntryId, controls: controlEntries } };
+    return { type: 'sc-synth', id, boxId: ctx.boxId, name, bind, controls, isRunning, runtime: { run: rEntryId, controls: controlEntries } };
   }
 
   private processSynthDef({ el, id }: ElementContext, ctx: WalkContext): ScSynthDefNode {
@@ -129,17 +129,17 @@ export class PluginParser {
       bytes = compileSynthDef(name, params, specsMap);
     }
 
-    return { type: 'sc-synthdef', id, name, params, ugens, bytes };
+    return { type: 'sc-synthdef', id, boxId: ctx.boxId, name, params, ugens, bytes };
   }
 
   private processRange({ el, id }: ElementContext, ctx: WalkContext): ScRangeNode {
     const { bind, value, entryId } = this.resolveBindEntry(el, ctx);
-    return { type: 'sc-range', id, bind, value, runtime: { value: entryId } };
+    return { type: 'sc-range', id, boxId: ctx.boxId, bind, value, runtime: { value: entryId } };
   }
 
   private processCheckbox({ el, id }: ElementContext, ctx: WalkContext): ScCheckboxNode {
     const { bind, value, entryId } = this.resolveBindEntry(el, ctx);
-    return { type: 'sc-checkbox', id, bind, value, runtime: { value: entryId } };
+    return { type: 'sc-checkbox', id, boxId: ctx.boxId, bind, value, runtime: { value: entryId } };
   }
 
   private processRun({ el, id }: ElementContext, ctx: WalkContext): ScRunNode {
@@ -162,14 +162,14 @@ export class PluginParser {
         ctx.runtime.push({ id: rEntryId, type: "run", targetNode: id, boxId: ctx.boxId, value: 1 });
       }
     }
-    return { type: 'sc-run', id, bind, value: 1, runtime: { value: rEntryId } };
+    return { type: 'sc-run', id, boxId: ctx.boxId, bind, value: 1, runtime: { value: rEntryId } };
   }
 
   private processMidi({ el, id }: ElementContext, ctx: WalkContext): ScMidiNode {
     const { bind, value, entryId } = this.resolveBindEntry(el, ctx);
     const octaves = Number(el.getAttribute('octaves')) || 2;
     const octave = Number(el.getAttribute('octave')) || 4;
-    return { type: 'sc-midi', id, bind, value, octaves, octave, runtime: { value: entryId } };
+    return { type: 'sc-midi', id, boxId: ctx.boxId, bind, value, octaves, octave, runtime: { value: entryId } };
   }
 
   private resolveBindEntry(el: Element, ctx: WalkContext): { bind: string; value: number; entryId: string } {

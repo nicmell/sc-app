@@ -1,6 +1,5 @@
 import {html, svg, css, LitElement} from 'lit';
 import {ContextConsumer} from '@lit/context';
-import {getRuntimeValue} from '@/lib/runtime';
 import {runtimeApi} from '@/lib/stores/api';
 import {nodeContext} from './context.ts';
 
@@ -42,9 +41,7 @@ export class ScRun extends LitElement {
     }
 
     get run(): boolean {
-        const boxRuntime = runtimeApi.getBox(this._node.value?.boxId() ?? '');
-        if (!boxRuntime?.elements) return true;
-        return (getRuntimeValue(boxRuntime.elements, runtimeApi.entries, this.id) ?? 1) !== 0;
+        return (runtimeApi.getValue(this._node.value?.boxId() ?? '', this.id) ?? 1) !== 0;
     }
 
     private _onClick = () => {
