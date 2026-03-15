@@ -6,7 +6,6 @@ import type {themeSlice} from "@/lib/stores/theme/slice";
 import type {pluginsSlice} from "@/lib/stores/plugins/slice";
 import type {runtimeSlice} from "@/lib/stores/runtime/slice";
 import type {ScElementNode, ScPluginNode} from "@/lib/parsers";
-import type {RuntimeEntry} from "@/lib/runtime/types";
 
 export interface BoxItem {
   i: string;
@@ -95,6 +94,14 @@ export interface ConfigFile {
 
 export interface PluginsState {
   items: PluginInfo[];
+}
+
+export interface RuntimeEntry {
+  id: string;
+  type: "control" | "run";
+  targetNode: string;
+  boxId: string;
+  value: number;
 }
 
 export interface RuntimeState {

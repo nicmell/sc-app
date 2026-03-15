@@ -1,4 +1,4 @@
-import type {RuntimeEntry} from "@/lib/runtime/types";
+import {RuntimeEntry} from "@/types/stores";
 
 export interface UGenSpec {
   name: string;
