@@ -1,6 +1,7 @@
 import {html} from 'lit';
 import {pluginManager} from '@/lib/plugins/PluginManager';
 import {runtimeApi} from '@/lib/stores/api';
+import type {ScPluginNode} from '@/lib/parsers';
 import {ScGroup} from './sc-group.ts';
 
 export class ScPlugin extends ScGroup {
@@ -22,10 +23,11 @@ export class ScPlugin extends ScGroup {
   protected async firstUpdated() {
     super.firstUpdated();
     try {
-      const result = await pluginManager.loadPlugin(this.id);
-      this.innerHTML = result.html;
+      const ctx = await pluginManager.loadPlugin(this.id);
+      const plugin = ctx.elements[0] as ScPluginNode;
+      this.innerHTML = ctx.el.innerHTML;
       this._loading = false;
-      runtimeApi.loadPlugin({id: this.id, loaded: true, title: result.title, elements: result.elements, entries: result.entries});
+      runtimeApi.loadPlugin({id: this.id, loaded: true, title: plugin.runtime.title, elements: plugin.children, entries: ctx.runtime});
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);
       this._loading = false;

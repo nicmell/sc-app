@@ -7,12 +7,7 @@ import type {
     ScGroupNode,
     ScSynthNode,
     ScSynthDefNode,
-    ScRangeNode,
-    ScCheckboxNode,
-    ScRunNode,
-    ScMidiNode,
-    UGenSpec,
-    PluginTreeEntry
+    UGenSpec
 } from "../../types/parsers";
 import {compileSynthDef} from "./SynthDefCompiler";
 import {findElementByPath} from "./elementTree";
@@ -24,122 +19,187 @@ const SYNTH_SKIP_ATTRS = new Set(['id', 'name', 'bind', 'is-running', 'class', '
 const SYNTHDEF_SKIP_ATTRS = new Set(['id', 'name', 'class', 'style', 'slot']);
 const UGEN_SKIP_ATTRS = new Set(['id', 'name', 'type', 'rate', 'class', 'style', 'slot']);
 
-interface WalkContext {
+const MATCH_EXCLUDE_KEYS = new Set(['id', 'boxId', 'runtime', 'children']);
+
+export interface ParseContext {
+    el: Element;
+    id: string;
     saved?: ScElementNode[];
     scope: ScElementNode[];
     offset: number;
     boxId: string;
     runtime: RuntimeEntry[];
+    elements: ScElementNode[];
 }
-
-interface ElementContext {
-    el: Element;
-    id: string;
-}
-
-type ElementHandler = (ectx: ElementContext, ctx: WalkContext) => ScElementNode;
 
 export class PluginParser {
-    private readonly handlers: Record<string, ElementHandler> = {
-        [ELEMENTS.SC_PLUGIN]: (ectx, ctx) => this.processPlugin(ectx, ctx),
-        [ELEMENTS.SC_GROUP]: (ectx, ctx) => this.processGroup(ectx, ctx),
-        [ELEMENTS.SC_SYNTH]: (ectx, ctx) => this.processSynth(ectx, ctx),
-        [ELEMENTS.SC_SYNTHDEF]: (ectx, ctx) => this.processSynthDef(ectx, ctx),
-        [ELEMENTS.SC_RANGE]: (ectx, ctx) => this.processRange(ectx, ctx),
-        [ELEMENTS.SC_CHECKBOX]: (ectx, ctx) => this.processCheckbox(ectx, ctx),
-        [ELEMENTS.SC_RUN]: (ectx, ctx) => this.processRun(ectx, ctx),
-        [ELEMENTS.SC_MIDI]: (ectx, ctx) => this.processMidi(ectx, ctx),
-    };
 
-    private static readonly BIND_ONLY_TAGS: Set<string> = new Set([ELEMENTS.SC_DISPLAY, ELEMENTS.SC_IF]);
-
-    parse(node: Element, boxId: string): PluginTreeEntry {
-        const ctx: WalkContext = {offset: 0, scope: [], boxId, runtime: []};
-        const plugin = this.processPlugin({el: node, id: boxId}, ctx) as ScPluginNode;
-
-        return {elements: plugin.children, entries: ctx.runtime, html: node.innerHTML, title: plugin.runtime.title};
+    parse(node: Element, boxId: string): ParseContext {
+        const ctx: ParseContext = {el: node, id: boxId, offset: 0, scope: [], boxId, runtime: [], elements: []};
+        return this.processElement(ctx);
     }
 
-    private walkChildren(node: Element, ctx: WalkContext): ScElementNode[] {
-        const result: ScElementNode[] = [];
-        for (const child of Array.from(node.children)) {
-            const tag = child.tagName.toLowerCase();
-            if (tag in this.handlers) {
-                result.push(this.processElement(child, tag, ctx));
-            } else if (PluginParser.BIND_ONLY_TAGS.has(tag)) {
-                this.resolveBindEntry(child, ctx);
-                result.push(...this.walkChildren(child, ctx));
-            } else {
-                result.push(...this.walkChildren(child, ctx));
+    private resolveId(tag: string, el: Element, ctx: ParseContext): string {
+        const saved = ctx.saved?.[ctx.offset - 1];
+        if (saved && saved.type === tag) {
+            const props: Record<string, unknown> = {};
+            for (const [key, val] of Object.entries(saved)) {
+                if (!MATCH_EXCLUDE_KEYS.has(key)) props[key] = val;
+            }
+            const htmlProps = this.extractProps(tag, el);
+            if (deepEqual(props, htmlProps)) {
+                return saved.id;
             }
         }
-        return result;
+        return randomId();
     }
 
-    private processElement(el: Element, tag: string, ctx: WalkContext): ScElementNode {
+    private extractProps(tag: string, el: Element): Record<string, unknown> {
+        switch (tag) {
+            case ELEMENTS.SC_GROUP:
+                return {
+                    type: 'sc-group',
+                    name: el.getAttribute('name') ?? '',
+                    isRunning: el.getAttribute('is-running') !== 'false',
+                };
+            case ELEMENTS.SC_SYNTH:
+                return {
+                    type: 'sc-synth',
+                    name: el.getAttribute('name') ?? '',
+                    bind: el.getAttribute('bind') ?? undefined,
+                    isRunning: el.getAttribute('is-running') !== 'false',
+                    controls: this.collectNumericAttrs(el, SYNTH_SKIP_ATTRS),
+                };
+            case ELEMENTS.SC_SYNTHDEF:
+                return {
+                    type: 'sc-synthdef',
+                    name: el.getAttribute('name') ?? '',
+                    params: this.collectNumericAttrs(el, SYNTHDEF_SKIP_ATTRS),
+                    ugens: this.collectUGenSpecs(el),
+                };
+            case ELEMENTS.SC_RANGE:
+                return {
+                    type: 'sc-range',
+                    bind: el.getAttribute('bind') ?? '',
+                    value: Number(el.getAttribute('value')) || 0,
+                };
+            case ELEMENTS.SC_CHECKBOX:
+                return {
+                    type: 'sc-checkbox',
+                    bind: el.getAttribute('bind') ?? '',
+                    value: Number(el.getAttribute('value')) || 0,
+                };
+            case ELEMENTS.SC_RUN:
+                return {
+                    type: 'sc-run',
+                    bind: el.getAttribute('bind') ?? '',
+                    value: 1,
+                };
+            case ELEMENTS.SC_MIDI:
+                return {
+                    type: 'sc-midi',
+                    bind: el.getAttribute('bind') ?? '',
+                    value: Number(el.getAttribute('value')) || 0,
+                    octaves: Number(el.getAttribute('octaves')) || 2,
+                    octave: Number(el.getAttribute('octave')) || 4,
+                };
+            default:
+                return {type: tag};
+        }
+    }
+
+    private processElement(ctx: ParseContext): ParseContext {
+        const tag = ctx.el.tagName.toLowerCase();
         ctx.offset++;
-        const id = el.getAttribute('id') || randomId();
-        const node = this.handlers[tag]({el, id}, ctx);
-        el.setAttribute('id', node.id);
+        ctx.id = this.resolveId(tag, ctx.el, ctx);
+        ctx.el.setAttribute('id', ctx.id);
+        switch (tag) {
+            case ELEMENTS.SC_PLUGIN: this.processPlugin(ctx); break;
+            case ELEMENTS.SC_GROUP: this.processGroup(ctx); break;
+            case ELEMENTS.SC_SYNTH: this.processSynth(ctx); break;
+            case ELEMENTS.SC_SYNTHDEF: this.processSynthDef(ctx); break;
+            case ELEMENTS.SC_RANGE: this.processRange(ctx); break;
+            case ELEMENTS.SC_CHECKBOX: this.processCheckbox(ctx); break;
+            case ELEMENTS.SC_RUN: this.processRun(ctx); break;
+            case ELEMENTS.SC_MIDI: this.processMidi(ctx); break;
+            case ELEMENTS.SC_DISPLAY:
+            case ELEMENTS.SC_IF: this.resolveBindEntry(ctx.el, ctx); this.walkChildren(ctx); break;
+            default: this.walkChildren(ctx); break;
+        }
+        return ctx;
+    }
+
+    private walkChildren(ctx: ParseContext): ParseContext {
+        for (const child of Array.from(ctx.el.children)) {
+            this.processElement({...ctx, el: child});
+        }
+        return ctx;
+    }
+
+    private processPlugin(ctx: ParseContext): ParseContext {
+        const saved = runtimeApi.getBox(ctx.id);
+        const children: ScElementNode[] = [];
+        this.walkChildren({...ctx, saved: saved?.children, elements: children});
+        const node: ScPluginNode = {type: 'sc-plugin', id: ctx.id, children, runtime: {loaded: true, title: ctx.el.querySelector('title')?.textContent ?? undefined}};
+        ctx.elements.push(node);
         ctx.scope.push(node);
-        return node;
+        return ctx;
     }
 
-    private processPlugin({el, id}: ElementContext, ctx: WalkContext): ScPluginNode {
-        const saved = runtimeApi.getBox(id);
-        const children = this.walkChildren(el, {...ctx, saved: saved?.children});
-        const title = el.querySelector('title')?.textContent ?? undefined;
-        return {type: 'sc-plugin', id, children, runtime: {loaded: true, title}};
-    }
-
-    private processGroup({el, id}: ElementContext, _ctx: WalkContext): ScGroupNode {
-        const name = el.getAttribute('name') ?? '';
-        const groupSaved = _ctx.saved?.[_ctx.offset - 1] as ScGroupNode | undefined;
+    private processGroup(ctx: ParseContext): ParseContext {
+        const name = ctx.el.getAttribute('name') ?? '';
+        const groupSaved = ctx.saved?.[ctx.offset - 1] as ScGroupNode | undefined;
         const savedChildren = groupSaved?.type === 'sc-group' && groupSaved.name === name
             ? groupSaved.children
             : undefined;
-        const isRunning = el.getAttribute('is-running') !== 'false';
+        const isRunning = ctx.el.getAttribute('is-running') !== 'false';
 
         const rEntryId = randomId();
-        _ctx.runtime.push({id: rEntryId, type: "run", targetNode: id, boxId: _ctx.boxId, value: isRunning ? 1 : 0});
+        ctx.runtime.push({id: rEntryId, type: "run", targetNode: ctx.id, boxId: ctx.boxId, value: isRunning ? 1 : 0});
 
-        const groupNode: ScGroupNode = {type: 'sc-group', id, boxId: _ctx.boxId, name, isRunning, children: [], runtime: {run: rEntryId, controls: {}}};
-        groupNode.children = this.walkChildren(el, {
+        const children: ScElementNode[] = [];
+        const groupNode: ScGroupNode = {type: 'sc-group', id: ctx.id, boxId: ctx.boxId, name, isRunning, children, runtime: {run: rEntryId, controls: {}}};
+        this.walkChildren({
+            ...ctx,
             saved: savedChildren,
             offset: 0,
-            scope: [..._ctx.scope, groupNode],
-            boxId: _ctx.boxId,
-            runtime: _ctx.runtime
+            scope: [...ctx.scope, groupNode],
+            elements: children,
         });
-        return groupNode;
+        ctx.elements.push(groupNode);
+        ctx.scope.push(groupNode);
+        return ctx;
     }
 
-    private processSynth({el, id}: ElementContext, ctx: WalkContext): ScSynthNode {
-        const name = el.getAttribute('name') ?? '';
-        const bind = el.getAttribute('bind') ?? undefined;
-        const controls = this.collectNumericAttrs(el, SYNTH_SKIP_ATTRS);
+    private processSynth(ctx: ParseContext): ParseContext {
+        const name = ctx.el.getAttribute('name') ?? '';
+        const bind = ctx.el.getAttribute('bind') ?? undefined;
+        const controls = this.collectNumericAttrs(ctx.el, SYNTH_SKIP_ATTRS);
         if (bind && !ctx.scope.some(n => n.type === 'sc-synthdef' && n.name === bind)) {
             throw new Error(`<sc-synth name="${name}">: bind "${bind}" does not match any <sc-synthdef> in scope`);
         }
-        const isRunning = el.getAttribute('is-running') !== 'false';
+        const isRunning = ctx.el.getAttribute('is-running') !== 'false';
 
         const controlEntries: Record<string, string> = {};
         for (const [controlName, defaultValue] of Object.entries(controls)) {
             const entryId = randomId();
-            ctx.runtime.push({id: entryId, type: "control", targetNode: id, boxId: ctx.boxId, value: defaultValue});
+            ctx.runtime.push({id: entryId, type: "control", targetNode: ctx.id, boxId: ctx.boxId, value: defaultValue});
             controlEntries[controlName] = entryId;
         }
 
         const rEntryId = randomId();
-        ctx.runtime.push({id: rEntryId, type: "run", targetNode: id, boxId: ctx.boxId, value: isRunning ? 1 : 0});
+        ctx.runtime.push({id: rEntryId, type: "run", targetNode: ctx.id, boxId: ctx.boxId, value: isRunning ? 1 : 0});
 
-        return {type: 'sc-synth', id, boxId: ctx.boxId, name, bind, controls, isRunning, runtime: {run: rEntryId, controls: controlEntries}};
+        const node: ScSynthNode = {type: 'sc-synth', id: ctx.id, boxId: ctx.boxId, name, bind, controls, isRunning, runtime: {run: rEntryId, controls: controlEntries}};
+        ctx.elements.push(node);
+        ctx.scope.push(node);
+        return ctx;
     }
 
-    private processSynthDef({el, id}: ElementContext, ctx: WalkContext): ScSynthDefNode {
-        const name = el.getAttribute('name') ?? '';
-        const params = this.collectNumericAttrs(el, SYNTHDEF_SKIP_ATTRS);
-        const ugens = this.collectUGenSpecs(el);
+    private processSynthDef(ctx: ParseContext): ParseContext {
+        const name = ctx.el.getAttribute('name') ?? '';
+        const params = this.collectNumericAttrs(ctx.el, SYNTHDEF_SKIP_ATTRS);
+        const ugens = this.collectUGenSpecs(ctx.el);
 
         const saved = ctx.saved?.[ctx.offset - 1];
         const savedDef = saved?.type === 'sc-synthdef' ? saved as ScSynthDefNode : undefined;
@@ -149,7 +209,6 @@ export class PluginParser {
             deepEqual(params, savedDef.params) &&
             deepEqual(ugens, savedDef.ugens)
         ) {
-            // Reuse saved bytes entry
             const savedEntry = runtimeApi.entries.find(e => e.id === savedDef.runtime.bytes);
             bytes = savedEntry?.type === 'synthdef' ? savedEntry.value : compileSynthDef(name, params, new Map(ugens.map(s => [s.name, s])));
         } else {
@@ -159,23 +218,28 @@ export class PluginParser {
         }
 
         const entryId = randomId();
-        ctx.runtime.push({id: entryId, type: "synthdef", targetNode: id, boxId: ctx.boxId, value: bytes});
+        ctx.runtime.push({id: entryId, type: "synthdef", targetNode: ctx.id, boxId: ctx.boxId, value: bytes});
 
-        return {type: 'sc-synthdef', id, boxId: ctx.boxId, name, params, ugens, runtime: {bytes: entryId}};
+        const node: ScSynthDefNode = {type: 'sc-synthdef', id: ctx.id, boxId: ctx.boxId, name, params, ugens, runtime: {bytes: entryId}};
+        ctx.elements.push(node);
+        ctx.scope.push(node);
+        return ctx;
     }
 
-    private processRange({el, id}: ElementContext, ctx: WalkContext): ScRangeNode {
-        const {bind, value, entryId} = this.resolveBindEntry(el, ctx);
-        return {type: 'sc-range', id, boxId: ctx.boxId, bind, value, runtime: {value: entryId}};
+    private processRange(ctx: ParseContext): ParseContext {
+        const {bind, value, entryId} = this.resolveBindEntry(ctx.el, ctx);
+        ctx.elements.push({type: 'sc-range', id: ctx.id, boxId: ctx.boxId, bind, value, runtime: {value: entryId}});
+        return ctx;
     }
 
-    private processCheckbox({el, id}: ElementContext, ctx: WalkContext): ScCheckboxNode {
-        const {bind, value, entryId} = this.resolveBindEntry(el, ctx);
-        return {type: 'sc-checkbox', id, boxId: ctx.boxId, bind, value, runtime: {value: entryId}};
+    private processCheckbox(ctx: ParseContext): ParseContext {
+        const {bind, value, entryId} = this.resolveBindEntry(ctx.el, ctx);
+        ctx.elements.push({type: 'sc-checkbox', id: ctx.id, boxId: ctx.boxId, bind, value, runtime: {value: entryId}});
+        return ctx;
     }
 
-    private processRun({el, id}: ElementContext, ctx: WalkContext): ScRunNode {
-        const bind = el.getAttribute('bind') ?? '';
+    private processRun(ctx: ParseContext): ParseContext {
+        const bind = ctx.el.getAttribute('bind') ?? '';
         let rEntryId: string;
         if (bind) {
             const target = ctx.scope.find(n => 'name' in n && n.name === bind);
@@ -184,27 +248,27 @@ export class PluginParser {
             }
             rEntryId = target.runtime.run;
         } else {
-            // Find parent node in scope (last node walking backwards)
             const parent = [...ctx.scope].reverse().find(n => isNode(n));
             if (parent && isNode(parent)) {
                 rEntryId = parent.runtime.run;
             } else {
-                // Fallback: create a standalone run entry
                 rEntryId = randomId();
-                ctx.runtime.push({id: rEntryId, type: "run", targetNode: id, boxId: ctx.boxId, value: 1});
+                ctx.runtime.push({id: rEntryId, type: "run", targetNode: ctx.id, boxId: ctx.boxId, value: 1});
             }
         }
-        return {type: 'sc-run', id, boxId: ctx.boxId, bind, value: 1, runtime: {value: rEntryId}};
+        ctx.elements.push({type: 'sc-run', id: ctx.id, boxId: ctx.boxId, bind, value: 1, runtime: {value: rEntryId}});
+        return ctx;
     }
 
-    private processMidi({el, id}: ElementContext, ctx: WalkContext): ScMidiNode {
-        const {bind, value, entryId} = this.resolveBindEntry(el, ctx);
-        const octaves = Number(el.getAttribute('octaves')) || 2;
-        const octave = Number(el.getAttribute('octave')) || 4;
-        return {type: 'sc-midi', id, boxId: ctx.boxId, bind, value, octaves, octave, runtime: {value: entryId}};
+    private processMidi(ctx: ParseContext): ParseContext {
+        const {bind, value, entryId} = this.resolveBindEntry(ctx.el, ctx);
+        const octaves = Number(ctx.el.getAttribute('octaves')) || 2;
+        const octave = Number(ctx.el.getAttribute('octave')) || 4;
+        ctx.elements.push({type: 'sc-midi', id: ctx.id, boxId: ctx.boxId, bind, value, octaves, octave, runtime: {value: entryId}});
+        return ctx;
     }
 
-    private resolveBindEntry(el: Element, ctx: WalkContext): { bind: string; value: number; entryId: string } {
+    private resolveBindEntry(el: Element, ctx: ParseContext): { bind: string; value: number; entryId: string } {
         const bind = el.getAttribute('bind') ?? '';
         if (!bind) return {bind, value: 0, entryId: ''};
         const segments = bind.split('.');
@@ -223,14 +287,12 @@ export class PluginParser {
             return {bind, value, entryId};
         }
         if (isGroup(target)) {
-            // Check if group already has an entry for this control
             const existingEntryId = target.runtime.controls[control];
             if (existingEntryId) {
                 const entry = ctx.runtime.find(e => e.id === existingEntryId);
                 const value = entry && entry.type === 'control' ? entry.value : 0;
                 return {bind, value, entryId: existingEntryId};
             }
-            // Find a synth in scope that has this control to get default value
             const synth = ctx.scope.find(n => isSynth(n) && control in n.controls);
             if (!synth || !isSynth(synth)) {
                 throw new Error(`<${el.tagName.toLowerCase()}>: no synth in scope has control "${control}"`);

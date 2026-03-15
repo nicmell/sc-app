@@ -2,7 +2,7 @@ import type {PluginInfo} from "@/types/stores";
 import {layoutApi, pluginsApi, runtimeApi} from "@/lib/stores/api";
 import {rehydrate} from "@/lib/stores/store";
 import {get, post, del} from "@/lib/http";
-import {PluginParser, isGroup, isPlugin, type PluginTreeEntry, type ScElementNode} from "@/lib/parsers";
+import {PluginParser, isGroup, isPlugin, type ParseContext, type ScElementNode} from "@/lib/parsers";
 
 export const PLUGINS_URL = "app://plugins";
 
@@ -54,7 +54,7 @@ export class PluginManager {
     return undefined;
   }
 
-  async loadPlugin(boxId: string): Promise<PluginTreeEntry> {
+  async loadPlugin(boxId: string): Promise<ParseContext> {
     const box = layoutApi.getById(boxId);
     if (!box?.plugin) {
       throw new Error(`No plugin assigned for ${boxId}`);
