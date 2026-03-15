@@ -49,9 +49,10 @@ export const runtimeSlice = createSlice({
   name: SliceName.RUNTIME,
   initialState,
   reducers: {
-    [RuntimeAction.LOAD_PLUGIN]: (state, action: { payload: { plugin: ScPluginNode; entries?: RuntimeEntry[] } }) => {
-      const {plugin, entries} = action.payload;
-      const idx = state.elements.findIndex(p => p.id === plugin.id);
+    [RuntimeAction.LOAD_PLUGIN]: (state, action: { payload: { id: string; loaded: boolean; title?: string; elements?: ScElementNode[]; entries?: RuntimeEntry[]; error?: string } }) => {
+      const {id, loaded, title, elements, entries, error} = action.payload;
+      const plugin: ScPluginNode = {type: 'sc-plugin', id, children: elements ?? [], runtime: {loaded, title, error}};
+      const idx = state.elements.findIndex(p => p.id === id);
       if (idx >= 0) {
         state.elements[idx] = plugin;
       } else {
@@ -59,7 +60,7 @@ export const runtimeSlice = createSlice({
       }
       if (entries && entries.length > 0) {
         const merged = mergeRuntime(entries, state.entries);
-        state.entries = state.entries.filter(e => e.boxId !== plugin.id).concat(merged);
+        state.entries = state.entries.filter(e => e.boxId !== id).concat(merged);
       }
     },
     [RuntimeAction.UNLOAD_PLUGIN]: (state, action: { payload: string }) => {

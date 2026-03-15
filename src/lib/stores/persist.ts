@@ -1,6 +1,5 @@
 import type {PersistOptions} from "zustand/middleware";
 import {tauriStorage} from "@/lib/storage/tauriStorage";
-import {stripRuntime} from "@/lib/parsers";
 import type {RootState, ConfigFile} from "@/types/stores";
 
 // State generic uses `any` because the redux middleware adds `dispatch` to the
@@ -20,10 +19,7 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
         .map(({loaded: _loaded, error: _error, ...plugin}) => ({...plugin})),
     runtime: {
       entries: runtime.entries,
-      elements: runtime.elements.map(plugin => ({
-        ...plugin,
-        children: stripRuntime(plugin.children),
-      })),
+      elements: runtime.elements.filter(plugin => !plugin.runtime.error),
     },
   }),
   merge: (persisted, current: RootState): RootState => {

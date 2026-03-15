@@ -98,7 +98,6 @@ export interface PluginRuntime {
 export interface ScPluginNode {
   type: 'sc-plugin';
   id: string;
-  boxId: string;
   children: ScElementNode[];
   runtime: PluginRuntime;
 }
@@ -106,7 +105,8 @@ export interface ScPluginNode {
 export type ScElementNode = ScPluginNode | ScGroupNode | ScSynthNode | ScSynthDefNode | ScRangeNode | ScCheckboxNode | ScRunNode | ScMidiNode;
 
 export interface PluginTreeEntry {
-  plugin: ScPluginNode;
+  elements: ScElementNode[];
   entries: RuntimeEntry[];
   html: string;
+  title?: string;
 }

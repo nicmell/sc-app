@@ -1,4 +1,4 @@
-import type {ScElementNode, ScPluginNode, ScGroupNode, ScSynthNode, ScRangeNode, ScCheckboxNode, ScMidiNode, ScRunNode} from "./types";
+import type {ScElementNode, ScPluginNode, ScGroupNode, ScSynthNode, ScRangeNode, ScCheckboxNode, ScMidiNode, ScRunNode} from "../../types/parsers";
 
 export function isPlugin(el: ScElementNode): el is ScPluginNode {
   return el.type === 'sc-plugin';
