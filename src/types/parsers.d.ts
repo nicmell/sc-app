@@ -14,7 +14,7 @@ export interface ScGroupNode {
   type: 'sc-group';
   id: string;
   name: string;
-  isRunning: boolean;
+  running: boolean;
   children: ScElementNode[];
   runtime: NodeRuntime;
 }
@@ -25,7 +25,7 @@ export interface ScSynthNode {
   name: string;
   bind?: string;
   controls: Record<string, number>;
-  isRunning: boolean;
+  running: boolean;
   runtime: NodeRuntime;
 }
 
@@ -50,7 +50,6 @@ export interface ScRangeNode {
   type: 'sc-range';
   id: string;
   bind: string;
-  value: number;
   runtime: InputRuntime;
 }
 
@@ -58,7 +57,6 @@ export interface ScCheckboxNode {
   type: 'sc-checkbox';
   id: string;
   bind: string;
-  value: number;
   runtime: InputRuntime;
 }
 
@@ -66,7 +64,6 @@ export interface ScRunNode {
   type: 'sc-run';
   id: string;
   bind: string;
-  value: number;
   runtime: InputRuntime;
 }
 
@@ -74,11 +71,24 @@ export interface ScMidiNode {
   type: 'sc-midi';
   id: string;
   bind: string;
-  value: number;
   octaves: number;
   octave: number;
   runtime: InputRuntime;
 }
+
+export interface PluginRuntime {
+  loaded: boolean;
+  error?: string;
+  title?: string;
+}
+
+export interface ScPluginNode {
+  type: 'sc-plugin';
+  id: string;
+  children: cElementNode[];
+  runtime: PluginRuntime;
+}
+
 
 export type ScElementNode = ScGroupNode | ScSynthNode | ScSynthDefNode | ScRangeNode | ScCheckboxNode | ScRunNode | ScMidiNode;
 
