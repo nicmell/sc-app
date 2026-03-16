@@ -2,17 +2,15 @@ import {ELEMENTS} from "@/constants/sc-elements";
 import {randomId} from "@/lib/utils/randomId.ts";
 import {deepEqual} from "@/lib/utils/deepEqual";
 import type {ScElementNode, UGenSpec} from "../../types/parsers";
-import {runtimeApi} from "@/lib/stores/api.ts";
-
 const SYNTH_SKIP_ATTRS = new Set(['id', 'name', 'bind', 'running', 'class', 'style', 'slot', 'title']);
 const SYNTHDEF_SKIP_ATTRS = new Set(['id', 'name', 'class', 'style', 'slot']);
 const UGEN_SKIP_ATTRS = new Set(['id', 'name', 'type', 'rate', 'class', 'style', 'slot']);
 const EXCLUDE_KEYS = new Set(['id', 'runtime', 'children']);
 const PARENT_TAGS: ReadonlySet<string> = new Set([ELEMENTS.SC_GROUP, ELEMENTS.SC_IF]);
 
-interface WalkContext {
+export interface WalkContext {
     element: Element;
-    matched: { children: ScElementNode[] } | undefined;
+    saved?: ScElementNode[];
     offset: number;
 }
 
@@ -53,10 +51,9 @@ const runtimeDefaults: Record<string, (props: Record<string, unknown>) => unknow
     [ELEMENTS.SC_RUN]: () => ({value: 1}),
 };
 
-export function parsePlugin(boxId: string, node: Element): ScElementNode[] {
-    const saved = runtimeApi.getById(boxId);
-    const matched = saved && 'children' in saved ? saved : undefined;
-    return walkChildren({element: node, matched, offset: 0});
+
+export function parse(element: Element, saved?: ScElementNode[]): ScElementNode[] {
+    return walkChildren({element, saved, offset: 0});
 }
 
 function propsMatch(fresh: Record<string, unknown>, saved: ScElementNode): boolean {
@@ -73,9 +70,9 @@ function extractProps(tag: string, node: Element): Record<string, unknown> {
 }
 
 // TODO: re-enable bind validation and synthdef compilation
-function processChildren(ctx: WalkContext): ScElementNode {
+function processElement(ctx: WalkContext): ScElementNode {
     const tag = ctx.element.tagName.toLowerCase();
-    const savedChild = ctx.matched?.children[ctx.offset];
+    const savedChild = ctx.saved?.[ctx.offset];
     const matched = savedChild?.type === tag ? savedChild : undefined;
     if (savedChild && !matched) {
         console.warn(`[plugin hydration] tag mismatch at offset ${ctx.offset}: <${tag}> vs saved <${savedChild.type}>`);
@@ -99,20 +96,20 @@ function processChildren(ctx: WalkContext): ScElementNode {
         ...PARENT_TAGS.has(tag) && {
             children: walkChildren({
                 element: ctx.element,
-                matched: matched && 'children' in matched ? matched : undefined,
+                saved: matched && 'children' in matched ? matched.children : [],
                 offset: 0
             }),
         }
     }
 }
 
-function walkChildren(ctx: WalkContext): ScElementNode[] {
+export function walkChildren(ctx: WalkContext): ScElementNode[] {
     function visit(element: Element): ScElementNode[] {
         const result: ScElementNode[] = [];
         for (const child of Array.from(element.children)) {
             const tag = child.tagName.toLowerCase();
             if (tag in propsExtractors) {
-                result.push(processChildren({element: child, matched: ctx.matched, offset: ctx.offset}));
+                result.push(processElement({element: child, saved: ctx.saved, offset: ctx.offset}));
                 ctx.offset++;
             } else {
                 result.push(...visit(child));
