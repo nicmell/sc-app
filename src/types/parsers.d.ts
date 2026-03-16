@@ -81,8 +81,6 @@ export interface ScIfNode {
   children: ScElementNode[];
 }
 
-export type PluginRuntime = NodeRuntime;
-
 export interface ScPluginNode {
   type: 'sc-plugin';
   id: string;
@@ -90,7 +88,7 @@ export interface ScPluginNode {
   loaded: boolean;
   error?: string;
   title?: string;
-  runtime: PluginRuntime;
+  runtime: NodeRuntime;
 }
 
 
