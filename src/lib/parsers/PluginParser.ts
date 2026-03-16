@@ -13,7 +13,7 @@ const UGEN_SKIP_ATTRS = new Set(['id', 'name', 'type', 'rate', 'class', 'style',
 const EXCLUDE_KEYS = new Set(['id', 'runtime', 'children']);
 
 interface WalkContext {
-  saved?: ScElementNode[];
+  saved?: ScElementNode;
   scope: ScElementNode[];
   offset: number;
 }
@@ -64,19 +64,20 @@ const propsExtractors: Record<string, PropsExtractor> = {
 };
 
 export function parsePlugin(boxId: string, node: Element): ScElementNode[] {
-  const saved = runtimeApi.getById(boxId);
-  if (saved) {
-    hydrateChildren(node, saved);
-  }
-  return walkChildren(node, { offset: 0, saved: saved?.children, scope: [] });
+  return walkChildren(node, { offset: 0, saved: runtimeApi.getById(boxId), scope: [] });
 }
 
 function matchSaved(node: Element, saved?: ScElementNode): ScElementNode | undefined {
-  if (!saved) return undefined;
+  if (!saved) {
+    return undefined
+  }
   const tag = node.tagName.toLowerCase();
-  const props = extractProps(node);
-  if (saved.type === tag && propsMatch(props, saved)) return saved;
-  console.warn(`[plugin hydration] mismatch: <${tag}> vs saved <${saved.type}>`);
+  const props = extractProps(tag, node);
+  if (saved.type === tag && propsMatch(props, saved)) {
+    return saved
+  } else {
+    console.warn(`[plugin hydration] mismatch: <${tag}> vs saved <${saved.type}>`);
+  }
   return undefined;
 }
 
@@ -85,7 +86,7 @@ function assignId(node: Element, matched?: ScElementNode): void {
   node.setAttribute('id', id);
 }
 
-function hydrateIds(node: Element, saved?: ScElementNode): void {
+function hydrate(node: Element, saved?: ScElementNode): void {
   const matched = matchSaved(node, saved);
   assignId(node, matched);
   if (matched && isParent(matched)) {
@@ -98,8 +99,8 @@ function hydrateChildren(node: Element, saved: ScElementNode, ctx = { offset: 0 
   for (const child of Array.from(node.children)) {
     const tag = child.tagName.toLowerCase();
     if (tag in handlers) {
-      hydrateIds(child, saved.children[ctx.offset]);
       ctx.offset++;
+      hydrate(child, saved.children[ctx.offset]);
     } else {
       hydrateChildren(child, saved, ctx);
     }
@@ -114,8 +115,7 @@ function propsMatch(fresh: Record<string, unknown>, saved: ScElementNode): boole
   return deepEqual(fresh, savedProps);
 }
 
-function extractProps(node: Element): Record<string, unknown> {
-  const tag = node.tagName.toLowerCase();
+function extractProps(tag: string, node: Element): Record<string, unknown> {
   const extractor = propsExtractors[tag];
   return { type: tag, ...extractor?.(node) };
 }
@@ -143,13 +143,10 @@ function processElement(el: Element, tag: string, ctx: WalkContext): ScElementNo
 
 function processGroup({ el, id }: ElementContext, _ctx: WalkContext): ScGroupNode {
   const name = el.getAttribute('name') ?? '';
-  const groupSaved = _ctx.saved?.[_ctx.offset - 1] as ScGroupNode | undefined;
-  const savedChildren = groupSaved?.type === 'sc-group' && groupSaved.name === name
-    ? groupSaved.children
-    : undefined;
+  const saved = _ctx.saved && isParent(_ctx.saved) ? _ctx.saved.children[_ctx.offset - 1] : undefined;
   const running = el.getAttribute('running') !== 'false';
   const groupNode: ScGroupNode = { type: 'sc-group', id, name, running, children: [], runtime: { isRunning: running, controls: {} } };
-  const children = walkChildren(el, { saved: savedChildren, offset: 0, scope: [..._ctx.scope, groupNode] });
+  const children = walkChildren(el, { saved, offset: 0, scope: [..._ctx.scope, groupNode] });
   groupNode.children = children;
   return groupNode;
 }
@@ -170,8 +167,8 @@ function processSynthDef({ el, id }: ElementContext, ctx: WalkContext): ScSynthD
   const params = collectNumericAttrs(el, SYNTHDEF_SKIP_ATTRS);
   const ugens = collectUGenSpecs(el);
 
-  const saved = ctx.saved?.[ctx.offset - 1];
-  const savedDef = saved?.type === 'sc-synthdef' ? saved as ScSynthDefNode : undefined;
+  const prev = ctx.saved && isParent(ctx.saved) ? ctx.saved.children[ctx.offset - 1] : undefined;
+  const savedDef = prev?.type === 'sc-synthdef' ? prev as ScSynthDefNode : undefined;
 
   let bytes: number[];
   if (savedDef && deepEqual(params, savedDef.params) && deepEqual(ugens, savedDef.ugens)) {
