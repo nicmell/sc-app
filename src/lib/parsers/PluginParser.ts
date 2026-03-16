@@ -50,7 +50,8 @@ function hydrateIds(node: Element, saved?: ScElementNode[]): void {
       const tag = child.tagName.toLowerCase();
       if (tag in handlers) {
         const prev = saved?.[offset];
-        const matched = prev?.type === tag && propsMatch(child, tag, prev) ? prev : undefined;
+        const props = extractProps(child);
+        const matched = prev?.type === tag && propsMatch(props, prev) ? prev : undefined;
         if (prev && !matched) {
           console.warn(`[plugin hydration] mismatch at index ${offset}: <${tag}> vs saved <${prev.type}>`);
         }
@@ -69,8 +70,7 @@ function hydrateIds(node: Element, saved?: ScElementNode[]): void {
   walk(node);
 }
 
-function propsMatch(el: Element, tag: string, saved: ScElementNode): boolean {
-  const fresh = extractProps(el, tag);
+function propsMatch(fresh: Record<string, unknown>, saved: ScElementNode): boolean {
   const savedProps: Record<string, unknown> = {};
   for (const [key, val] of Object.entries(saved)) {
     if (!EXCLUDE_KEYS.has(key)) savedProps[key] = val;
@@ -78,35 +78,36 @@ function propsMatch(el: Element, tag: string, saved: ScElementNode): boolean {
   return deepEqual(fresh, savedProps);
 }
 
-function extractProps(el: Element, tag: string): Record<string, unknown> {
+function extractProps(node: Element): Record<string, unknown> {
+  const tag = node.tagName.toLowerCase();
   const props: Record<string, unknown> = { type: tag };
   switch (tag) {
     case ELEMENTS.SC_GROUP:
-      props.name = el.getAttribute('name') ?? '';
-      props.running = el.getAttribute('running') !== 'false';
+      props.name = node.getAttribute('name') ?? '';
+      props.running = node.getAttribute('running') !== 'false';
       break;
     case ELEMENTS.SC_SYNTH:
-      props.name = el.getAttribute('name') ?? '';
-      props.bind = el.getAttribute('bind') ?? undefined;
-      props.controls = collectNumericAttrs(el, SYNTH_SKIP_ATTRS);
-      props.running = el.getAttribute('running') !== 'false';
+      props.name = node.getAttribute('name') ?? '';
+      props.bind = node.getAttribute('bind') ?? undefined;
+      props.controls = collectNumericAttrs(node, SYNTH_SKIP_ATTRS);
+      props.running = node.getAttribute('running') !== 'false';
       break;
     case ELEMENTS.SC_SYNTHDEF:
-      props.name = el.getAttribute('name') ?? '';
-      props.params = collectNumericAttrs(el, SYNTHDEF_SKIP_ATTRS);
-      props.ugens = collectUGenSpecs(el);
+      props.name = node.getAttribute('name') ?? '';
+      props.params = collectNumericAttrs(node, SYNTHDEF_SKIP_ATTRS);
+      props.ugens = collectUGenSpecs(node);
       break;
     case ELEMENTS.SC_RANGE:
     case ELEMENTS.SC_CHECKBOX:
-      props.bind = el.getAttribute('bind') ?? '';
+      props.bind = node.getAttribute('bind') ?? '';
       break;
     case ELEMENTS.SC_RUN:
-      props.bind = el.getAttribute('bind') ?? '';
+      props.bind = node.getAttribute('bind') ?? '';
       break;
     case ELEMENTS.SC_MIDI:
-      props.bind = el.getAttribute('bind') ?? '';
-      props.octaves = Number(el.getAttribute('octaves')) || 2;
-      props.octave = Number(el.getAttribute('octave')) || 4;
+      props.bind = node.getAttribute('bind') ?? '';
+      props.octaves = Number(node.getAttribute('octaves')) || 2;
+      props.octave = Number(node.getAttribute('octave')) || 4;
       break;
   }
   return props;
