@@ -1,7 +1,7 @@
 import {ELEMENTS} from "@/constants/sc-elements";
 import {randomId} from "@/lib/utils/randomId.ts";
 import {deepEqual} from "@/lib/utils/deepEqual";
-import type {ScElementNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScRangeNode, ScCheckboxNode, ScRunNode, ScMidiNode, UGenSpec} from "../../types/parsers";
+import type {ScElementNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScRangeNode, ScCheckboxNode, ScRunNode, ScMidiNode, ScDisplayNode, ScIfNode, UGenSpec} from "../../types/parsers";
 import {compileSynthDef} from "./SynthDefCompiler";
 import {findElementByPath} from "./elementTree";
 import {isSynth, isGroup, isParent, isNode} from "./guards";
@@ -11,7 +11,6 @@ const SYNTH_SKIP_ATTRS = new Set(['id', 'name', 'bind', 'running', 'class', 'sty
 const SYNTHDEF_SKIP_ATTRS = new Set(['id', 'name', 'class', 'style', 'slot']);
 const UGEN_SKIP_ATTRS = new Set(['id', 'name', 'type', 'rate', 'class', 'style', 'slot']);
 const EXCLUDE_KEYS = new Set(['id', 'runtime', 'children']);
-const BIND_ONLY_TAGS: Set<string> = new Set([ELEMENTS.SC_DISPLAY, ELEMENTS.SC_IF]);
 
 interface WalkContext {
   saved?: ScElementNode[];
@@ -34,6 +33,8 @@ const handlers: Record<string, ElementHandler> = {
   [ELEMENTS.SC_CHECKBOX]: (ectx, ctx) => processCheckbox(ectx, ctx),
   [ELEMENTS.SC_RUN]: (ectx, ctx) => processRun(ectx, ctx),
   [ELEMENTS.SC_MIDI]: (ectx, ctx) => processMidi(ectx, ctx),
+  [ELEMENTS.SC_DISPLAY]: (ectx, ctx) => processDisplay(ectx, ctx),
+  [ELEMENTS.SC_IF]: (ectx, ctx) => processIf(ectx, ctx),
 };
 
 export function parsePlugin(boxId: string, node: Element): ScElementNode[] {
@@ -60,7 +61,7 @@ function hydrateIds(node: Element, saved: ScElementNode): void {
         const id = matched ? matched.id : (child.getAttribute('id') || randomId());
         child.setAttribute('id', id);
         offset++;
-        if (tag === ELEMENTS.SC_GROUP && matched) {
+        if (matched && isParent(matched)) {
           hydrateIds(child, matched);
         }
       } else {
@@ -110,6 +111,13 @@ function extractProps(node: Element): Record<string, unknown> {
       props.octaves = Number(node.getAttribute('octaves')) || 2;
       props.octave = Number(node.getAttribute('octave')) || 4;
       break;
+    case ELEMENTS.SC_DISPLAY:
+      props.bind = node.getAttribute('bind') ?? '';
+      props.format = node.getAttribute('format') ?? '';
+      break;
+    case ELEMENTS.SC_IF:
+      props.bind = node.getAttribute('bind') ?? '';
+      break;
   }
   return props;
 }
@@ -120,9 +128,6 @@ function walkChildren(node: Element, ctx: WalkContext): ScElementNode[] {
     const tag = child.tagName.toLowerCase();
     if (tag in handlers) {
       result.push(processElement(child, tag, ctx));
-    } else if (BIND_ONLY_TAGS.has(tag)) {
-      resolveBindValue(child, ctx);
-      result.push(...walkChildren(child, ctx));
     } else {
       result.push(...walkChildren(child, ctx));
     }
@@ -208,6 +213,20 @@ function processMidi({ el, id }: ElementContext, ctx: WalkContext): ScMidiNode {
   const octaves = Number(el.getAttribute('octaves')) || 2;
   const octave = Number(el.getAttribute('octave')) || 4;
   return { type: 'sc-midi', id, bind, octaves, octave, runtime: { value } };
+}
+
+function processDisplay({ el, id }: ElementContext, ctx: WalkContext): ScDisplayNode {
+  resolveBindValue(el, ctx);
+  const bind = el.getAttribute('bind') ?? '';
+  const format = el.getAttribute('format') ?? '';
+  return { type: 'sc-display', id, bind, format };
+}
+
+function processIf({ el, id }: ElementContext, ctx: WalkContext): ScIfNode {
+  resolveBindValue(el, ctx);
+  const bind = el.getAttribute('bind') ?? '';
+  const children = walkChildren(el, { saved: ctx.saved, offset: ctx.offset, scope: ctx.scope });
+  return { type: 'sc-if', id, bind, children };
 }
 
 function resolveBindValue(el: Element, ctx: WalkContext): { bind: string; value: number } {

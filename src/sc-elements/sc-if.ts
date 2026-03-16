@@ -25,6 +25,7 @@ export class ScIf extends LitElement {
 
   static styles = css`
     :host { display: contents; }
+    :host([hidden]) { display: none; }
   `;
 
   constructor() {
@@ -53,21 +54,28 @@ export class ScIf extends LitElement {
     const hasTruthy = this.isTruthy !== null;
     const hasFalsy = this.isFalsy !== null;
 
+    this.toggleAttribute('hidden', !this._shouldShow(pass, hasTruthy, hasFalsy));
+
     if (hasTruthy && hasFalsy) {
       const text = pass ? this.isTruthy : this.isFalsy;
       return text ? html`${text}` : html`<slot></slot>`;
     }
 
     if (hasTruthy) {
-      if (!pass) return html``;
       return this.isTruthy ? html`${this.isTruthy}` : html`<slot></slot>`;
     }
 
     if (hasFalsy) {
-      if (pass) return html``;
       return this.isFalsy ? html`${this.isFalsy}` : html`<slot></slot>`;
     }
 
-    return pass ? html`<slot></slot>` : html``;
+    return html`<slot></slot>`;
+  }
+
+  private _shouldShow(pass: boolean, hasTruthy: boolean, hasFalsy: boolean): boolean {
+    if (hasTruthy && hasFalsy) return true;
+    if (hasTruthy) return pass;
+    if (hasFalsy) return !pass;
+    return pass;
   }
 }

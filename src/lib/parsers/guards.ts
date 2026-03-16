@@ -1,4 +1,4 @@
-import type {ScElementNode, ScPluginNode, ScGroupNode, ScSynthNode, ScRangeNode, ScCheckboxNode, ScMidiNode, ScRunNode} from "../../types/parsers";
+import type {ScElementNode, ScPluginNode, ScGroupNode, ScSynthNode, ScRangeNode, ScCheckboxNode, ScMidiNode, ScRunNode, ScIfNode} from "../../types/parsers";
 
 export function isPlugin(el: ScElementNode): el is ScPluginNode {
   return el.type === 'sc-plugin';
@@ -8,8 +8,8 @@ export function isGroup(el: ScElementNode): el is ScGroupNode {
   return el.type === 'sc-group';
 }
 
-export function isParent(el: ScElementNode): el is ScPluginNode | ScGroupNode {
-  return el.type === 'sc-plugin' || el.type === 'sc-group';
+export function isParent(el: ScElementNode): el is ScPluginNode | ScGroupNode | ScIfNode {
+  return el.type === 'sc-plugin' || el.type === 'sc-group' || el.type === 'sc-if';
 }
 
 export function isSynth(el: ScElementNode): el is ScSynthNode {

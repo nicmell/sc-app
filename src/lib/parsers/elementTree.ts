@@ -1,5 +1,5 @@
 import type {ScElementNode} from "../../types/parsers";
-import {isGroup, isParent, isSynth, isNode, isInput, isRun} from "./guards";
+import {isPlugin, isGroup, isParent, isSynth, isNode, isInput, isRun} from "./guards";
 
 export function findElementById(elements: ScElementNode[], id: string): ScElementNode | undefined {
   for (const el of elements) {
@@ -43,8 +43,12 @@ export function resolveControl(elements: ScElementNode[], bind: string): number 
 export function setControls(element: ScElementNode, controls: Record<string, number>): void {
   if (isSynth(element)) {
     Object.assign(element.runtime.controls, controls);
-  } else if (isParent(element)) {
+  } else if (isGroup(element) || isPlugin(element)) {
     Object.assign(element.runtime.controls, controls);
+    for (const child of element.children) {
+      setControls(child, controls);
+    }
+  } else if (isParent(element)) {
     for (const child of element.children) {
       setControls(child, controls);
     }
@@ -101,8 +105,11 @@ export function syncRunValues(elements: ScElementNode[], root?: ScElementNode[],
 export function stripRuntime(elements: ScElementNode[]): ScElementNode[] {
   return elements.map(el => {
     if (isParent(el)) {
-      const {runtime: _, ...rest} = el;
-      return {...rest, children: stripRuntime(el.children)} as ScElementNode;
+      if ('runtime' in el) {
+        const {runtime: _, ...rest} = el;
+        return {...rest, children: stripRuntime(el.children)} as ScElementNode;
+      }
+      return {...el, children: stripRuntime(el.children)} as ScElementNode;
     }
     if ('runtime' in el) {
       const {runtime: _, ...rest} = el;
