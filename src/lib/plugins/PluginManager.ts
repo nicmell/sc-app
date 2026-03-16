@@ -1,13 +1,12 @@
 import type {PluginInfo} from "@/types/stores";
-import {layoutApi, pluginsApi, runtimeApi} from "@/lib/stores/api";
+import {layoutApi, pluginsApi} from "@/lib/stores/api";
 import {rehydrate} from "@/lib/stores/store";
 import {get, post, del} from "@/lib/http";
-import {PluginParser, type PluginTreeEntry} from "@/lib/parsers";
+import {parse, type PluginTreeEntry} from "@/lib/parsers";
 
 export const PLUGINS_URL = "app://plugins";
 
 export class PluginManager {
-  private readonly treeParser = new PluginParser();
 
   async listPlugins(): Promise<PluginInfo[]> {
     const resp = await get(PLUGINS_URL);
@@ -42,8 +41,11 @@ export class PluginManager {
     if (error) {
       throw new Error(error.textContent ?? "Invalid XHTML")
     }
-    const saved = runtimeApi.getById(boxId);
-    return this.treeParser.parse(doc.documentElement, saved?.children);
+    return {
+      title: doc.title,
+      tree: parse(boxId, doc.documentElement),
+      html: doc.documentElement.innerHTML
+    };
   }
 }
 
