@@ -1,4 +1,4 @@
-export {parse} from "./PluginParser";
-export {isGroup, isSynth, isNode, isInput, isRun} from "./guards";
+export {parsePlugin} from "./PluginParser";
+export {isPlugin, isGroup, isParent, isSynth, isNode, isInput, isRun} from "./guards";
 export {findElementById, findElementByPath, resolveControl, setControls, syncInputValues, syncIsRunning, syncRunValues, stripRuntime} from "./elementTree";
-export type {PluginTreeEntry, ScElementNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScRangeNode, ScCheckboxNode, ScRunNode, ScMidiNode, UGenSpec, NodeRuntime, InputRuntime} from "../../types/parsers";
+export type {PluginTreeEntry, ScElementNode, ScPluginNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScRangeNode, ScCheckboxNode, ScRunNode, ScMidiNode, UGenSpec, NodeRuntime, InputRuntime} from "../../types/parsers";

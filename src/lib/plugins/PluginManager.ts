@@ -2,7 +2,7 @@ import type {PluginInfo} from "@/types/stores";
 import {layoutApi, pluginsApi} from "@/lib/stores/api";
 import {rehydrate} from "@/lib/stores/store";
 import {get, post, del} from "@/lib/http";
-import {parse, type PluginTreeEntry} from "@/lib/parsers";
+import {parsePlugin, type PluginTreeEntry} from "@/lib/parsers";
 
 export const PLUGINS_URL = "app://plugins";
 
@@ -43,7 +43,7 @@ export class PluginManager {
     }
     return {
       title: doc.title,
-      tree: parse(boxId, doc.documentElement),
+      tree: parsePlugin(boxId, doc.documentElement),
       html: doc.documentElement.innerHTML
     };
   }

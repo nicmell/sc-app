@@ -27,6 +27,7 @@ export const runtimeSlice = createSlice({
           error: action.payload.error,
           title: action.payload.title,
           children: action.payload.elements ?? [],
+          runtime: { isRunning: true, controls: {} },
         });
       }
     },

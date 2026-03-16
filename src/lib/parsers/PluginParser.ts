@@ -4,7 +4,7 @@ import {deepEqual} from "@/lib/utils/deepEqual";
 import type {ScElementNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScRangeNode, ScCheckboxNode, ScRunNode, ScMidiNode, UGenSpec} from "../../types/parsers";
 import {compileSynthDef} from "./SynthDefCompiler";
 import {findElementByPath} from "./elementTree";
-import {isSynth, isGroup, isNode} from "./guards";
+import {isSynth, isGroup, isParent, isNode} from "./guards";
 import {runtimeApi} from "@/lib/stores/api.ts";
 
 const SYNTH_SKIP_ATTRS = new Set(['id', 'name', 'bind', 'running', 'class', 'style', 'slot', 'title']);
@@ -36,20 +36,22 @@ const handlers: Record<string, ElementHandler> = {
   [ELEMENTS.SC_MIDI]: (ectx, ctx) => processMidi(ectx, ctx),
 };
 
-export function parse(boxId: string, node: Element): ScElementNode[] {
+export function parsePlugin(boxId: string, node: Element): ScElementNode[] {
   const saved = runtimeApi.getById(boxId);
-  const children = saved?.children
-  hydrateIds(node, children);
-  return walkChildren(node, { offset: 0, saved: children, scope: [] });
+  if (saved) {
+    hydrateIds(node, saved);
+  }
+  return walkChildren(node, { offset: 0, saved: saved?.children, scope: [] });
 }
 
-function hydrateIds(node: Element, saved?: ScElementNode[]): void {
+function hydrateIds(node: Element, saved: ScElementNode): void {
+  if (!isParent(saved)) return;
   let offset = 0;
   const walk = (parent: Element) => {
     for (const child of Array.from(parent.children)) {
       const tag = child.tagName.toLowerCase();
       if (tag in handlers) {
-        const prev = saved?.[offset];
+        const prev = saved.children[offset];
         const props = extractProps(child);
         const matched = prev?.type === tag && propsMatch(props, prev) ? prev : undefined;
         if (prev && !matched) {
@@ -58,9 +60,8 @@ function hydrateIds(node: Element, saved?: ScElementNode[]): void {
         const id = matched ? matched.id : (child.getAttribute('id') || randomId());
         child.setAttribute('id', id);
         offset++;
-        if (tag === ELEMENTS.SC_GROUP) {
-          const savedGroup = matched?.type === 'sc-group' ? matched as ScGroupNode : undefined;
-          hydrateIds(child, savedGroup?.children);
+        if (tag === ELEMENTS.SC_GROUP && matched) {
+          hydrateIds(child, matched);
         }
       } else {
         walk(child);
