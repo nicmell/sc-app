@@ -9,5 +9,4 @@ export const ELEMENTS = {
   SC_PLUGIN: 'sc-plugin',
   SC_SYNTHDEF: 'sc-synthdef',
   SC_UGEN: 'sc-ugen',
-  SC_MIDI: 'sc-midi',
 } as const;

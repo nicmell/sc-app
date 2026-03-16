@@ -1,7 +1,7 @@
 import {ELEMENTS} from "@/constants/sc-elements";
 import {randomId} from "@/lib/utils/randomId.ts";
 import {deepEqual} from "@/lib/utils/deepEqual";
-import type {ScElementNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScRangeNode, ScCheckboxNode, ScRunNode, ScMidiNode, ScDisplayNode, ScIfNode, UGenSpec} from "../../types/parsers";
+import type {ScElementNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode, UGenSpec} from "../../types/parsers";
 import {compileSynthDef} from "./SynthDefCompiler";
 import {findElementByPath} from "./elementTree";
 import {isSynth, isGroup, isParent, isNode} from "./guards";
@@ -24,6 +24,7 @@ interface ElementContext {
 }
 
 type ElementHandler = (ectx: ElementContext, ctx: WalkContext) => ScElementNode;
+type PropsExtractor = (el: Element) => Record<string, unknown>;
 
 const handlers: Record<string, ElementHandler> = {
   [ELEMENTS.SC_GROUP]: (ectx, ctx) => processGroup(ectx, ctx),
@@ -32,44 +33,77 @@ const handlers: Record<string, ElementHandler> = {
   [ELEMENTS.SC_RANGE]: (ectx, ctx) => processRange(ectx, ctx),
   [ELEMENTS.SC_CHECKBOX]: (ectx, ctx) => processCheckbox(ectx, ctx),
   [ELEMENTS.SC_RUN]: (ectx, ctx) => processRun(ectx, ctx),
-  [ELEMENTS.SC_MIDI]: (ectx, ctx) => processMidi(ectx, ctx),
   [ELEMENTS.SC_DISPLAY]: (ectx, ctx) => processDisplay(ectx, ctx),
   [ELEMENTS.SC_IF]: (ectx, ctx) => processIf(ectx, ctx),
+};
+
+const propsExtractors: Record<string, PropsExtractor> = {
+  [ELEMENTS.SC_GROUP]: (el) => ({
+    name: el.getAttribute('name') ?? '',
+    running: el.getAttribute('running') !== 'false',
+  }),
+  [ELEMENTS.SC_SYNTH]: (el) => ({
+    name: el.getAttribute('name') ?? '',
+    bind: el.getAttribute('bind') ?? undefined,
+    controls: collectNumericAttrs(el, SYNTH_SKIP_ATTRS),
+    running: el.getAttribute('running') !== 'false',
+  }),
+  [ELEMENTS.SC_SYNTHDEF]: (el) => ({
+    name: el.getAttribute('name') ?? '',
+    params: collectNumericAttrs(el, SYNTHDEF_SKIP_ATTRS),
+    ugens: collectUGenSpecs(el),
+  }),
+  [ELEMENTS.SC_RANGE]: (el) => ({ bind: el.getAttribute('bind') ?? '' }),
+  [ELEMENTS.SC_CHECKBOX]: (el) => ({ bind: el.getAttribute('bind') ?? '' }),
+  [ELEMENTS.SC_RUN]: (el) => ({ bind: el.getAttribute('bind') ?? '' }),
+  [ELEMENTS.SC_DISPLAY]: (el) => ({
+    bind: el.getAttribute('bind') ?? '',
+    format: el.getAttribute('format') ?? '',
+  }),
+  [ELEMENTS.SC_IF]: (el) => ({ bind: el.getAttribute('bind') ?? '' }),
 };
 
 export function parsePlugin(boxId: string, node: Element): ScElementNode[] {
   const saved = runtimeApi.getById(boxId);
   if (saved) {
-    hydrateIds(node, saved);
+    hydrateChildren(node, saved);
   }
   return walkChildren(node, { offset: 0, saved: saved?.children, scope: [] });
 }
 
-function hydrateIds(node: Element, saved: ScElementNode): void {
+function matchSaved(node: Element, saved?: ScElementNode): ScElementNode | undefined {
+  if (!saved) return undefined;
+  const tag = node.tagName.toLowerCase();
+  const props = extractProps(node);
+  if (saved.type === tag && propsMatch(props, saved)) return saved;
+  console.warn(`[plugin hydration] mismatch: <${tag}> vs saved <${saved.type}>`);
+  return undefined;
+}
+
+function assignId(node: Element, matched?: ScElementNode): void {
+  const id = matched ? matched.id : (node.getAttribute('id') || randomId());
+  node.setAttribute('id', id);
+}
+
+function hydrateIds(node: Element, saved?: ScElementNode): void {
+  const matched = matchSaved(node, saved);
+  assignId(node, matched);
+  if (matched && isParent(matched)) {
+    hydrateChildren(node, matched);
+  }
+}
+
+function hydrateChildren(node: Element, saved: ScElementNode, ctx = { offset: 0 }): void {
   if (!isParent(saved)) return;
-  let offset = 0;
-  const walk = (parent: Element) => {
-    for (const child of Array.from(parent.children)) {
-      const tag = child.tagName.toLowerCase();
-      if (tag in handlers) {
-        const prev = saved.children[offset];
-        const props = extractProps(child);
-        const matched = prev?.type === tag && propsMatch(props, prev) ? prev : undefined;
-        if (prev && !matched) {
-          console.warn(`[plugin hydration] mismatch at index ${offset}: <${tag}> vs saved <${prev.type}>`);
-        }
-        const id = matched ? matched.id : (child.getAttribute('id') || randomId());
-        child.setAttribute('id', id);
-        offset++;
-        if (matched && isParent(matched)) {
-          hydrateIds(child, matched);
-        }
-      } else {
-        walk(child);
-      }
+  for (const child of Array.from(node.children)) {
+    const tag = child.tagName.toLowerCase();
+    if (tag in handlers) {
+      hydrateIds(child, saved.children[ctx.offset]);
+      ctx.offset++;
+    } else {
+      hydrateChildren(child, saved, ctx);
     }
-  };
-  walk(node);
+  }
 }
 
 function propsMatch(fresh: Record<string, unknown>, saved: ScElementNode): boolean {
@@ -82,44 +116,8 @@ function propsMatch(fresh: Record<string, unknown>, saved: ScElementNode): boole
 
 function extractProps(node: Element): Record<string, unknown> {
   const tag = node.tagName.toLowerCase();
-  const props: Record<string, unknown> = { type: tag };
-  switch (tag) {
-    case ELEMENTS.SC_GROUP:
-      props.name = node.getAttribute('name') ?? '';
-      props.running = node.getAttribute('running') !== 'false';
-      break;
-    case ELEMENTS.SC_SYNTH:
-      props.name = node.getAttribute('name') ?? '';
-      props.bind = node.getAttribute('bind') ?? undefined;
-      props.controls = collectNumericAttrs(node, SYNTH_SKIP_ATTRS);
-      props.running = node.getAttribute('running') !== 'false';
-      break;
-    case ELEMENTS.SC_SYNTHDEF:
-      props.name = node.getAttribute('name') ?? '';
-      props.params = collectNumericAttrs(node, SYNTHDEF_SKIP_ATTRS);
-      props.ugens = collectUGenSpecs(node);
-      break;
-    case ELEMENTS.SC_RANGE:
-    case ELEMENTS.SC_CHECKBOX:
-      props.bind = node.getAttribute('bind') ?? '';
-      break;
-    case ELEMENTS.SC_RUN:
-      props.bind = node.getAttribute('bind') ?? '';
-      break;
-    case ELEMENTS.SC_MIDI:
-      props.bind = node.getAttribute('bind') ?? '';
-      props.octaves = Number(node.getAttribute('octaves')) || 2;
-      props.octave = Number(node.getAttribute('octave')) || 4;
-      break;
-    case ELEMENTS.SC_DISPLAY:
-      props.bind = node.getAttribute('bind') ?? '';
-      props.format = node.getAttribute('format') ?? '';
-      break;
-    case ELEMENTS.SC_IF:
-      props.bind = node.getAttribute('bind') ?? '';
-      break;
-  }
-  return props;
+  const extractor = propsExtractors[tag];
+  return { type: tag, ...extractor?.(node) };
 }
 
 function walkChildren(node: Element, ctx: WalkContext): ScElementNode[] {
@@ -206,13 +204,6 @@ function processRun({ el, id }: ElementContext, ctx: WalkContext): ScRunNode {
     }
   }
   return { type: 'sc-run', id, bind, runtime: { value: 1 } };
-}
-
-function processMidi({ el, id }: ElementContext, ctx: WalkContext): ScMidiNode {
-  const { bind, value } = resolveBindValue(el, ctx);
-  const octaves = Number(el.getAttribute('octaves')) || 2;
-  const octave = Number(el.getAttribute('octave')) || 4;
-  return { type: 'sc-midi', id, bind, octaves, octave, runtime: { value } };
 }
 
 function processDisplay({ el, id }: ElementContext, ctx: WalkContext): ScDisplayNode {

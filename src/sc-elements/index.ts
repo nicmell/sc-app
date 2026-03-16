@@ -9,7 +9,6 @@ import {ScRun} from './sc-run.ts';
 import {ScPlugin} from './sc-plugin.ts';
 import {ScSynthDef} from './sc-synthdef.ts';
 import {ScUgen} from './sc-ugen.ts';
-import {ScMidi} from './sc-midi.ts';
 
 export default {
   [ELEMENTS.SC_DISPLAY]: ScDisplay,
@@ -22,5 +21,4 @@ export default {
   [ELEMENTS.SC_PLUGIN]: ScPlugin,
   [ELEMENTS.SC_SYNTHDEF]: ScSynthDef,
   [ELEMENTS.SC_UGEN]: ScUgen,
-  [ELEMENTS.SC_MIDI]: ScMidi,
 };

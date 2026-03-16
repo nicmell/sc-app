@@ -67,15 +67,6 @@ export interface ScRunNode {
   runtime: InputRuntime;
 }
 
-export interface ScMidiNode {
-  type: 'sc-midi';
-  id: string;
-  bind: string;
-  octaves: number;
-  octave: number;
-  runtime: InputRuntime;
-}
-
 export interface ScDisplayNode {
   type: 'sc-display';
   id: string;
@@ -103,7 +94,7 @@ export interface ScPluginNode {
 }
 
 
-export type ScElementNode = ScPluginNode | ScGroupNode | ScSynthNode | ScSynthDefNode | ScRangeNode | ScCheckboxNode | ScRunNode | ScMidiNode | ScDisplayNode | ScIfNode;
+export type ScElementNode = ScPluginNode | ScGroupNode | ScSynthNode | ScSynthDefNode | ScRangeNode | ScCheckboxNode | ScRunNode | ScDisplayNode | ScIfNode;
 
 export interface PluginTreeEntry {
   title: string;
