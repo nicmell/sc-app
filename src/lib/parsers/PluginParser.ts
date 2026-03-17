@@ -1,9 +1,11 @@
 import {ELEMENTS} from "@/constants/sc-elements";
 import {randomId} from "@/lib/utils/randomId.ts";
 import {deepEqual} from "@/lib/utils/deepEqual";
-import type {ScElementNode, UGenSpec} from "../../types/parsers";
+import type {ScElementNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScRangeNode, ScCheckboxNode, ScRunNode, UGenSpec} from "../../types/parsers";
+/*
 import {isGroup, isInput, isRun, isSynth, isSynthDef, isVisual} from "@/lib/parsers/guards.ts";
 import {findElementByPath} from "@/lib/parsers/elementTree.ts";
+*/
 
 const SYNTH_SKIP_ATTRS = new Set(['id', 'name', 'bind', 'running', 'class', 'style', 'slot', 'title']);
 const SYNTHDEF_SKIP_ATTRS = new Set(['id', 'name', 'class', 'style', 'slot']);
@@ -26,6 +28,7 @@ export interface WalkContext {
 }
 
 type PropsExtractor = (el: Element) => Record<string, unknown>;
+
 
 const propsExtractors: Record<string, PropsExtractor> = {
     [ELEMENTS.SC_GROUP]: (el) => ({
@@ -53,14 +56,14 @@ const propsExtractors: Record<string, PropsExtractor> = {
     [ELEMENTS.SC_IF]: (el) => ({bind: el.getAttribute('bind') ?? ''}),
 };
 
-const runtimeDefaults: Record<string, (props: Record<string, unknown>) => unknown> = {
-    [ELEMENTS.SC_GROUP]: (p) => ({isRunning: p.running, controls: {}}),
-    [ELEMENTS.SC_SYNTH]: (p) => ({isRunning: p.running, controls: {...(p.controls as Record<string, number>)}}),
-    [ELEMENTS.SC_SYNTHDEF]: () => ({value: []}),
-    [ELEMENTS.SC_RANGE]: () => ({value: 0}),
-    [ELEMENTS.SC_CHECKBOX]: () => ({value: 0}),
-    [ELEMENTS.SC_RUN]: () => ({value: 1}),
-};
+const runtimeHandlers = {
+    [ELEMENTS.SC_GROUP]: (n: ScGroupNode) => Object.assign(n, {runtime: {isRunning: n.running, controls: {}}}),
+    [ELEMENTS.SC_SYNTH]: (n: ScSynthNode) => Object.assign(n, {runtime: {isRunning: n.running, controls: {...n.controls}}}),
+    [ELEMENTS.SC_SYNTHDEF]: (n: ScSynthDefNode) => Object.assign(n, {runtime: {value: []}}),
+    [ELEMENTS.SC_RANGE]: (n: ScRangeNode) => Object.assign(n, {runtime: {value: 0}}),
+    [ELEMENTS.SC_CHECKBOX]: (n: ScCheckboxNode) => Object.assign(n, {runtime: {value: 0}}),
+    [ELEMENTS.SC_RUN]: (n: ScRunNode) => Object.assign(n, {runtime: {value: 1}}),
+} as Record<string, (node: ScElementNode, scope: ScElementNode[], ctx: WalkContext) => void>;
 
 
 export function parse(element: Element, saved?: ScElementNode[]): ScElementNode[] {
@@ -115,11 +118,8 @@ function processElement(ctx: WalkContext): ScElementNode {
 }
 
 function processRuntime(node: ScElementNode, scope: ScElementNode[], ctx: WalkContext) {
-    const factory = runtimeDefaults[node.type];
-    if (factory) {
-        validateBind(node, scope, ctx)
-        Object.assign(node, {runtime: factory(node as unknown as Record<string, unknown>)});
-    }
+    const handler = runtimeHandlers[node.type];
+    if (handler) handler(node, scope, ctx);
 }
 
 export function walkChildren(ctx: WalkContext): ScElementNode[] {
@@ -177,6 +177,7 @@ function collectNumericAttrs(el: Element, skip: Set<string>): Record<string, num
     }
     return params;
 }
+/*
 
 function validateBind(node: ScElementNode, scope: ScElementNode[], ctx: WalkContext) {
     console.log(ctx)
@@ -204,3 +205,4 @@ function validateBind(node: ScElementNode, scope: ScElementNode[], ctx: WalkCont
         }
     }
 }
+*/
