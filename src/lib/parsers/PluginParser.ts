@@ -2,16 +2,27 @@ import {ELEMENTS} from "@/constants/sc-elements";
 import {randomId} from "@/lib/utils/randomId.ts";
 import {deepEqual} from "@/lib/utils/deepEqual";
 import type {ScElementNode, UGenSpec} from "../../types/parsers";
+import {isGroup, isInput, isRun, isSynth, isSynthDef, isVisual} from "@/lib/parsers/guards.ts";
+import {findElementByPath} from "@/lib/parsers/elementTree.ts";
+
 const SYNTH_SKIP_ATTRS = new Set(['id', 'name', 'bind', 'running', 'class', 'style', 'slot', 'title']);
 const SYNTHDEF_SKIP_ATTRS = new Set(['id', 'name', 'class', 'style', 'slot']);
 const UGEN_SKIP_ATTRS = new Set(['id', 'name', 'type', 'rate', 'class', 'style', 'slot']);
 const EXCLUDE_KEYS = new Set(['id', 'runtime', 'children']);
 const PARENT_TAGS: ReadonlySet<string> = new Set([ELEMENTS.SC_GROUP, ELEMENTS.SC_IF]);
 
+
+export type RuntimeEntry =
+    | { type: "control"; name: string, targetNode: string; boxId: string; value: number }
+    | { type: "run"; targetNode: string; boxId: string; value: number }
+    | { type: "synthdef"; targetNode: string; boxId: string; value: number[] };
+
+
 export interface WalkContext {
     element: Element;
     saved?: ScElementNode[];
     offset: number;
+    runtime: Map<string, RuntimeEntry>
 }
 
 type PropsExtractor = (el: Element) => Record<string, unknown>;
@@ -53,7 +64,7 @@ const runtimeDefaults: Record<string, (props: Record<string, unknown>) => unknow
 
 
 export function parse(element: Element, saved?: ScElementNode[]): ScElementNode[] {
-    return walkChildren({element, saved, offset: 0});
+    return walkChildren({element, saved, offset: 0, runtime: new Map<string, RuntimeEntry>});
 }
 
 function propsMatch(fresh: Record<string, unknown>, saved: ScElementNode): boolean {
@@ -87,8 +98,7 @@ function processElement(ctx: WalkContext): ScElementNode {
         if (matched) console.warn(`[plugin hydration] props mismatch for <${tag}>`);
         const id = randomId();
         ctx.element.setAttribute('id', id);
-        const factory = runtimeDefaults[tag];
-        node = (factory ? {...props, id, runtime: factory(props)} : {...props, id}) as ScElementNode;
+        node = {...props, id} as ScElementNode;
     }
 
     return {
@@ -96,10 +106,19 @@ function processElement(ctx: WalkContext): ScElementNode {
         ...PARENT_TAGS.has(tag) && {
             children: walkChildren({
                 element: ctx.element,
+                runtime: ctx.runtime,
                 saved: matched && 'children' in matched ? matched.children : [],
-                offset: 0
+                offset: 0,
             }),
         }
+    }
+}
+
+function processRuntime(node: ScElementNode, scope: ScElementNode[], ctx: WalkContext) {
+    const factory = runtimeDefaults[node.type];
+    if (factory) {
+        validateBind(node, scope, ctx)
+        Object.assign(node, {runtime: factory(node as unknown as Record<string, unknown>)});
     }
 }
 
@@ -109,11 +128,14 @@ export function walkChildren(ctx: WalkContext): ScElementNode[] {
         for (const child of Array.from(element.children)) {
             const tag = child.tagName.toLowerCase();
             if (tag in propsExtractors) {
-                result.push(processElement({element: child, saved: ctx.saved, offset: ctx.offset}));
+                result.push(processElement({element: child, saved: ctx.saved, offset: ctx.offset, runtime: ctx.runtime}));
                 ctx.offset++;
             } else {
                 result.push(...visit(child));
             }
+        }
+        for (const node of result) {
+            processRuntime(node, result, ctx);
         }
         return result;
     }
@@ -154,4 +176,31 @@ function collectNumericAttrs(el: Element, skip: Set<string>): Record<string, num
         if (!isNaN(val)) params[attr.name] = val;
     }
     return params;
+}
+
+function validateBind(node: ScElementNode, scope: ScElementNode[], ctx: WalkContext) {
+    console.log(ctx)
+    if ("bind" in node) {
+        if (isSynth(node)) {
+            const segments = node.bind.split('.');
+            const target = findElementByPath(scope, segments)
+            if (node.bind && (!target || !isSynthDef(target))) {
+                throw new Error(`<sc-synth bind="${node.bind}">: does not match any <sc-synthdef> in scope`);
+            }
+        }
+        if (isRun(node)) {
+            const segments = node.bind.split('.');
+            const target = findElementByPath(scope, segments)
+            if (node.bind && (!target || !isSynth(target) || isGroup(target))) {
+                throw new Error(`<sc-run>: bind "${node.bind}" does not match any <sc-synth> or <sc-group> in scope`);
+            }
+        }
+        if (isInput(node) || isVisual(node)) {
+            const segments = node.bind.split('.');
+            const target = findElementByPath(scope, segments.slice(0, segments.length - 1))
+            if (node.bind && (!target || !isSynth(target) || isGroup(target))) {
+                throw new Error(`<${node.type} bind="${node.bind}">: does not match any <sc-synth> or <sc-group> in scope`);
+            }
+        }
+    }
 }

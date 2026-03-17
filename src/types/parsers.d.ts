@@ -23,7 +23,7 @@ export interface ScSynthNode {
   type: 'sc-synth';
   id: string;
   name: string;
-  bind?: string;
+  bind: string;
   controls: Record<string, number>;
   running: boolean;
   runtime: NodeRuntime;
