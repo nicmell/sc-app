@@ -11,16 +11,13 @@ export class ScSynth extends ScNode {
     static properties = {
         ...ScNode.properties,
         bind: {type: String},
-        running: {type: Boolean},
     };
 
     declare bind: string;
-    declare running: boolean;
 
     constructor() {
         super();
         this.bind = 'default';
-        this.running = true;
     }
 
     protected firstUpdated() {

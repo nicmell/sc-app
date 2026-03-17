@@ -9,17 +9,6 @@ import {
 import {ScNode} from './internal/sc-node.ts';
 
 export class ScGroup extends ScNode {
-    static properties = {
-        ...ScNode.properties,
-        running: {type: Boolean},
-    };
-
-    declare running: boolean;
-
-    constructor() {
-        super();
-        this.running = true;
-    }
 
     protected firstUpdated() {
         oscService.send(

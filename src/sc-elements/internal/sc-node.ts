@@ -11,9 +11,11 @@ import {nodeContext, type NodeContext, type ScNode as IScNode, type ScElement} f
 export abstract class ScNode extends LitElement implements IScNode {
     static properties = {
         name: {type: String, reflect: true},
+        running: {type: Boolean, reflect: true},
     };
 
     declare name: string;
+    declare running: boolean;
     readonly nodeId = oscService.nextNodeId();
     protected _loaded = false;
     protected registeredElements = new Set<ScElement>();
@@ -94,6 +96,7 @@ export abstract class ScNode extends LitElement implements IScNode {
 
     constructor() {
         super();
+        this.running = true;
         this._parent = new ContextConsumer(this, {
             context: nodeContext, subscribe: false,
             callback: (ctx) => ctx?.registerElement(this),
