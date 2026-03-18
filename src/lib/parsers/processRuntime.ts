@@ -88,12 +88,12 @@ export function processPluginRuntime(n: ScPluginNode, ctx: WalkContext) {
     Object.assign(n, {runtime: {run: runId, controls: {}}});
 }
 
-export function processGroupRuntime(n: ScGroupNode, ctx: WalkContext) {
+function processGroupRuntime(n: ScGroupNode, ctx: WalkContext) {
     const runId = findOrCreateEntry(ctx, "run", n.id, n.name, n.running ? 1 : 0);
     Object.assign(n, {runtime: {run: runId, controls: {}}});
 }
 
-export function processSynthRuntime(n: ScSynthNode, ctx: WalkContext) {
+function processSynthRuntime(n: ScSynthNode, ctx: WalkContext) {
     if (n.bind) {
         const target = findElementByPath(ctx.scope, n.bind.split('.'));
         if (!target || !isSynthDef(target)) {
@@ -108,7 +108,7 @@ export function processSynthRuntime(n: ScSynthNode, ctx: WalkContext) {
     Object.assign(n, {runtime: {run: runId, controls}});
 }
 
-export function processSynthDefRuntime(n: ScSynthDefNode, ctx: WalkContext) {
+function processSynthDefRuntime(n: ScSynthDefNode, ctx: WalkContext) {
     let bytes: number[] = [];
     if (n.ugens.length > 0) {
         const specsMap = new Map(n.ugens.map(u => [u.name, u]));
@@ -118,10 +118,9 @@ export function processSynthDefRuntime(n: ScSynthDefNode, ctx: WalkContext) {
     Object.assign(n, {runtime: {value: entryId}});
 }
 
-export function processRangeRuntime(n: ScRangeNode, ctx: WalkContext) {
+function processRangeRuntime(n: ScRangeNode, ctx: WalkContext) {
     const {targetNode, controlName, defaultValue} = resolveControlBind(n, ctx);
     const entryId = findOrCreateEntry(ctx, "control", targetNode, controlName, defaultValue);
-    // Also update the target node's runtime.controls
     const segments = n.bind.split('.');
     const target = findElementByPath(ctx.scope, segments.slice(0, -1));
     if (target && isNode(target)) {
@@ -130,19 +129,18 @@ export function processRangeRuntime(n: ScRangeNode, ctx: WalkContext) {
     Object.assign(n, {runtime: {value: entryId}});
 }
 
-export function processCheckboxRuntime(n: ScCheckboxNode, ctx: WalkContext) {
+function processCheckboxRuntime(n: ScCheckboxNode, ctx: WalkContext) {
     const {targetNode, controlName, defaultValue} = resolveControlBind(n, ctx);
     const entryId = findOrCreateEntry(ctx, "control", targetNode, controlName, defaultValue);
     const segments = n.bind.split('.');
     const target = findElementByPath(ctx.scope, segments.slice(0, -1));
-    // Update the target node's runtime.controls. TODO: verify logic behind it
     if (target && isNode(target)) {
         target.runtime.controls[controlName] = entryId;
     }
     Object.assign(n, {runtime: {value: entryId}});
 }
 
-export function processRunRuntime(n: ScRunNode, ctx: WalkContext) {
+function processRunRuntime(n: ScRunNode, ctx: WalkContext) {
     let target: ScElementNode | undefined;
     if (n.bind) {
         target = findElementByPath(ctx.scope, n.bind.split('.'));
@@ -155,20 +153,19 @@ export function processRunRuntime(n: ScRunNode, ctx: WalkContext) {
     const targetId = target ? target.id : '';
     const targetName = target && 'name' in target ? target.name : '';
     const entryId = findOrCreateEntry(ctx, "run", targetId, targetName, 1);
-    // Update the target node's runtime.run. TODO: verify logic behind it
     if (target && isNode(target)) {
         target.runtime.run = entryId;
     }
     Object.assign(n, {runtime: {value: entryId}});
 }
 
-export function processDisplayRuntime(n: ScDisplayNode, ctx: WalkContext) {
+function processDisplayRuntime(n: ScDisplayNode, ctx: WalkContext) {
     const {targetNode, controlName, defaultValue} = resolveControlBind(n, ctx);
     const entryId = findOrCreateEntry(ctx, "control", targetNode, controlName, defaultValue);
     Object.assign(n, {runtime: {value: entryId}});
 }
 
-export function processIfRuntime(n: ScIfNode, ctx: WalkContext) {
+function processIfRuntime(n: ScIfNode, ctx: WalkContext) {
     const {targetNode, controlName, defaultValue} = resolveControlBind(n, ctx);
     const entryId = findOrCreateEntry(ctx, "control", targetNode, controlName, defaultValue);
     Object.assign(n, {runtime: {value: entryId}});

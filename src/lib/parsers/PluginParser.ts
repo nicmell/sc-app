@@ -1,4 +1,5 @@
 import {ELEMENTS} from "@/constants/sc-elements";
+import {randomId} from "@/lib/utils/randomId";
 import type {ScElementNode, ScPluginNode, NodeRuntime, RuntimeValueEntry} from "../../types/parsers";
 import {extractProps, propsMatch} from "./extractProps";
 import {processRuntime, processPluginRuntime} from "./processRuntime";
@@ -14,6 +15,8 @@ const SC_TAGS = [
     ELEMENTS.SC_IF,
 ] as const;
 
+const PARENT_TAGS: ReadonlySet<string> = new Set([ELEMENTS.SC_GROUP, ELEMENTS.SC_IF]);
+
 export interface WalkContext {
     element: Element;
     saved?: ScElementNode;
@@ -22,7 +25,6 @@ export interface WalkContext {
     runtime: Map<string, RuntimeValueEntry>;
     parentNode?: ScElementNode;
     scope: ScElementNode[];
-    walk: (ctx: WalkContext) => ScElementNode[];
 }
 
 export interface ParseResult {
@@ -39,12 +41,11 @@ export function parse(element: Element, saved?: ScElementNode, boxId?: string): 
         offset: 0,
         runtime: new Map<string, RuntimeValueEntry>(),
         scope: [],
-        walk: walkChildren,
     };
     const tree = walkChildren(ctx);
 
     // Process runtime for entire tree after all ids are finalized
-    const pluginNode = {type: 'sc-plugin', id: ctx.boxId} as ScPluginNode;
+    const pluginNode = {type: 'sc-plugin', id: ctx.boxId, children: tree} as ScPluginNode;
     processPluginRuntime(pluginNode, ctx);
     processTree(tree, pluginNode, ctx);
 
@@ -64,14 +65,19 @@ function processElement(ctx: WalkContext): ScElementNode {
         console.warn(`[plugin hydration] tag mismatch at offset ${ctx.offset}: <${tag}> vs saved <${savedChild.type}>`);
     }
 
-    const node = extractProps(tag, ctx.element, {...ctx, saved: matched});
+    const props = extractProps(tag, ctx.element);
+    const id = matched && propsMatch(props, matched) ? matched.id : randomId();
+    ctx.element.setAttribute('id', id);
 
-    if (matched && propsMatch(node, matched)) {
-        node.id = matched.id;
-        ctx.element.setAttribute('id', matched.id);
-    } else {
-        if (matched) console.warn(`[plugin hydration] props mismatch for <${tag}>`);
-        ctx.element.setAttribute('id', node.id);
+    const node = {type: tag, id, ...props} as ScElementNode;
+
+    if (PARENT_TAGS.has(tag) && 'children' in node) {
+        node.children = walkChildren({
+            ...ctx,
+            element: ctx.element,
+            saved: matched,
+            offset: 0,
+        });
     }
 
     return node;

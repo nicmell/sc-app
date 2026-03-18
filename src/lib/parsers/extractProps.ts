@@ -1,17 +1,16 @@
 import {ELEMENTS} from "@/constants/sc-elements";
-import {randomId} from "@/lib/utils/randomId";
 import {deepEqual} from "@/lib/utils/deepEqual";
 import type {
     ScElementNode, UGenSpec, ScGroupNode, ScSynthNode, ScSynthDefNode,
-    ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode,
+    ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode, ScPluginNode,
 } from "../../types/parsers";
-import type {WalkContext} from "./PluginParser";
 
 const SYNTH_SKIP_ATTRS = new Set(['id', 'name', 'bind', 'running', 'class', 'style', 'slot', 'title']);
 const SYNTHDEF_SKIP_ATTRS = new Set(['id', 'name', 'class', 'style', 'slot']);
 const UGEN_SKIP_ATTRS = new Set(['id', 'name', 'type', 'rate', 'class', 'style', 'slot']);
 
-const RUNTIME_KEYS = [
+export const RUNTIME_KEYS = [
+    'type',
     'id',
     'title',
     'loaded',
@@ -20,8 +19,10 @@ const RUNTIME_KEYS = [
     'children'
 ] as const;
 
-export function propsMatch(fresh: ScElementNode, saved: ScElementNode): boolean {
-    const strip = (node: ScElementNode) => {
+type WithoutRuntime<Node extends ScElementNode> = Omit<Node, typeof RUNTIME_KEYS[number]>
+
+export function propsMatch(fresh: object, saved?: object): boolean {
+    const strip = (node: object = {}) => {
         const props: Record<string, unknown> = {};
         for (const [key, val] of Object.entries(node)) {
             if (!RUNTIME_KEYS.includes(key as any)) props[key] = val;
@@ -31,98 +32,78 @@ export function propsMatch(fresh: ScElementNode, saved: ScElementNode): boolean 
     return deepEqual(strip(fresh), strip(saved));
 }
 
-export function extractProps(tag: string, el: Element, ctx: WalkContext): ScElementNode {
+export function extractProps(tag: string, el: Element): WithoutRuntime<ScElementNode> {
     switch (tag) {
-        case ELEMENTS.SC_GROUP:    return extractGroupProps(el, ctx);
+        case ELEMENTS.SC_PLUGIN:   return extractPluginProps(el);
+        case ELEMENTS.SC_GROUP:    return extractGroupProps(el);
         case ELEMENTS.SC_SYNTH:    return extractSynthProps(el);
         case ELEMENTS.SC_SYNTHDEF: return extractSynthDefProps(el);
         case ELEMENTS.SC_RANGE:    return extractRangeProps(el);
         case ELEMENTS.SC_CHECKBOX: return extractCheckboxProps(el);
         case ELEMENTS.SC_RUN:      return extractRunProps(el);
         case ELEMENTS.SC_DISPLAY:  return extractDisplayProps(el);
-        case ELEMENTS.SC_IF:       return extractIfProps(el, ctx);
-        default: throw new Error(`Unknown element: <${tag}>`);
+        case ELEMENTS.SC_IF:       return extractIfProps(el);
+        default:
+            throw new Error(`Unknown element: <${tag}>`);
     }
 }
 
-function extractGroupProps(el: Element, ctx: WalkContext): ScGroupNode {
+function extractPluginProps(_: Element): WithoutRuntime<ScPluginNode> {
+    return {}
+}
+
+function extractGroupProps(el: Element): WithoutRuntime<ScGroupNode> {
     return {
-        type: 'sc-group',
-        id: randomId(),
         name: el.getAttribute('name') ?? '',
         running: el.getAttribute('running') !== 'false',
-        children: ctx.walk({...ctx, element: el, offset: 0, scope: []}),
-        runtime: {run: '', controls: {}},
     };
 }
 
-function extractSynthProps(el: Element): ScSynthNode {
+function extractSynthProps(el: Element): WithoutRuntime<ScSynthNode> {
     return {
-        type: 'sc-synth',
-        id: randomId(),
         name: el.getAttribute('name') ?? '',
         bind: el.getAttribute('bind') ?? '',
         controls: collectNumericAttrs(el, SYNTH_SKIP_ATTRS),
         running: el.getAttribute('running') !== 'false',
-        runtime: {run: '', controls: {}},
     };
 }
 
-function extractSynthDefProps(el: Element): ScSynthDefNode {
+function extractSynthDefProps(el: Element): WithoutRuntime<ScSynthDefNode> {
     return {
-        type: 'sc-synthdef',
-        id: randomId(),
         name: el.getAttribute('name') ?? '',
         params: collectNumericAttrs(el, SYNTHDEF_SKIP_ATTRS),
         ugens: collectUGenSpecs(el),
-        runtime: {value: ''},
     };
 }
 
-function extractRangeProps(el: Element): ScRangeNode {
+function extractRangeProps(el: Element): WithoutRuntime<ScRangeNode> {
     return {
-        type: 'sc-range',
-        id: randomId(),
         bind: el.getAttribute('bind') ?? '',
-        runtime: {value: ''},
     };
 }
 
-function extractCheckboxProps(el: Element): ScCheckboxNode {
+function extractCheckboxProps(el: Element): WithoutRuntime<ScCheckboxNode> {
     return {
-        type: 'sc-checkbox',
-        id: randomId(),
         bind: el.getAttribute('bind') ?? '',
-        runtime: {value: ''},
     };
 }
 
-function extractRunProps(el: Element): ScRunNode {
+function extractRunProps(el: Element): WithoutRuntime<ScRunNode> {
     return {
-        type: 'sc-run',
-        id: randomId(),
         bind: el.getAttribute('bind') ?? '',
-        runtime: {value: ''},
     };
 }
 
-function extractDisplayProps(el: Element): ScDisplayNode {
+function extractDisplayProps(el: Element): WithoutRuntime<ScDisplayNode> {
     return {
-        type: 'sc-display',
-        id: randomId(),
         bind: el.getAttribute('bind') ?? '',
         format: el.getAttribute('format') ?? '',
-        runtime: {value: ''},
     };
 }
 
-function extractIfProps(el: Element, ctx: WalkContext): ScIfNode {
+function extractIfProps(el: Element): WithoutRuntime<ScIfNode> {
     return {
-        type: 'sc-if',
-        id: randomId(),
         bind: el.getAttribute('bind') ?? '',
-        children: ctx.walk({...ctx, element: el, offset: 0, scope: []}),
-        runtime: {value: ''},
     };
 }
 
