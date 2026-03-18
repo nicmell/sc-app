@@ -84,22 +84,22 @@ export function processRuntime(ctx: WalkContext) {
     }
 }
 
+function savedChildren(ctx: WalkContext): ScElementNode[] {
+    const saved = ctx.saved[ctx.offset];
+    return saved && 'children' in saved ? saved.children : [];
+}
+
 function processPluginRuntime(ctx: WalkContext) {
     const n = ctx.node as ScPluginNode;
     const runId = findOrCreateEntry(ctx, "run", n.id, n.id, 1);
-    const savedSelf = ctx.saved?.find(c => c.id === n.id);
-    const savedChildren = savedSelf && 'children' in savedSelf ? savedSelf.children : [];
-    const children = ctx.walk({...ctx, saved: savedChildren, parentNode: n, offset: 0, scope: []});
+    const children = ctx.walk({...ctx, saved: savedChildren(ctx), parentNode: n, offset: 0, scope: []});
     Object.assign(n, {runtime: {run: runId, controls: {}}, children});
 }
 
 function processGroupRuntime(ctx: WalkContext) {
     const n = ctx.node as ScGroupNode;
     const runId = findOrCreateEntry(ctx, "run", n.id, n.name, n.running ? 1 : 0);
-    const el = ctx.element.ownerDocument.getElementById(n.id)!;
-    const savedSelf = ctx.saved?.find(c => c.id === n.id);
-    const savedChildren = savedSelf && 'children' in savedSelf ? savedSelf.children : [];
-    const children = ctx.walk({...ctx, element: el, saved: savedChildren, parentNode: n, offset: 0, scope: []});
+    const children = ctx.walk({...ctx, saved: savedChildren(ctx), parentNode: n, offset: 0, scope: []});
     Object.assign(n, {runtime: {run: runId, controls: {}}, children});
 }
 
@@ -185,10 +185,7 @@ function processIfRuntime(ctx: WalkContext) {
     const n = ctx.node as ScIfNode;
     const {targetNode, controlName, defaultValue} = resolveControlBind(n, ctx);
     const entryId = findOrCreateEntry(ctx, "control", targetNode, controlName, defaultValue);
-    const el = ctx.element.ownerDocument.getElementById(n.id)!;
-    const savedSelf = ctx.saved?.find(c => c.id === n.id);
-    const savedChildren = savedSelf && 'children' in savedSelf ? savedSelf.children : [];
-    const children = ctx.walk({...ctx, element: el, saved: savedChildren, parentNode: n, offset: 0, scope: []});
+    const children = ctx.walk({...ctx, saved: savedChildren(ctx), parentNode: n, offset: 0, scope: []});
     Object.assign(n, {runtime: {value: entryId}, children});
 }
 
