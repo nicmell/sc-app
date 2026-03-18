@@ -1,14 +1,14 @@
 import {ELEMENTS} from "@/constants/sc-elements";
 import {randomId} from "@/lib/utils/randomId.ts";
 import {deepEqual} from "@/lib/utils/deepEqual";
-import type {ScElementNode, RuntimeValueEntry} from "../../types/parsers";
+import type {ScElementNode, ScPluginNode, NodeRuntime, RuntimeValueEntry} from "../../types/parsers";
 import {
     extractGroupProps, extractSynthProps, extractSynthDefProps,
     extractRangeProps, extractCheckboxProps, extractRunProps,
     extractDisplayProps, extractIfProps,
 } from "./extractProps";
 import {
-    processGroupRuntime, processSynthRuntime, processSynthDefRuntime,
+    processPluginRuntime, processGroupRuntime, processSynthRuntime, processSynthDefRuntime,
     processRangeRuntime, processCheckboxRuntime, processRunRuntime,
     processDisplayRuntime, processIfRuntime,
 } from "./processRuntime";
@@ -25,7 +25,6 @@ const SC_TAGS: ReadonlySet<string> = new Set([
 export interface WalkContext {
     element: Element;
     saved?: ScElementNode[];
-    savedValues?: Record<string, RuntimeValueEntry>;
     boxId: string;
     offset: number;
     runtime: Map<string, RuntimeValueEntry>;
@@ -35,24 +34,29 @@ export interface WalkContext {
 export interface ParseResult {
     tree: ScElementNode[];
     values: Record<string, RuntimeValueEntry>;
+    runtime: NodeRuntime;
 }
 
 
-export function parse(element: Element, saved?: ScElementNode[], savedValues?: Record<string, RuntimeValueEntry>, boxId?: string): ParseResult {
+export function parse(element: Element, saved?: ScElementNode[], boxId?: string): ParseResult {
     const ctx: WalkContext = {
         element,
         saved,
-        savedValues,
         boxId: boxId ?? '',
         offset: 0,
         runtime: new Map<string, RuntimeValueEntry>(),
     };
     const tree = walkChildren(ctx);
+
+    // Create runtime entries for the plugin node itself
+    const pluginNode = {type: 'sc-plugin', id: ctx.boxId} as ScPluginNode;
+    processPluginRuntime(pluginNode, tree, ctx);
+
     const values: Record<string, RuntimeValueEntry> = {};
     for (const [id, entry] of ctx.runtime) {
         values[id] = entry;
     }
-    return {tree, values};
+    return {tree, values, runtime: pluginNode.runtime};
 }
 
 function propsMatch(fresh: Record<string, unknown>, saved: ScElementNode): boolean {
@@ -117,11 +121,10 @@ function processElement(ctx: WalkContext): ScElementNode {
             children: walkChildren({
                 element: ctx.element,
                 runtime: ctx.runtime,
-                savedValues: ctx.savedValues,
                 boxId: ctx.boxId,
                 saved: matched && 'children' in matched ? matched.children : [],
-                offset: 0,
                 parentNode: node,
+                offset: 0,
             }),
         }
     }
@@ -136,7 +139,6 @@ export function walkChildren(ctx: WalkContext): ScElementNode[] {
                 result.push(processElement({
                     element: child,
                     saved: ctx.saved,
-                    savedValues: ctx.savedValues,
                     boxId: ctx.boxId,
                     offset: ctx.offset,
                     runtime: ctx.runtime,

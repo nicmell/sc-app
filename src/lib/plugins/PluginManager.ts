@@ -44,12 +44,12 @@ export class PluginManager {
     }
     const runtime = runtimeApi.getById(boxId);
     const saved = runtime?.children;
-    const savedValues = runtimeApi.values;
-    const result = parse(doc.documentElement, saved, savedValues, boxId);
+    const result = parse(doc.documentElement, saved, boxId);
     return {
       title: doc.title,
       tree: result.tree,
       values: result.values,
+      runtime: result.runtime,
       html: doc.documentElement.innerHTML,
     };
   }

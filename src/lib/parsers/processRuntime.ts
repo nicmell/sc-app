@@ -1,10 +1,12 @@
 import type {
     ScElementNode, ScGroupNode, ScSynthNode, ScSynthDefNode,
     ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode,
-    RuntimeValueEntry,
+    ScPluginNode, RuntimeValueEntry,
 } from "../../types/parsers";
 import {findElementByPath} from "./elementTree";
 import {isSynthDef, isSynth, isGroup, isNode} from "./guards";
+import {compileSynthDef} from "./SynthDefCompiler";
+import {runtimeApi} from "@/lib/stores/api";
 import type {WalkContext} from "./PluginParser";
 
 function findOrCreateEntry(
@@ -44,14 +46,13 @@ function findOrCreateEntry(
         }
     }
 
-    // 2. Check savedValues for persisted entry
-    if (ctx.savedValues) {
-        for (const [id, entry] of Object.entries(ctx.savedValues)) {
-            if (entry.type === type && entry.targetNode === targetNode && entry.boxId === ctx.boxId) {
-                if (type === "synthdef" || ('name' in entry && entry.name === name)) {
-                    ctx.runtime.set(id, entry);
-                    return id;
-                }
+    // 2. Check store for persisted entry
+    const savedValues = runtimeApi.values;
+    for (const [id, entry] of Object.entries(savedValues)) {
+        if (entry.type === type && entry.targetNode === targetNode && entry.boxId === ctx.boxId) {
+            if (type === "synthdef" || ('name' in entry && entry.name === name)) {
+                ctx.runtime.set(id, entry);
+                return id;
             }
         }
     }
@@ -68,8 +69,13 @@ function findOrCreateEntry(
     return id;
 }
 
+export function processPluginRuntime(n: ScPluginNode, _scope: ScElementNode[], ctx: WalkContext) {
+    const runId = findOrCreateEntry(ctx, "run", n.id, n.id, 1);
+    Object.assign(n, {runtime: {run: runId, controls: {}}});
+}
+
 export function processGroupRuntime(n: ScGroupNode, _scope: ScElementNode[], ctx: WalkContext) {
-    const runId = findOrCreateEntry(ctx, "run", n.name, n.name, n.running ? 1 : 0);
+    const runId = findOrCreateEntry(ctx, "run", n.id, n.name, n.running ? 1 : 0);
     Object.assign(n, {runtime: {run: runId, controls: {}}});
 }
 
@@ -80,16 +86,21 @@ export function processSynthRuntime(n: ScSynthNode, scope: ScElementNode[], ctx:
             throw new Error(`<sc-synth bind="${n.bind}">: does not match any <sc-synthdef> in scope`);
         }
     }
-    const runId = findOrCreateEntry(ctx, "run", n.name, n.name, n.running ? 1 : 0);
+    const runId = findOrCreateEntry(ctx, "run", n.id, n.name, n.running ? 1 : 0);
     const controls: Record<string, string> = {};
     for (const [name, value] of Object.entries(n.controls)) {
-        controls[name] = findOrCreateEntry(ctx, "control", n.name, name, value);
+        controls[name] = findOrCreateEntry(ctx, "control", n.id, name, value);
     }
     Object.assign(n, {runtime: {run: runId, controls}});
 }
 
 export function processSynthDefRuntime(n: ScSynthDefNode, _scope: ScElementNode[], ctx: WalkContext) {
-    const entryId = findOrCreateEntry(ctx, "synthdef", n.name, n.name, []);
+    let bytes: number[] = [];
+    if (n.ugens.length > 0) {
+        const specsMap = new Map(n.ugens.map(u => [u.name, u]));
+        bytes = compileSynthDef(n.name, n.params, specsMap);
+    }
+    const entryId = findOrCreateEntry(ctx, "synthdef", n.id, n.name, bytes);
     Object.assign(n, {runtime: {value: entryId}});
 }
 
@@ -110,6 +121,7 @@ export function processCheckboxRuntime(n: ScCheckboxNode, scope: ScElementNode[]
     const entryId = findOrCreateEntry(ctx, "control", targetNode, controlName, defaultValue);
     const segments = n.bind.split('.');
     const target = findElementByPath(scope, segments.slice(0, -1));
+    // Update the target node's runtime.controls. TODO: verify logic behind it
     if (target && isNode(target)) {
         target.runtime.controls[controlName] = entryId;
     }
@@ -126,9 +138,10 @@ export function processRunRuntime(n: ScRunNode, scope: ScElementNode[], ctx: Wal
     } else if (ctx.parentNode && isNode(ctx.parentNode)) {
         target = ctx.parentNode;
     }
+    const targetId = target ? target.id : '';
     const targetName = target && 'name' in target ? target.name : '';
-    const entryId = findOrCreateEntry(ctx, "run", targetName, targetName, 1);
-    // Update the target node's runtime.run
+    const entryId = findOrCreateEntry(ctx, "run", targetId, targetName, 1);
+    // Update the target node's runtime.run. TODO: verify logic behind it
     if (target && isNode(target)) {
         target.runtime.run = entryId;
     }
@@ -154,7 +167,6 @@ function resolveControlBind(n: {bind: string; type: string}, scope: ScElementNod
     if (!target || (!isSynth(target) && !isGroup(target))) {
         throw new Error(`<${n.type} bind="${n.bind}">: does not match any <sc-synth> or <sc-group> in scope`);
     }
-    const targetName = 'name' in target ? target.name : '';
     const defaultValue = isSynth(target) ? (target.controls[controlName] ?? 0) : 0;
-    return {targetNode: targetName, controlName, defaultValue};
+    return {targetNode: target.id, controlName, defaultValue};
 }

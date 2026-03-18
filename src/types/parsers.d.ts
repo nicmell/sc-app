@@ -106,4 +106,5 @@ export interface PluginTreeEntry {
   html: string;
   tree: ScElementNode[];
   values: Record<string, RuntimeValueEntry>;
+  runtime: NodeRuntime;
 }
