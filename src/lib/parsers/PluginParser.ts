@@ -6,15 +6,29 @@ import {
     extractRangeProps, extractCheckboxProps, extractRunProps,
     extractDisplayProps, extractIfProps,
 } from "./extractProps";
-import {processPluginRuntime} from "./processRuntime";
+import {processRuntime, processPluginRuntime} from "./processRuntime";
 
-const EXCLUDE_KEYS = new Set(['id', 'runtime', 'children']);
-const SC_TAGS: ReadonlySet<string> = new Set([
-    ELEMENTS.SC_GROUP, ELEMENTS.SC_SYNTH, ELEMENTS.SC_SYNTHDEF,
-    ELEMENTS.SC_RANGE, ELEMENTS.SC_CHECKBOX, ELEMENTS.SC_RUN,
-    ELEMENTS.SC_DISPLAY, ELEMENTS.SC_IF,
-]);
+const RUNTIME_KEYS = [
+    'id',
+    'title',
+    'loaded',
+    'error',
+    'runtime',
+    'children'
+] as const;
 
+const SC_TAGS = [
+    ELEMENTS.SC_GROUP,
+    ELEMENTS.SC_SYNTH,
+    ELEMENTS.SC_SYNTHDEF,
+    ELEMENTS.SC_RANGE,
+    ELEMENTS.SC_CHECKBOX,
+    ELEMENTS.SC_RUN,
+    ELEMENTS.SC_DISPLAY,
+    ELEMENTS.SC_IF,
+] as const;
+
+// type WithoutRuntime<Node extends ScElementNode> = Omit<Node, typeof RUNTIME_KEYS[number]>
 
 export interface WalkContext {
     element: Element;
@@ -46,10 +60,10 @@ export function parse(element: Element, saved?: ScElementNode, boxId?: string): 
     };
     const tree = walkChildren(ctx);
 
-    // Create runtime entries for the plugin node itself
+    // Process runtime for entire tree after all ids are finalized
     const pluginNode = {type: 'sc-plugin', id: ctx.boxId} as ScPluginNode;
-    ctx.scope = tree;
     processPluginRuntime(pluginNode, ctx);
+    processTree(tree, pluginNode, ctx);
 
     const values: Record<string, RuntimeValueEntry> = {};
     for (const [id, entry] of ctx.runtime) {
@@ -62,7 +76,7 @@ function propsMatch(fresh: ScElementNode, saved: ScElementNode): boolean {
     const strip = (node: ScElementNode) => {
         const props: Record<string, unknown> = {};
         for (const [key, val] of Object.entries(node)) {
-            if (!EXCLUDE_KEYS.has(key)) props[key] = val;
+            if (!RUNTIME_KEYS.includes(key as any)) props[key] = val;
         }
         return props;
     };
@@ -106,12 +120,23 @@ function processElement(ctx: WalkContext): ScElementNode {
     return node;
 }
 
+function processTree(children: ScElementNode[], parent: ScElementNode, ctx: WalkContext) {
+    ctx.scope = children;
+    ctx.parentNode = parent;
+    for (const child of children) {
+        processRuntime(child, ctx);
+        if ('children' in child) {
+            processTree(child.children, child, ctx);
+        }
+    }
+}
+
 export function walkChildren(ctx: WalkContext): ScElementNode[] {
     function visit(element: Element): ScElementNode[] {
         const result: ScElementNode[] = [];
         for (const child of Array.from(element.children)) {
             const tag = child.tagName.toLowerCase();
-            if (SC_TAGS.has(tag)) {
+            if (SC_TAGS.includes(tag as any)) {
                 result.push(processElement({...ctx, element: child}));
                 ctx.offset++;
             } else {
