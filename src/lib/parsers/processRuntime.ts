@@ -1,3 +1,4 @@
+import {ELEMENTS} from "@/constants/sc-elements";
 import type {
     ScElementNode, ScGroupNode, ScSynthNode, ScSynthDefNode,
     ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode,
@@ -69,14 +70,41 @@ function findOrCreateEntry(
     return id;
 }
 
+export function processRuntime(node: ScElementNode, ctx: WalkContext) {
+    switch (node.type) {
+        case ELEMENTS.SC_GROUP:    processGroupRuntime(node, ctx); break;
+        case ELEMENTS.SC_SYNTH:    processSynthRuntime(node, ctx); break;
+        case ELEMENTS.SC_SYNTHDEF: processSynthDefRuntime(node, ctx); break;
+        case ELEMENTS.SC_RANGE:    processRangeRuntime(node, ctx); break;
+        case ELEMENTS.SC_CHECKBOX: processCheckboxRuntime(node, ctx); break;
+        case ELEMENTS.SC_RUN:      processRunRuntime(node, ctx); break;
+        case ELEMENTS.SC_DISPLAY:  processDisplayRuntime(node, ctx); break;
+        case ELEMENTS.SC_IF:       processIfRuntime(node, ctx); break;
+    }
+}
+
+function processChildren(children: ScElementNode[], parentNode: ScElementNode, ctx: WalkContext) {
+    const savedScope = ctx.scope;
+    const savedParent = ctx.parentNode;
+    ctx.scope = children;
+    ctx.parentNode = parentNode;
+    for (const child of children) {
+        processRuntime(child, ctx);
+    }
+    ctx.scope = savedScope;
+    ctx.parentNode = savedParent;
+}
+
 export function processPluginRuntime(n: ScPluginNode, ctx: WalkContext) {
     const runId = findOrCreateEntry(ctx, "run", n.id, n.id, 1);
     Object.assign(n, {runtime: {run: runId, controls: {}}});
+    processChildren(ctx.scope, n, ctx);
 }
 
 export function processGroupRuntime(n: ScGroupNode, ctx: WalkContext) {
     const runId = findOrCreateEntry(ctx, "run", n.id, n.name, n.running ? 1 : 0);
     Object.assign(n, {runtime: {run: runId, controls: {}}});
+    processChildren(n.children, n, ctx);
 }
 
 export function processSynthRuntime(n: ScSynthNode, ctx: WalkContext) {
@@ -158,6 +186,7 @@ export function processIfRuntime(n: ScIfNode, ctx: WalkContext) {
     const {targetNode, controlName, defaultValue} = resolveControlBind(n, ctx);
     const entryId = findOrCreateEntry(ctx, "control", targetNode, controlName, defaultValue);
     Object.assign(n, {runtime: {value: entryId}});
+    processChildren(n.children, n, ctx);
 }
 
 function resolveControlBind(n: {bind: string; type: string}, ctx: WalkContext): {targetNode: string; controlName: string; defaultValue: number} {

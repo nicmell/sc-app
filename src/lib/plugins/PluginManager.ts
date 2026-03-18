@@ -42,8 +42,7 @@ export class PluginManager {
     if (error) {
       throw new Error(error.textContent ?? "Invalid XHTML")
     }
-    const runtime = runtimeApi.getById(boxId);
-    const saved = runtime?.children;
+    const saved = runtimeApi.getById(boxId);
     const result = parse(doc.documentElement, saved, boxId);
     return {
       title: doc.title,

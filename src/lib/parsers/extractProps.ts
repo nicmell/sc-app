@@ -1,55 +1,94 @@
 import {ELEMENTS} from "@/constants/sc-elements";
-import type {UGenSpec} from "../../types/parsers";
+import {randomId} from "@/lib/utils/randomId";
+import type {
+    UGenSpec, ScGroupNode, ScSynthNode, ScSynthDefNode,
+    ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode,
+} from "../../types/parsers";
+import type {WalkContext} from "./PluginParser";
 
 const SYNTH_SKIP_ATTRS = new Set(['id', 'name', 'bind', 'running', 'class', 'style', 'slot', 'title']);
 const SYNTHDEF_SKIP_ATTRS = new Set(['id', 'name', 'class', 'style', 'slot']);
 const UGEN_SKIP_ATTRS = new Set(['id', 'name', 'type', 'rate', 'class', 'style', 'slot']);
 
-export function extractGroupProps(el: Element) {
+export function extractGroupProps(el: Element, ctx: WalkContext): ScGroupNode {
     return {
+        type: 'sc-group',
+        id: randomId(),
         name: el.getAttribute('name') ?? '',
         running: el.getAttribute('running') !== 'false',
+        children: ctx.walk({...ctx, element: el, offset: 0, scope: []}),
+        runtime: {run: '', controls: {}},
     };
 }
 
-export function extractSynthProps(el: Element) {
+export function extractSynthProps(el: Element): ScSynthNode {
     return {
+        type: 'sc-synth',
+        id: randomId(),
         name: el.getAttribute('name') ?? '',
-        bind: el.getAttribute('bind') ?? undefined,
+        bind: el.getAttribute('bind') ?? '',
         controls: collectNumericAttrs(el, SYNTH_SKIP_ATTRS),
         running: el.getAttribute('running') !== 'false',
+        runtime: {run: '', controls: {}},
     };
 }
 
-export function extractSynthDefProps(el: Element) {
+export function extractSynthDefProps(el: Element): ScSynthDefNode {
     return {
+        type: 'sc-synthdef',
+        id: randomId(),
         name: el.getAttribute('name') ?? '',
         params: collectNumericAttrs(el, SYNTHDEF_SKIP_ATTRS),
         ugens: collectUGenSpecs(el),
+        runtime: {value: ''},
     };
 }
 
-export function extractRangeProps(el: Element) {
-    return {bind: el.getAttribute('bind') ?? ''};
-}
-
-export function extractCheckboxProps(el: Element) {
-    return {bind: el.getAttribute('bind') ?? ''};
-}
-
-export function extractRunProps(el: Element) {
-    return {bind: el.getAttribute('bind') ?? ''};
-}
-
-export function extractDisplayProps(el: Element) {
+export function extractRangeProps(el: Element): ScRangeNode {
     return {
+        type: 'sc-range',
+        id: randomId(),
+        bind: el.getAttribute('bind') ?? '',
+        runtime: {value: ''},
+    };
+}
+
+export function extractCheckboxProps(el: Element): ScCheckboxNode {
+    return {
+        type: 'sc-checkbox',
+        id: randomId(),
+        bind: el.getAttribute('bind') ?? '',
+        runtime: {value: ''},
+    };
+}
+
+export function extractRunProps(el: Element): ScRunNode {
+    return {
+        type: 'sc-run',
+        id: randomId(),
+        bind: el.getAttribute('bind') ?? '',
+        runtime: {value: ''},
+    };
+}
+
+export function extractDisplayProps(el: Element): ScDisplayNode {
+    return {
+        type: 'sc-display',
+        id: randomId(),
         bind: el.getAttribute('bind') ?? '',
         format: el.getAttribute('format') ?? '',
+        runtime: {value: ''},
     };
 }
 
-export function extractIfProps(el: Element) {
-    return {bind: el.getAttribute('bind') ?? ''};
+export function extractIfProps(el: Element, ctx: WalkContext): ScIfNode {
+    return {
+        type: 'sc-if',
+        id: randomId(),
+        bind: el.getAttribute('bind') ?? '',
+        children: ctx.walk({...ctx, element: el, offset: 0, scope: []}),
+        runtime: {value: ''},
+    };
 }
 
 function collectUGenSpecs(el: Element): UGenSpec[] {
