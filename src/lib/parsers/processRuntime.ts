@@ -69,19 +69,19 @@ function findOrCreateEntry(
     return id;
 }
 
-export function processPluginRuntime(n: ScPluginNode, _scope: ScElementNode[], ctx: WalkContext) {
+export function processPluginRuntime(n: ScPluginNode, ctx: WalkContext) {
     const runId = findOrCreateEntry(ctx, "run", n.id, n.id, 1);
     Object.assign(n, {runtime: {run: runId, controls: {}}});
 }
 
-export function processGroupRuntime(n: ScGroupNode, _scope: ScElementNode[], ctx: WalkContext) {
+export function processGroupRuntime(n: ScGroupNode, ctx: WalkContext) {
     const runId = findOrCreateEntry(ctx, "run", n.id, n.name, n.running ? 1 : 0);
     Object.assign(n, {runtime: {run: runId, controls: {}}});
 }
 
-export function processSynthRuntime(n: ScSynthNode, scope: ScElementNode[], ctx: WalkContext) {
+export function processSynthRuntime(n: ScSynthNode, ctx: WalkContext) {
     if (n.bind) {
-        const target = findElementByPath(scope, n.bind.split('.'));
+        const target = findElementByPath(ctx.scope, n.bind.split('.'));
         if (!target || !isSynthDef(target)) {
             throw new Error(`<sc-synth bind="${n.bind}">: does not match any <sc-synthdef> in scope`);
         }
@@ -94,7 +94,7 @@ export function processSynthRuntime(n: ScSynthNode, scope: ScElementNode[], ctx:
     Object.assign(n, {runtime: {run: runId, controls}});
 }
 
-export function processSynthDefRuntime(n: ScSynthDefNode, _scope: ScElementNode[], ctx: WalkContext) {
+export function processSynthDefRuntime(n: ScSynthDefNode, ctx: WalkContext) {
     let bytes: number[] = [];
     if (n.ugens.length > 0) {
         const specsMap = new Map(n.ugens.map(u => [u.name, u]));
@@ -104,23 +104,23 @@ export function processSynthDefRuntime(n: ScSynthDefNode, _scope: ScElementNode[
     Object.assign(n, {runtime: {value: entryId}});
 }
 
-export function processRangeRuntime(n: ScRangeNode, scope: ScElementNode[], ctx: WalkContext) {
-    const {targetNode, controlName, defaultValue} = resolveControlBind(n, scope);
+export function processRangeRuntime(n: ScRangeNode, ctx: WalkContext) {
+    const {targetNode, controlName, defaultValue} = resolveControlBind(n, ctx);
     const entryId = findOrCreateEntry(ctx, "control", targetNode, controlName, defaultValue);
     // Also update the target node's runtime.controls
     const segments = n.bind.split('.');
-    const target = findElementByPath(scope, segments.slice(0, -1));
+    const target = findElementByPath(ctx.scope, segments.slice(0, -1));
     if (target && isNode(target)) {
         target.runtime.controls[controlName] = entryId;
     }
     Object.assign(n, {runtime: {value: entryId}});
 }
 
-export function processCheckboxRuntime(n: ScCheckboxNode, scope: ScElementNode[], ctx: WalkContext) {
-    const {targetNode, controlName, defaultValue} = resolveControlBind(n, scope);
+export function processCheckboxRuntime(n: ScCheckboxNode, ctx: WalkContext) {
+    const {targetNode, controlName, defaultValue} = resolveControlBind(n, ctx);
     const entryId = findOrCreateEntry(ctx, "control", targetNode, controlName, defaultValue);
     const segments = n.bind.split('.');
-    const target = findElementByPath(scope, segments.slice(0, -1));
+    const target = findElementByPath(ctx.scope, segments.slice(0, -1));
     // Update the target node's runtime.controls. TODO: verify logic behind it
     if (target && isNode(target)) {
         target.runtime.controls[controlName] = entryId;
@@ -128,10 +128,10 @@ export function processCheckboxRuntime(n: ScCheckboxNode, scope: ScElementNode[]
     Object.assign(n, {runtime: {value: entryId}});
 }
 
-export function processRunRuntime(n: ScRunNode, scope: ScElementNode[], ctx: WalkContext) {
+export function processRunRuntime(n: ScRunNode, ctx: WalkContext) {
     let target: ScElementNode | undefined;
     if (n.bind) {
-        target = findElementByPath(scope, n.bind.split('.'));
+        target = findElementByPath(ctx.scope, n.bind.split('.'));
         if (!target || (!isSynth(target) && !isGroup(target))) {
             throw new Error(`<sc-run>: bind "${n.bind}" does not match any <sc-synth> or <sc-group> in scope`);
         }
@@ -148,22 +148,22 @@ export function processRunRuntime(n: ScRunNode, scope: ScElementNode[], ctx: Wal
     Object.assign(n, {runtime: {value: entryId}});
 }
 
-export function processDisplayRuntime(n: ScDisplayNode, scope: ScElementNode[], ctx: WalkContext) {
-    const {targetNode, controlName, defaultValue} = resolveControlBind(n, scope);
+export function processDisplayRuntime(n: ScDisplayNode, ctx: WalkContext) {
+    const {targetNode, controlName, defaultValue} = resolveControlBind(n, ctx);
     const entryId = findOrCreateEntry(ctx, "control", targetNode, controlName, defaultValue);
     Object.assign(n, {runtime: {value: entryId}});
 }
 
-export function processIfRuntime(n: ScIfNode, scope: ScElementNode[], ctx: WalkContext) {
-    const {targetNode, controlName, defaultValue} = resolveControlBind(n, scope);
+export function processIfRuntime(n: ScIfNode, ctx: WalkContext) {
+    const {targetNode, controlName, defaultValue} = resolveControlBind(n, ctx);
     const entryId = findOrCreateEntry(ctx, "control", targetNode, controlName, defaultValue);
     Object.assign(n, {runtime: {value: entryId}});
 }
 
-function resolveControlBind(n: {bind: string; type: string}, scope: ScElementNode[]): {targetNode: string; controlName: string; defaultValue: number} {
+function resolveControlBind(n: {bind: string; type: string}, ctx: WalkContext): {targetNode: string; controlName: string; defaultValue: number} {
     const segments = n.bind.split('.');
     const controlName = segments[segments.length - 1];
-    const target = findElementByPath(scope, segments.slice(0, -1));
+    const target = findElementByPath(ctx.scope, segments.slice(0, -1));
     if (!target || (!isSynth(target) && !isGroup(target))) {
         throw new Error(`<${n.type} bind="${n.bind}">: does not match any <sc-synth> or <sc-group> in scope`);
     }

@@ -29,6 +29,7 @@ export interface WalkContext {
     offset: number;
     runtime: Map<string, RuntimeValueEntry>;
     parentNode?: ScElementNode;
+    scope: ScElementNode[];
 }
 
 export interface ParseResult {
@@ -45,12 +46,14 @@ export function parse(element: Element, saved?: ScElementNode[], boxId?: string)
         boxId: boxId ?? '',
         offset: 0,
         runtime: new Map<string, RuntimeValueEntry>(),
+        scope: [],
     };
     const tree = walkChildren(ctx);
 
     // Create runtime entries for the plugin node itself
     const pluginNode = {type: 'sc-plugin', id: ctx.boxId} as ScPluginNode;
-    processPluginRuntime(pluginNode, tree, ctx);
+    ctx.scope = tree;
+    processPluginRuntime(pluginNode, ctx);
 
     const values: Record<string, RuntimeValueEntry> = {};
     for (const [id, entry] of ctx.runtime) {
@@ -81,16 +84,16 @@ function extractProps(tag: string, el: Element): Record<string, unknown> {
     }
 }
 
-function processRuntime(node: ScElementNode, scope: ScElementNode[], ctx: WalkContext) {
+function processRuntime(node: ScElementNode, ctx: WalkContext) {
     switch (node.type) {
-        case ELEMENTS.SC_GROUP:    processGroupRuntime(node, scope, ctx); break;
-        case ELEMENTS.SC_SYNTH:    processSynthRuntime(node, scope, ctx); break;
-        case ELEMENTS.SC_SYNTHDEF: processSynthDefRuntime(node, scope, ctx); break;
-        case ELEMENTS.SC_RANGE:    processRangeRuntime(node, scope, ctx); break;
-        case ELEMENTS.SC_CHECKBOX: processCheckboxRuntime(node, scope, ctx); break;
-        case ELEMENTS.SC_RUN:      processRunRuntime(node, scope, ctx); break;
-        case ELEMENTS.SC_DISPLAY:  processDisplayRuntime(node, scope, ctx); break;
-        case ELEMENTS.SC_IF:       processIfRuntime(node, scope, ctx); break;
+        case ELEMENTS.SC_GROUP:    processGroupRuntime(node, ctx); break;
+        case ELEMENTS.SC_SYNTH:    processSynthRuntime(node, ctx); break;
+        case ELEMENTS.SC_SYNTHDEF: processSynthDefRuntime(node, ctx); break;
+        case ELEMENTS.SC_RANGE:    processRangeRuntime(node, ctx); break;
+        case ELEMENTS.SC_CHECKBOX: processCheckboxRuntime(node, ctx); break;
+        case ELEMENTS.SC_RUN:      processRunRuntime(node, ctx); break;
+        case ELEMENTS.SC_DISPLAY:  processDisplayRuntime(node, ctx); break;
+        case ELEMENTS.SC_IF:       processIfRuntime(node, ctx); break;
     }
 }
 
@@ -125,6 +128,7 @@ function processElement(ctx: WalkContext): ScElementNode {
                 saved: matched && 'children' in matched ? matched.children : [],
                 parentNode: node,
                 offset: 0,
+                scope: [],
             }),
         }
     }
@@ -136,21 +140,15 @@ export function walkChildren(ctx: WalkContext): ScElementNode[] {
         for (const child of Array.from(element.children)) {
             const tag = child.tagName.toLowerCase();
             if (SC_TAGS.has(tag)) {
-                result.push(processElement({
-                    element: child,
-                    saved: ctx.saved,
-                    boxId: ctx.boxId,
-                    offset: ctx.offset,
-                    runtime: ctx.runtime,
-                    parentNode: ctx.parentNode,
-                }));
+                result.push(processElement({...ctx, element: child}));
                 ctx.offset++;
             } else {
                 result.push(...visit(child));
             }
         }
+        ctx.scope = result;
         for (const node of result) {
-            processRuntime(node, result, ctx);
+            processRuntime(node, ctx);
         }
         return result;
     }
