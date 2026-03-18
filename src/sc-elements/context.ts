@@ -13,10 +13,9 @@ export interface NodeContext {
   boxId(): string;
   registerElement(el: ScElement): void;
   unregisterElement(el: ScElement): void;
-  onChange(elementId: string, target: string, value: number): void;
-  onRun(elementId: string, target: string, value: number): void;
-  getBindValue(bind: string): number | undefined;
-  getInputValue(elementId: string): number | undefined;
+  onChange(entryId: string, target: string, value: number): void;
+  onRun(entryId: string, target: string, value: number): void;
+  getInputValue(entryId: string): number | undefined;
 }
 
 export const nodeContext = createContext<NodeContext>('node');

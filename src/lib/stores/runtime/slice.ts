@@ -1,18 +1,29 @@
 import type {RuntimeState} from "@/types/stores";
-import type {ScElementNode} from "@/lib/parsers";
-import {isInput, isRun, findElementById, findElementByPath, setControls, syncInputValues, syncIsRunning, syncRunValues} from "@/lib/parsers";
+import type {ScElementNode, RuntimeValueEntry} from "@/lib/parsers";
 import {createSlice} from "@/lib/stores/utils";
 import {SliceName, RuntimeAction} from "@/constants/store";
 
 const initialState: RuntimeState = {
   items: [],
+  values: {},
 };
 
 export const runtimeSlice = createSlice({
   name: SliceName.RUNTIME,
   initialState,
   reducers: {
-    [RuntimeAction.LOAD_PLUGIN]: (state, action: { payload: { id: string; loaded: boolean; error?: string; title?: string; elements?: ScElementNode[] } }) => {
+    [RuntimeAction.LOAD_PLUGIN]: (state, action: { payload: { id: string; loaded: boolean; error?: string; title?: string; elements?: ScElementNode[]; values?: Record<string, RuntimeValueEntry> } }) => {
+      // Delete old entries for this boxId
+      for (const key of Object.keys(state.values)) {
+        if (state.values[key].boxId === action.payload.id) {
+          delete state.values[key];
+        }
+      }
+      // Add new entries
+      if (action.payload.values) {
+        Object.assign(state.values, action.payload.values);
+      }
+
       const existing = state.items.find(item => item.id === action.payload.id);
       if (existing) {
         existing.loaded = action.payload.loaded;
@@ -27,36 +38,29 @@ export const runtimeSlice = createSlice({
           error: action.payload.error,
           title: action.payload.title,
           children: action.payload.elements ?? [],
-          runtime: { isRunning: true, controls: {} },
+          runtime: { run: '', controls: {} },
         });
       }
     },
     [RuntimeAction.UNLOAD_PLUGIN]: (state, action: { payload: string }) => {
       state.items = state.items.filter(item => item.id !== action.payload);
-    },
-    [RuntimeAction.SET_CONTROL]: (state, action: { payload: { boxId: string; elementId: string; value: number } }) => {
-      const plugin = state.items.find(item => item.id === action.payload.boxId);
-      if (!plugin) return;
-      const input = findElementById(plugin.children, action.payload.elementId);
-      if (!input || !isInput(input)) return;
-      const segments = input.bind.split('.');
-      const path = segments.slice(0, -1);
-      const control = segments[segments.length - 1];
-      const target = findElementByPath(plugin.children, path);
-      if (target) {
-        input.runtime.value = action.payload.value;
-        setControls(target, {[control]: action.payload.value});
-        syncInputValues(plugin.children);
+      // Delete all entries for this boxId
+      for (const key of Object.keys(state.values)) {
+        if (state.values[key].boxId === action.payload) {
+          delete state.values[key];
+        }
       }
     },
-    [RuntimeAction.SET_RUNNING]: (state, action: { payload: { boxId: string; elementId: string; value: number } }) => {
-      const plugin = state.items.find(item => item.id === action.payload.boxId);
-      if (!plugin) return;
-      const el = findElementById(plugin.children, action.payload.elementId);
-      if (el && isRun(el)) {
-        el.runtime.value = action.payload.value;
-        syncIsRunning(plugin.children);
-        syncRunValues(plugin.children);
+    [RuntimeAction.SET_CONTROL]: (state, action: { payload: { entryId: string; value: number } }) => {
+      const entry = state.values[action.payload.entryId];
+      if (entry && entry.type === 'control') {
+        entry.value = action.payload.value;
+      }
+    },
+    [RuntimeAction.SET_RUNNING]: (state, action: { payload: { entryId: string; value: number } }) => {
+      const entry = state.values[action.payload.entryId];
+      if (entry && entry.type === 'run') {
+        entry.value = action.payload.value;
       }
     },
   },

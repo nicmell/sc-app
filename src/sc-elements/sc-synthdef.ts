@@ -2,23 +2,29 @@ import {LitElement, html} from 'lit';
 import {defRecvMessage} from '@/lib/osc/messages.ts';
 import {oscService} from '@/lib/osc';
 import {runtimeApi} from '@/lib/stores/api';
-import {isGroup, type ScElementNode} from '@/lib/parsers';
+import type {ScSynthDefNode} from '@/lib/parsers';
 
-function findSynthDefBytes(elements: ScElementNode[], name: string): number[] | undefined {
-  for (const el of elements) {
-    if (el.type === 'sc-synthdef' && el.name === name) return el.runtime.value;
-    if (isGroup(el)) {
-      const found = findSynthDefBytes(el.children, name);
-      if (found) return found;
+function getCompiledSynthDef(name: string): Uint8Array | undefined {
+  const values = runtimeApi.values;
+  for (const plugin of runtimeApi.items) {
+    const el = findSynthDefNode(plugin.children, name);
+    if (el) {
+      const entry = values[el.runtime.value];
+      if (entry && entry.type === 'synthdef' && entry.value.length > 0) {
+        return new Uint8Array(entry.value);
+      }
     }
   }
   return undefined;
 }
 
-function getCompiledSynthDef(name: string): Uint8Array | undefined {
-  for (const plugin of runtimeApi.items) {
-    const bytes = findSynthDefBytes(plugin.children, name);
-    if (bytes) return new Uint8Array(bytes);
+function findSynthDefNode(elements: import('@/lib/parsers').ScElementNode[], name: string): ScSynthDefNode | undefined {
+  for (const el of elements) {
+    if (el.type === 'sc-synthdef' && el.name === name) return el;
+    if ('children' in el && Array.isArray(el.children)) {
+      const found = findSynthDefNode(el.children, name);
+      if (found) return found;
+    }
   }
   return undefined;
 }

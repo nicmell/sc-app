@@ -1,7 +1,7 @@
 import {ELEMENTS} from "@/constants/sc-elements";
 import {randomId} from "@/lib/utils/randomId.ts";
 import {deepEqual} from "@/lib/utils/deepEqual";
-import type {ScElementNode} from "../../types/parsers";
+import type {ScElementNode, RuntimeValueEntry} from "../../types/parsers";
 import {
     extractGroupProps, extractSynthProps, extractSynthDefProps,
     extractRangeProps, extractCheckboxProps, extractRunProps,
@@ -14,7 +14,7 @@ import {
 } from "./processRuntime";
 
 const EXCLUDE_KEYS = new Set(['id', 'runtime', 'children']);
-const PARENT_TAGS: ReadonlySet<string> = new Set([ELEMENTS.SC_GROUP, ELEMENTS.SC_IF]);
+const PARENT_TAGS: ReadonlySet<string> = new Set([ELEMENTS.SC_GROUP, ELEMENTS.SC_IF, ELEMENTS.SC_PLUGIN]);
 const SC_TAGS: ReadonlySet<string> = new Set([
     ELEMENTS.SC_GROUP, ELEMENTS.SC_SYNTH, ELEMENTS.SC_SYNTHDEF,
     ELEMENTS.SC_RANGE, ELEMENTS.SC_CHECKBOX, ELEMENTS.SC_RUN,
@@ -22,22 +22,37 @@ const SC_TAGS: ReadonlySet<string> = new Set([
 ]);
 
 
-export type RuntimeEntry =
-    | { type: "control"; name: string, targetNode: string; boxId: string; value: number }
-    | { type: "run"; targetNode: string; boxId: string; value: number }
-    | { type: "synthdef"; targetNode: string; boxId: string; value: number[] };
-
-
 export interface WalkContext {
     element: Element;
     saved?: ScElementNode[];
+    savedValues?: Record<string, RuntimeValueEntry>;
+    boxId: string;
     offset: number;
-    runtime: Map<string, RuntimeEntry>
+    runtime: Map<string, RuntimeValueEntry>;
+    parentNode?: ScElementNode;
+}
+
+export interface ParseResult {
+    tree: ScElementNode[];
+    values: Record<string, RuntimeValueEntry>;
 }
 
 
-export function parse(element: Element, saved?: ScElementNode[]): ScElementNode[] {
-    return walkChildren({element, saved, offset: 0, runtime: new Map<string, RuntimeEntry>});
+export function parse(element: Element, saved?: ScElementNode[], savedValues?: Record<string, RuntimeValueEntry>, boxId?: string): ParseResult {
+    const ctx: WalkContext = {
+        element,
+        saved,
+        savedValues,
+        boxId: boxId ?? '',
+        offset: 0,
+        runtime: new Map<string, RuntimeValueEntry>(),
+    };
+    const tree = walkChildren(ctx);
+    const values: Record<string, RuntimeValueEntry> = {};
+    for (const [id, entry] of ctx.runtime) {
+        values[id] = entry;
+    }
+    return {tree, values};
 }
 
 function propsMatch(fresh: Record<string, unknown>, saved: ScElementNode): boolean {
@@ -62,21 +77,20 @@ function extractProps(tag: string, el: Element): Record<string, unknown> {
     }
 }
 
-function processRuntime(node: ScElementNode, scope: ScElementNode[], _ctx: WalkContext) {
+function processRuntime(node: ScElementNode, scope: ScElementNode[], ctx: WalkContext) {
     switch (node.type) {
-        case ELEMENTS.SC_GROUP:    processGroupRuntime(node, scope); break;
-        case ELEMENTS.SC_SYNTH:    processSynthRuntime(node, scope); break;
-        case ELEMENTS.SC_SYNTHDEF: processSynthDefRuntime(node, scope); break;
-        case ELEMENTS.SC_RANGE:    processRangeRuntime(node, scope); break;
-        case ELEMENTS.SC_CHECKBOX: processCheckboxRuntime(node, scope); break;
-        case ELEMENTS.SC_RUN:      processRunRuntime(node, scope); break;
-        case ELEMENTS.SC_DISPLAY:  processDisplayRuntime(node, scope); break;
-        case ELEMENTS.SC_IF:       processIfRuntime(node, scope); break;
+        case ELEMENTS.SC_GROUP:    processGroupRuntime(node, scope, ctx); break;
+        case ELEMENTS.SC_SYNTH:    processSynthRuntime(node, scope, ctx); break;
+        case ELEMENTS.SC_SYNTHDEF: processSynthDefRuntime(node, scope, ctx); break;
+        case ELEMENTS.SC_RANGE:    processRangeRuntime(node, scope, ctx); break;
+        case ELEMENTS.SC_CHECKBOX: processCheckboxRuntime(node, scope, ctx); break;
+        case ELEMENTS.SC_RUN:      processRunRuntime(node, scope, ctx); break;
+        case ELEMENTS.SC_DISPLAY:  processDisplayRuntime(node, scope, ctx); break;
+        case ELEMENTS.SC_IF:       processIfRuntime(node, scope, ctx); break;
     }
 }
 
 
-// TODO: re-enable bind validation and synthdef compilation
 function processElement(ctx: WalkContext): ScElementNode {
     const tag = ctx.element.tagName.toLowerCase();
     const savedChild = ctx.saved?.[ctx.offset];
@@ -103,8 +117,11 @@ function processElement(ctx: WalkContext): ScElementNode {
             children: walkChildren({
                 element: ctx.element,
                 runtime: ctx.runtime,
+                savedValues: ctx.savedValues,
+                boxId: ctx.boxId,
                 saved: matched && 'children' in matched ? matched.children : [],
                 offset: 0,
+                parentNode: node,
             }),
         }
     }
@@ -116,7 +133,15 @@ export function walkChildren(ctx: WalkContext): ScElementNode[] {
         for (const child of Array.from(element.children)) {
             const tag = child.tagName.toLowerCase();
             if (SC_TAGS.has(tag)) {
-                result.push(processElement({element: child, saved: ctx.saved, offset: ctx.offset, runtime: ctx.runtime}));
+                result.push(processElement({
+                    element: child,
+                    saved: ctx.saved,
+                    savedValues: ctx.savedValues,
+                    boxId: ctx.boxId,
+                    offset: ctx.offset,
+                    runtime: ctx.runtime,
+                    parentNode: ctx.parentNode,
+                }));
                 ctx.offset++;
             } else {
                 result.push(...visit(child));

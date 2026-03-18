@@ -1,6 +1,8 @@
 import {html, svg, css, LitElement} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
+import {runtimeApi} from '@/lib/stores/api';
+import {findElementById, isRun} from '@/lib/parsers';
 
 export class ScRun extends LitElement {
     static properties = {
@@ -39,12 +41,27 @@ export class ScRun extends LitElement {
         this.bgcolor = 'var(--color-bg-secondary, #e8e8e8)';
     }
 
+    private get _entryId(): string | undefined {
+        const boxId = this._node.value?.boxId();
+        if (!boxId) return undefined;
+        const plugin = runtimeApi.getById(boxId);
+        if (!plugin) return undefined;
+        const el = findElementById(plugin.children, this.id);
+        if (!el || !isRun(el)) return undefined;
+        return el.runtime.value;
+    }
+
     get run(): boolean {
-        return (this._node.value?.getInputValue(this.id) ?? 1) !== 0;
+        const entryId = this._entryId;
+        if (!entryId) return true;
+        return (this._node.value?.getInputValue(entryId) ?? 1) !== 0;
     }
 
     private _onClick = () => {
-        this._node.value?.onRun(this.id, this.bind, this.run ? 0 : 1);
+        const entryId = this._entryId;
+        if (entryId) {
+            this._node.value?.onRun(entryId, this.bind, this.run ? 0 : 1);
+        }
     };
 
     render() {

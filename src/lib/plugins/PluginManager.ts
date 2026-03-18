@@ -43,11 +43,14 @@ export class PluginManager {
       throw new Error(error.textContent ?? "Invalid XHTML")
     }
     const runtime = runtimeApi.getById(boxId);
-    const saved = runtime?.children
+    const saved = runtime?.children;
+    const savedValues = runtimeApi.values;
+    const result = parse(doc.documentElement, saved, savedValues, boxId);
     return {
       title: doc.title,
-      tree: parse(doc.documentElement, saved),
-      html: doc.documentElement.innerHTML
+      tree: result.tree,
+      values: result.values,
+      html: doc.documentElement.innerHTML,
     };
   }
 }

@@ -8,7 +8,7 @@ import type {RootState, ConfigFile} from "@/types/stores";
 export const persistConfig: PersistOptions<any, ConfigFile> = {
   name: "config",
   storage: tauriStorage,
-  partialize: ({theme, layout, scsynth, plugins}: RootState): ConfigFile => ({ // isRunning, runtime excluded
+  partialize: ({theme, layout, scsynth, plugins, runtime}: RootState): ConfigFile => ({ // isRunning excluded
     theme: {mode: theme.mode, primaryColor: theme.primaryColor},
     layout: {
       items: layout.items,
@@ -17,6 +17,7 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
     scsynth: {options: scsynth.options},
     plugins: plugins.items
         .map(({loaded: _loaded, error: _error, ...plugin}) => ({...plugin})),
+    runtime: {values: runtime.values},
   }),
   merge: (persisted, current: RootState): RootState => {
     const p = persisted as ConfigFile | undefined;
@@ -32,6 +33,10 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
               return cur ? {...cur, ...pp} : pp;
             })
           : current.plugins.items,
+      },
+      runtime: {
+        ...current.runtime,
+        values: p?.runtime?.values ?? current.runtime.values,
       },
     };
   },

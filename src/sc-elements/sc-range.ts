@@ -1,6 +1,8 @@
 import {css, html, LitElement} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
+import {runtimeApi} from '@/lib/stores/api';
+import {findElementById, isInput} from '@/lib/parsers';
 import './internal/sc-knob.ts';
 import './internal/sc-slider.ts';
 
@@ -41,8 +43,20 @@ export class ScRange extends LitElement {
         }
     `;
 
+    private get _entryId(): string | undefined {
+        const boxId = this._node.value?.boxId();
+        if (!boxId) return undefined;
+        const plugin = runtimeApi.getById(boxId);
+        if (!plugin) return undefined;
+        const el = findElementById(plugin.children, this.id);
+        if (!el || !isInput(el)) return undefined;
+        return el.runtime.value;
+    }
+
     get value(): number {
-        return this._node.value?.getInputValue(this.id) ?? 0;
+        const entryId = this._entryId;
+        if (!entryId) return 0;
+        return this._node.value?.getInputValue(entryId) ?? 0;
     }
 
     constructor() {
@@ -62,8 +76,9 @@ export class ScRange extends LitElement {
     }
 
     onChange = (value: number) => {
-        if (value !== this.value && this.bind) {
-            this._node.value?.onChange(this.id, this.bind, value);
+        const entryId = this._entryId;
+        if (value !== this.value && this.bind && entryId) {
+            this._node.value?.onChange(entryId, this.bind, value);
         }
     };
 

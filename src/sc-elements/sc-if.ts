@@ -1,6 +1,9 @@
 import {LitElement, html, css} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
+import {runtimeApi} from '@/lib/stores/api';
+import {findElementById} from '@/lib/parsers';
+import type {ScIfNode} from '@/lib/parsers';
 
 export class ScIf extends LitElement {
   static properties = {
@@ -39,8 +42,19 @@ export class ScIf extends LitElement {
     this.isLesserThan = null;
   }
 
+  private get _entryId(): string | undefined {
+    const boxId = this._node.value?.boxId();
+    if (!boxId) return undefined;
+    const plugin = runtimeApi.getById(boxId);
+    if (!plugin) return undefined;
+    const el = findElementById(plugin.children, this.id) as ScIfNode | undefined;
+    if (!el || el.type !== 'sc-if') return undefined;
+    return el.runtime.value;
+  }
+
   private _test(): boolean {
-    const value = this._node.value?.getBindValue(this.bind);
+    const entryId = this._entryId;
+    const value = entryId ? this._node.value?.getInputValue(entryId) : undefined;
     const num = typeof value === 'number' ? value : Number(value);
     if (this.isEqual !== null) return String(value) === this.isEqual;
     if (this.isNotEqual !== null) return String(value) !== this.isNotEqual;

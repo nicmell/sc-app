@@ -5,7 +5,7 @@ import type {layoutSlice} from "@/lib/stores/layout/slice";
 import type {themeSlice} from "@/lib/stores/theme/slice";
 import type {pluginsSlice} from "@/lib/stores/plugins/slice";
 import type {runtimeSlice} from "@/lib/stores/runtime/slice";
-import type {ScPluginNode} from "@/types/parsers";
+import type {ScPluginNode, RuntimeValueEntry} from "@/types/parsers";
 
 export interface BoxItem {
   i: string;
@@ -86,6 +86,7 @@ export interface ConfigFile {
   layout: { items: BoxItem[]; options: LayoutOptions };
   scsynth: Pick<ScsynthState, 'options'>;
   plugins: PersistedPlugin[];
+  runtime: { values: Record<string, RuntimeValueEntry> };
 }
 
 export interface PluginsState {
@@ -94,6 +95,7 @@ export interface PluginsState {
 
 export interface RuntimeState {
   items: ScPluginNode[];
+  values: Record<string, RuntimeValueEntry>;
 }
 
 export interface RootState {
