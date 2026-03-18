@@ -1,21 +1,7 @@
 import {ELEMENTS} from "@/constants/sc-elements";
-import {deepEqual} from "@/lib/utils/deepEqual";
 import type {ScElementNode, ScPluginNode, NodeRuntime, RuntimeValueEntry} from "../../types/parsers";
-import {
-    extractGroupProps, extractSynthProps, extractSynthDefProps,
-    extractRangeProps, extractCheckboxProps, extractRunProps,
-    extractDisplayProps, extractIfProps,
-} from "./extractProps";
+import {extractProps, propsMatch} from "./extractProps";
 import {processRuntime, processPluginRuntime} from "./processRuntime";
-
-const RUNTIME_KEYS = [
-    'id',
-    'title',
-    'loaded',
-    'error',
-    'runtime',
-    'children'
-] as const;
 
 const SC_TAGS = [
     ELEMENTS.SC_GROUP,
@@ -27,8 +13,6 @@ const SC_TAGS = [
     ELEMENTS.SC_DISPLAY,
     ELEMENTS.SC_IF,
 ] as const;
-
-// type WithoutRuntime<Node extends ScElementNode> = Omit<Node, typeof RUNTIME_KEYS[number]>
 
 export interface WalkContext {
     element: Element;
@@ -46,7 +30,6 @@ export interface ParseResult {
     values: Record<string, RuntimeValueEntry>;
     runtime: NodeRuntime;
 }
-
 
 export function parse(element: Element, saved?: ScElementNode, boxId?: string): ParseResult {
     const ctx: WalkContext = {
@@ -72,32 +55,6 @@ export function parse(element: Element, saved?: ScElementNode, boxId?: string): 
     return {tree, values, runtime: pluginNode.runtime};
 }
 
-function propsMatch(fresh: ScElementNode, saved: ScElementNode): boolean {
-    const strip = (node: ScElementNode) => {
-        const props: Record<string, unknown> = {};
-        for (const [key, val] of Object.entries(node)) {
-            if (!RUNTIME_KEYS.includes(key as any)) props[key] = val;
-        }
-        return props;
-    };
-    return deepEqual(strip(fresh), strip(saved));
-}
-
-function extractNode(tag: string, el: Element, ctx: WalkContext): ScElementNode {
-    switch (tag) {
-        case ELEMENTS.SC_GROUP:    return extractGroupProps(el, ctx);
-        case ELEMENTS.SC_SYNTH:    return extractSynthProps(el);
-        case ELEMENTS.SC_SYNTHDEF: return extractSynthDefProps(el);
-        case ELEMENTS.SC_RANGE:    return extractRangeProps(el);
-        case ELEMENTS.SC_CHECKBOX: return extractCheckboxProps(el);
-        case ELEMENTS.SC_RUN:      return extractRunProps(el);
-        case ELEMENTS.SC_DISPLAY:  return extractDisplayProps(el);
-        case ELEMENTS.SC_IF:       return extractIfProps(el, ctx);
-        default: throw new Error(`Unknown element: <${tag}>`);
-    }
-}
-
-
 function processElement(ctx: WalkContext): ScElementNode {
     const tag = ctx.element.tagName.toLowerCase();
     const savedChildren = ctx.saved && 'children' in ctx.saved ? ctx.saved.children : undefined;
@@ -107,7 +64,7 @@ function processElement(ctx: WalkContext): ScElementNode {
         console.warn(`[plugin hydration] tag mismatch at offset ${ctx.offset}: <${tag}> vs saved <${savedChild.type}>`);
     }
 
-    const node = extractNode(tag, ctx.element, {...ctx, saved: matched});
+    const node = extractProps(tag, ctx.element, {...ctx, saved: matched});
 
     if (matched && propsMatch(node, matched)) {
         node.id = matched.id;

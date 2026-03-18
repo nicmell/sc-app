@@ -1,7 +1,8 @@
 import {ELEMENTS} from "@/constants/sc-elements";
 import {randomId} from "@/lib/utils/randomId";
+import {deepEqual} from "@/lib/utils/deepEqual";
 import type {
-    UGenSpec, ScGroupNode, ScSynthNode, ScSynthDefNode,
+    ScElementNode, UGenSpec, ScGroupNode, ScSynthNode, ScSynthDefNode,
     ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode,
 } from "../../types/parsers";
 import type {WalkContext} from "./PluginParser";
@@ -10,7 +11,41 @@ const SYNTH_SKIP_ATTRS = new Set(['id', 'name', 'bind', 'running', 'class', 'sty
 const SYNTHDEF_SKIP_ATTRS = new Set(['id', 'name', 'class', 'style', 'slot']);
 const UGEN_SKIP_ATTRS = new Set(['id', 'name', 'type', 'rate', 'class', 'style', 'slot']);
 
-export function extractGroupProps(el: Element, ctx: WalkContext): ScGroupNode {
+const RUNTIME_KEYS = [
+    'id',
+    'title',
+    'loaded',
+    'error',
+    'runtime',
+    'children'
+] as const;
+
+export function propsMatch(fresh: ScElementNode, saved: ScElementNode): boolean {
+    const strip = (node: ScElementNode) => {
+        const props: Record<string, unknown> = {};
+        for (const [key, val] of Object.entries(node)) {
+            if (!RUNTIME_KEYS.includes(key as any)) props[key] = val;
+        }
+        return props;
+    };
+    return deepEqual(strip(fresh), strip(saved));
+}
+
+export function extractProps(tag: string, el: Element, ctx: WalkContext): ScElementNode {
+    switch (tag) {
+        case ELEMENTS.SC_GROUP:    return extractGroupProps(el, ctx);
+        case ELEMENTS.SC_SYNTH:    return extractSynthProps(el);
+        case ELEMENTS.SC_SYNTHDEF: return extractSynthDefProps(el);
+        case ELEMENTS.SC_RANGE:    return extractRangeProps(el);
+        case ELEMENTS.SC_CHECKBOX: return extractCheckboxProps(el);
+        case ELEMENTS.SC_RUN:      return extractRunProps(el);
+        case ELEMENTS.SC_DISPLAY:  return extractDisplayProps(el);
+        case ELEMENTS.SC_IF:       return extractIfProps(el, ctx);
+        default: throw new Error(`Unknown element: <${tag}>`);
+    }
+}
+
+function extractGroupProps(el: Element, ctx: WalkContext): ScGroupNode {
     return {
         type: 'sc-group',
         id: randomId(),
@@ -21,7 +56,7 @@ export function extractGroupProps(el: Element, ctx: WalkContext): ScGroupNode {
     };
 }
 
-export function extractSynthProps(el: Element): ScSynthNode {
+function extractSynthProps(el: Element): ScSynthNode {
     return {
         type: 'sc-synth',
         id: randomId(),
@@ -33,7 +68,7 @@ export function extractSynthProps(el: Element): ScSynthNode {
     };
 }
 
-export function extractSynthDefProps(el: Element): ScSynthDefNode {
+function extractSynthDefProps(el: Element): ScSynthDefNode {
     return {
         type: 'sc-synthdef',
         id: randomId(),
@@ -44,7 +79,7 @@ export function extractSynthDefProps(el: Element): ScSynthDefNode {
     };
 }
 
-export function extractRangeProps(el: Element): ScRangeNode {
+function extractRangeProps(el: Element): ScRangeNode {
     return {
         type: 'sc-range',
         id: randomId(),
@@ -53,7 +88,7 @@ export function extractRangeProps(el: Element): ScRangeNode {
     };
 }
 
-export function extractCheckboxProps(el: Element): ScCheckboxNode {
+function extractCheckboxProps(el: Element): ScCheckboxNode {
     return {
         type: 'sc-checkbox',
         id: randomId(),
@@ -62,7 +97,7 @@ export function extractCheckboxProps(el: Element): ScCheckboxNode {
     };
 }
 
-export function extractRunProps(el: Element): ScRunNode {
+function extractRunProps(el: Element): ScRunNode {
     return {
         type: 'sc-run',
         id: randomId(),
@@ -71,7 +106,7 @@ export function extractRunProps(el: Element): ScRunNode {
     };
 }
 
-export function extractDisplayProps(el: Element): ScDisplayNode {
+function extractDisplayProps(el: Element): ScDisplayNode {
     return {
         type: 'sc-display',
         id: randomId(),
@@ -81,7 +116,7 @@ export function extractDisplayProps(el: Element): ScDisplayNode {
     };
 }
 
-export function extractIfProps(el: Element, ctx: WalkContext): ScIfNode {
+function extractIfProps(el: Element, ctx: WalkContext): ScIfNode {
     return {
         type: 'sc-if',
         id: randomId(),
