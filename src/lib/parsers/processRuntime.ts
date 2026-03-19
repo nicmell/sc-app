@@ -10,6 +10,10 @@ import {compileSynthDef} from "./SynthDefCompiler";
 import {runtimeApi} from "@/lib/stores/api";
 import type {WalkContext} from "./PluginParser";
 
+type NodeRuntime<Node extends ScElementNode> = Pick<
+    Node, Extract<keyof Node, 'runtime' | 'children'>
+>
+
 function findOrCreateEntry(
     ctx: WalkContext,
     type: "control",
@@ -70,37 +74,39 @@ function findOrCreateEntry(
     return id;
 }
 
-export function processRuntime(ctx: WalkContext) {
+export function processRuntime(ctx: WalkContext): ScElementNode {
+    let rt;
     switch (ctx.node.type) {
-        case ELEMENTS.SC_PLUGIN:   processPluginRuntime(ctx); break;
-        case ELEMENTS.SC_GROUP:    processGroupRuntime(ctx); break;
-        case ELEMENTS.SC_SYNTH:    processSynthRuntime(ctx); break;
-        case ELEMENTS.SC_SYNTHDEF: processSynthDefRuntime(ctx); break;
-        case ELEMENTS.SC_RANGE:    processRangeRuntime(ctx); break;
-        case ELEMENTS.SC_CHECKBOX: processCheckboxRuntime(ctx); break;
-        case ELEMENTS.SC_RUN:      processRunRuntime(ctx); break;
-        case ELEMENTS.SC_DISPLAY:  processDisplayRuntime(ctx); break;
-        case ELEMENTS.SC_IF:       processIfRuntime(ctx); break;
+        case ELEMENTS.SC_PLUGIN:   rt = processPluginRuntime(ctx); break;
+        case ELEMENTS.SC_GROUP:    rt = processGroupRuntime(ctx); break;
+        case ELEMENTS.SC_SYNTH:    rt = processSynthRuntime(ctx); break;
+        case ELEMENTS.SC_SYNTHDEF: rt = processSynthDefRuntime(ctx); break;
+        case ELEMENTS.SC_RANGE:    rt = processRangeRuntime(ctx); break;
+        case ELEMENTS.SC_CHECKBOX: rt = processCheckboxRuntime(ctx); break;
+        case ELEMENTS.SC_RUN:      rt = processRunRuntime(ctx); break;
+        case ELEMENTS.SC_DISPLAY:  rt = processDisplayRuntime(ctx); break;
+        case ELEMENTS.SC_IF:       rt = processIfRuntime(ctx); break;
         default:
             throw new Error()
     }
+    return Object.assign(ctx.node, rt);
 }
 
-function processPluginRuntime(ctx: WalkContext) {
+function processPluginRuntime(ctx: WalkContext): NodeRuntime<ScPluginNode> {
     const n = ctx.node as ScPluginNode;
     const runId = findOrCreateEntry(ctx, "run", n.id, n.id, 1);
     const children = ctx.walk({...ctx, saved: ctx.scope[ctx.offset], parentNode: n, offset: 0, scope: []});
-    Object.assign(n, {runtime: {run: runId, controls: {}}, children});
+    return {runtime: {run: runId, controls: {}}, children};
 }
 
-function processGroupRuntime(ctx: WalkContext) {
+function processGroupRuntime(ctx: WalkContext): NodeRuntime<ScGroupNode> {
     const n = ctx.node as ScGroupNode;
     const runId = findOrCreateEntry(ctx, "run", n.id, n.name, n.running ? 1 : 0);
     const children = ctx.walk({...ctx, saved: ctx.scope[ctx.offset], parentNode: n, offset: 0, scope: []});
-    Object.assign(n, {runtime: {run: runId, controls: {}}, children});
+    return {runtime: {run: runId, controls: {}}, children};
 }
 
-function processSynthRuntime(ctx: WalkContext) {
+function processSynthRuntime(ctx: WalkContext): NodeRuntime<ScSynthNode> {
     const n = ctx.node as ScSynthNode;
     if (n.bind) {
         const target = findElementByPath(ctx.scope, n.bind.split('.'));
@@ -113,10 +119,10 @@ function processSynthRuntime(ctx: WalkContext) {
     for (const [name, value] of Object.entries(n.controls)) {
         controls[name] = findOrCreateEntry(ctx, "control", n.id, name, value);
     }
-    Object.assign(n, {runtime: {run: runId, controls}});
+    return {runtime: {run: runId, controls}};
 }
 
-function processSynthDefRuntime(ctx: WalkContext) {
+function processSynthDefRuntime(ctx: WalkContext): NodeRuntime<ScSynthDefNode> {
     const n = ctx.node as ScSynthDefNode;
     let bytes: number[] = [];
     if (n.ugens.length > 0) {
@@ -124,10 +130,10 @@ function processSynthDefRuntime(ctx: WalkContext) {
         bytes = compileSynthDef(n.name, n.params, specsMap);
     }
     const entryId = findOrCreateEntry(ctx, "synthdef", n.id, n.name, bytes);
-    Object.assign(n, {runtime: {value: entryId}});
+    return {runtime: {value: entryId}};
 }
 
-function processRangeRuntime(ctx: WalkContext) {
+function processRangeRuntime(ctx: WalkContext): NodeRuntime<ScRangeNode> {
     const n = ctx.node as ScRangeNode;
     const {targetNode, controlName, defaultValue} = resolveControlBind(n, ctx);
     const entryId = findOrCreateEntry(ctx, "control", targetNode, controlName, defaultValue);
@@ -136,10 +142,10 @@ function processRangeRuntime(ctx: WalkContext) {
     if (target && isNode(target)) {
         target.runtime.controls[controlName] = entryId;
     }
-    Object.assign(n, {runtime: {value: entryId}});
+    return {runtime: {value: entryId}};
 }
 
-function processCheckboxRuntime(ctx: WalkContext) {
+function processCheckboxRuntime(ctx: WalkContext): NodeRuntime<ScCheckboxNode> {
     const n = ctx.node as ScCheckboxNode;
     const {targetNode, controlName, defaultValue} = resolveControlBind(n, ctx);
     const entryId = findOrCreateEntry(ctx, "control", targetNode, controlName, defaultValue);
@@ -148,10 +154,10 @@ function processCheckboxRuntime(ctx: WalkContext) {
     if (target && isNode(target)) {
         target.runtime.controls[controlName] = entryId;
     }
-    Object.assign(n, {runtime: {value: entryId}});
+    return {runtime: {value: entryId}};
 }
 
-function processRunRuntime(ctx: WalkContext) {
+function processRunRuntime(ctx: WalkContext): NodeRuntime<ScRunNode> {
     const n = ctx.node as ScRunNode;
     let target: ScElementNode | undefined;
     if (n.bind) {
@@ -168,22 +174,22 @@ function processRunRuntime(ctx: WalkContext) {
     if (target && isNode(target)) {
         target.runtime.run = entryId;
     }
-    Object.assign(n, {runtime: {value: entryId}});
+    return {runtime: {value: entryId}};
 }
 
-function processDisplayRuntime(ctx: WalkContext) {
+function processDisplayRuntime(ctx: WalkContext): NodeRuntime<ScDisplayNode> {
     const n = ctx.node as ScDisplayNode;
     const {targetNode, controlName, defaultValue} = resolveControlBind(n, ctx);
     const entryId = findOrCreateEntry(ctx, "control", targetNode, controlName, defaultValue);
-    Object.assign(n, {runtime: {value: entryId}});
+    return {runtime: {value: entryId}};
 }
 
-function processIfRuntime(ctx: WalkContext) {
+function processIfRuntime(ctx: WalkContext): NodeRuntime<ScIfNode> {
     const n = ctx.node as ScIfNode;
     const {targetNode, controlName, defaultValue} = resolveControlBind(n, ctx);
     const entryId = findOrCreateEntry(ctx, "control", targetNode, controlName, defaultValue);
     const children = ctx.walk({...ctx, saved: ctx.scope[ctx.offset], parentNode: n, offset: 0, scope: []});
-    Object.assign(n, {runtime: {value: entryId}, children});
+    return {runtime: {value: entryId}, children};
 }
 
 function resolveControlBind(n: {bind: string; type: string}, ctx: WalkContext): {targetNode: string; controlName: string; defaultValue: number} {
