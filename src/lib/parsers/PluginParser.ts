@@ -18,7 +18,7 @@ const SC_TAGS = [
 export interface WalkContext {
     node: ScElementNode;
     element: Element;
-    saved: ScElementNode[];
+    saved?: ScElementNode;
     boxId: string;
     offset: number;
     runtime: Map<string, RuntimeValueEntry>;
@@ -41,7 +41,7 @@ export function parse(element: Element, scPlugin?: ScElementNode, boxId?: string
     const ctx: WalkContext = {
         node: {type: 'sc-plugin', id: boxId ?? ''} as ScElementNode,
         element,
-        saved: scPlugin ? [scPlugin] : [],
+        saved: scPlugin,
         boxId: boxId ?? '',
         offset: 0,
         runtime: new Map<string, RuntimeValueEntry>(),
@@ -49,7 +49,7 @@ export function parse(element: Element, scPlugin?: ScElementNode, boxId?: string
         walk: walkChildren,
     };
 
-    const pluginNode = processElement(ctx) as ScPluginNode;
+    const pluginNode = processElement(element, 'sc-plugin', scPlugin) as ScPluginNode;
     processRuntime({...ctx, node: pluginNode});
 
     const values: Record<string, RuntimeValueEntry> = {};
@@ -59,46 +59,36 @@ export function parse(element: Element, scPlugin?: ScElementNode, boxId?: string
     return {tree: pluginNode.children, values, runtime: pluginNode.runtime};
 }
 
-function processElement(ctx: WalkContext): ScElementNode {
-    const tag = ctx.element.tagName.toLowerCase();
-    const type = ctx.node.type;
+function processElement(el: Element, type: string, saved?: ScElementNode): ScElementNode {
+    const tag = el.tagName.toLowerCase();
     if (domTag(type) !== tag) {
         console.warn(`[plugin hydration] tag mismatch: expected <${domTag(type)}> but got <${tag}>`);
     }
 
-    const savedChild = ctx.saved[ctx.offset];
-    const matched = savedChild?.type === type ? savedChild : undefined;
-    if (savedChild && !matched) {
-        console.warn(`[plugin hydration] type mismatch at offset ${ctx.offset}: <${type}> vs saved <${savedChild.type}>`);
+    const matched = saved?.type === type ? saved : undefined;
+    if (saved && !matched) {
+        console.warn(`[plugin hydration] type mismatch: <${type}> vs saved <${saved.type}>`);
     }
 
-    const props = extractProps(type, ctx.element);
-    const id = matched && propsMatch(props, matched) ? matched.id : (ctx.node.id || randomId());
-    ctx.element.setAttribute('id', id);
+    const props = extractProps(type, el);
+    const id = matched && propsMatch(props, matched) ? matched.id : randomId()
+    el.setAttribute('id', id);
 
     return {type, id, runtime: {}, ...props} as ScElementNode;
 }
 
-function walkChildren(ctx: WalkContext): ScElementNode[] {
-    const scope: ScElementNode[] = [];
-    const elements: Element[] = [];
-
+function walkChildren(ctx: WalkContext): ScElementNode {
     function visit(element: Element) {
         for (const child of Array.from(element.children)) {
             const tag = child.tagName.toLowerCase();
             if (SC_TAGS.includes(tag as any)) {
-                scope.push(processElement({...ctx, element: child, node: {type: tag} as ScElementNode}));
-                elements.push(child);
+                ctx.scope.push(walkChildren({
+                    ...ctx,
+                }));
                 ctx.offset++;
-            } else {
-                visit(child);
             }
         }
     }
     visit(ctx.element);
-
-    for (let i = 0; i < scope.length; i++) {
-        processRuntime({...ctx, node: scope[i], element: elements[i], scope, offset: i});
-    }
-    return scope;
+    return processRuntime(ctx);
 }
