@@ -15,8 +15,8 @@ const SC_TAGS = [
     ELEMENTS.SC_IF,
 ] as const;
 
-export interface WalkContext {
-    node: ScElementNode;
+export interface WalkContext<Node extends ScElementNode = ScElementNode> {
+    node: Node;
     element: Element;
     saved?: ScElementNode;
     boxId: string;
@@ -90,5 +90,6 @@ function walkChildren(ctx: WalkContext): ScElementNode {
         }
     }
     visit(ctx.element);
-    return processRuntime(ctx);
+    processRuntime(ctx);
+    return ctx.node;
 }

@@ -74,7 +74,7 @@ function findOrCreateEntry(
     return id;
 }
 
-export function processRuntime(ctx: WalkContext): ScElementNode {
+export function processRuntime<Node extends ScElementNode = ScElementNode>(ctx: WalkContext<Node>): NodeRuntime<Node> {
     let rt;
     switch (ctx.node.type) {
         case ELEMENTS.SC_PLUGIN:   rt = processPluginRuntime(ctx); break;
@@ -89,7 +89,7 @@ export function processRuntime(ctx: WalkContext): ScElementNode {
         default:
             throw new Error()
     }
-    return Object.assign(ctx.node, rt);
+    return Object.assign(ctx.node, rt) as NodeRuntime<Node>;
 }
 
 function processPluginRuntime(ctx: WalkContext): NodeRuntime<ScPluginNode> {
