@@ -1,9 +1,7 @@
 import {LitElement, html, css} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
-import {runtimeApi} from '@/lib/stores/api';
-import {findElementById} from '@/lib/utils/elementTree';
-import type {ScDisplayNode} from '@/types/parsers';
+import {resolveEntryId} from './resolve.ts';
 
 function formatValue(template: string, value: unknown): string {
   if (typeof value === 'boolean') return template.replace('%b', value ? 'true' : 'false');
@@ -45,13 +43,7 @@ export class ScDisplay extends LitElement {
   }
 
   private get _entryId(): string | undefined {
-    const boxId = this._node.value?.boxId();
-    if (!boxId) return undefined;
-    const plugin = runtimeApi.getById(boxId);
-    if (!plugin) return undefined;
-    const el = findElementById(plugin.children, this.id) as ScDisplayNode | undefined;
-    if (!el || el.type !== 'sc-display') return undefined;
-    return el.runtime.value;
+    return resolveEntryId(this._node, this.id, 'sc-display');
   }
 
   render() {

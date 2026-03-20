@@ -1,9 +1,7 @@
 import {css, html, LitElement} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
-import {runtimeApi} from '@/lib/stores/api';
-import {findElementById} from '@/lib/utils/elementTree';
-import {isInput} from '@/lib/utils/guards';
+import {resolveEntryId} from './resolve.ts';
 import './internal/sc-knob.ts';
 import './internal/sc-slider.ts';
 
@@ -45,13 +43,7 @@ export class ScRange extends LitElement {
     `;
 
     private get _entryId(): string | undefined {
-        const boxId = this._node.value?.boxId();
-        if (!boxId) return undefined;
-        const plugin = runtimeApi.getById(boxId);
-        if (!plugin) return undefined;
-        const el = findElementById(plugin.children, this.id);
-        if (!el || !isInput(el)) return undefined;
-        return el.runtime.value;
+        return resolveEntryId(this._node, this.id, 'sc-range');
     }
 
     get value(): number {

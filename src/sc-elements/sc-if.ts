@@ -1,9 +1,7 @@
 import {LitElement, html, css} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
-import {runtimeApi} from '@/lib/stores/api';
-import {findElementById} from '@/lib/utils/elementTree';
-import type {ScIfNode} from '@/types/parsers';
+import {resolveEntryId} from './resolve.ts';
 
 export class ScIf extends LitElement {
   static properties = {
@@ -43,13 +41,7 @@ export class ScIf extends LitElement {
   }
 
   private get _entryId(): string | undefined {
-    const boxId = this._node.value?.boxId();
-    if (!boxId) return undefined;
-    const plugin = runtimeApi.getById(boxId);
-    if (!plugin) return undefined;
-    const el = findElementById(plugin.children, this.id) as ScIfNode | undefined;
-    if (!el || el.type !== 'sc-if') return undefined;
-    return el.runtime.value;
+    return resolveEntryId(this._node, this.id, 'sc-if');
   }
 
   private _test(): boolean {

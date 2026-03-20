@@ -1,9 +1,7 @@
 import {html, svg, css, LitElement} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
-import {runtimeApi} from '@/lib/stores/api';
-import {findElementById} from '@/lib/utils/elementTree';
-import {isRun} from '@/lib/utils/guards';
+import {resolveEntryId} from './resolve.ts';
 
 export class ScRun extends LitElement {
     static properties = {
@@ -43,13 +41,7 @@ export class ScRun extends LitElement {
     }
 
     private get _entryId(): string | undefined {
-        const boxId = this._node.value?.boxId();
-        if (!boxId) return undefined;
-        const plugin = runtimeApi.getById(boxId);
-        if (!plugin) return undefined;
-        const el = findElementById(plugin.children, this.id);
-        if (!el || !isRun(el)) return undefined;
-        return el.runtime.value;
+        return resolveEntryId(this._node, this.id, 'sc-run');
     }
 
     get run(): boolean {

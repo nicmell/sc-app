@@ -15,6 +15,10 @@ export interface RuntimeContext {
     parentNode?: ScElementNodeBase;
 }
 
+function getRuntime(node: ScElementNodeBase): NodeRuntime {
+    return (node as unknown as {runtime: NodeRuntime}).runtime;
+}
+
 function findOrCreateEntry(
     ctx: RuntimeContext,
     type: "control",
@@ -111,25 +115,17 @@ export function processSynthDefRuntime(n: StripRuntime<ScSynthDefNode>, ctx: Run
     Object.assign(n, {runtime: {value: entryId}});
 }
 
-export function processRangeRuntime(n: StripRuntime<ScRangeNode>, ctx: RuntimeContext): void {
+export function processControlRuntime(
+    n: StripRuntime<ScRangeNode> | StripRuntime<ScCheckboxNode>,
+    ctx: RuntimeContext,
+): void {
     const {targetNode, controlName, defaultValue} = resolveControlBind(n, ctx);
     const entryId = findOrCreateEntry(ctx, "control", targetNode, controlName, defaultValue);
     // Also update the target node's runtime.controls
     const segments = n.bind.split('.');
     const target = findElementByPath(ctx.scope, segments.slice(0, -1));
     if (target && isNode(target)) {
-        (target as unknown as {runtime: NodeRuntime}).runtime.controls[controlName] = entryId;
-    }
-    Object.assign(n, {runtime: {value: entryId}});
-}
-
-export function processCheckboxRuntime(n: StripRuntime<ScCheckboxNode>, ctx: RuntimeContext): void {
-    const {targetNode, controlName, defaultValue} = resolveControlBind(n, ctx);
-    const entryId = findOrCreateEntry(ctx, "control", targetNode, controlName, defaultValue);
-    const segments = n.bind.split('.');
-    const target = findElementByPath(ctx.scope, segments.slice(0, -1));
-    if (target && isNode(target)) {
-        (target as unknown as {runtime: NodeRuntime}).runtime.controls[controlName] = entryId;
+        getRuntime(target).controls[controlName] = entryId;
     }
     Object.assign(n, {runtime: {value: entryId}});
 }
@@ -149,18 +145,15 @@ export function processRunRuntime(n: StripRuntime<ScRunNode>, ctx: RuntimeContex
     const entryId = findOrCreateEntry(ctx, "run", targetId, targetName, 1);
     // Update the target node's runtime.run
     if (target && isNode(target)) {
-        (target as unknown as {runtime: NodeRuntime}).runtime.run = entryId;
+        getRuntime(target).run = entryId;
     }
     Object.assign(n, {runtime: {value: entryId}});
 }
 
-export function processDisplayRuntime(n: StripRuntime<ScDisplayNode>, ctx: RuntimeContext): void {
-    const {targetNode, controlName, defaultValue} = resolveControlBind(n, ctx);
-    const entryId = findOrCreateEntry(ctx, "control", targetNode, controlName, defaultValue);
-    Object.assign(n, {runtime: {value: entryId}});
-}
-
-export function processIfRuntime(n: StripRuntime<ScIfNode>, ctx: RuntimeContext): void {
+export function processVisualRuntime(
+    n: StripRuntime<ScDisplayNode> | StripRuntime<ScIfNode>,
+    ctx: RuntimeContext,
+): void {
     const {targetNode, controlName, defaultValue} = resolveControlBind(n, ctx);
     const entryId = findOrCreateEntry(ctx, "control", targetNode, controlName, defaultValue);
     Object.assign(n, {runtime: {value: entryId}});
