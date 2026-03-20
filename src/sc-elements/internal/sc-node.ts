@@ -114,8 +114,13 @@ export abstract class ScNode extends LitElement implements IScNode {
             getInputValue: (entryId) => this.getInputValue(entryId),
         };
         const provider = new ContextProvider(this, {context: nodeContext, initialValue: ctx});
+        let prevValues = store.getState().runtime.values;
         this._unsubscribe = store.subscribe(() => {
-            provider.setValue(ctx, true);
+            const values = store.getState().runtime.values;
+            if (values !== prevValues) {
+                prevValues = values;
+                provider.setValue(ctx, true);
+            }
         });
     }
 

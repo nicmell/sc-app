@@ -7,6 +7,7 @@ import {useSelector} from "@/lib/stores/store";
 import layoutStore from "@/lib/stores/layout";
 import runtimeStore from "@/lib/stores/runtime";
 import {layoutApi, pluginsApi, runtimeApi} from "@/lib/stores/api";
+import {ScNode} from "@/sc-elements/internal/sc-node";
 import {DashboardPanel} from "./DashboardPanel";
 import {deepEqual} from "@/lib/utils/deepEqual";
 import {randomId} from "@/lib/utils/randomId.ts";
@@ -80,16 +81,29 @@ export function Dashboard() {
     }, [modalOpen])
 
     const runtimeItems = useSelector(runtimeStore.selectors.items);
+    const runtimeValues = useSelector(runtimeStore.selectors.values);
 
     const renderDashboardPanel = (item: BoxItem) => {
         const plugin = item.plugin ? pluginsApi.getById(item.plugin) : undefined;
         const rt = runtimeItems.find(r => r.id === item.i);
+        const runEntryId = rt?.loaded ? rt.runtime.run : undefined;
+        const isRunning = runEntryId ? runtimeValues[runEntryId]?.value === 1 : undefined;
+
+        const handleToggleRun = runEntryId ? () => {
+            const el = document.getElementById(item.i);
+            if (el instanceof ScNode) {
+                el.onRun(runEntryId, '', isRunning ? 0 : 1);
+            }
+        } : undefined;
+
         return (
             <DashboardPanel
                 key={item.i}
                 title={rt?.loaded ? rt.title : undefined}
+                running={isRunning}
                 onClose={() => layoutApi.removeBox(item.i)}
                 onEdit={() => setModalOpen(item)}
+                onToggleRun={handleToggleRun}
                 onLog={item.plugin ? () => console.log(runtimeApi.getById(item.i)) : undefined}
             >
                 {
