@@ -24,7 +24,7 @@ export function extractSynthProps(el: Element) {
 export function extractSynthDefProps(el: Element) {
     return {
         name: el.getAttribute('name') ?? '',
-        params: collectNumericAttrs(el, SYNTHDEF_SKIP_ATTRS),
+        controls: collectNumericAttrs(el, SYNTHDEF_SKIP_ATTRS),
         ugens: collectUGenSpecs(el),
     };
 }

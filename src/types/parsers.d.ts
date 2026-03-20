@@ -42,7 +42,7 @@ export interface ScSynthDefNode {
   type: 'sc-synthdef';
   id: string;
   name: string;
-  params: Record<string, number>;
+  controls: Record<string, number>;
   ugens: UGenSpec[];
   runtime: SynthDefRuntime;
 }

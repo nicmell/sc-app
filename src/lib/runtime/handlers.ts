@@ -109,7 +109,7 @@ export function processSynthDefRuntime(n: StripRuntime<ScSynthDefNode>, ctx: Run
     let bytes: number[] = [];
     if (n.ugens.length > 0) {
         const specsMap = new Map(n.ugens.map(u => [u.name, u]));
-        bytes = compileSynthDef(n.name, n.params, specsMap);
+        bytes = compileSynthDef(n.name, n.controls, specsMap);
     }
     const entryId = findOrCreateEntry(ctx, "synthdef", n.id, n.name, bytes);
     Object.assign(n, {runtime: {value: entryId}});

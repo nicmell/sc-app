@@ -6,7 +6,7 @@ import {
     extractGroupProps, extractSynthProps, extractSynthDefProps,
     extractRangeProps, extractCheckboxProps, extractRunProps,
     extractDisplayProps, extractIfProps,
-} from "@/lib/utils/extractProps";
+} from "./handlers";
 
 const EXCLUDE_KEYS = new Set(['id', 'runtime', 'children']);
 const PARENT_TAGS: ReadonlySet<string> = new Set([ELEMENTS.SC_GROUP, ELEMENTS.SC_IF, ELEMENTS.SC_PLUGIN]);
