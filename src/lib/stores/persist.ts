@@ -17,7 +17,10 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
     scsynth: {options: scsynth.options},
     plugins: plugins.items
         .map(({loaded: _loaded, error: _error, ...plugin}) => ({...plugin})),
-    runtime: {values: runtime.values},
+    runtime: {
+      items: runtime.items.map(({loaded: _l, error: _e, ...item}) => ({...item, loaded: false})),
+      values: runtime.values,
+    },
   }),
   merge: (persisted, current: RootState): RootState => {
     const p = persisted as ConfigFile | undefined;
@@ -36,6 +39,7 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
       },
       runtime: {
         ...current.runtime,
+        items: p?.runtime?.items ?? current.runtime.items,
         values: p?.runtime?.values ?? current.runtime.values,
       },
     };

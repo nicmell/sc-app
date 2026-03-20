@@ -39,7 +39,9 @@ bash scripts/package_examples.sh tmp
 - **Lit web components** (`src/sc-elements/`) for plugin content (sc-synth, sc-group, sc-range, sc-checkbox, sc-run, sc-display, sc-if, sc-synthdef)
 - **Zustand** store with Redux-style slices + Immer (`src/lib/stores/`)
 - **OSC communication** via `osc-js` + custom Tauri UDP plugin (`src/lib/osc/`)
-- **Plugin parser** (`src/lib/parsers/`) — walks plugin HTML, builds typed element tree, validates bindings, compiles synthdefs
+- **HTML parser** (`src/lib/html/`) — walks plugin HTML, builds typed element tree with two-phase hydration
+- **Runtime processor** (`src/lib/runtime/`) — creates runtime entries (controls, run states, synthdefs) from element tree
+- **Parser utilities** (`src/lib/utils/`) — guards, element tree traversal, props extraction, SynthDef compiler
 - **UGen system** (`src/lib/ugen/`) — SuperCollider UGen graph builder, binary SCgf encoder, operator support
 
 ### Backend (`src-tauri/src/`)
@@ -65,60 +67,68 @@ bash scripts/package_examples.sh tmp
 
 ## Store Architecture
 
-Five top-level slices in `src/lib/stores/`:
+Six top-level slices in `src/lib/stores/`:
 
 | Slice | Purpose |
 |-------|---------|
 | `root` | App-level state (`isRunning` flag) |
 | `scsynth` | Connection state, server status, options (host/port/polling/timeout/latency) |
-| `layout` | Dashboard grid items (BoxItem[]) + grid options (rows/columns). Each BoxItem holds plugin ref, element tree, runtime state |
+| `layout` | Dashboard grid items (BoxItem[]) + grid options (rows/columns). Each BoxItem holds plugin ref |
 | `theme` | Dark/light/adaptive mode, primary color |
 | `plugins` | Installed plugin registry (PluginInfo[]) |
+| `runtime` | Plugin element trees (ScPluginNode[]) + flat values map (RuntimeValueEntry keyed by entry ID) |
 
 Each slice has: `slice.ts` (reducer + actions), `selectors.ts`, `index.ts` (barrel).
 
 API layer (`src/lib/stores/api.ts`) wraps each slice for ergonomic dispatch: `layoutApi.setLayout(...)`, `scsynthApi.isConnected`, etc.
 
-Persisted to `config.json` via Zustand persist middleware with custom `tauriStorage` adapter. Runtime-only fields (`isRunning`, `loaded`, `error`) are stripped before persistence via `stripRuntime()`.
+Persisted to `config.json` via Zustand persist middleware with custom `tauriStorage` adapter. The `partialize` function selects which fields to persist; runtime-only fields (`loaded`, `error`) are stripped from plugin nodes and plugin info before persistence.
 
-## Parser & Element Tree System
+## Element Tree & Runtime System
 
-Located in `src/lib/parsers/`. This is the core system that converts plugin HTML into a typed element tree.
+Plugin HTML is processed in two phases: HTML parsing (`src/lib/html/`) builds a typed element tree, then runtime processing (`src/lib/runtime/`) creates runtime entries and mutates nodes with runtime references. Shared utilities live in `src/lib/utils/`.
 
-### Node Types (`parsers.d.ts`)
+### Node Types (`types/parsers.d.ts`)
 
 | Type | Key Fields | Description |
 |------|-----------|-------------|
-| `ScGroupNode` | name, children, isRunning | Group container |
-| `ScSynthNode` | name, bind?, controls, isRunning | Synth instance; `bind` references an `sc-synthdef` by name |
-| `ScSynthDefNode` | name, params, ugens, bytes | SynthDef template with compiled SCgf bytes |
-| `ScRangeNode` | bind, value | Slider/knob input bound to a synth control |
-| `ScCheckboxNode` | bind, value | Toggle input bound to a synth control |
-| `ScRunNode` | bind, value | Play/pause control; bind references a synth or group |
+| `ScPluginNode` | children, loaded, runtime | Plugin root container |
+| `ScGroupNode` | name, running, children, runtime | Group container |
+| `ScSynthNode` | name, bind, controls, running, runtime | Synth instance; `bind` references an `sc-synthdef` by name |
+| `ScSynthDefNode` | name, params, ugens, runtime | SynthDef template; `ugens` are parsed `UGenSpec[]` |
+| `ScRangeNode` | bind, runtime | Slider/knob input bound to a synth control |
+| `ScCheckboxNode` | bind, runtime | Toggle input bound to a synth control |
+| `ScRunNode` | bind, runtime | Play/pause control; bind references a synth or group |
+| `ScDisplayNode` | bind, format, runtime | Read-only value display |
+| `ScIfNode` | bind, children, runtime | Conditional rendering container |
 | `UGenSpec` | name, type, rate, inputs | UGen declaration parsed from `<sc-ugen>` elements |
 
-### PluginParser (`PluginParser.ts`)
+`StripRuntime<T>` removes `runtime` (and recursively from `children`) to produce `ScElementNodeBase` — the base type used during HTML parsing before runtime entries exist.
 
-- Walks plugin HTML, dispatches to per-tag handlers
-- **Two-phase hydration**: generates fresh node → compares with saved node via `propsMatch()` → reuses saved id only if props match (prevents stale state on changed nodes)
-- **Bind validation**: `sc-range`, `sc-checkbox`, `sc-display`, `sc-if` throw if bind path doesn't resolve against `computeState(scope)`
+### HTML Parser (`src/lib/html/processHtml.ts`)
+
+- `processHtml(docElement, saved?)` → `ProcessHtmlResult { tree, nodes }`
+- Walks DOM, dispatches to per-tag extractors via `extractProps()` (`src/lib/utils/extractProps.ts`)
+- **Two-phase hydration**: generates fresh node → compares with saved node via `propsMatch()` → reuses saved ID only if props match (prevents stale state on changed nodes)
+- Returns `ScElementNodeBase[]` tree (no `runtime` fields yet) and a `Map<string, ScElementNodeBase>` of all nodes keyed by ID
+
+### Runtime Processor (`src/lib/runtime/`)
+
+- `processRuntime(boxId, tree, nodes, persistedEntries)` → `{ tree, entries, pluginRuntime }`
+- Walks tree **children-before-parents** (ensures synth runtime exists before range/checkbox handlers reference it)
+- Per-type handlers in `handlers.ts` create runtime entries via `findOrCreateEntry()`, which checks: (1) current session entries, (2) persisted entries from store, (3) creates new with default
+- **Bind validation**: `sc-range`, `sc-checkbox`, `sc-display`, `sc-if` throw if bind path doesn't resolve
 - **sc-synth bind validation**: throws if `bind` doesn't reference an `sc-synthdef` in scope
 - **sc-run bind validation**: throws if `bind` doesn't reference an `sc-synth` or `sc-group` in scope
-- **SynthDef recompilation skip**: reuses saved bytes when params and ugens are unchanged
+- Decoupled from store — receives `persistedEntries` as parameter, no direct store imports
+- After walking, casts mutated `ScElementNodeBase[]` tree to `ScElementNode[]` (safe: every node has `runtime` via `Object.assign`)
 
-### SynthDefCompiler (`SynthDefCompiler.ts`)
+### Utilities (`src/lib/utils/`)
 
-- `compileSynthDef(name, params, specs)` — accepts data, not DOM elements
-- Topologically sorts UGen specs, builds UGen graph via `UGenGraphBuilder`
-- Supports standard UGens, `BinaryOpUGen`, `UnaryOpUGen`
-- Returns SCgf binary bytes as `number[]`
-
-### elementTree (`elementTree.ts`)
-
-- `findElementByPath(elements, path)` — dot-path navigation through groups
-- `computeState(elements)` — builds `{synthName: controls}` state object for bind resolution
-- `setControls()`, `setRunning()` — runtime mutations
-- `stripRuntime()` — removes `isRunning` before persistence
+- **`guards.ts`** — Generic type guards (`isParent`, `isSynth`, `isNode`, etc.) over `<T extends ScElementNodeBase>` with `Extract<T, ...>` return types. Work with both `ScElementNode` and `ScElementNodeBase`
+- **`elementTree.ts`** — Generic `findElementById<T>(elements, id)` and `findElementByPath<T>(elements, path)` — preserve input type in return
+- **`extractProps.ts`** — Per-tag HTML attribute extractors (`extractSynthProps`, `extractGroupProps`, etc.)
+- **`SynthDefCompiler.ts`** — `compileSynthDef(name, params, specs)` — topologically sorts UGen specs, builds graph via `UGenGraphBuilder`, returns SCgf binary bytes as `number[]`
 
 ## UGen System
 
@@ -173,7 +183,9 @@ All element-to-data references use `bind`:
 
 **Frontend loading** (`src/lib/plugins/PluginManager.ts`):
 - Fetches via `app://plugins/{id}/{entry}` URI scheme
-- Parses XHTML via DOMParser, runs through PluginParser to build element tree
+- Parses XHTML via DOMParser
+- Phase 1: `processHtml()` builds element tree with ID hydration from saved state
+- Phase 2: `processRuntime()` creates runtime entries, resolves bindings, compiles synthdefs
 - Sanitizes with DOMPurify (forbids script/iframe/object/embed/form)
 - Caches as TrustedHTML, renders inside shadow DOM
 
@@ -249,8 +261,8 @@ export function Foo({variant = "a", size = "md", className, ...rest}: FooProps) 
 
 - Never mutate store directly — always dispatch actions via API layer
 - Selectors are memoized (`createSelector`) — use them for derived state
-- Runtime-only fields (isRunning, loaded, error) are excluded from persistence via `stripRuntime()`
-- Element trees live on `BoxItem.elements` in the layout slice — no separate nodes slice
+- Runtime-only fields (`loaded`, `error`) are stripped during persistence via `partialize` in persist config
+- Element trees live on `ScPluginNode.children` in the runtime slice (`runtime.items`)
 
 ## Key Constants
 
