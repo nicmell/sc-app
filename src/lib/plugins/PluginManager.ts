@@ -45,11 +45,8 @@ export class PluginManager {
         const saved = runtimeApi.getById(boxId)?.children;
         const htmlResult = processHtml(doc.documentElement, saved);
 
-        const tree = htmlResult.tree
-        const nodes = htmlResult.nodes
-
         // Phase 2: Runtime processing
-        const runtimeResult = processRuntime(boxId, tree, nodes, runtimeApi.values);
+        const runtimeResult = processRuntime(boxId, htmlResult.tree, runtimeApi.values);
 
         return {
             title: doc.title,

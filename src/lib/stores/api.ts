@@ -11,8 +11,9 @@ import {logger} from "@/lib/logger";
 const wrappedStore = {
   ...store,
   dispatch: (action: any) => {
-    if (!scsynth.actions.setStatus.match(action))
-    logger.log(JSON.stringify(action));
+    if (!scsynth.actions.setStatus.match(action)) {
+      logger.log(JSON.stringify(action));
+    }
     store.getState().dispatch(action);
   },
 }

@@ -42,7 +42,6 @@ function walkTree(
 export function processRuntime(
     boxId: string,
     tree: ScElementNodeBase[],
-    _nodes: Map<string, ScElementNodeBase>,
     persistedEntries: Record<string, RuntimeValueEntry>,
 ): {tree: ScElementNode[]; entries: Record<string, RuntimeValueEntry>; pluginRuntime: NodeRuntime} {
     const entries = new Map<string, RuntimeValueEntry>();
