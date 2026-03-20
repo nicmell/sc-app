@@ -8,8 +8,8 @@ export function isGroup<T extends ScElementNodeBase>(el: T): el is Extract<T, { 
   return el.type === 'sc-group' || el.type === 'sc-plugin';
 }
 
-export function isParent<T extends ScElementNodeBase>(el: T): el is Extract<T, { type: 'sc-group' } | { type: 'sc-plugin' } | { type: 'sc-if' }> {
-  return el.type === 'sc-group' || el.type === 'sc-plugin' || el.type === 'sc-if';
+export function isParent<T extends ScElementNodeBase>(el: T): el is Extract<T, { type: 'sc-group' } | { type: 'sc-plugin' } | { type: 'sc-if' } | { type: 'sc-synthdef' }> {
+  return el.type === 'sc-group' || el.type === 'sc-plugin' || el.type === 'sc-if' || el.type === 'sc-synthdef';
 }
 
 export function isSynth<T extends ScElementNodeBase>(el: T): el is Extract<T, { type: 'sc-synth' }> {

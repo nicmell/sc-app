@@ -95,20 +95,20 @@ Plugin HTML is processed in two phases: HTML parsing (`src/lib/html/`) builds a 
 | `ScPluginNode` | children, loaded, runtime | Plugin root container |
 | `ScGroupNode` | name, running, children, runtime | Group container |
 | `ScSynthNode` | name, bind, controls, running, runtime | Synth instance; `bind` references an `sc-synthdef` by name |
-| `ScSynthDefNode` | name, params, ugens, runtime | SynthDef template; `ugens` are parsed `UGenSpec[]` |
+| `ScSynthDefNode` | name, controls, children, runtime | SynthDef template; children are `ScUgenNode[]` |
+| `ScUgenNode` | name, ugen, rate, controls, runtime | UGen declaration; `ugen` is the UGen class name |
 | `ScRangeNode` | bind, runtime | Slider/knob input bound to a synth control |
 | `ScCheckboxNode` | bind, runtime | Toggle input bound to a synth control |
 | `ScRunNode` | bind, runtime | Play/pause control; bind references a synth or group |
 | `ScDisplayNode` | bind, format, runtime | Read-only value display |
 | `ScIfNode` | bind, children, runtime | Conditional rendering container |
-| `UGenSpec` | name, type, rate, inputs | UGen declaration parsed from `<sc-ugen>` elements |
 
 `StripRuntime<T>` removes `runtime` (and recursively from `children`) to produce `ScElementNodeBase` — the base type used during HTML parsing before runtime entries exist.
 
 ### HTML Parser (`src/lib/html/processHtml.ts`)
 
 - `processHtml(docElement, saved?)` → `ProcessHtmlResult { tree, nodes }`
-- Walks DOM, dispatches to per-tag extractors via `extractProps()` (`src/lib/utils/extractProps.ts`)
+- Walks DOM, dispatches to per-tag extractors via `extractProps()` (`src/lib/html/handlers.ts`)
 - **Two-phase hydration**: generates fresh node → compares with saved node via `propsMatch()` → reuses saved ID only if props match (prevents stale state on changed nodes)
 - Returns `ScElementNodeBase[]` tree (no `runtime` fields yet) and a `Map<string, ScElementNodeBase>` of all nodes keyed by ID
 

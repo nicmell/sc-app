@@ -3,17 +3,17 @@ import {randomId} from "@/lib/utils/randomId";
 import {deepEqual} from "@/lib/utils/deepEqual";
 import type {ScElementNodeBase, ProcessHtmlResult} from "@/types/parsers";
 import {
-    extractGroupProps, extractSynthProps, extractSynthDefProps,
+    extractGroupProps, extractSynthProps, extractSynthDefProps, extractUgenProps,
     extractRangeProps, extractCheckboxProps, extractRunProps,
     extractDisplayProps, extractIfProps,
 } from "./handlers";
 
 const EXCLUDE_KEYS = new Set(['id', 'runtime', 'children']);
-const PARENT_TAGS: ReadonlySet<string> = new Set([ELEMENTS.SC_GROUP, ELEMENTS.SC_IF, ELEMENTS.SC_PLUGIN]);
+const PARENT_TAGS: ReadonlySet<string> = new Set([ELEMENTS.SC_GROUP, ELEMENTS.SC_IF, ELEMENTS.SC_PLUGIN, ELEMENTS.SC_SYNTHDEF]);
 const SC_TAGS: ReadonlySet<string> = new Set([
     ELEMENTS.SC_GROUP, ELEMENTS.SC_SYNTH, ELEMENTS.SC_SYNTHDEF,
     ELEMENTS.SC_RANGE, ELEMENTS.SC_CHECKBOX, ELEMENTS.SC_RUN,
-    ELEMENTS.SC_DISPLAY, ELEMENTS.SC_IF,
+    ELEMENTS.SC_DISPLAY, ELEMENTS.SC_IF, ELEMENTS.SC_UGEN,
 ]);
 
 interface HtmlWalkContext {
@@ -36,6 +36,7 @@ function extractProps(tag: string, el: Element): Record<string, unknown> {
         case ELEMENTS.SC_GROUP:    return {type: tag, ...extractGroupProps(el)};
         case ELEMENTS.SC_SYNTH:    return {type: tag, ...extractSynthProps(el)};
         case ELEMENTS.SC_SYNTHDEF: return {type: tag, ...extractSynthDefProps(el)};
+        case ELEMENTS.SC_UGEN:     return {type: tag, ...extractUgenProps(el)};
         case ELEMENTS.SC_RANGE:    return {type: tag, ...extractRangeProps(el)};
         case ELEMENTS.SC_CHECKBOX: return {type: tag, ...extractCheckboxProps(el)};
         case ELEMENTS.SC_RUN:      return {type: tag, ...extractRunProps(el)};

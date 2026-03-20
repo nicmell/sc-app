@@ -4,7 +4,7 @@ import {ELEMENTS} from "@/constants/sc-elements";
 import {
     type RuntimeContext,
     processPluginRuntime, processGroupRuntime, processSynthRuntime, processSynthDefRuntime,
-    processControlRuntime, processRunRuntime, processVisualRuntime,
+    processUgenRuntime, processControlRuntime, processRunRuntime, processVisualRuntime,
 } from "./handlers";
 
 function dispatchRuntime(node: ScElementNodeBase, ctx: RuntimeContext): void {
@@ -12,6 +12,7 @@ function dispatchRuntime(node: ScElementNodeBase, ctx: RuntimeContext): void {
         case ELEMENTS.SC_GROUP:    processGroupRuntime(node, ctx); break;
         case ELEMENTS.SC_SYNTH:    processSynthRuntime(node, ctx); break;
         case ELEMENTS.SC_SYNTHDEF: processSynthDefRuntime(node, ctx); break;
+        case ELEMENTS.SC_UGEN:     processUgenRuntime(node, ctx); break;
         case ELEMENTS.SC_RANGE:
         case ELEMENTS.SC_CHECKBOX: processControlRuntime(node, ctx); break;
         case ELEMENTS.SC_RUN:      processRunRuntime(node, ctx); break;

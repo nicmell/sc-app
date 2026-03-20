@@ -38,12 +38,24 @@ export interface SynthDefRuntime {
   value: string;
 }
 
+export type UgenRuntime = Record<string, never>;
+
+export interface ScUgenNode {
+  type: 'sc-ugen';
+  id: string;
+  name: string;
+  ugen: string;
+  rate: string;
+  controls: Record<string, string>;
+  runtime: UgenRuntime;
+}
+
 export interface ScSynthDefNode {
   type: 'sc-synthdef';
   id: string;
   name: string;
   controls: Record<string, number>;
-  ugens: UGenSpec[];
+  children: ScElementNode[];
   runtime: SynthDefRuntime;
 }
 
@@ -99,7 +111,7 @@ export interface ScPluginNode {
 }
 
 
-export type ScElementNode = ScPluginNode | ScGroupNode | ScSynthNode | ScSynthDefNode | ScRangeNode | ScCheckboxNode | ScRunNode | ScDisplayNode | ScIfNode;
+export type ScElementNode = ScPluginNode | ScGroupNode | ScSynthNode | ScSynthDefNode | ScUgenNode | ScRangeNode | ScCheckboxNode | ScRunNode | ScDisplayNode | ScIfNode;
 
 export type StripRuntime<T> = T extends { children: ScElementNode[] }
   ? Omit<T, 'runtime' | 'children'> & { children: StripRuntime<ScElementNode>[] }

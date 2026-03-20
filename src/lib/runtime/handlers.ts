@@ -1,5 +1,5 @@
 import type {
-    ScElementNodeBase, StripRuntime, ScGroupNode, ScSynthNode, ScSynthDefNode,
+    ScElementNodeBase, StripRuntime, ScGroupNode, ScSynthNode, ScSynthDefNode, ScUgenNode,
     ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode,
     ScPluginNode, RuntimeValueEntry, NodeRuntime,
 } from "@/types/parsers";
@@ -21,60 +21,31 @@ function getRuntime(node: ScElementNodeBase): NodeRuntime {
 
 function findOrCreateEntry(
     ctx: RuntimeContext,
-    type: "control",
+    type: "control" | "run",
     targetNode: string,
     name: string,
     defaultValue: number,
-): string;
-function findOrCreateEntry(
-    ctx: RuntimeContext,
-    type: "run",
-    targetNode: string,
-    name: string,
-    defaultValue: number,
-): string;
-function findOrCreateEntry(
-    ctx: RuntimeContext,
-    type: "synthdef",
-    targetNode: string,
-    name: string,
-    defaultValue: number[],
-): string;
-function findOrCreateEntry(
-    ctx: RuntimeContext,
-    type: "control" | "run" | "synthdef",
-    targetNode: string,
-    name: string,
-    defaultValue: number | number[],
 ): string {
     // 1. Check ctx.entries for existing entry created this parse session
     for (const [id, entry] of ctx.entries) {
-        if (entry.type === type && entry.targetNode === targetNode && entry.boxId === ctx.boxId) {
-            if (type === "synthdef" || ('name' in entry && entry.name === name)) {
-                return id;
-            }
+        if (entry.type === type && entry.targetNode === targetNode && entry.boxId === ctx.boxId
+            && 'name' in entry && entry.name === name) {
+            return id;
         }
     }
 
     // 2. Check persisted entries
     for (const [id, entry] of Object.entries(ctx.persistedEntries)) {
-        if (entry.type === type && entry.targetNode === targetNode && entry.boxId === ctx.boxId) {
-            if (type === "synthdef" || ('name' in entry && entry.name === name)) {
-                ctx.entries.set(id, entry);
-                return id;
-            }
+        if (entry.type === type && entry.targetNode === targetNode && entry.boxId === ctx.boxId
+            && 'name' in entry && entry.name === name) {
+            ctx.entries.set(id, entry);
+            return id;
         }
     }
 
     // 3. Create new entry
     const id = crypto.randomUUID();
-    let entry: RuntimeValueEntry;
-    if (type === "synthdef") {
-        entry = {type, boxId: ctx.boxId, targetNode, value: defaultValue as number[]};
-    } else {
-        entry = {type, boxId: ctx.boxId, targetNode, name, value: defaultValue as number};
-    }
-    ctx.entries.set(id, entry);
+    ctx.entries.set(id, {type, boxId: ctx.boxId, targetNode, name, value: defaultValue});
     return id;
 }
 
@@ -107,12 +78,45 @@ export function processSynthRuntime(n: StripRuntime<ScSynthNode>, ctx: RuntimeCo
 
 export function processSynthDefRuntime(n: StripRuntime<ScSynthDefNode>, ctx: RuntimeContext): void {
     let bytes: number[] = [];
-    if (n.ugens.length > 0) {
-        const specsMap = new Map(n.ugens.map(u => [u.name, u]));
+    const ugenChildren = n.children.filter(c => c.type === 'sc-ugen');
+    if (ugenChildren.length > 0) {
+        const specsMap = new Map(ugenChildren.map(c => {
+            const u = c as StripRuntime<ScUgenNode>;
+            return [u.name, {name: u.name, type: u.ugen, rate: u.rate, inputs: u.controls}];
+        }));
         bytes = compileSynthDef(n.name, n.controls, specsMap);
     }
-    const entryId = findOrCreateEntry(ctx, "synthdef", n.id, n.name, bytes);
+    const entryId = createSynthDefEntry(ctx, n.id, bytes);
     Object.assign(n, {runtime: {value: entryId}});
+}
+
+export function processUgenRuntime(n: StripRuntime<ScUgenNode>, ctx: RuntimeContext): void {
+    for (const [key, value] of Object.entries(n.controls)) {
+        if (key === 'op') continue;
+        const num = Number(value);
+        if (!isNaN(num) && value.trim() !== '') continue;
+
+        const refId = value.split(':')[0];
+
+        // Check sibling UGens
+        if (ctx.scope.some(s => s.type === 'sc-ugen' && 'name' in s && s.name === refId)) continue;
+
+        // Check parent synthdef controls
+        if (ctx.parentNode?.type === 'sc-synthdef' && 'controls' in ctx.parentNode) {
+            if (refId in (ctx.parentNode as {controls: Record<string, number>}).controls) continue;
+        }
+
+        throw new Error(`<sc-ugen name="${n.name}">: input "${key}" references unknown "${refId}"`);
+    }
+    Object.assign(n, {runtime: {}});
+}
+
+function createSynthDefEntry(
+    ctx: RuntimeContext, targetNode: string, bytes: number[],
+): string {
+    const id = crypto.randomUUID();
+    ctx.entries.set(id, {type: "synthdef", boxId: ctx.boxId, targetNode, value: bytes});
+    return id;
 }
 
 export function processControlRuntime(
