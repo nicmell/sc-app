@@ -2,7 +2,8 @@ import {css, html, LitElement} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
 import {runtimeApi} from '@/lib/stores/api';
-import {findElementById, isInput} from '@/lib/parsers';
+import {findElementById} from '@/lib/utils/elementTree';
+import {isInput} from '@/lib/utils/guards';
 import './internal/sc-knob.ts';
 import './internal/sc-slider.ts';
 

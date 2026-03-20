@@ -2,8 +2,8 @@ import {LitElement, html, css} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
 import {runtimeApi} from '@/lib/stores/api';
-import {findElementById} from '@/lib/parsers';
-import type {ScIfNode} from '@/lib/parsers';
+import {findElementById} from '@/lib/utils/elementTree';
+import type {ScIfNode} from '@/types/parsers';
 
 export class ScIf extends LitElement {
   static properties = {

@@ -1,5 +1,5 @@
 import type {RuntimeState} from "@/types/stores";
-import type {ScElementNode, NodeRuntime, RuntimeValueEntry} from "@/lib/parsers";
+import type {ScElementNode, NodeRuntime, RuntimeValueEntry} from "@/types/parsers";
 import {createSlice} from "@/lib/stores/utils";
 import {SliceName, RuntimeAction} from "@/constants/store";
 

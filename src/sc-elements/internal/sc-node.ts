@@ -3,7 +3,8 @@ import {ContextProvider, ContextConsumer} from '@lit/context';
 import {oscService} from '@/lib/osc';
 import {nodeRunMessage, nodeSetMessage} from '@/lib/osc/messages.ts';
 import {runtimeApi} from '@/lib/stores/api';
-import {isSynth, findElementById} from '@/lib/parsers';
+import {isSynth} from '@/lib/utils/guards';
+import {findElementById} from '@/lib/utils/elementTree';
 import {store} from '@/lib/stores/store';
 import {nodeContext, type NodeContext, type ScNode as IScNode, type ScElement} from '../context.ts';
 

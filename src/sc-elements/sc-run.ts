@@ -2,7 +2,8 @@ import {html, svg, css, LitElement} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
 import {runtimeApi} from '@/lib/stores/api';
-import {findElementById, isRun} from '@/lib/parsers';
+import {findElementById} from '@/lib/utils/elementTree';
+import {isRun} from '@/lib/utils/guards';
 
 export class ScRun extends LitElement {
     static properties = {

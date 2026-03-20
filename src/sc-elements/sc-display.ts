@@ -2,8 +2,8 @@ import {LitElement, html, css} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
 import {runtimeApi} from '@/lib/stores/api';
-import {findElementById} from '@/lib/parsers';
-import type {ScDisplayNode} from '@/lib/parsers';
+import {findElementById} from '@/lib/utils/elementTree';
+import type {ScDisplayNode} from '@/types/parsers';
 
 function formatValue(template: string, value: unknown): string {
   if (typeof value === 'boolean') return template.replace('%b', value ? 'true' : 'false');

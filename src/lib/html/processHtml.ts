@@ -1,17 +1,12 @@
 import {ELEMENTS} from "@/constants/sc-elements";
-import {randomId} from "@/lib/utils/randomId.ts";
+import {randomId} from "@/lib/utils/randomId";
 import {deepEqual} from "@/lib/utils/deepEqual";
-import type {ScElementNode, ScPluginNode, NodeRuntime, RuntimeValueEntry} from "../../types/parsers";
+import type {ScElementNodeBase, ProcessHtmlResult} from "@/types/parsers";
 import {
     extractGroupProps, extractSynthProps, extractSynthDefProps,
     extractRangeProps, extractCheckboxProps, extractRunProps,
     extractDisplayProps, extractIfProps,
-} from "./extractProps";
-import {
-    processPluginRuntime, processGroupRuntime, processSynthRuntime, processSynthDefRuntime,
-    processRangeRuntime, processCheckboxRuntime, processRunRuntime,
-    processDisplayRuntime, processIfRuntime,
-} from "./processRuntime";
+} from "@/lib/utils/extractProps";
 
 const EXCLUDE_KEYS = new Set(['id', 'runtime', 'children']);
 const PARENT_TAGS: ReadonlySet<string> = new Set([ELEMENTS.SC_GROUP, ELEMENTS.SC_IF, ELEMENTS.SC_PLUGIN]);
@@ -21,48 +16,14 @@ const SC_TAGS: ReadonlySet<string> = new Set([
     ELEMENTS.SC_DISPLAY, ELEMENTS.SC_IF,
 ]);
 
-
-export interface WalkContext {
+interface HtmlWalkContext {
     element: Element;
-    saved?: ScElementNode[];
-    boxId: string;
+    saved?: ScElementNodeBase[];
     offset: number;
-    runtime: Map<string, RuntimeValueEntry>;
-    parentNode?: ScElementNode;
-    scope: ScElementNode[];
+    nodes: Map<string, ScElementNodeBase>;
 }
 
-export interface ParseResult {
-    tree: ScElementNode[];
-    values: Record<string, RuntimeValueEntry>;
-    runtime: NodeRuntime;
-}
-
-
-export function parse(element: Element, saved?: ScElementNode[], boxId?: string): ParseResult {
-    const ctx: WalkContext = {
-        element,
-        saved,
-        boxId: boxId ?? '',
-        offset: 0,
-        runtime: new Map<string, RuntimeValueEntry>(),
-        scope: [],
-    };
-    const tree = walkChildren(ctx);
-
-    // Create runtime entries for the plugin node itself
-    const pluginNode = {type: 'sc-plugin', id: ctx.boxId} as ScPluginNode;
-    ctx.scope = tree;
-    processPluginRuntime(pluginNode, ctx);
-
-    const values: Record<string, RuntimeValueEntry> = {};
-    for (const [id, entry] of ctx.runtime) {
-        values[id] = entry;
-    }
-    return {tree, values, runtime: pluginNode.runtime};
-}
-
-function propsMatch(fresh: Record<string, unknown>, saved: ScElementNode): boolean {
+function propsMatch(fresh: Record<string, unknown>, saved: ScElementNodeBase): boolean {
     const savedProps: Record<string, unknown> = {};
     for (const [key, val] of Object.entries(saved)) {
         if (!EXCLUDE_KEYS.has(key)) savedProps[key] = val;
@@ -84,21 +45,7 @@ function extractProps(tag: string, el: Element): Record<string, unknown> {
     }
 }
 
-function processRuntime(node: ScElementNode, ctx: WalkContext) {
-    switch (node.type) {
-        case ELEMENTS.SC_GROUP:    processGroupRuntime(node, ctx); break;
-        case ELEMENTS.SC_SYNTH:    processSynthRuntime(node, ctx); break;
-        case ELEMENTS.SC_SYNTHDEF: processSynthDefRuntime(node, ctx); break;
-        case ELEMENTS.SC_RANGE:    processRangeRuntime(node, ctx); break;
-        case ELEMENTS.SC_CHECKBOX: processCheckboxRuntime(node, ctx); break;
-        case ELEMENTS.SC_RUN:      processRunRuntime(node, ctx); break;
-        case ELEMENTS.SC_DISPLAY:  processDisplayRuntime(node, ctx); break;
-        case ELEMENTS.SC_IF:       processIfRuntime(node, ctx); break;
-    }
-}
-
-
-function processElement(ctx: WalkContext): ScElementNode {
+function processElement(ctx: HtmlWalkContext): ScElementNodeBase {
     const tag = ctx.element.tagName.toLowerCase();
     const savedChild = ctx.saved?.[ctx.offset];
     const matched = savedChild?.type === tag ? savedChild : undefined;
@@ -106,7 +53,7 @@ function processElement(ctx: WalkContext): ScElementNode {
         console.warn(`[plugin hydration] tag mismatch at offset ${ctx.offset}: <${tag}> vs saved <${savedChild.type}>`);
     }
     const props = extractProps(tag, ctx.element);
-    let node: ScElementNode;
+    let node: ScElementNodeBase;
 
     if (matched && propsMatch(props, matched)) {
         ctx.element.setAttribute('id', matched.id);
@@ -115,28 +62,30 @@ function processElement(ctx: WalkContext): ScElementNode {
         if (matched) console.warn(`[plugin hydration] props mismatch for <${tag}>`);
         const id = randomId();
         ctx.element.setAttribute('id', id);
-        node = {id, ...props} as ScElementNode;
+        node = {id, ...props} as ScElementNodeBase;
     }
 
-    return {
+    const result: ScElementNodeBase = {
         ...node,
         ...PARENT_TAGS.has(tag) && {
             children: walkChildren({
                 element: ctx.element,
-                runtime: ctx.runtime,
-                boxId: ctx.boxId,
-                saved: matched && 'children' in matched ? matched.children : [],
-                parentNode: node,
+                nodes: ctx.nodes,
+                saved: matched && 'children' in matched ? (matched as {children: ScElementNodeBase[]}).children : [],
                 offset: 0,
-                scope: [],
             }),
         }
-    }
+    } as ScElementNodeBase;
+
+    // Populate nodes map with the final object (shared reference)
+    ctx.nodes.set(result.id, result);
+
+    return result;
 }
 
-export function walkChildren(ctx: WalkContext): ScElementNode[] {
-    function visit(element: Element): ScElementNode[] {
-        const result: ScElementNode[] = [];
+function walkChildren(ctx: HtmlWalkContext): ScElementNodeBase[] {
+    function visit(element: Element): ScElementNodeBase[] {
+        const result: ScElementNodeBase[] = [];
         for (const child of Array.from(element.children)) {
             const tag = child.tagName.toLowerCase();
             if (SC_TAGS.has(tag)) {
@@ -146,12 +95,22 @@ export function walkChildren(ctx: WalkContext): ScElementNode[] {
                 result.push(...visit(child));
             }
         }
-        ctx.scope = result;
-        for (const node of result) {
-            processRuntime(node, ctx);
-        }
         return result;
     }
 
     return visit(ctx.element);
+}
+
+export function processHtml(
+    docElement: Element,
+    saved?: ScElementNodeBase[],
+): ProcessHtmlResult {
+    const nodes = new Map<string, ScElementNodeBase>();
+    const tree = walkChildren({
+        element: docElement,
+        saved,
+        offset: 0,
+        nodes,
+    });
+    return {tree, nodes};
 }

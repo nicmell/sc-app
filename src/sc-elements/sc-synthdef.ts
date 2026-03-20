@@ -2,7 +2,7 @@ import {LitElement, html} from 'lit';
 import {defRecvMessage} from '@/lib/osc/messages.ts';
 import {oscService} from '@/lib/osc';
 import {runtimeApi} from '@/lib/stores/api';
-import type {ScSynthDefNode} from '@/lib/parsers';
+import type {ScSynthDefNode} from '@/types/parsers';
 
 function getCompiledSynthDef(name: string): Uint8Array | undefined {
   const values = runtimeApi.values;
@@ -18,7 +18,7 @@ function getCompiledSynthDef(name: string): Uint8Array | undefined {
   return undefined;
 }
 
-function findSynthDefNode(elements: import('@/lib/parsers').ScElementNode[], name: string): ScSynthDefNode | undefined {
+function findSynthDefNode(elements: import('@/types/parsers').ScElementNode[], name: string): ScSynthDefNode | undefined {
   for (const el of elements) {
     if (el.type === 'sc-synthdef' && el.name === name) return el;
     if ('children' in el && Array.isArray(el.children)) {

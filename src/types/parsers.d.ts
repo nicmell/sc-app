@@ -101,6 +101,17 @@ export interface ScPluginNode {
 
 export type ScElementNode = ScPluginNode | ScGroupNode | ScSynthNode | ScSynthDefNode | ScRangeNode | ScCheckboxNode | ScRunNode | ScDisplayNode | ScIfNode;
 
+export type StripRuntime<T> = T extends { children: ScElementNode[] }
+  ? Omit<T, 'runtime' | 'children'> & { children: StripRuntime<ScElementNode>[] }
+  : Omit<T, 'runtime'>;
+
+export type ScElementNodeBase = StripRuntime<ScElementNode>;
+
+export interface ProcessHtmlResult {
+  tree: ScElementNodeBase[];
+  nodes: Map<string, ScElementNodeBase>;
+}
+
 export interface PluginTreeEntry {
   title: string;
   html: string;

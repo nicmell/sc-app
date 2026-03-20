@@ -1,44 +1,50 @@
 import type {
-    ScElementNode, ScGroupNode, ScSynthNode, ScSynthDefNode,
+    ScElementNodeBase, StripRuntime, ScGroupNode, ScSynthNode, ScSynthDefNode,
     ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode,
-    ScPluginNode, RuntimeValueEntry,
-} from "../../types/parsers";
-import {findElementByPath} from "./elementTree";
-import {isSynthDef, isSynth, isGroup, isNode} from "./guards";
-import {compileSynthDef} from "./SynthDefCompiler";
-import {runtimeApi} from "@/lib/stores/api";
-import type {WalkContext} from "./PluginParser";
+    ScPluginNode, RuntimeValueEntry, NodeRuntime,
+} from "@/types/parsers";
+import {findElementByPath} from "@/lib/utils/elementTree";
+import {isSynthDef, isSynth, isGroup, isNode} from "@/lib/utils/guards";
+import {compileSynthDef} from "@/lib/utils/SynthDefCompiler";
+
+export interface RuntimeContext {
+    boxId: string;
+    entries: Map<string, RuntimeValueEntry>;
+    persistedEntries: Record<string, RuntimeValueEntry>;
+    scope: ScElementNodeBase[];
+    parentNode?: ScElementNodeBase;
+}
 
 function findOrCreateEntry(
-    ctx: WalkContext,
+    ctx: RuntimeContext,
     type: "control",
     targetNode: string,
     name: string,
     defaultValue: number,
 ): string;
 function findOrCreateEntry(
-    ctx: WalkContext,
+    ctx: RuntimeContext,
     type: "run",
     targetNode: string,
     name: string,
     defaultValue: number,
 ): string;
 function findOrCreateEntry(
-    ctx: WalkContext,
+    ctx: RuntimeContext,
     type: "synthdef",
     targetNode: string,
     name: string,
     defaultValue: number[],
 ): string;
 function findOrCreateEntry(
-    ctx: WalkContext,
+    ctx: RuntimeContext,
     type: "control" | "run" | "synthdef",
     targetNode: string,
     name: string,
     defaultValue: number | number[],
 ): string {
-    // 1. Check ctx.runtime for existing entry created this parse session
-    for (const [id, entry] of ctx.runtime) {
+    // 1. Check ctx.entries for existing entry created this parse session
+    for (const [id, entry] of ctx.entries) {
         if (entry.type === type && entry.targetNode === targetNode && entry.boxId === ctx.boxId) {
             if (type === "synthdef" || ('name' in entry && entry.name === name)) {
                 return id;
@@ -46,12 +52,11 @@ function findOrCreateEntry(
         }
     }
 
-    // 2. Check store for persisted entry
-    const savedValues = runtimeApi.values;
-    for (const [id, entry] of Object.entries(savedValues)) {
+    // 2. Check persisted entries
+    for (const [id, entry] of Object.entries(ctx.persistedEntries)) {
         if (entry.type === type && entry.targetNode === targetNode && entry.boxId === ctx.boxId) {
             if (type === "synthdef" || ('name' in entry && entry.name === name)) {
-                ctx.runtime.set(id, entry);
+                ctx.entries.set(id, entry);
                 return id;
             }
         }
@@ -65,21 +70,23 @@ function findOrCreateEntry(
     } else {
         entry = {type, boxId: ctx.boxId, targetNode, name, value: defaultValue as number};
     }
-    ctx.runtime.set(id, entry);
+    ctx.entries.set(id, entry);
     return id;
 }
 
-export function processPluginRuntime(n: ScPluginNode, ctx: WalkContext) {
+export function processPluginRuntime(n: StripRuntime<ScPluginNode>, ctx: RuntimeContext): NodeRuntime {
     const runId = findOrCreateEntry(ctx, "run", n.id, n.id, 1);
-    Object.assign(n, {runtime: {run: runId, controls: {}}});
+    const runtime: NodeRuntime = {run: runId, controls: {}};
+    Object.assign(n, {runtime});
+    return runtime;
 }
 
-export function processGroupRuntime(n: ScGroupNode, ctx: WalkContext) {
+export function processGroupRuntime(n: StripRuntime<ScGroupNode>, ctx: RuntimeContext): void {
     const runId = findOrCreateEntry(ctx, "run", n.id, n.name, n.running ? 1 : 0);
     Object.assign(n, {runtime: {run: runId, controls: {}}});
 }
 
-export function processSynthRuntime(n: ScSynthNode, ctx: WalkContext) {
+export function processSynthRuntime(n: StripRuntime<ScSynthNode>, ctx: RuntimeContext): void {
     if (n.bind) {
         const target = findElementByPath(ctx.scope, n.bind.split('.'));
         if (!target || !isSynthDef(target)) {
@@ -94,7 +101,7 @@ export function processSynthRuntime(n: ScSynthNode, ctx: WalkContext) {
     Object.assign(n, {runtime: {run: runId, controls}});
 }
 
-export function processSynthDefRuntime(n: ScSynthDefNode, ctx: WalkContext) {
+export function processSynthDefRuntime(n: StripRuntime<ScSynthDefNode>, ctx: RuntimeContext): void {
     let bytes: number[] = [];
     if (n.ugens.length > 0) {
         const specsMap = new Map(n.ugens.map(u => [u.name, u]));
@@ -104,32 +111,31 @@ export function processSynthDefRuntime(n: ScSynthDefNode, ctx: WalkContext) {
     Object.assign(n, {runtime: {value: entryId}});
 }
 
-export function processRangeRuntime(n: ScRangeNode, ctx: WalkContext) {
+export function processRangeRuntime(n: StripRuntime<ScRangeNode>, ctx: RuntimeContext): void {
     const {targetNode, controlName, defaultValue} = resolveControlBind(n, ctx);
     const entryId = findOrCreateEntry(ctx, "control", targetNode, controlName, defaultValue);
     // Also update the target node's runtime.controls
     const segments = n.bind.split('.');
     const target = findElementByPath(ctx.scope, segments.slice(0, -1));
     if (target && isNode(target)) {
-        target.runtime.controls[controlName] = entryId;
+        (target as unknown as {runtime: NodeRuntime}).runtime.controls[controlName] = entryId;
     }
     Object.assign(n, {runtime: {value: entryId}});
 }
 
-export function processCheckboxRuntime(n: ScCheckboxNode, ctx: WalkContext) {
+export function processCheckboxRuntime(n: StripRuntime<ScCheckboxNode>, ctx: RuntimeContext): void {
     const {targetNode, controlName, defaultValue} = resolveControlBind(n, ctx);
     const entryId = findOrCreateEntry(ctx, "control", targetNode, controlName, defaultValue);
     const segments = n.bind.split('.');
     const target = findElementByPath(ctx.scope, segments.slice(0, -1));
-    // Update the target node's runtime.controls. TODO: verify logic behind it
     if (target && isNode(target)) {
-        target.runtime.controls[controlName] = entryId;
+        (target as unknown as {runtime: NodeRuntime}).runtime.controls[controlName] = entryId;
     }
     Object.assign(n, {runtime: {value: entryId}});
 }
 
-export function processRunRuntime(n: ScRunNode, ctx: WalkContext) {
-    let target: ScElementNode | undefined;
+export function processRunRuntime(n: StripRuntime<ScRunNode>, ctx: RuntimeContext): void {
+    let target: ScElementNodeBase | undefined;
     if (n.bind) {
         target = findElementByPath(ctx.scope, n.bind.split('.'));
         if (!target || (!isSynth(target) && !isGroup(target))) {
@@ -139,28 +145,28 @@ export function processRunRuntime(n: ScRunNode, ctx: WalkContext) {
         target = ctx.parentNode;
     }
     const targetId = target ? target.id : '';
-    const targetName = target && 'name' in target ? target.name : '';
+    const targetName = target && 'name' in target ? (target as {name: string}).name : '';
     const entryId = findOrCreateEntry(ctx, "run", targetId, targetName, 1);
-    // Update the target node's runtime.run. TODO: verify logic behind it
+    // Update the target node's runtime.run
     if (target && isNode(target)) {
-        target.runtime.run = entryId;
+        (target as unknown as {runtime: NodeRuntime}).runtime.run = entryId;
     }
     Object.assign(n, {runtime: {value: entryId}});
 }
 
-export function processDisplayRuntime(n: ScDisplayNode, ctx: WalkContext) {
+export function processDisplayRuntime(n: StripRuntime<ScDisplayNode>, ctx: RuntimeContext): void {
     const {targetNode, controlName, defaultValue} = resolveControlBind(n, ctx);
     const entryId = findOrCreateEntry(ctx, "control", targetNode, controlName, defaultValue);
     Object.assign(n, {runtime: {value: entryId}});
 }
 
-export function processIfRuntime(n: ScIfNode, ctx: WalkContext) {
+export function processIfRuntime(n: StripRuntime<ScIfNode>, ctx: RuntimeContext): void {
     const {targetNode, controlName, defaultValue} = resolveControlBind(n, ctx);
     const entryId = findOrCreateEntry(ctx, "control", targetNode, controlName, defaultValue);
     Object.assign(n, {runtime: {value: entryId}});
 }
 
-function resolveControlBind(n: {bind: string; type: string}, ctx: WalkContext): {targetNode: string; controlName: string; defaultValue: number} {
+function resolveControlBind(n: {bind: string; type: string}, ctx: RuntimeContext): {targetNode: string; controlName: string; defaultValue: number} {
     const segments = n.bind.split('.');
     const controlName = segments[segments.length - 1];
     const target = findElementByPath(ctx.scope, segments.slice(0, -1));
