@@ -1,0 +1,1 @@
+export {synthDefManager} from "./SynthDefManager";

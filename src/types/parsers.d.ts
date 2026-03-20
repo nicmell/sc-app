@@ -7,8 +7,7 @@ export interface UGenSpec {
 
 export type RuntimeValueEntry =
   | { type: "control"; boxId: string; targetNode: string; name: string; value: number }
-  | { type: "run"; boxId: string; targetNode: string; name: string; value: number }
-  | { type: "synthdef"; boxId: string; targetNode: string; value: number[] };
+  | { type: "run"; boxId: string; targetNode: string; name: string; value: number };
 
 export interface NodeRuntime {
   run: string;
@@ -34,10 +33,6 @@ export interface ScSynthNode {
   runtime: NodeRuntime;
 }
 
-export interface SynthDefRuntime {
-  value: string;
-}
-
 export type UgenRuntime = Record<string, never>;
 
 export interface ScUgenNode {
@@ -56,7 +51,7 @@ export interface ScSynthDefNode {
   name: string;
   controls: Record<string, number>;
   children: ScElementNode[];
-  runtime: SynthDefRuntime;
+  runtime: UgenRuntime;
 }
 
 export interface InputRuntime {

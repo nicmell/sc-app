@@ -40,8 +40,9 @@ bash scripts/package_examples.sh tmp
 - **Zustand** store with Redux-style slices + Immer (`src/lib/stores/`)
 - **OSC communication** via `osc-js` + custom Tauri UDP plugin (`src/lib/osc/`)
 - **HTML parser** (`src/lib/html/`) — walks plugin HTML, builds typed element tree with two-phase hydration
-- **Runtime processor** (`src/lib/runtime/`) — creates runtime entries (controls, run states, synthdefs) from element tree
-- **Parser utilities** (`src/lib/utils/`) — guards, element tree traversal, props extraction, SynthDef compiler
+- **Runtime processor** (`src/lib/runtime/`) — creates runtime entries (controls, run states) from element tree
+- **SynthDef manager** (`src/lib/synthdef/`) — SynthDef compilation, byte storage, and lookup (singleton `synthDefManager`)
+- **Parser utilities** (`src/lib/utils/`) — guards, element tree traversal, props extraction
 - **UGen system** (`src/lib/ugen/`) — SuperCollider UGen graph builder, binary SCgf encoder, operator support
 
 ### Backend (`src-tauri/src/`)
@@ -76,7 +77,7 @@ Six top-level slices in `src/lib/stores/`:
 | `layout` | Dashboard grid items (BoxItem[]) + grid options (rows/columns). Each BoxItem holds plugin ref |
 | `theme` | Dark/light/adaptive mode, primary color |
 | `plugins` | Installed plugin registry (PluginInfo[]) |
-| `runtime` | Plugin element trees (ScPluginNode[]) + flat values map (RuntimeValueEntry keyed by entry ID) |
+| `runtime` | Plugin element trees (ScPluginNode[]) + flat values map (RuntimeValueEntry keyed by entry ID). Synthdef bytes are stored separately in `synthDefManager`, not here |
 
 Each slice has: `slice.ts` (reducer + actions), `selectors.ts`, `index.ts` (barrel).
 
@@ -128,7 +129,11 @@ Plugin HTML is processed in two phases: HTML parsing (`src/lib/html/`) builds a 
 - **`guards.ts`** — Generic type guards (`isParent`, `isSynth`, `isNode`, etc.) over `<T extends ScElementNodeBase>` with `Extract<T, ...>` return types. Work with both `ScElementNode` and `ScElementNodeBase`
 - **`elementTree.ts`** — Generic `findElementById<T>(elements, id)` and `findElementByPath<T>(elements, path)` — preserve input type in return
 - **`extractProps.ts`** — Per-tag HTML attribute extractors (`extractSynthProps`, `extractGroupProps`, etc.)
+
+### SynthDef Manager (`src/lib/synthdef/`)
+
 - **`SynthDefCompiler.ts`** — `compileSynthDef(name, params, specs)` — topologically sorts UGen specs, builds graph via `UGenGraphBuilder`, returns SCgf binary bytes as `number[]`
+- **`SynthDefManager.ts`** — Singleton `synthDefManager` storing compiled bytes keyed by node ID. Methods: `compile(boxId, nodeId, name, controls, specs)`, `get(nodeId)`, `clearBox(boxId)`. Bytes are not persisted to `config.json`
 
 ## UGen System
 

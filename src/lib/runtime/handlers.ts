@@ -5,7 +5,7 @@ import type {
 } from "@/types/parsers";
 import {findElementByPath} from "@/lib/utils/elementTree";
 import {isSynthDef, isSynth, isGroup, isNode} from "@/lib/utils/guards";
-import {compileSynthDef} from "@/lib/utils/SynthDefCompiler";
+import {synthDefManager} from "@/lib/synthdef";
 
 export interface RuntimeContext {
     boxId: string;
@@ -77,17 +77,15 @@ export function processSynthRuntime(n: StripRuntime<ScSynthNode>, ctx: RuntimeCo
 }
 
 export function processSynthDefRuntime(n: StripRuntime<ScSynthDefNode>, ctx: RuntimeContext): void {
-    let bytes: number[] = [];
     const ugenChildren = n.children.filter(c => c.type === 'sc-ugen');
     if (ugenChildren.length > 0) {
         const specsMap = new Map(ugenChildren.map(c => {
             const u = c as StripRuntime<ScUgenNode>;
             return [u.name, {name: u.name, type: u.ugen, rate: u.rate, inputs: u.controls}];
         }));
-        bytes = compileSynthDef(n.name, n.controls, specsMap);
+        synthDefManager.compile(ctx.boxId, n.id, n.name, n.controls, specsMap);
     }
-    const entryId = createSynthDefEntry(ctx, n.id, bytes);
-    Object.assign(n, {runtime: {value: entryId}});
+    Object.assign(n, {runtime: {}});
 }
 
 export function processUgenRuntime(n: StripRuntime<ScUgenNode>, ctx: RuntimeContext): void {
@@ -109,14 +107,6 @@ export function processUgenRuntime(n: StripRuntime<ScUgenNode>, ctx: RuntimeCont
         throw new Error(`<sc-ugen name="${n.name}">: input "${key}" references unknown "${refId}"`);
     }
     Object.assign(n, {runtime: {}});
-}
-
-function createSynthDefEntry(
-    ctx: RuntimeContext, targetNode: string, bytes: number[],
-): string {
-    const id = crypto.randomUUID();
-    ctx.entries.set(id, {type: "synthdef", boxId: ctx.boxId, targetNode, value: bytes});
-    return id;
 }
 
 export function processControlRuntime(

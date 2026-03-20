@@ -1,6 +1,7 @@
 import {html} from 'lit';
 import {pluginManager} from '@/lib/plugins/PluginManager';
 import {runtimeApi} from '@/lib/stores/api';
+import {synthDefManager} from '@/lib/synthdef';
 import {ScGroup} from './sc-group.ts';
 
 export class ScPlugin extends ScGroup {
@@ -36,6 +37,7 @@ export class ScPlugin extends ScGroup {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    synthDefManager.clearBox(this.id);
     runtimeApi.unloadPlugin(this.id);
   }
 
