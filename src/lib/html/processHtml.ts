@@ -1,7 +1,7 @@
 import {ELEMENTS} from "@/constants/sc-elements";
 import {randomId} from "@/lib/utils/randomId";
 import {deepEqual} from "@/lib/utils/deepEqual";
-import type {ScElementNode, ScElementNodeBase, ScParentNode, NodeType} from "@/types/parsers";
+import type {ScElementNode, ScElementNodeBase, NodeType} from "@/types/parsers";
 import {isNodeType, isParent} from "@/lib/utils/guards";
 import {
     extractPluginProps,
@@ -69,17 +69,6 @@ export interface WalkContext {
     nodes: Map<string, ScElementNode>;
 }
 
-function* visit(element: Element): Generator<Element> {
-    for (const child of Array.from(element.children)) {
-        const tag = child.tagName.toLowerCase();
-        if (isNodeType(tag)) {
-            yield child;
-        } else {
-            yield* visit(child);
-        }
-    }
-}
-
 function hydrateNode<T extends ScElementNode>(
     element: Element,
     node: { type: NodeType; id?: string },
@@ -102,22 +91,34 @@ function hydrateNode<T extends ScElementNode>(
     return Object.assign(node, props) as unknown as T;
 }
 
-export function processHtml<T extends ScElementNode = ScElementNode>(ctx: WalkContext): T {
-    const {element, saved, nodes} = ctx;
-    const node = hydrateNode<T>(element, ctx.node, saved);
-
+function* visit(ctx: WalkContext, offset = {value: 0}): Generator<WalkContext> {
+    const {saved, nodes} = ctx;
     const savedChildren =
-        saved?.type === node.type && isParent(saved) ? saved.children : [];
+        saved?.type === ctx.node.type && isParent(saved) ? saved.children : [];
 
-    let offset = 0;
-    for (const child of visit(element)) {
-        const savedChild = savedChildren[offset];
-        (node as unknown as ScParentNode).children.push(
-            processHtml<ScElementNode>({node: {type: tagToType(child.tagName)}, element: child, saved: savedChild, nodes})
-        );
-        offset++;
+    for (const child of Array.from(ctx.element.children)) {
+        const tag = child.tagName.toLowerCase();
+        if (isNodeType(tag)) {
+            const savedChild = savedChildren[offset.value];
+            const childNode = hydrateNode(child, {type: tagToType(child.tagName)}, savedChild)
+            yield {node: childNode, element: child, saved: savedChild, nodes};
+            offset.value++;
+        } else {
+            yield* visit({...ctx, element: child}, offset);
+        }
+    }
+}
+
+export function processHtml<T extends ScElementNode = ScElementNode>(ctx: WalkContext): T {
+    const node = hydrateNode<T>(ctx.element, ctx.node, ctx.saved);
+
+    for (const childCtx of visit(ctx)) {
+        const childNode = processHtml<ScElementNode>(childCtx);
+        if (isParent(node)) {
+            node.children.push(childNode);
+        }
     }
 
-    nodes.set(node.id, node as unknown as ScElementNode);
+    ctx.nodes.set(node.id, node as unknown as ScElementNode);
     return node;
 }
