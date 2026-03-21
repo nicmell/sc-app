@@ -1,2 +1,2 @@
 export {processHtml} from "./processHtml";
-export type {ProcessHtmlResult} from "@/types/parsers";
+export type {WalkContext} from "./processHtml";

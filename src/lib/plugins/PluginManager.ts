@@ -1,5 +1,6 @@
 import type {PluginInfo} from "@/types/stores";
-import type {PluginTreeEntry} from "@/types/parsers";
+import type {ScElementNode, ScParentNode, PluginTreeEntry} from "@/types/parsers";
+import {ELEMENTS} from "@/constants/sc-elements";
 import {layoutApi, pluginsApi, runtimeApi} from "@/lib/stores/api";
 import {get, post, del} from "@/lib/http";
 import {processHtml} from "@/lib/html";
@@ -43,13 +44,16 @@ export class PluginManager {
 
         // Phase 1: HTML parsing
         const saved = runtimeApi.getById(boxId);
-        const htmlResult = processHtml(doc.documentElement, boxId, saved);
-
-        const tree = htmlResult.tree
-        const nodes = htmlResult.nodes
+        const nodes = new Map<string, ScElementNode>();
+        const root = processHtml<ScParentNode>({
+            node: {type: ELEMENTS.SC_PLUGIN, id: boxId},
+            element: doc.documentElement,
+            saved,
+            nodes,
+        });
 
         // Phase 2: Runtime processing
-        const runtimeResult = processRuntime(boxId, tree, nodes, runtimeApi.values);
+        const runtimeResult = processRuntime(boxId, root.children, nodes, runtimeApi.values);
 
         return {
             title: doc.title,

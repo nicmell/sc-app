@@ -2,10 +2,16 @@ const SYNTH_SKIP_ATTRS = new Set(['id', 'name', 'bind', 'running', 'class', 'sty
 const SYNTHDEF_SKIP_ATTRS = new Set(['id', 'name', 'class', 'style', 'slot']);
 const UGEN_SKIP_ATTRS = new Set(['id', 'name', 'type', 'rate', 'class', 'style', 'slot']);
 
+export function extractPluginProps() {
+    return {children: [] as never[], runtime: {run: '', controls: {}}};
+}
+
 export function extractGroupProps(el: Element) {
     return {
         name: el.getAttribute('name') ?? '',
         running: el.getAttribute('running') !== 'false',
+        children: [] as never[],
+        runtime: {run: '', controls: {}},
     };
 }
 
@@ -15,6 +21,7 @@ export function extractSynthProps(el: Element) {
         bind: el.getAttribute('bind') ?? undefined,
         controls: collectNumericAttrs(el, SYNTH_SKIP_ATTRS),
         running: el.getAttribute('running') !== 'false',
+        runtime: {run: '', controls: {}},
     };
 }
 
@@ -22,6 +29,8 @@ export function extractSynthDefProps(el: Element) {
     return {
         name: el.getAttribute('name') ?? '',
         controls: collectNumericAttrs(el, SYNTHDEF_SKIP_ATTRS),
+        children: [] as never[],
+        runtime: {},
     };
 }
 
@@ -31,30 +40,32 @@ export function extractUgenProps(el: Element) {
         ugen: el.getAttribute('type') ?? '',
         rate: el.getAttribute('rate') ?? 'ar',
         controls: collectUgenInputs(el),
+        runtime: {},
     };
 }
 
 export function extractRangeProps(el: Element) {
-    return {bind: el.getAttribute('bind') ?? ''};
+    return {bind: el.getAttribute('bind') ?? '', runtime: {value: ''}};
 }
 
 export function extractCheckboxProps(el: Element) {
-    return {bind: el.getAttribute('bind') ?? ''};
+    return {bind: el.getAttribute('bind') ?? '', runtime: {value: ''}};
 }
 
 export function extractRunProps(el: Element) {
-    return {bind: el.getAttribute('bind') ?? ''};
+    return {bind: el.getAttribute('bind') ?? '', runtime: {value: ''}};
 }
 
 export function extractDisplayProps(el: Element) {
     return {
         bind: el.getAttribute('bind') ?? '',
         format: el.getAttribute('format') ?? '',
+        runtime: {value: ''},
     };
 }
 
 export function extractIfProps(el: Element) {
-    return {bind: el.getAttribute('bind') ?? ''};
+    return {bind: el.getAttribute('bind') ?? '', children: [] as never[], runtime: {value: ''}};
 }
 
 function collectNumericAttrs(el: Element, skip: Set<string>): Record<string, number> {
