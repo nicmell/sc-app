@@ -1,7 +1,7 @@
 import {ELEMENTS} from "@/constants/sc-elements";
 import {randomId} from "@/lib/utils/randomId";
 import {deepEqual} from "@/lib/utils/deepEqual";
-import type {ScElementNode, ScElementNodeBase, ProcessHtmlResult} from "@/types/parsers";
+import type {ScElementNode, ScElementNodeBase, ProcessHtmlResult, NodeType} from "@/types/parsers";
 import {isNodeType} from "@/lib/utils/guards";
 import {
     extractGroupProps, extractSynthProps, extractSynthDefProps, extractUgenProps,
@@ -14,9 +14,9 @@ const PARENT_TAGS: ReadonlySet<string> = new Set([ELEMENTS.SC_GROUP, ELEMENTS.SC
 const NODE_TAGS: ReadonlySet<string> = new Set([ELEMENTS.SC_GROUP, ELEMENTS.SC_SYNTH, ELEMENTS.SC_PLUGIN]);
 const INPUT_TAGS: ReadonlySet<string> = new Set([ELEMENTS.SC_RANGE, ELEMENTS.SC_CHECKBOX, ELEMENTS.SC_RUN, ELEMENTS.SC_DISPLAY, ELEMENTS.SC_IF]);
 
-function tagToType(tag: string): string {
+function tagToType(tag: string): NodeType {
     if (tag === 'html') return ELEMENTS.SC_PLUGIN;
-    return tag as keyof typeof ELEMENTS;
+    return tag as NodeType;
 }
 
 function defaultRuntime(type: string): Record<string, unknown> {
@@ -50,7 +50,7 @@ function extractProps(type: string, el: Element): Record<string, unknown> {
 }
 
 function processElement(
-    node: ScElementNodeBase,
+    node: { type: NodeType, id?: string },
     element: Element,
     saved: ScElementNodeBase | undefined,
     nodes: Map<string, ScElementNode>,
@@ -74,16 +74,12 @@ function processElement(
         ? (matched as {children: ScElementNodeBase[]}).children
         : [];
 
-    Object.assign(node, {
+    return Object.assign(node, {
         runtime: defaultRuntime(node.type),
         ...PARENT_TAGS.has(node.type) && {
             children: walkChildren(element, savedChildren, nodes),
         },
-    });
-
-    const result = node as unknown as ScElementNode;
-    nodes.set(result.id, result);
-    return result;
+    }) as unknown as ScElementNode;
 }
 
 function walkChildren(
@@ -97,8 +93,9 @@ function walkChildren(
         for (const child of Array.from(el.children)) {
             const tag = child.tagName.toLowerCase();
             if (isNodeType(tag)) {
-                const node = {type: tagToType(tag)} as ScElementNodeBase;
-                result.push(processElement(node, child, saved[offset], nodes));
+                const node = processElement({type: tagToType(tag)}, child, saved[offset], nodes);
+                nodes.set(node.id, node);
+                result.push(node);
                 offset++;
             } else {
                 result.push(...visit(child));
