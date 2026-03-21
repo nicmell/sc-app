@@ -74,12 +74,16 @@ function processElement(
         ? (matched as {children: ScElementNodeBase[]}).children
         : [];
 
-    return Object.assign(node, {
+    const result = Object.assign(node, {
         runtime: defaultRuntime(node.type),
         ...PARENT_TAGS.has(node.type) && {
             children: walkChildren(element, savedChildren, nodes),
         },
     }) as unknown as ScElementNode;
+
+    nodes.set(node.id, result)
+    return result
+
 }
 
 function walkChildren(
@@ -94,7 +98,6 @@ function walkChildren(
             const tag = child.tagName.toLowerCase();
             if (isNodeType(tag)) {
                 const node = processElement({type: tagToType(tag)}, child, saved[offset], nodes);
-                nodes.set(node.id, node);
                 result.push(node);
                 offset++;
             } else {
