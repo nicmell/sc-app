@@ -44,34 +44,20 @@ function propsMatch(fresh: ScElementNodeBase, saved: ScElementNodeBase): boolean
     return deepEqual(freshProps, savedProps);
 }
 
-function extractProps(id: string, type: string, el: Element): ScElementNodeBase {
+function extractProps(type: string, el: Element): Omit<ScElementNodeBase, 'id' | 'type'> {
     switch (type) {
-        case ELEMENTS.SC_PLUGIN:   return extractPluginProps(id);
-        case ELEMENTS.SC_GROUP:    return extractGroupProps(id, el);
-        case ELEMENTS.SC_SYNTH:    return extractSynthProps(id, el);
-        case ELEMENTS.SC_SYNTHDEF: return extractSynthDefProps(id, el);
-        case ELEMENTS.SC_UGEN:     return extractUgenProps(id, el);
-        case ELEMENTS.SC_RANGE:    return extractRangeProps(id, el);
-        case ELEMENTS.SC_CHECKBOX: return extractCheckboxProps(id, el);
-        case ELEMENTS.SC_RUN:      return extractRunProps(id, el);
-        case ELEMENTS.SC_DISPLAY:  return extractDisplayProps(id, el);
-        case ELEMENTS.SC_IF:       return extractIfProps(id, el);
+        case ELEMENTS.SC_PLUGIN:   return extractPluginProps();
+        case ELEMENTS.SC_GROUP:    return extractGroupProps(el);
+        case ELEMENTS.SC_SYNTH:    return extractSynthProps(el);
+        case ELEMENTS.SC_SYNTHDEF: return extractSynthDefProps(el);
+        case ELEMENTS.SC_UGEN:     return extractUgenProps(el);
+        case ELEMENTS.SC_RANGE:    return extractRangeProps(el);
+        case ELEMENTS.SC_CHECKBOX: return extractCheckboxProps(el);
+        case ELEMENTS.SC_RUN:      return extractRunProps(el);
+        case ELEMENTS.SC_DISPLAY:  return extractDisplayProps(el);
+        case ELEMENTS.SC_IF:       return extractIfProps(el);
         default: throw new Error(`Unknown element type: ${type}`);
     }
-}
-
-function hydrateId(node: ScElementNodeBase, saved?: ScElementNodeBase): string {
-    const matched = saved?.type === node.type ? saved : undefined;
-    if (saved && !matched) {
-        console.warn(`[plugin hydration] type mismatch: ${node.type} vs saved <${saved.type}>`);
-    }
-    if (matched && propsMatch(node, matched)) {
-        return matched.id;
-    }
-    if (matched) {
-        console.warn(`[plugin hydration] props mismatch for ${node.type}`);
-    }
-    return node.id;
 }
 
 export interface WalkContext {
@@ -79,6 +65,20 @@ export interface WalkContext {
     element: Element;
     saved?: ScElementNodeBase;
     nodes: Map<string, ScElementNode>;
+}
+
+function hydrate(node: ScElementNodeBase, element: Element, saved?: ScElementNodeBase) {
+    const matched = saved?.type === node.type ? saved : undefined;
+    if (saved && !matched) {
+        console.warn(`[plugin hydration] type mismatch: ${node.type} vs saved ${saved.type}`);
+    }
+    if (matched && propsMatch(node, matched)) {
+        node.id = matched.id;
+    } else if (matched) {
+        console.warn(`[plugin hydration] props mismatch for ${node.type}`);
+    }
+    element.setAttribute('id', node.id);
+    return node;
 }
 
 function visit(ctx: WalkContext): WalkContext[] {
@@ -93,10 +93,12 @@ function visit(ctx: WalkContext): WalkContext[] {
             const tag = child.tagName.toLowerCase();
             if (isNodeType(tag)) {
                 const savedChild = savedChildren[offset];
-                const type = tagToType(child.tagName);
-                const node = extractProps(randomId(), type, child);
-                node.id = hydrateId(node, savedChild);
-                child.setAttribute('id', node.id);
+                const type = tagToType(tag);
+                const node = hydrate(
+                    {id: randomId(), type, ...extractProps(type, child)} as ScElementNodeBase,
+                    child,
+                    savedChild,
+                )
                 result.push({node, element: child, saved: savedChild, nodes});
                 offset++;
             } else {
@@ -110,9 +112,11 @@ function visit(ctx: WalkContext): WalkContext[] {
 }
 
 export function processHtml<T extends ScElementNode = ScElementNode>(ctx: WalkContext): T {
-    const node = Object.assign(ctx.node, {
+    const node = ctx.node as T;
+
+    Object.assign(ctx.node, {
         runtime: defaultRuntime(ctx.node.type),
-    }) as unknown as T;
+    })
 
     for (const childCtx of visit(ctx)) {
         const childNode = processHtml<ScElementNode>(childCtx);
