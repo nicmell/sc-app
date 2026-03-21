@@ -1,4 +1,4 @@
-import type {ScElementNode, ScPluginNode, RuntimeValueEntry, NodeRuntime} from "@/types/parsers";
+import type {ScElementNode, ScParentNode, ScPluginNode, RuntimeValueEntry, NodeRuntime} from "@/types/parsers";
 import {isParent} from "@/lib/utils/guards";
 import {ELEMENTS} from "@/constants/sc-elements";
 import {
@@ -23,7 +23,7 @@ function dispatchRuntime(node: ScElementNode, ctx: RuntimeContext): void {
 
 function walkTree(
     siblings: ScElementNode[],
-    parentNode: ScElementNode | undefined,
+    parentNode: ScParentNode | undefined,
     ctx: Omit<RuntimeContext, 'scope' | 'parentNode'>,
 ): void {
     // 1. Recurse into children of parent nodes FIRST
@@ -32,9 +32,8 @@ function walkTree(
             walkTree(node.children, node, ctx);
         }
     }
-    // 2. Then process all siblings at this level (include parent so children can reference it by name)
-    const scope = parentNode ? [parentNode, ...siblings] : siblings;
-    const levelCtx: RuntimeContext = {...ctx, scope, parentNode};
+    // 2. Then process all siblings at this level
+    const levelCtx: RuntimeContext = {...ctx, scope: siblings, parentNode};
     for (const node of siblings) {
         dispatchRuntime(node, levelCtx);
     }

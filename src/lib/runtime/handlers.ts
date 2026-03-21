@@ -1,5 +1,5 @@
 import type {
-    ScElementNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScUgenNode,
+    ScElementNode, ScParentNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScUgenNode,
     ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode,
     ScPluginNode, RuntimeValueEntry, NodeRuntime,
 } from "@/types/parsers";
@@ -13,7 +13,7 @@ export interface RuntimeContext {
     persistedEntries: Record<string, RuntimeValueEntry>;
     nodes: Map<string, ScElementNode>;
     scope: ScElementNode[];
-    parentNode?: ScElementNode;
+    parentNode?: ScParentNode;
 }
 
 function findOrCreateEntry(
@@ -59,9 +59,12 @@ export function processGroupRuntime(n: ScGroupNode, ctx: RuntimeContext): void {
 
 export function processSynthRuntime(n: ScSynthNode, ctx: RuntimeContext): void {
     if (n.bind) {
-        const target = findElementByPath(ctx.scope, n.bind.split('.'));
-        if (!target || !isSynthDef(target)) {
-            throw new Error(`<sc-synth bind="${n.bind}">: does not match any <sc-synthdef> in scope`);
+        let found = false;
+        for (const node of ctx.nodes.values()) {
+            if (isSynthDef(node) && node.name === n.bind) { found = true; break; }
+        }
+        if (!found) {
+            throw new Error(`<sc-synth bind="${n.bind}">: does not match any <sc-synthdef>`);
         }
     }
     if (!n.runtime.run) {
@@ -106,12 +109,9 @@ export function processControlRuntime(
     n: ScRangeNode | ScCheckboxNode,
     ctx: RuntimeContext,
 ): void {
-    const {targetNode, controlName, defaultValue} = resolveControlBind(n, ctx);
-    const entryId = findOrCreateEntry(ctx, "control", targetNode, controlName, defaultValue);
-    // Also update the target node's runtime.controls
-    const segments = n.bind.split('.');
-    const target = findElementByPath(ctx.scope, segments.slice(0, -1));
-    if (target && isNode(target)) {
+    const {target, controlName, defaultValue} = resolveControlBind(n, ctx);
+    const entryId = findOrCreateEntry(ctx, "control", target.id, controlName, defaultValue);
+    if (isNode(target)) {
         target.runtime.controls[controlName] = entryId;
     }
     n.runtime.value = entryId;
@@ -130,7 +130,6 @@ export function processRunRuntime(n: ScRunNode, ctx: RuntimeContext): void {
     const targetId = target ? target.id : '';
     const targetName = target && 'name' in target ? (target as {name: string}).name : '';
     const entryId = findOrCreateEntry(ctx, "run", targetId, targetName, 1);
-    // Update the target node's runtime.run
     if (target && isNode(target)) {
         target.runtime.run = entryId;
     }
@@ -141,18 +140,23 @@ export function processVisualRuntime(
     n: ScDisplayNode | ScIfNode,
     ctx: RuntimeContext,
 ): void {
-    const {targetNode, controlName, defaultValue} = resolveControlBind(n, ctx);
-    const entryId = findOrCreateEntry(ctx, "control", targetNode, controlName, defaultValue);
+    const {target, controlName, defaultValue} = resolveControlBind(n, ctx);
+    const entryId = findOrCreateEntry(ctx, "control", target.id, controlName, defaultValue);
     n.runtime.value = entryId;
 }
 
-function resolveControlBind(n: {bind: string; type: string}, ctx: RuntimeContext): {targetNode: string; controlName: string; defaultValue: number} {
+function resolveControlBind(n: {bind: string; type: string}, ctx: RuntimeContext): {target: ScElementNode; controlName: string; defaultValue: number} {
     const segments = n.bind.split('.');
     const controlName = segments[segments.length - 1];
-    const target = findElementByPath(ctx.scope, segments.slice(0, -1));
+    let target: ScElementNode | undefined;
+    if (segments.length > 1) {
+        target = findElementByPath(ctx.scope, segments.slice(0, -1));
+    } else if (ctx.parentNode && isNode(ctx.parentNode)) {
+        target = ctx.parentNode;
+    }
     if (!target || (!isSynth(target) && !isGroup(target))) {
         throw new Error(`<${n.type} bind="${n.bind}">: does not match any <sc-synth> or <sc-group> in scope`);
     }
     const defaultValue = isSynth(target) ? (target.controls[controlName] ?? 0) : 0;
-    return {targetNode: target.id, controlName, defaultValue};
+    return {target, controlName, defaultValue};
 }
