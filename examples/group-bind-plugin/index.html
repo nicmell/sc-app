@@ -4,17 +4,18 @@
     <title>Group Bind Plugin</title>
 </head>
 <body>
-<sc-synthdef name="tone" freq="440" amp="0.2" gate="1">
-    <sc-ugen name="osc" type="SinOsc" freq="freq"/>
-    <sc-ugen name="env" type="Linen" gate="gate" attacktime="0.01" susLevel="1" releasetime="0.1"/>
-    <sc-ugen name="sig" type="BinaryOpUGen" op="*" a="osc" b="amp"/>
-    <sc-ugen name="gated" type="BinaryOpUGen" op="*" a="sig" b="env"/>
-    <sc-ugen name="out" type="Out" bus="0" channelsarray="gated"/>
-</sc-synthdef>
-
 <sc-group name="voices">
+    <sc-synthdef name="tone" freq="440" amp="0.2" gate="1">
+        <sc-ugen name="osc" type="SinOsc" freq="freq"/>
+        <sc-ugen name="env" type="Linen" gate="gate" attacktime="0.01" susLevel="1" releasetime="0.1"/>
+        <sc-ugen name="sig" type="BinaryOpUGen" op="*" a="osc" b="amp"/>
+        <sc-ugen name="gated" type="BinaryOpUGen" op="*" a="sig" b="env"/>
+        <sc-ugen name="out" type="Out" bus="0" channelsarray="gated"/>
+    </sc-synthdef>
+
     <sc-synth name="low" bind="tone" freq="261" amp="0.15" gate="1"/>
     <sc-synth name="high" bind="tone" freq="523" amp="0.15" gate="1"/>
+
 
     <div>
         <h3>Group Controls</h3>

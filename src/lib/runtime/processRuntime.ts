@@ -32,8 +32,9 @@ function walkTree(
             walkTree(node.children, node, ctx);
         }
     }
-    // 2. Then process all siblings at this level
-    const levelCtx: RuntimeContext = {...ctx, scope: siblings, parentNode};
+    // 2. Then process all siblings at this level (include parent so children can reference it by name)
+    const scope = parentNode ? [parentNode, ...siblings] : siblings;
+    const levelCtx: RuntimeContext = {...ctx, scope, parentNode};
     for (const node of siblings) {
         dispatchRuntime(node, levelCtx);
     }
@@ -42,15 +43,16 @@ function walkTree(
 export function processRuntime(
     boxId: string,
     tree: ScElementNodeBase[],
+    nodes: Map<string, ScElementNodeBase>,
     persistedEntries: Record<string, RuntimeValueEntry>,
 ): {tree: ScElementNode[]; entries: Record<string, RuntimeValueEntry>; pluginRuntime: NodeRuntime} {
     const entries = new Map<string, RuntimeValueEntry>();
 
-    walkTree(tree, undefined, {boxId, entries, persistedEntries});
+    walkTree(tree, undefined, {boxId, entries, persistedEntries, nodes});
 
     // Create runtime entries for the plugin node itself
     const pluginNode = {type: 'sc-plugin', id: boxId} as StripRuntime<ScPluginNode>;
-    const pluginCtx: RuntimeContext = {boxId, entries, persistedEntries, scope: tree};
+    const pluginCtx: RuntimeContext = {boxId, entries, persistedEntries, nodes, scope: tree};
     const pluginRuntime = processPluginRuntime(pluginNode, pluginCtx);
 
     const values: Record<string, RuntimeValueEntry> = {};

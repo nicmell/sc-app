@@ -11,6 +11,7 @@ export interface RuntimeContext {
     boxId: string;
     entries: Map<string, RuntimeValueEntry>;
     persistedEntries: Record<string, RuntimeValueEntry>;
+    nodes: Map<string, ScElementNodeBase>;
     scope: ScElementNodeBase[];
     parentNode?: ScElementNodeBase;
 }
