@@ -50,41 +50,38 @@ function extractProps(type: string, el: Element): Record<string, unknown> {
 }
 
 function processElement(
+    node: ScElementNodeBase,
     element: Element,
     saved: ScElementNodeBase | undefined,
     nodes: Map<string, ScElementNode>,
 ): ScElementNode {
-    const tag = element.tagName.toLowerCase();
-    const type = tagToType(tag);
-    const matched = saved?.type === type ? saved : undefined;
+    const matched = saved?.type === node.type ? saved : undefined;
     if (saved && !matched) {
-        console.warn(`[plugin hydration] type mismatch: <${tag}> (${type}) vs saved <${saved.type}>`);
+        console.warn(`[plugin hydration] type mismatch: ${node.type} vs saved <${saved.type}>`);
     }
-    const props = extractProps(type, element);
-    let node: ScElementNodeBase;
+    const props = extractProps(node.type, element);
 
     if (matched && propsMatch(props, matched)) {
-        element.setAttribute('id', matched.id);
-        node = matched;
+        node.id = matched.id;
     } else {
-        if (matched) console.warn(`[plugin hydration] props mismatch for <${tag}>`);
-        const id = randomId();
-        element.setAttribute('id', id);
-        node = {id, ...props} as ScElementNodeBase;
+        if (matched) console.warn(`[plugin hydration] props mismatch for ${node.type}`);
+        if (!node.id) node.id = randomId();
     }
+    element.setAttribute('id', node.id);
+    Object.assign(node, props);
 
     const savedChildren = matched && 'children' in matched
         ? (matched as {children: ScElementNodeBase[]}).children
         : [];
 
-    const result = {
-        ...node,
-        runtime: defaultRuntime(type),
-        ...PARENT_TAGS.has(type) && {
+    Object.assign(node, {
+        runtime: defaultRuntime(node.type),
+        ...PARENT_TAGS.has(node.type) && {
             children: walkChildren(element, savedChildren, nodes),
         },
-    } as unknown as ScElementNode;
+    });
 
+    const result = node as unknown as ScElementNode;
     nodes.set(result.id, result);
     return result;
 }
@@ -100,7 +97,8 @@ function walkChildren(
         for (const child of Array.from(el.children)) {
             const tag = child.tagName.toLowerCase();
             if (isNodeType(tag)) {
-                result.push(processElement(child, saved[offset], nodes));
+                const node = {type: tagToType(tag)} as ScElementNodeBase;
+                result.push(processElement(node, child, saved[offset], nodes));
                 offset++;
             } else {
                 result.push(...visit(child));
@@ -113,10 +111,12 @@ function walkChildren(
 
 export function processHtml(
     docElement: Element,
+    boxId: string,
     saved?: ScElementNodeBase,
 ): ProcessHtmlResult {
     const nodes = new Map<string, ScElementNode>();
-    const root = processElement(docElement, saved, nodes);
+    const node = {type: ELEMENTS.SC_PLUGIN, id: boxId} as ScElementNodeBase;
+    const root = processElement(node, docElement, saved, nodes);
     const children = 'children' in root ? (root as {children: ScElementNode[]}).children : [];
     return {tree: children, nodes};
 }
