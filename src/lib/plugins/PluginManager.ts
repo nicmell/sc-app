@@ -42,7 +42,7 @@ export class PluginManager {
         }
 
         // Phase 1: HTML parsing
-        const saved = runtimeApi.getById(boxId)?.children;
+        const saved = runtimeApi.getById(boxId);
         const htmlResult = processHtml(doc.documentElement, saved);
 
         const tree = htmlResult.tree
