@@ -17,13 +17,22 @@ import {
 } from "./handlers";
 
 const EXCLUDE_KEYS = new Set(['id', 'runtime', 'children']);
+const NODE_TYPES: ReadonlySet<string> = new Set([ELEMENTS.SC_GROUP, ELEMENTS.SC_SYNTH, ELEMENTS.SC_PLUGIN]);
+const INPUT_TYPES: ReadonlySet<string> = new Set([ELEMENTS.SC_RANGE, ELEMENTS.SC_CHECKBOX, ELEMENTS.SC_RUN, ELEMENTS.SC_DISPLAY, ELEMENTS.SC_IF]);
 
 function tagToType(tag: string): NodeType {
     if (tag === 'html') return ELEMENTS.SC_PLUGIN;
     return tag as NodeType;
 }
 
-function propsMatch(fresh: Record<string, unknown>, saved: ScElementNodeBase): boolean {
+function defaultRuntime(type: string): Record<string, unknown> {
+    if (type === ELEMENTS.SC_PLUGIN) return {run: '', controls: {}, loaded: false};
+    if (NODE_TYPES.has(type)) return {run: '', controls: {}};
+    if (INPUT_TYPES.has(type)) return {value: ''};
+    return {};
+}
+
+function propsMatch(fresh: ScElementNodeBase, saved: ScElementNodeBase): boolean {
     const freshProps: Record<string, unknown> = {};
     for (const [key, val] of Object.entries(fresh)) {
         if (!EXCLUDE_KEYS.has(key)) freshProps[key] = val;
@@ -35,54 +44,38 @@ function propsMatch(fresh: Record<string, unknown>, saved: ScElementNodeBase): b
     return deepEqual(freshProps, savedProps);
 }
 
-function extractProps(type: string, el: Element): Record<string, unknown> {
+function extractProps(id: string, type: string, el: Element): ScElementNodeBase {
     switch (type) {
-        case ELEMENTS.SC_PLUGIN:
-            return {type, ...extractPluginProps()};
-        case ELEMENTS.SC_GROUP:
-            return {type, ...extractGroupProps(el)};
-        case ELEMENTS.SC_SYNTH:
-            return {type, ...extractSynthProps(el)};
-        case ELEMENTS.SC_SYNTHDEF:
-            return {type, ...extractSynthDefProps(el)};
-        case ELEMENTS.SC_UGEN:
-            return {type, ...extractUgenProps(el)};
-        case ELEMENTS.SC_RANGE:
-            return {type, ...extractRangeProps(el)};
-        case ELEMENTS.SC_CHECKBOX:
-            return {type, ...extractCheckboxProps(el)};
-        case ELEMENTS.SC_RUN:
-            return {type, ...extractRunProps(el)};
-        case ELEMENTS.SC_DISPLAY:
-            return {type, ...extractDisplayProps(el)};
-        case ELEMENTS.SC_IF:
-            return {type, ...extractIfProps(el)};
-        default:
-            return {type};
+        case ELEMENTS.SC_PLUGIN:   return extractPluginProps(id);
+        case ELEMENTS.SC_GROUP:    return extractGroupProps(id, el);
+        case ELEMENTS.SC_SYNTH:    return extractSynthProps(id, el);
+        case ELEMENTS.SC_SYNTHDEF: return extractSynthDefProps(id, el);
+        case ELEMENTS.SC_UGEN:     return extractUgenProps(id, el);
+        case ELEMENTS.SC_RANGE:    return extractRangeProps(id, el);
+        case ELEMENTS.SC_CHECKBOX: return extractCheckboxProps(id, el);
+        case ELEMENTS.SC_RUN:      return extractRunProps(id, el);
+        case ELEMENTS.SC_DISPLAY:  return extractDisplayProps(id, el);
+        case ELEMENTS.SC_IF:       return extractIfProps(id, el);
+        default: throw new Error(`Unknown element type: ${type}`);
     }
 }
 
-function hydrateId(
-    type: NodeType,
-    defaultId: string,
-    props: Record<string, unknown>,
-    saved?: ScElementNodeBase,
-): string {
-    const matched = saved?.type === type ? saved : undefined;
+function hydrateId(node: ScElementNodeBase, saved?: ScElementNodeBase): string {
+    const matched = saved?.type === node.type ? saved : undefined;
     if (saved && !matched) {
-        console.warn(`[plugin hydration] type mismatch: ${type} vs saved <${saved.type}>`);
+        console.warn(`[plugin hydration] type mismatch: ${node.type} vs saved <${saved.type}>`);
     }
-    if (matched && propsMatch(props, matched)) {
+    if (matched && propsMatch(node, matched)) {
         return matched.id;
     }
     if (matched) {
-        console.warn(`[plugin hydration] props mismatch for ${type}`);
+        console.warn(`[plugin hydration] props mismatch for ${node.type}`);
     }
-    return defaultId;
+    return node.id;
 }
 
 export interface WalkContext {
-    node: { type: NodeType; id: string };
+    node: ScElementNodeBase;
     element: Element;
     saved?: ScElementNodeBase;
     nodes: Map<string, ScElementNode>;
@@ -101,10 +94,10 @@ function visit(ctx: WalkContext): WalkContext[] {
             if (isNodeType(tag)) {
                 const savedChild = savedChildren[offset];
                 const type = tagToType(child.tagName);
-                const props = extractProps(type, child);
-                const id = hydrateId(type, randomId(), props, savedChild);
-                child.setAttribute('id', id);
-                result.push({node: {id, type}, element: child, saved: savedChild, nodes});
+                const node = extractProps(randomId(), type, child);
+                node.id = hydrateId(node, savedChild);
+                child.setAttribute('id', node.id);
+                result.push({node, element: child, saved: savedChild, nodes});
                 offset++;
             } else {
                 walk(child);
@@ -117,19 +110,17 @@ function visit(ctx: WalkContext): WalkContext[] {
 }
 
 export function processHtml<T extends ScElementNode = ScElementNode>(ctx: WalkContext): T {
-    const {element, saved, nodes} = ctx;
-    const props = extractProps(ctx.node.type, element);
-    const id = hydrateId(ctx.node.type, ctx.node.id, props, saved);
-    element.setAttribute('id', id);
-    const node = {id, ...props} as unknown as T;
+    const node = Object.assign(ctx.node, {
+        runtime: defaultRuntime(ctx.node.type),
+    }) as unknown as T;
 
-    for (const childCtx of visit({...ctx, node: {id, type: ctx.node.type}})) {
+    for (const childCtx of visit(ctx)) {
         const childNode = processHtml<ScElementNode>(childCtx);
         if (isParent(node)) {
             node.children.push(childNode);
         }
     }
 
-    nodes.set(id, node as unknown as ScElementNode);
+    ctx.nodes.set(node.id, node as unknown as ScElementNode);
     return node;
 }
