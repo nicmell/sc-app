@@ -1,7 +1,7 @@
 import {ELEMENTS} from "@/constants/sc-elements";
 import {randomId} from "@/lib/utils/randomId";
 import {deepEqual} from "@/lib/utils/deepEqual";
-import type {ScElementNode, ScElementNodeBase, ProcessHtmlResult, NodeType} from "@/types/parsers";
+import type {ScElementNode, ScElementNodeBase, ScParentNode, ProcessHtmlResult, NodeType} from "@/types/parsers";
 import {isNodeType} from "@/lib/utils/guards";
 import {
     extractGroupProps, extractSynthProps, extractSynthDefProps, extractUgenProps,
@@ -71,7 +71,7 @@ function processElement(
     Object.assign(node, props);
 
     const savedChildren = matched && 'children' in matched
-        ? (matched as {children: ScElementNodeBase[]}).children
+        ? (matched as ScParentNode).children
         : [];
 
     const result = Object.assign(node, {
@@ -117,6 +117,6 @@ export function processHtml(
     const nodes = new Map<string, ScElementNode>();
     const node = {type: ELEMENTS.SC_PLUGIN, id: boxId} as ScElementNodeBase;
     const root = processElement(node, docElement, saved, nodes);
-    const children = 'children' in root ? (root as {children: ScElementNode[]}).children : [];
+    const children = 'children' in root ? (root as ScParentNode).children : [];
     return {tree: children, nodes};
 }

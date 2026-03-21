@@ -105,6 +105,7 @@ export interface ScPluginNode {
   runtime: NodeRuntime;
 }
 
+export type ScParentNode = ScPluginNode | ScGroupNode | ScIfNode | ScSynthDefNode;
 
 export type ScElementNode = ScPluginNode | ScGroupNode | ScSynthNode | ScSynthDefNode | ScUgenNode | ScRangeNode | ScCheckboxNode | ScRunNode | ScDisplayNode | ScIfNode;
 
