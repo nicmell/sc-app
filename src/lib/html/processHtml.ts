@@ -1,7 +1,7 @@
 import {ELEMENTS} from "@/constants/sc-elements";
 import {randomId} from "@/lib/utils/randomId";
 import {deepEqual} from "@/lib/utils/deepEqual";
-import type {ScElementNode, ScElementNodeBase, ScParentNode, ProcessHtmlResult, NodeType} from "@/types/parsers";
+import type {ScElementNode, ScElementNodeBase, ScParentNode, StripRuntime, ProcessHtmlResult, NodeType} from "@/types/parsers";
 import {isNodeType} from "@/lib/utils/guards";
 import {
     extractGroupProps, extractSynthProps, extractSynthDefProps, extractUgenProps,
@@ -49,16 +49,19 @@ function extractProps(type: string, el: Element): Record<string, unknown> {
     }
 }
 
-interface WalkContext {
-    node: { type: NodeType; id?: string };
+interface WalkContext<T extends ScElementNode = ScElementNode> {
+    node: StripRuntime<T>;
     element: Element;
     saved?: ScElementNodeBase;
     nodes: Map<string, ScElementNode>;
 }
 
-function processElement<T extends ScElementNode = ScElementNode>(ctx: WalkContext): T {
-    const {node, element, saved, nodes} = ctx;
-    const matched = saved?.type === node.type ? saved : undefined as T | undefined;
+function hydrateNode<T extends ScElementNode>(
+    element: Element,
+    node: { type: NodeType; id?: string },
+    saved?: ScElementNodeBase,
+): StripRuntime<T> {
+    const matched = saved?.type === node.type ? saved : undefined;
     if (saved && !matched) {
         console.warn(`[plugin hydration] type mismatch: ${node.type} vs saved <${saved.type}>`);
     }
@@ -71,10 +74,15 @@ function processElement<T extends ScElementNode = ScElementNode>(ctx: WalkContex
         if (!node.id) node.id = randomId();
     }
     element.setAttribute('id', node.id);
-    Object.assign(node, props);
 
-    const savedChildren = matched && 'children' in matched
-        ? (matched as ScParentNode).children
+    return Object.assign(node, props) as unknown as StripRuntime<T>;
+}
+
+function processElement<T extends ScElementNode = ScElementNode>(ctx: WalkContext<T>): T {
+    const {node, element, saved, nodes} = ctx;
+
+    const savedChildren = saved?.type === node.type && 'children' in saved
+        ? (saved as ScParentNode).children
         : [];
 
     const result = Object.assign(node, {
@@ -99,7 +107,12 @@ function walkChildren(
         for (const child of Array.from(el.children)) {
             const tag = child.tagName.toLowerCase();
             if (isNodeType(tag)) {
-                const node = processElement({node: {type: tagToType(tag)}, element: child, saved: saved[offset], nodes});
+                const node = processElement<ScElementNode>({
+                    node: hydrateNode(child, {type: tagToType(tag)}, saved[offset]),
+                    element: child,
+                    saved: saved[offset],
+                    nodes
+                });
                 result.push(node);
                 offset++;
             } else {
@@ -118,10 +131,11 @@ export function processHtml(
 ): ProcessHtmlResult {
     const nodes = new Map<string, ScElementNode>();
     const root = processElement<ScParentNode>({
-        node: {type: ELEMENTS.SC_PLUGIN, id: boxId},
-        element: docElement,
+        node: hydrateNode<ScParentNode>(docElement, {type: ELEMENTS.SC_PLUGIN, id: boxId}, saved),
+        element:
+        docElement,
         saved,
-        nodes,
+        nodes
     });
     return {tree: root.children, nodes};
 }
