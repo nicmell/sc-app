@@ -1,7 +1,7 @@
 import {ELEMENTS} from "@/constants/sc-elements";
 import {randomId} from "@/lib/utils/randomId";
 import {deepEqual} from "@/lib/utils/deepEqual";
-import type {ScElementNodeBase, ProcessHtmlResult} from "@/types/parsers";
+import type {ScElementNode, ScElementNodeBase, ProcessHtmlResult} from "@/types/parsers";
 import {
     extractGroupProps, extractSynthProps, extractSynthDefProps, extractUgenProps,
     extractRangeProps, extractCheckboxProps, extractRunProps,
@@ -10,6 +10,14 @@ import {
 
 const EXCLUDE_KEYS = new Set(['id', 'runtime', 'children']);
 const PARENT_TAGS: ReadonlySet<string> = new Set([ELEMENTS.SC_GROUP, ELEMENTS.SC_IF, ELEMENTS.SC_PLUGIN, ELEMENTS.SC_SYNTHDEF]);
+const NODE_TAGS: ReadonlySet<string> = new Set([ELEMENTS.SC_GROUP, ELEMENTS.SC_SYNTH]);
+const INPUT_TAGS: ReadonlySet<string> = new Set([ELEMENTS.SC_RANGE, ELEMENTS.SC_CHECKBOX, ELEMENTS.SC_RUN, ELEMENTS.SC_DISPLAY, ELEMENTS.SC_IF]);
+
+function defaultRuntime(tag: string): Record<string, unknown> {
+    if (NODE_TAGS.has(tag)) return {run: '', controls: {}};
+    if (INPUT_TAGS.has(tag)) return {value: ''};
+    return {};
+}
 const SC_TAGS: ReadonlySet<string> = new Set([
     ELEMENTS.SC_GROUP, ELEMENTS.SC_SYNTH, ELEMENTS.SC_SYNTHDEF,
     ELEMENTS.SC_RANGE, ELEMENTS.SC_CHECKBOX, ELEMENTS.SC_RUN,
@@ -20,7 +28,7 @@ interface HtmlWalkContext {
     element: Element;
     saved?: ScElementNodeBase[];
     offset: number;
-    nodes: Map<string, ScElementNodeBase>;
+    nodes: Map<string, ScElementNode>;
 }
 
 function propsMatch(fresh: Record<string, unknown>, saved: ScElementNodeBase): boolean {
@@ -46,7 +54,7 @@ function extractProps(tag: string, el: Element): Record<string, unknown> {
     }
 }
 
-function processElement(ctx: HtmlWalkContext): ScElementNodeBase {
+function processElement(ctx: HtmlWalkContext): ScElementNode {
     const tag = ctx.element.tagName.toLowerCase();
     const savedChild = ctx.saved?.[ctx.offset];
     const matched = savedChild?.type === tag ? savedChild : undefined;
@@ -66,8 +74,9 @@ function processElement(ctx: HtmlWalkContext): ScElementNodeBase {
         node = {id, ...props} as ScElementNodeBase;
     }
 
-    const result: ScElementNodeBase = {
+    const result = {
         ...node,
+        runtime: defaultRuntime(tag),
         ...PARENT_TAGS.has(tag) && {
             children: walkChildren({
                 element: ctx.element,
@@ -75,8 +84,8 @@ function processElement(ctx: HtmlWalkContext): ScElementNodeBase {
                 saved: matched && 'children' in matched ? (matched as {children: ScElementNodeBase[]}).children : [],
                 offset: 0,
             }),
-        }
-    } as ScElementNodeBase;
+        },
+    } as unknown as ScElementNode;
 
     // Populate nodes map with the final object (shared reference)
     ctx.nodes.set(result.id, result);
@@ -84,9 +93,9 @@ function processElement(ctx: HtmlWalkContext): ScElementNodeBase {
     return result;
 }
 
-function walkChildren(ctx: HtmlWalkContext): ScElementNodeBase[] {
-    function visit(element: Element): ScElementNodeBase[] {
-        const result: ScElementNodeBase[] = [];
+function walkChildren(ctx: HtmlWalkContext): ScElementNode[] {
+    function visit(element: Element): ScElementNode[] {
+        const result: ScElementNode[] = [];
         for (const child of Array.from(element.children)) {
             const tag = child.tagName.toLowerCase();
             if (SC_TAGS.has(tag)) {
@@ -106,7 +115,7 @@ export function processHtml(
     docElement: Element,
     saved?: ScElementNodeBase[],
 ): ProcessHtmlResult {
-    const nodes = new Map<string, ScElementNodeBase>();
+    const nodes = new Map<string, ScElementNode>();
     const tree = walkChildren({
         element: docElement,
         saved,

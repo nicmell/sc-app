@@ -115,8 +115,8 @@ export type StripRuntime<T> = T extends { children: ScElementNode[] }
 export type ScElementNodeBase = StripRuntime<ScElementNode>;
 
 export interface ProcessHtmlResult {
-  tree: ScElementNodeBase[];
-  nodes: Map<string, ScElementNodeBase>;
+  tree: ScElementNode[];
+  nodes: Map<string, ScElementNode>;
 }
 
 export interface PluginTreeEntry {

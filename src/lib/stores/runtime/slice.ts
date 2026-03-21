@@ -1,7 +1,27 @@
 import type {RuntimeState} from "@/types/stores";
 import type {ScElementNode, NodeRuntime, RuntimeValueEntry} from "@/types/parsers";
+import {findElementById} from "@/lib/utils/elementTree";
 import {createSlice} from "@/lib/stores/utils";
 import {SliceName, RuntimeAction} from "@/constants/store";
+
+function propagateGroupControl(
+    values: Record<string, RuntimeValueEntry>,
+    children: ScElementNode[],
+    controlName: string,
+    value: number,
+): void {
+    for (const child of children) {
+        if ((child.type === 'sc-synth' || child.type === 'sc-group') && child.runtime.controls[controlName]) {
+            const entry = values[child.runtime.controls[controlName]];
+            if (entry?.type === 'control') {
+                entry.value = value;
+            }
+        }
+        if (child.type === 'sc-group') {
+            propagateGroupControl(values, child.children, controlName, value);
+        }
+    }
+}
 
 const initialState: RuntimeState = {
   items: [],
@@ -57,6 +77,14 @@ export const runtimeSlice = createSlice({
       const entry = state.values[action.payload.entryId];
       if (entry && entry.type === 'control') {
         entry.value = action.payload.value;
+        // Propagate to children if target is a group
+        const plugin = state.items.find(p => p.id === entry.boxId);
+        if (plugin) {
+          const target = findElementById(plugin.children, entry.targetNode);
+          if (target?.type === 'sc-group') {
+            propagateGroupControl(state.values, target.children, entry.name, action.payload.value);
+          }
+        }
       }
     },
     [RuntimeAction.SET_RUNNING]: (state, action: { payload: { entryId: string; value: number } }) => {

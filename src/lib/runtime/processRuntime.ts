@@ -1,4 +1,4 @@
-import type {ScElementNode, ScElementNodeBase, ScPluginNode, StripRuntime, RuntimeValueEntry, NodeRuntime} from "@/types/parsers";
+import type {ScElementNode, ScPluginNode, StripRuntime, RuntimeValueEntry, NodeRuntime} from "@/types/parsers";
 import {isParent} from "@/lib/utils/guards";
 import {ELEMENTS} from "@/constants/sc-elements";
 import {
@@ -7,7 +7,7 @@ import {
     processUgenRuntime, processControlRuntime, processRunRuntime, processVisualRuntime,
 } from "./handlers";
 
-function dispatchRuntime(node: ScElementNodeBase, ctx: RuntimeContext): void {
+function dispatchRuntime(node: ScElementNode, ctx: RuntimeContext): void {
     switch (node.type) {
         case ELEMENTS.SC_GROUP:    processGroupRuntime(node, ctx); break;
         case ELEMENTS.SC_SYNTH:    processSynthRuntime(node, ctx); break;
@@ -22,8 +22,8 @@ function dispatchRuntime(node: ScElementNodeBase, ctx: RuntimeContext): void {
 }
 
 function walkTree(
-    siblings: ScElementNodeBase[],
-    parentNode: ScElementNodeBase | undefined,
+    siblings: ScElementNode[],
+    parentNode: ScElementNode | undefined,
     ctx: Omit<RuntimeContext, 'scope' | 'parentNode'>,
 ): void {
     // 1. Recurse into children of parent nodes FIRST
@@ -42,8 +42,8 @@ function walkTree(
 
 export function processRuntime(
     boxId: string,
-    tree: ScElementNodeBase[],
-    nodes: Map<string, ScElementNodeBase>,
+    tree: ScElementNode[],
+    nodes: Map<string, ScElementNode>,
     persistedEntries: Record<string, RuntimeValueEntry>,
 ): {tree: ScElementNode[]; entries: Record<string, RuntimeValueEntry>; pluginRuntime: NodeRuntime} {
     const entries = new Map<string, RuntimeValueEntry>();
@@ -60,9 +60,5 @@ export function processRuntime(
         values[id] = entry;
     }
 
-    return {
-        tree: tree as ScElementNode[],
-        entries: values,
-        pluginRuntime,
-    };
+    return {tree, entries: values, pluginRuntime};
 }

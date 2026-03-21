@@ -1,5 +1,5 @@
 import type {
-    ScElementNodeBase, StripRuntime, ScGroupNode, ScSynthNode, ScSynthDefNode, ScUgenNode,
+    ScElementNode, ScElementNodeBase, StripRuntime, ScGroupNode, ScSynthNode, ScSynthDefNode, ScUgenNode,
     ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode,
     ScPluginNode, RuntimeValueEntry, NodeRuntime,
 } from "@/types/parsers";
@@ -11,13 +11,13 @@ export interface RuntimeContext {
     boxId: string;
     entries: Map<string, RuntimeValueEntry>;
     persistedEntries: Record<string, RuntimeValueEntry>;
-    nodes: Map<string, ScElementNodeBase>;
-    scope: ScElementNodeBase[];
-    parentNode?: ScElementNodeBase;
+    nodes: Map<string, ScElementNode>;
+    scope: ScElementNode[];
+    parentNode?: ScElementNode;
 }
 
-function getRuntime(node: ScElementNodeBase): NodeRuntime {
-    return (node as unknown as {runtime: NodeRuntime}).runtime;
+function getRuntime(node: unknown): NodeRuntime {
+    return (node as {runtime: NodeRuntime}).runtime;
 }
 
 function findOrCreateEntry(
@@ -58,8 +58,10 @@ export function processPluginRuntime(n: StripRuntime<ScPluginNode>, ctx: Runtime
 }
 
 export function processGroupRuntime(n: StripRuntime<ScGroupNode>, ctx: RuntimeContext): void {
-    const runId = findOrCreateEntry(ctx, "run", n.id, n.name, n.running ? 1 : 0);
-    Object.assign(n, {runtime: {run: runId, controls: {}}});
+    const runtime = getRuntime(n);
+    if (!runtime.run) {
+        runtime.run = findOrCreateEntry(ctx, "run", n.id, n.name, n.running ? 1 : 0);
+    }
 }
 
 export function processSynthRuntime(n: StripRuntime<ScSynthNode>, ctx: RuntimeContext): void {
@@ -69,12 +71,15 @@ export function processSynthRuntime(n: StripRuntime<ScSynthNode>, ctx: RuntimeCo
             throw new Error(`<sc-synth bind="${n.bind}">: does not match any <sc-synthdef> in scope`);
         }
     }
-    const runId = findOrCreateEntry(ctx, "run", n.id, n.name, n.running ? 1 : 0);
-    const controls: Record<string, string> = {};
-    for (const [name, value] of Object.entries(n.controls)) {
-        controls[name] = findOrCreateEntry(ctx, "control", n.id, name, value);
+    const runtime = getRuntime(n);
+    if (!runtime.run) {
+        runtime.run = findOrCreateEntry(ctx, "run", n.id, n.name, n.running ? 1 : 0);
     }
-    Object.assign(n, {runtime: {run: runId, controls}});
+    for (const [name, value] of Object.entries(n.controls)) {
+        if (!runtime.controls[name]) {
+            runtime.controls[name] = findOrCreateEntry(ctx, "control", n.id, name, value);
+        }
+    }
 }
 
 export function processSynthDefRuntime(n: StripRuntime<ScSynthDefNode>, ctx: RuntimeContext): void {
