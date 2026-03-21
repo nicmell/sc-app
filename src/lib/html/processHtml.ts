@@ -49,13 +49,16 @@ function extractProps(type: string, el: Element): Record<string, unknown> {
     }
 }
 
-function processElement(
-    node: { type: NodeType, id?: string },
-    element: Element,
-    saved: ScElementNodeBase | undefined,
-    nodes: Map<string, ScElementNode>,
-): ScElementNode {
-    const matched = saved?.type === node.type ? saved : undefined;
+interface WalkContext {
+    node: { type: NodeType; id?: string };
+    element: Element;
+    saved?: ScElementNodeBase;
+    nodes: Map<string, ScElementNode>;
+}
+
+function processElement<T extends ScElementNode = ScElementNode>(ctx: WalkContext): T {
+    const {node, element, saved, nodes} = ctx;
+    const matched = saved?.type === node.type ? saved : undefined as T | undefined;
     if (saved && !matched) {
         console.warn(`[plugin hydration] type mismatch: ${node.type} vs saved <${saved.type}>`);
     }
@@ -79,11 +82,10 @@ function processElement(
         ...PARENT_TAGS.has(node.type) && {
             children: walkChildren(element, savedChildren, nodes),
         },
-    }) as unknown as ScElementNode;
+    }) as unknown as T;
 
-    nodes.set(node.id, result)
-    return result
-
+    nodes.set(node.id, result);
+    return result;
 }
 
 function walkChildren(
@@ -97,7 +99,7 @@ function walkChildren(
         for (const child of Array.from(el.children)) {
             const tag = child.tagName.toLowerCase();
             if (isNodeType(tag)) {
-                const node = processElement({type: tagToType(tag)}, child, saved[offset], nodes);
+                const node = processElement({node: {type: tagToType(tag)}, element: child, saved: saved[offset], nodes});
                 result.push(node);
                 offset++;
             } else {
@@ -115,8 +117,11 @@ export function processHtml(
     saved?: ScElementNodeBase,
 ): ProcessHtmlResult {
     const nodes = new Map<string, ScElementNode>();
-    const node = {type: ELEMENTS.SC_PLUGIN, id: boxId} as ScElementNodeBase;
-    const root = processElement(node, docElement, saved, nodes);
-    const children = 'children' in root ? (root as ScParentNode).children : [];
-    return {tree: children, nodes};
+    const root = processElement<ScParentNode>({
+        node: {type: ELEMENTS.SC_PLUGIN, id: boxId},
+        element: docElement,
+        saved,
+        nodes,
+    });
+    return {tree: root.children, nodes};
 }
