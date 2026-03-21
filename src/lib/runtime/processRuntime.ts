@@ -1,4 +1,4 @@
-import type {ScElementNode, ScPluginNode, StripRuntime, RuntimeValueEntry, NodeRuntime} from "@/types/parsers";
+import type {ScElementNode, ScPluginNode, RuntimeValueEntry, NodeRuntime} from "@/types/parsers";
 import {isParent} from "@/lib/utils/guards";
 import {ELEMENTS} from "@/constants/sc-elements";
 import {
@@ -51,7 +51,7 @@ export function processRuntime(
     walkTree(tree, undefined, {boxId, entries, persistedEntries, nodes});
 
     // Create runtime entries for the plugin node itself
-    const pluginNode = {type: 'sc-plugin', id: boxId} as StripRuntime<ScPluginNode>;
+    const pluginNode = {type: 'sc-plugin', id: boxId, children: tree, runtime: {run: '', controls: {}}} as ScPluginNode;
     const pluginCtx: RuntimeContext = {boxId, entries, persistedEntries, nodes, scope: tree};
     const pluginRuntime = processPluginRuntime(pluginNode, pluginCtx);
 
