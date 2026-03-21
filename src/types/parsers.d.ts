@@ -108,6 +108,8 @@ export interface ScPluginNode {
 
 export type ScElementNode = ScPluginNode | ScGroupNode | ScSynthNode | ScSynthDefNode | ScUgenNode | ScRangeNode | ScCheckboxNode | ScRunNode | ScDisplayNode | ScIfNode;
 
+export type NodeType = ScElementNode["type"]
+
 export type StripRuntime<T> = T extends { children: ScElementNode[] }
   ? Omit<T, 'runtime' | 'children'> & { children: StripRuntime<ScElementNode>[] }
   : Omit<T, 'runtime'>;

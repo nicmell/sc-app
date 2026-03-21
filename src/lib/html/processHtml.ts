@@ -2,6 +2,7 @@ import {ELEMENTS} from "@/constants/sc-elements";
 import {randomId} from "@/lib/utils/randomId";
 import {deepEqual} from "@/lib/utils/deepEqual";
 import type {ScElementNode, ScElementNodeBase, ProcessHtmlResult} from "@/types/parsers";
+import {isNodeType} from "@/lib/utils/guards";
 import {
     extractGroupProps, extractSynthProps, extractSynthDefProps, extractUgenProps,
     extractRangeProps, extractCheckboxProps, extractRunProps,
@@ -12,15 +13,10 @@ const EXCLUDE_KEYS = new Set(['id', 'runtime', 'children', 'loaded', 'error', 't
 const PARENT_TAGS: ReadonlySet<string> = new Set([ELEMENTS.SC_GROUP, ELEMENTS.SC_IF, ELEMENTS.SC_PLUGIN, ELEMENTS.SC_SYNTHDEF]);
 const NODE_TAGS: ReadonlySet<string> = new Set([ELEMENTS.SC_GROUP, ELEMENTS.SC_SYNTH, ELEMENTS.SC_PLUGIN]);
 const INPUT_TAGS: ReadonlySet<string> = new Set([ELEMENTS.SC_RANGE, ELEMENTS.SC_CHECKBOX, ELEMENTS.SC_RUN, ELEMENTS.SC_DISPLAY, ELEMENTS.SC_IF]);
-const SC_TAGS: ReadonlySet<string> = new Set([
-    ELEMENTS.SC_GROUP, ELEMENTS.SC_SYNTH, ELEMENTS.SC_SYNTHDEF,
-    ELEMENTS.SC_RANGE, ELEMENTS.SC_CHECKBOX, ELEMENTS.SC_RUN,
-    ELEMENTS.SC_DISPLAY, ELEMENTS.SC_IF, ELEMENTS.SC_UGEN,
-]);
 
 function tagToType(tag: string): string {
     if (tag === 'html') return ELEMENTS.SC_PLUGIN;
-    return tag;
+    return tag as keyof typeof ELEMENTS;
 }
 
 function defaultRuntime(type: string): Record<string, unknown> {
@@ -103,7 +99,7 @@ function walkChildren(
         const result: ScElementNode[] = [];
         for (const child of Array.from(el.children)) {
             const tag = child.tagName.toLowerCase();
-            if (SC_TAGS.has(tag)) {
+            if (isNodeType(tag)) {
                 result.push(processElement(child, saved[offset], nodes));
                 offset++;
             } else {

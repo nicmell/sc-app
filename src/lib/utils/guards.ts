@@ -1,4 +1,11 @@
-import type {ScElementNodeBase} from "../../types/parsers";
+import type {NodeType, ScElementNodeBase} from "../../types/parsers";
+import {ELEMENTS} from "../../constants/sc-elements";
+
+const NODE_TYPES: ReadonlySet<string> = new Set(Object.values(ELEMENTS));
+
+export function isNodeType(value: string): value is NodeType {
+  return NODE_TYPES.has(value);
+}
 
 export function isPlugin<T extends ScElementNodeBase>(el: T): el is Extract<T, { type: 'sc-plugin' }> {
   return el.type === 'sc-plugin';
