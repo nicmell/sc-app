@@ -91,22 +91,24 @@ function hydrateNode<T extends ScElementNode>(
     return Object.assign(node, props) as unknown as T;
 }
 
-function* visit(ctx: WalkContext, offset = {value: 0}): Generator<WalkContext> {
+function visit(ctx: WalkContext, offset = {value: 0}): WalkContext[] {
     const {saved, nodes} = ctx;
     const savedChildren =
         saved?.type === ctx.node.type && isParent(saved) ? saved.children : [];
+    const result: WalkContext[] = [];
 
     for (const child of Array.from(ctx.element.children)) {
         const tag = child.tagName.toLowerCase();
         if (isNodeType(tag)) {
             const savedChild = savedChildren[offset.value];
-            const childNode = hydrateNode(child, {type: tagToType(child.tagName)}, savedChild)
-            yield {node: childNode, element: child, saved: savedChild, nodes};
+            const childNode = hydrateNode(child, {type: tagToType(child.tagName)}, savedChild);
+            result.push({node: childNode, element: child, saved: savedChild, nodes});
             offset.value++;
         } else {
-            yield* visit({...ctx, element: child}, offset);
+            result.push(...visit({...ctx, element: child}, offset));
         }
     }
+    return result;
 }
 
 export function processHtml<T extends ScElementNode = ScElementNode>(ctx: WalkContext): T {
