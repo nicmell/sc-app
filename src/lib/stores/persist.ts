@@ -18,7 +18,7 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
     plugins: plugins.items
         .map(({loaded: _loaded, error: _error, ...plugin}) => ({...plugin})),
     runtime: {
-      items: runtime.items.map(({loaded: _l, error: _e, ...item}) => ({...item, loaded: false})),
+      items: runtime.items.map(item => ({...item, runtime: {...item.runtime, loaded: false, error: undefined}})),
       values: runtime.values,
     },
   }),

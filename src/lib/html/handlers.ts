@@ -3,7 +3,9 @@ const SYNTHDEF_SKIP_ATTRS = new Set(['id', 'name', 'class', 'style', 'slot']);
 const UGEN_SKIP_ATTRS = new Set(['id', 'name', 'type', 'rate', 'class', 'style', 'slot']);
 
 export function extractPluginProps() {
-    return {children: [] as never[], runtime: {run: '', controls: {}}};
+    return {
+        children: [] as never[], runtime: {run: '', controls: {}, loaded: false}
+    };
 }
 
 export function extractGroupProps(el: Element) {
@@ -18,7 +20,7 @@ export function extractGroupProps(el: Element) {
 export function extractSynthProps(el: Element) {
     return {
         name: el.getAttribute('name') ?? '',
-        bind: el.getAttribute('bind') ?? undefined,
+        bind: el.getAttribute('bind') ?? '',
         controls: collectNumericAttrs(el, SYNTH_SKIP_ATTRS),
         running: el.getAttribute('running') !== 'false',
         runtime: {run: '', controls: {}},

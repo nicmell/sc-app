@@ -16,7 +16,7 @@ import {
     extractIfProps,
 } from "./handlers";
 
-const EXCLUDE_KEYS = new Set(['id', 'runtime', 'children', 'loaded', 'error', 'title']);
+const EXCLUDE_KEYS = new Set(['id', 'runtime', 'children']);
 
 function tagToType(tag: string): NodeType {
     if (tag === 'html') return ELEMENTS.SC_PLUGIN;
@@ -62,65 +62,74 @@ function extractProps(type: string, el: Element): Record<string, unknown> {
     }
 }
 
+function hydrateId(
+    type: NodeType,
+    defaultId: string,
+    props: Record<string, unknown>,
+    saved?: ScElementNodeBase,
+): string {
+    const matched = saved?.type === type ? saved : undefined;
+    if (saved && !matched) {
+        console.warn(`[plugin hydration] type mismatch: ${type} vs saved <${saved.type}>`);
+    }
+    if (matched && propsMatch(props, matched)) {
+        return matched.id;
+    }
+    if (matched) {
+        console.warn(`[plugin hydration] props mismatch for ${type}`);
+    }
+    return defaultId;
+}
+
 export interface WalkContext {
-    node: { type: NodeType; id?: string };
+    node: { type: NodeType; id: string };
     element: Element;
     saved?: ScElementNodeBase;
     nodes: Map<string, ScElementNode>;
 }
 
-function hydrateNode<T extends ScElementNode>(
-    element: Element,
-    node: { type: NodeType; id?: string },
-    saved?: ScElementNodeBase,
-): T {
-    const matched = saved?.type === node.type ? saved : undefined;
-    if (saved && !matched) {
-        console.warn(`[plugin hydration] type mismatch: ${node.type} vs saved <${saved.type}>`);
-    }
-    const props = extractProps(node.type, element);
-
-    if (matched && propsMatch(props, matched)) {
-        node.id = matched.id;
-    } else {
-        if (matched) console.warn(`[plugin hydration] props mismatch for ${node.type}`);
-        if (!node.id) node.id = randomId();
-    }
-    element.setAttribute('id', node.id);
-
-    return Object.assign(node, props) as unknown as T;
-}
-
-function visit(ctx: WalkContext, offset = {value: 0}): WalkContext[] {
+function visit(ctx: WalkContext): WalkContext[] {
     const {saved, nodes} = ctx;
     const savedChildren =
         saved?.type === ctx.node.type && isParent(saved) ? saved.children : [];
     const result: WalkContext[] = [];
+    let offset = 0;
 
-    for (const child of Array.from(ctx.element.children)) {
-        const tag = child.tagName.toLowerCase();
-        if (isNodeType(tag)) {
-            const savedChild = savedChildren[offset.value];
-            const childNode = hydrateNode(child, {type: tagToType(child.tagName)}, savedChild);
-            result.push({node: childNode, element: child, saved: savedChild, nodes});
-            offset.value++;
-        } else {
-            result.push(...visit({...ctx, element: child}, offset));
+    function walk(element: Element): void {
+        for (const child of Array.from(element.children)) {
+            const tag = child.tagName.toLowerCase();
+            if (isNodeType(tag)) {
+                const savedChild = savedChildren[offset];
+                const type = tagToType(child.tagName);
+                const props = extractProps(type, child);
+                const id = hydrateId(type, randomId(), props, savedChild);
+                child.setAttribute('id', id);
+                result.push({node: {id, type}, element: child, saved: savedChild, nodes});
+                offset++;
+            } else {
+                walk(child);
+            }
         }
     }
+
+    walk(ctx.element);
     return result;
 }
 
 export function processHtml<T extends ScElementNode = ScElementNode>(ctx: WalkContext): T {
-    const node = hydrateNode<T>(ctx.element, ctx.node, ctx.saved);
+    const {element, saved, nodes} = ctx;
+    const props = extractProps(ctx.node.type, element);
+    const id = hydrateId(ctx.node.type, ctx.node.id, props, saved);
+    element.setAttribute('id', id);
+    const node = {id, ...props} as unknown as T;
 
-    for (const childCtx of visit(ctx)) {
+    for (const childCtx of visit({...ctx, node: {id, type: ctx.node.type}})) {
         const childNode = processHtml<ScElementNode>(childCtx);
         if (isParent(node)) {
             node.children.push(childNode);
         }
     }
 
-    ctx.nodes.set(node.id, node as unknown as ScElementNode);
+    nodes.set(id, node as unknown as ScElementNode);
     return node;
 }

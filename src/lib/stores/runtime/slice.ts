@@ -1,5 +1,5 @@
 import type {RuntimeState} from "@/types/stores";
-import type {ScElementNode, NodeRuntime, RuntimeValueEntry} from "@/types/parsers";
+import type {ScElementNode, PluginRuntime, RuntimeValueEntry} from "@/types/parsers";
 import {findElementById} from "@/lib/utils/elementTree";
 import {createSlice} from "@/lib/stores/utils";
 import {SliceName, RuntimeAction} from "@/constants/store";
@@ -32,7 +32,7 @@ export const runtimeSlice = createSlice({
   name: SliceName.RUNTIME,
   initialState,
   reducers: {
-    [RuntimeAction.LOAD_PLUGIN]: (state, action: { payload: { id: string; loaded: boolean; error?: string; title?: string; elements?: ScElementNode[]; values?: Record<string, RuntimeValueEntry>; runtime?: NodeRuntime } }) => {
+    [RuntimeAction.LOAD_PLUGIN]: (state, action: { payload: { id: string; elements?: ScElementNode[]; values?: Record<string, RuntimeValueEntry>; runtime: PluginRuntime } }) => {
       // Delete old entries for this boxId
       for (const key of Object.keys(state.values)) {
         if (state.values[key].boxId === action.payload.id) {
@@ -44,23 +44,16 @@ export const runtimeSlice = createSlice({
         Object.assign(state.values, action.payload.values);
       }
 
-      const runtime = action.payload.runtime ?? { run: '', controls: {} };
       const existing = state.items.find(item => item.id === action.payload.id);
       if (existing) {
-        existing.loaded = action.payload.loaded;
-        existing.error = action.payload.error;
-        existing.title = action.payload.title;
         existing.children = action.payload.elements ?? [];
-        existing.runtime = runtime;
+        existing.runtime = action.payload.runtime;
       } else {
         state.items.push({
           type: 'sc-plugin',
           id: action.payload.id,
-          loaded: action.payload.loaded,
-          error: action.payload.error,
-          title: action.payload.title,
           children: action.payload.elements ?? [],
-          runtime,
+          runtime: action.payload.runtime,
         });
       }
     },

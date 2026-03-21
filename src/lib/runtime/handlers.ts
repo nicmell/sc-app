@@ -1,7 +1,7 @@
 import type {
     ScElementNode, ScParentNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScUgenNode,
     ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode,
-    ScPluginNode, RuntimeValueEntry, NodeRuntime,
+    ScPluginNode, PluginRuntime, RuntimeValueEntry,
 } from "@/types/parsers";
 import {findElementByPath} from "@/lib/utils/elementTree";
 import {isSynthDef, isSynth, isGroup, isNode} from "@/lib/utils/guards";
@@ -46,7 +46,7 @@ function findOrCreateEntry(
     return id;
 }
 
-export function processPluginRuntime(n: ScPluginNode, ctx: RuntimeContext): NodeRuntime {
+export function processPluginRuntime(n: ScPluginNode, ctx: RuntimeContext): PluginRuntime {
     n.runtime.run = findOrCreateEntry(ctx, "run", n.id, n.id, 1);
     return n.runtime;
 }
