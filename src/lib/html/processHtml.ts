@@ -24,11 +24,15 @@ function tagToType(tag: string): NodeType {
 }
 
 function propsMatch(fresh: Record<string, unknown>, saved: ScElementNodeBase): boolean {
+    const freshProps: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(fresh)) {
+        if (!EXCLUDE_KEYS.has(key)) freshProps[key] = val;
+    }
     const savedProps: Record<string, unknown> = {};
     for (const [key, val] of Object.entries(saved)) {
         if (!EXCLUDE_KEYS.has(key)) savedProps[key] = val;
     }
-    return deepEqual(fresh, savedProps);
+    return deepEqual(freshProps, savedProps);
 }
 
 function extractProps(type: string, el: Element): Record<string, unknown> {
