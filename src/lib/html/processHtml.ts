@@ -4,21 +4,13 @@ import {deepEqual} from "@/lib/utils/deepEqual";
 import type {ScElementNode, ScElementNodeBase, ScParentNode, NodeType, RuntimeValueEntry} from "@/types/parsers";
 import {isNodeType, isParent} from "@/lib/utils/guards";
 import {type HtmlProps, extractProps} from "./handlers";
+import {dispatchRuntime} from "@/lib/runtime/handlers";
 
 const EXCLUDE_KEYS = new Set(['id', 'type', 'runtime', 'children']);
-const NODE_TYPES: ReadonlySet<string> = new Set([ELEMENTS.SC_GROUP, ELEMENTS.SC_SYNTH, ELEMENTS.SC_PLUGIN]);
-const INPUT_TYPES: ReadonlySet<string> = new Set([ELEMENTS.SC_RANGE, ELEMENTS.SC_CHECKBOX, ELEMENTS.SC_RUN, ELEMENTS.SC_DISPLAY, ELEMENTS.SC_IF]);
 
 function tagToType(tag: string): NodeType {
     if (tag === 'html') return ELEMENTS.SC_PLUGIN;
     return tag as NodeType;
-}
-
-function defaultRuntime(type: string): Record<string, unknown> {
-    if (type === ELEMENTS.SC_PLUGIN) return {run: '', controls: {}, loaded: false};
-    if (NODE_TYPES.has(type)) return {run: '', controls: {}};
-    if (INPUT_TYPES.has(type)) return {value: ''};
-    return {};
 }
 
 function propsMatch(fresh: HtmlProps<ScElementNodeBase>, saved: ScElementNodeBase): boolean {
@@ -68,7 +60,7 @@ function hydrateNode(node: {id: string, type: NodeType}, element: Element, saved
 function processElement(ctx: WalkContext): ScElementNode {
     const node = ctx.scope[ctx.offset];
 
-    Object.assign(node, {runtime: defaultRuntime(node.type)});
+    node.runtime = dispatchRuntime(ctx);
 
     for (const childCtx of walk(ctx)) {
         const child = processElement(childCtx);

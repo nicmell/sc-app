@@ -4,7 +4,6 @@ import {ELEMENTS} from "@/constants/sc-elements";
 import {layoutApi, pluginsApi, runtimeApi} from "@/lib/stores/api";
 import {get, post, del} from "@/lib/http";
 import {processHtml} from "@/lib/html";
-import {processRuntime} from "@/lib/runtime";
 
 export const PLUGINS_URL = "app://plugins";
 
@@ -57,16 +56,6 @@ export class PluginManager {
             entries,
             persistedEntries: runtimeApi.entries,
             offset: 0,
-        });
-
-        // Phase 2: Runtime processing
-        processRuntime({
-            rootId: boxId,
-            entries,
-            persistedEntries: runtimeApi.entries,
-            nodesMap,
-            scope: [root],
-            offset: 0
         });
 
         const entriesRecord: Record<string, RuntimeValueEntry> = {};
