@@ -44,18 +44,18 @@ export class PluginManager {
 
         // Phase 1: HTML parsing
         const saved = runtimeApi.getById(boxId);
-        const nodes = new Map<string, ScElementNode>();
+        const nodesMap = new Map<string, ScElementNode>();
         const root = processHtml<ScParentNode>({
             node: {id: boxId, type: ELEMENTS.SC_PLUGIN},
             element: doc.documentElement,
             saved,
-            nodes,
+            nodesMap,
             offset: 0,
             scope: [],
         });
 
         // Phase 2: Runtime processing
-        const runtimeResult = processRuntime(boxId, root.children, nodes, runtimeApi.entries);
+        const runtimeResult = processRuntime(boxId, root.children, nodesMap, runtimeApi.entries);
 
         return {
             title: doc.title,

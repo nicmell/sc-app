@@ -34,7 +34,7 @@ export interface WalkContext {
     node: {id: string, type: NodeType};
     element: Element;
     saved?: ScElementNodeBase;
-    nodes: Map<string, ScElementNode>;
+    nodesMap: Map<string, ScElementNode>;
     offset: number;
     parentNode?: ScParentNode;
     scope: ScElementNode[];
@@ -74,7 +74,7 @@ function processElement(ctx: WalkContext): ScElementNode {
             node.children.push(child);
         }
     }
-    ctx.nodes.set(node.id, node);
+    ctx.nodesMap.set(node.id, node);
     return node;
 }
 
@@ -91,7 +91,7 @@ function walk(ctx: WalkContext): WalkContext[] {
         if (isNodeType(tag)) {
             const savedChild = savedChildren[offset];
             const node = hydrateNode({id: randomId(), type: tagToType(tag)}, child, savedChild);
-            result.push({node, element: child, saved: savedChild, nodes: ctx.nodes, offset: 0, parentNode, scope});
+            result.push({node, element: child, saved: savedChild, nodesMap: ctx.nodesMap, offset: 0, parentNode, scope});
             scope.push(node as unknown as ScElementNode);
             offset++;
         } else {
