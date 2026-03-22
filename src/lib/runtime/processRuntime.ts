@@ -1,31 +1,11 @@
 import type {ScElementNode, ScParentNode, ScPluginNode, PluginRuntime, RuntimeValueEntry} from "@/types/parsers";
 import {isParent} from "@/lib/utils/guards";
-import {ELEMENTS} from "@/constants/sc-elements";
-import {
-    type RuntimeContext,
-    processPluginRuntime, processGroupRuntime, processSynthRuntime, processSynthDefRuntime,
-    processUgenRuntime, processControlRuntime, processRunRuntime, processVisualRuntime,
-} from "./handlers";
-
-function dispatchRuntime(node: ScElementNode, ctx: RuntimeContext): ScElementNode["runtime"] {
-    switch (node.type) {
-        case ELEMENTS.SC_GROUP:    return processGroupRuntime(node, ctx);
-        case ELEMENTS.SC_SYNTH:    return processSynthRuntime(node, ctx);
-        case ELEMENTS.SC_SYNTHDEF: return processSynthDefRuntime(node, ctx);
-        case ELEMENTS.SC_UGEN:     return processUgenRuntime(node, ctx);
-        case ELEMENTS.SC_RANGE:
-        case ELEMENTS.SC_CHECKBOX: return processControlRuntime(node, ctx);
-        case ELEMENTS.SC_RUN:      return processRunRuntime(node, ctx);
-        case ELEMENTS.SC_DISPLAY:
-        case ELEMENTS.SC_IF:       return processVisualRuntime(node, ctx);
-        default: throw new Error(`Unknown element type: ${node.type}`);
-    }
-}
+import {type RuntimeContext, dispatchRuntime, processPluginRuntime} from "./handlers";
 
 function walkTree(
     siblings: ScElementNode[],
     parentNode: ScParentNode | undefined,
-    ctx: Omit<RuntimeContext, 'scope' | 'parentNode'>,
+    ctx: Omit<RuntimeContext, 'scope' | 'parentNode' | 'node'>,
 ): void {
     // 1. Recurse into children of parent nodes FIRST
     for (const node of siblings) {
@@ -34,9 +14,9 @@ function walkTree(
         }
     }
     // 2. Then process all siblings at this level
-    const levelCtx: RuntimeContext = {...ctx, scope: siblings, parentNode};
+    const levelCtx: Omit<RuntimeContext, 'node'> = {...ctx, scope: siblings, parentNode};
     for (const node of siblings) {
-        node.runtime = dispatchRuntime(node, levelCtx);
+        node.runtime = dispatchRuntime({...levelCtx, node});
     }
 }
 
@@ -52,8 +32,7 @@ export function processRuntime(
 
     // Create runtime entries for the plugin node itself
     const pluginNode = {type: 'sc-plugin', id: boxId, children: tree, runtime: {run: '', controls: {}, loaded: false}} as ScPluginNode;
-    const pluginCtx: RuntimeContext = {boxId, entries, persistedEntries, nodes, scope: tree};
-    const pluginRuntime = processPluginRuntime(pluginNode, pluginCtx);
+    const pluginRuntime = processPluginRuntime({node: pluginNode, boxId, entries, persistedEntries, nodes, scope: tree});
 
     const values: Record<string, RuntimeValueEntry> = {};
     for (const [id, entry] of entries) {

@@ -6,8 +6,10 @@ import type {
 import {findElementByPath} from "@/lib/utils/elementTree";
 import {isSynthDef, isSynth, isGroup, isNode} from "@/lib/utils/guards";
 import {synthDefManager} from "@/lib/synthdef";
+import {ELEMENTS} from "@/constants/sc-elements";
 
-export interface RuntimeContext {
+export interface RuntimeContext<T extends ScElementNode = ScElementNode> {
+    node: T;
     boxId: string;
     entries: Map<string, RuntimeValueEntry>;
     persistedEntries: Record<string, RuntimeValueEntry>;
@@ -44,7 +46,8 @@ function findOrCreateEntry(
     return id;
 }
 
-export function processPluginRuntime(n: ScPluginNode, ctx: RuntimeContext): PluginRuntime {
+function processPluginRuntime(ctx: RuntimeContext<ScPluginNode>): PluginRuntime {
+    const n = ctx.node;
     return {
         run: findOrCreateEntry(ctx, "run", n.id, n.id, 1),
         controls: {},
@@ -52,14 +55,16 @@ export function processPluginRuntime(n: ScPluginNode, ctx: RuntimeContext): Plug
     };
 }
 
-export function processGroupRuntime(n: ScGroupNode, ctx: RuntimeContext): NodeRuntime {
+function processGroupRuntime(ctx: RuntimeContext<ScGroupNode>): NodeRuntime {
+    const n = ctx.node;
     return {
         run: n.runtime.run || findOrCreateEntry(ctx, "run", n.id, n.name, n.running ? 1 : 0),
         controls: {...n.runtime.controls},
     };
 }
 
-export function processSynthRuntime(n: ScSynthNode, ctx: RuntimeContext): NodeRuntime {
+function processSynthRuntime(ctx: RuntimeContext<ScSynthNode>): NodeRuntime {
+    const n = ctx.node;
     if (n.bind) {
         let found = false;
         for (const node of ctx.nodes.values()) {
@@ -81,7 +86,8 @@ export function processSynthRuntime(n: ScSynthNode, ctx: RuntimeContext): NodeRu
     };
 }
 
-export function processSynthDefRuntime(n: ScSynthDefNode, ctx: RuntimeContext): UgenRuntime {
+function processSynthDefRuntime(ctx: RuntimeContext<ScSynthDefNode>): UgenRuntime {
+    const n = ctx.node;
     const ugenChildren = n.children.filter((c): c is ScUgenNode => c.type === 'sc-ugen');
     if (ugenChildren.length > 0) {
         const specsMap = new Map(ugenChildren.map(c => {
@@ -92,7 +98,8 @@ export function processSynthDefRuntime(n: ScSynthDefNode, ctx: RuntimeContext): 
     return {} as UgenRuntime;
 }
 
-export function processUgenRuntime(n: ScUgenNode, ctx: RuntimeContext): UgenRuntime {
+function processUgenRuntime(ctx: RuntimeContext<ScUgenNode>): UgenRuntime {
+    const n = ctx.node;
     for (const [key, value] of Object.entries(n.controls)) {
         if (key === 'op') continue;
         const num = Number(value);
@@ -111,11 +118,8 @@ export function processUgenRuntime(n: ScUgenNode, ctx: RuntimeContext): UgenRunt
     return {} as UgenRuntime;
 }
 
-export function processControlRuntime(
-    n: ScRangeNode | ScCheckboxNode,
-    ctx: RuntimeContext,
-): InputRuntime {
-    const {target, controlName, defaultValue} = resolveControlBind(n, ctx);
+function processControlRuntime(ctx: RuntimeContext<ScRangeNode | ScCheckboxNode>): InputRuntime {
+    const {target, controlName, defaultValue} = resolveControlBind(ctx.node, ctx);
     const entryId = findOrCreateEntry(ctx, "control", target.id, controlName, defaultValue);
     if (isNode(target)) {
         target.runtime.controls[controlName] = entryId;
@@ -123,7 +127,8 @@ export function processControlRuntime(
     return {value: entryId};
 }
 
-export function processRunRuntime(n: ScRunNode, ctx: RuntimeContext): InputRuntime {
+function processRunRuntime(ctx: RuntimeContext<ScRunNode>): InputRuntime {
+    const n = ctx.node;
     let target: ScElementNode | undefined;
     if (n.bind) {
         target = findElementByPath(ctx.scope, n.bind.split('.'));
@@ -142,11 +147,8 @@ export function processRunRuntime(n: ScRunNode, ctx: RuntimeContext): InputRunti
     return {value: entryId};
 }
 
-export function processVisualRuntime(
-    n: ScDisplayNode | ScIfNode,
-    ctx: RuntimeContext,
-): InputRuntime {
-    const {target, controlName, defaultValue} = resolveControlBind(n, ctx);
+function processVisualRuntime(ctx: RuntimeContext<ScDisplayNode | ScIfNode>): InputRuntime {
+    const {target, controlName, defaultValue} = resolveControlBind(ctx.node, ctx);
     const entryId = findOrCreateEntry(ctx, "control", target.id, controlName, defaultValue);
     return {value: entryId};
 }
@@ -166,3 +168,20 @@ function resolveControlBind(n: {bind: string; type: string}, ctx: RuntimeContext
     const defaultValue = isSynth(target) ? (target.controls[controlName] ?? 0) : 0;
     return {target, controlName, defaultValue};
 }
+
+export function dispatchRuntime(ctx: RuntimeContext): ScElementNode["runtime"] {
+    switch (ctx.node.type) {
+        case ELEMENTS.SC_GROUP:    return processGroupRuntime({...ctx, node: ctx.node});
+        case ELEMENTS.SC_SYNTH:    return processSynthRuntime({...ctx, node: ctx.node});
+        case ELEMENTS.SC_SYNTHDEF: return processSynthDefRuntime({...ctx, node: ctx.node});
+        case ELEMENTS.SC_UGEN:     return processUgenRuntime({...ctx, node: ctx.node});
+        case ELEMENTS.SC_RANGE:
+        case ELEMENTS.SC_CHECKBOX: return processControlRuntime({...ctx, node: ctx.node});
+        case ELEMENTS.SC_RUN:      return processRunRuntime({...ctx, node: ctx.node});
+        case ELEMENTS.SC_DISPLAY:
+        case ELEMENTS.SC_IF:       return processVisualRuntime({...ctx, node: ctx.node});
+        default: throw new Error(`Unknown element type: ${ctx.node.type}`);
+    }
+}
+
+export {processPluginRuntime};

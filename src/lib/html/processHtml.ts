@@ -3,19 +3,7 @@ import {randomId} from "@/lib/utils/randomId";
 import {deepEqual} from "@/lib/utils/deepEqual";
 import type {ScElementNode, ScElementNodeBase, NodeType} from "@/types/parsers";
 import {isNodeType, isParent} from "@/lib/utils/guards";
-import type {HtmlProps} from "./handlers";
-import {
-    extractPluginProps,
-    extractGroupProps,
-    extractSynthProps,
-    extractSynthDefProps,
-    extractUgenProps,
-    extractRangeProps,
-    extractCheckboxProps,
-    extractRunProps,
-    extractDisplayProps,
-    extractIfProps,
-} from "./handlers";
+import {type HtmlProps, extractProps} from "./handlers";
 
 const EXCLUDE_KEYS = new Set(['id', 'type', 'runtime', 'children']);
 const NODE_TYPES: ReadonlySet<string> = new Set([ELEMENTS.SC_GROUP, ELEMENTS.SC_SYNTH, ELEMENTS.SC_PLUGIN]);
@@ -41,32 +29,6 @@ function propsMatch(fresh: HtmlProps<ScElementNodeBase>, saved: ScElementNodeBas
     return deepEqual(fresh, savedProps);
 }
 
-function extractProps(type: string, el: Element): Omit<ScElementNodeBase, 'id' | 'type'> {
-    switch (type) {
-        case ELEMENTS.SC_PLUGIN:
-            return {children: [], ...extractPluginProps(el)};
-        case ELEMENTS.SC_GROUP:
-            return {children: [], ...extractGroupProps(el)};
-        case ELEMENTS.SC_SYNTH:
-            return extractSynthProps(el);
-        case ELEMENTS.SC_SYNTHDEF:
-            return {children: [], ...extractSynthDefProps(el)};
-        case ELEMENTS.SC_UGEN:
-            return extractUgenProps(el);
-        case ELEMENTS.SC_RANGE:
-            return extractRangeProps(el);
-        case ELEMENTS.SC_CHECKBOX:
-            return extractCheckboxProps(el);
-        case ELEMENTS.SC_RUN:
-            return extractRunProps(el);
-        case ELEMENTS.SC_DISPLAY:
-            return extractDisplayProps(el);
-        case ELEMENTS.SC_IF:
-            return {children: [], ...extractIfProps(el)};
-        default:
-            throw new Error(`Unknown element type: ${type}`);
-    }
-}
 
 export interface WalkContext {
     node: {id: string, type: NodeType};
@@ -90,16 +52,22 @@ function hydrate<T extends ScElementNode>(
     } else if (matched) {
         console.warn(`[plugin hydration] props mismatch for ${node.type}`);
     }
-    return Object.assign(node, props) as unknown as T;
+    return Object.assign(node, props);
+}
+
+function hydrateNode(node: {id: string, type: NodeType}, element: Element, saved?: ScElementNodeBase) {
+    const hydrated = hydrate(node, extractProps(node.type, element), saved);
+    element.setAttribute('id', hydrated.id);
+    return hydrated;
 }
 
 function processElement(ctx: WalkContext): ScElementNode {
-    const node = hydrate(ctx.node, extractProps(ctx.node.type, ctx.element), ctx.saved);
-    ctx.element.setAttribute('id', node.id);
+    const node = ctx.node as unknown as ScElementNode;
 
     Object.assign(node, {runtime: defaultRuntime(node.type)});
-
-    for (const child of walk(ctx)) {
+    
+    for (const childCtx of walk(ctx)) {
+        const child = processElement(childCtx);
         if (isParent(node)) {
             node.children.push(child);
         }
@@ -108,22 +76,22 @@ function processElement(ctx: WalkContext): ScElementNode {
     return node;
 }
 
-function walk(ctx: WalkContext): ScElementNode[] {
+function walk(ctx: WalkContext): WalkContext[] {
     const savedChildren = ctx.saved && isParent(ctx.saved) ? ctx.saved.children : [];
-    const result: ScElementNode[] = [];
+    const result: WalkContext[] = [];
 
+    let offset = ctx.offset;
     for (const child of Array.from(ctx.element.children)) {
         const tag = child.tagName.toLowerCase();
         if (isNodeType(tag)) {
-            const savedChild = savedChildren[ctx.offset];
-            const node = {id: randomId(), type: tagToType(tag)}
-            const childCtx = {node, element: child, saved: savedChild, nodes: ctx.nodes, offset: 0}
-            result.push(processElement(childCtx));
-            ctx.offset++;
+            const savedChild = savedChildren[offset];
+            const node = hydrateNode({id: randomId(), type: tagToType(tag)}, child, savedChild);
+            result.push({node, element: child, saved: savedChild, nodes: ctx.nodes, offset: 0});
+            offset++;
         } else {
-            const nested = walk({...ctx, element: child});
+            const nested = walk({...ctx, element: child, offset});
             result.push(...nested);
-            ctx.offset += nested.length;
+            offset += nested.length;
         }
     }
 
@@ -131,5 +99,6 @@ function walk(ctx: WalkContext): ScElementNode[] {
 }
 
 export function processHtml<T extends ScElementNode = ScElementNode>(ctx: WalkContext): T {
+    hydrateNode(ctx.node, ctx.element, ctx.saved);
     return processElement(ctx) as T;
 }

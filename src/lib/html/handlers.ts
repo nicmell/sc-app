@@ -1,7 +1,8 @@
 import type {
-    StripRuntime, ScPluginNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScUgenNode,
+    ScElementNodeBase, StripRuntime, ScPluginNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScUgenNode,
     ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode,
 } from "@/types/parsers";
+import {ELEMENTS} from "@/constants/sc-elements";
 
 export type HtmlProps<T> = Omit<StripRuntime<T>, 'id' | 'type' | 'children'>;
 
@@ -9,18 +10,18 @@ const SYNTH_SKIP_ATTRS = new Set(['id', 'name', 'bind', 'running', 'class', 'sty
 const SYNTHDEF_SKIP_ATTRS = new Set(['id', 'name', 'class', 'style', 'slot']);
 const UGEN_SKIP_ATTRS = new Set(['id', 'name', 'type', 'rate', 'class', 'style', 'slot']);
 
-export function extractPluginProps(_: Element): HtmlProps<ScPluginNode> {
+function extractPluginProps(_: Element): HtmlProps<ScPluginNode> {
     return {};
 }
 
-export function extractGroupProps(el: Element): HtmlProps<ScGroupNode> {
+function extractGroupProps(el: Element): HtmlProps<ScGroupNode> {
     return {
         name: el.getAttribute('name') ?? '',
         running: el.getAttribute('running') !== 'false',
     };
 }
 
-export function extractSynthProps(el: Element): HtmlProps<ScSynthNode> {
+function extractSynthProps(el: Element): HtmlProps<ScSynthNode> {
     return {
         name: el.getAttribute('name') ?? '',
         bind: el.getAttribute('bind') ?? '',
@@ -29,14 +30,14 @@ export function extractSynthProps(el: Element): HtmlProps<ScSynthNode> {
     };
 }
 
-export function extractSynthDefProps(el: Element): HtmlProps<ScSynthDefNode> {
+function extractSynthDefProps(el: Element): HtmlProps<ScSynthDefNode> {
     return {
         name: el.getAttribute('name') ?? '',
         controls: collectNumericAttrs(el, SYNTHDEF_SKIP_ATTRS),
     };
 }
 
-export function extractUgenProps(el: Element): HtmlProps<ScUgenNode> {
+function extractUgenProps(el: Element): HtmlProps<ScUgenNode> {
     return {
         name: el.getAttribute('name') ?? '',
         ugen: el.getAttribute('type') ?? '',
@@ -45,27 +46,54 @@ export function extractUgenProps(el: Element): HtmlProps<ScUgenNode> {
     };
 }
 
-export function extractRangeProps(el: Element): HtmlProps<ScRangeNode> {
+function extractRangeProps(el: Element): HtmlProps<ScRangeNode> {
     return {bind: el.getAttribute('bind') ?? ''};
 }
 
-export function extractCheckboxProps(el: Element): HtmlProps<ScCheckboxNode> {
+function extractCheckboxProps(el: Element): HtmlProps<ScCheckboxNode> {
     return {bind: el.getAttribute('bind') ?? ''};
 }
 
-export function extractRunProps(el: Element): HtmlProps<ScRunNode> {
+function extractRunProps(el: Element): HtmlProps<ScRunNode> {
     return {bind: el.getAttribute('bind') ?? ''};
 }
 
-export function extractDisplayProps(el: Element): HtmlProps<ScDisplayNode> {
+function extractDisplayProps(el: Element): HtmlProps<ScDisplayNode> {
     return {
         bind: el.getAttribute('bind') ?? '',
         format: el.getAttribute('format') ?? '',
     };
 }
 
-export function extractIfProps(el: Element): HtmlProps<ScIfNode> {
+function extractIfProps(el: Element): HtmlProps<ScIfNode> {
     return {bind: el.getAttribute('bind') ?? ''};
+}
+
+export function extractProps(type: string, el: Element): Omit<ScElementNodeBase, 'id' | 'type'> {
+    switch (type) {
+        case ELEMENTS.SC_PLUGIN:
+            return {children: [], ...extractPluginProps(el)};
+        case ELEMENTS.SC_GROUP:
+            return {children: [], ...extractGroupProps(el)};
+        case ELEMENTS.SC_SYNTH:
+            return extractSynthProps(el);
+        case ELEMENTS.SC_SYNTHDEF:
+            return {children: [], ...extractSynthDefProps(el)};
+        case ELEMENTS.SC_UGEN:
+            return extractUgenProps(el);
+        case ELEMENTS.SC_RANGE:
+            return extractRangeProps(el);
+        case ELEMENTS.SC_CHECKBOX:
+            return extractCheckboxProps(el);
+        case ELEMENTS.SC_RUN:
+            return extractRunProps(el);
+        case ELEMENTS.SC_DISPLAY:
+            return extractDisplayProps(el);
+        case ELEMENTS.SC_IF:
+            return {children: [], ...extractIfProps(el)};
+        default:
+            throw new Error(`Unknown element type: ${type}`);
+    }
 }
 
 function collectNumericAttrs(el: Element, skip: Set<string>): Record<string, number> {
