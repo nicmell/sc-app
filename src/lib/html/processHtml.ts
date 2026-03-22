@@ -103,14 +103,18 @@ function walk(ctx: WalkContext): ScElementNode[] {
             const savedChild = savedChildren[ctx.offset];
             const type = tagToType(tag);
             const node = hydrate({id: randomId(), type}, extractProps(type, child), savedChild);
-            child.setAttribute('id', node.id);
             Object.assign(node, {runtime: defaultRuntime(type)});
-            if (isParent(node)) {
-                node.children.push(...walk({node, element: child, saved: savedChild, nodes: ctx.nodes, offset: 0}));
+            const childCxt = {node, element: child, saved: savedChild, nodes: ctx.nodes, offset: 0}
+            for (const childNode of walk(childCxt)) {
+                if (isParent(node)) {
+                    node.children.push(childNode);
+                }
             }
             ctx.nodes.set(node.id, node as unknown as ScElementNode);
-            result.push(node as unknown as ScElementNode);
             ctx.offset++;
+
+            child.setAttribute('id', node.id);
+            result.push(node as unknown as ScElementNode);
         } else {
             const nested = walk({...ctx, element: child});
             result.push(...nested);
@@ -124,8 +128,10 @@ function walk(ctx: WalkContext): ScElementNode[] {
 export function processHtml<T extends ScElementNode = ScElementNode>(ctx: WalkContext): T {
     const node = ctx.node as T;
     Object.assign(node, {runtime: defaultRuntime(node.type)});
-    if (isParent(node)) {
-        node.children.push(...walk(ctx));
+    for (const child of walk(ctx)) {
+        if (isParent(node)) {
+            node.children.push(child);
+        }
     }
     ctx.nodes.set(node.id, node as unknown as ScElementNode);
     return node;
