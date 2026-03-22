@@ -88,6 +88,7 @@ function walk(ctx: WalkContext): WalkContext[] {
     const scope: ScElementNode[] = [];
     const elements: Element[] = [];
     const saved: ScElementNodeBase[] = [];
+    const result: WalkContext[] = [];
 
     let savedOffset = 0;
     function collect(el: Element): void {
@@ -99,6 +100,7 @@ function walk(ctx: WalkContext): WalkContext[] {
                 scope.push(node as unknown as ScElementNode);
                 elements.push(child);
                 saved.push(s);
+                result.push({...ctx, scope, elements, saved, offset: savedOffset, parentNode});
                 savedOffset++;
             } else {
                 collect(child);
@@ -107,9 +109,7 @@ function walk(ctx: WalkContext): WalkContext[] {
     }
     collect(element);
 
-    return scope.map((_, i) => ({
-        scope, elements, saved, nodesMap: ctx.nodesMap, entries: ctx.entries, persistedEntries: ctx.persistedEntries, offset: i, parentNode,
-    }));
+    return result;
 }
 
 export function processHtml<T extends ScElementNode = ScElementNode>(ctx: WalkContext): T {
