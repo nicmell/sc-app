@@ -1,21 +1,17 @@
-import type {ScElementNode, ScParentNode, ScPluginNode, PluginRuntime, RuntimeValueEntry} from "@/types/parsers";
+import type {ScElementNode, ScPluginNode, PluginRuntime, RuntimeValueEntry} from "@/types/parsers";
 import {isParent} from "@/lib/utils/guards";
 import {type RuntimeContext, dispatchRuntime} from "./handlers";
 
-function walkTree(
-    siblings: ScElementNode[],
-    parentNode: ScParentNode | undefined,
-    ctx: RuntimeContext,
-): void {
+function walkTree(ctx: RuntimeContext): void {
     // 1. Recurse into children of parent nodes FIRST
-    for (const node of siblings) {
+    for (const node of ctx.scope) {
         if (isParent(node)) {
-            walkTree(node.children, node, ctx);
+            walkTree({...ctx, scope: node.children, parentNode: node});
         }
     }
     // 2. Then process all siblings at this level
-    for (let i = 0; i < siblings.length; i++) {
-        siblings[i].runtime = dispatchRuntime({...ctx, scope: siblings, parentNode, offset: i});
+    for (let i = 0; i < ctx.scope.length; i++) {
+        ctx.scope[i].runtime = dispatchRuntime({...ctx, offset: i});
     }
 }
 
@@ -28,9 +24,7 @@ export function processRuntime(
 
     const entries = new Map<string, RuntimeValueEntry>();
     const pluginNode = {type: 'sc-plugin', id: rootId, children: tree, runtime: {run: '', controls: {}, loaded: false}} as ScPluginNode;
-    const ctx: RuntimeContext = {rootId, entries, persistedEntries, nodesMap, scope: [], offset: 0};
-
-    walkTree([pluginNode], undefined, ctx);
+    walkTree({rootId, entries, persistedEntries, nodesMap, scope: [pluginNode], offset: 0});
 
     const values: Record<string, RuntimeValueEntry> = {};
     for (const [id, entry] of entries) {
