@@ -67,7 +67,11 @@ export interface WalkContext {
     nodes: Map<string, ScElementNode>;
 }
 
-function hydrate(node: ScElementNodeBase, element: Element, saved?: ScElementNodeBase) {
+function hydrate(
+    node: ScElementNodeBase,
+    element: Element,
+    saved?: ScElementNodeBase
+): ScElementNodeBase {
     const matched = saved?.type === node.type ? saved : undefined;
     if (saved && !matched) {
         console.warn(`[plugin hydration] type mismatch: ${node.type} vs saved ${saved.type}`);
