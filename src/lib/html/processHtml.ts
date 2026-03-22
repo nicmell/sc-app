@@ -44,7 +44,7 @@ function propsMatch(fresh: HtmlProps<ScElementNodeBase>, saved: ScElementNodeBas
 function extractProps(type: string, el: Element): Omit<ScElementNodeBase, 'id' | 'type'> {
     switch (type) {
         case ELEMENTS.SC_PLUGIN:
-            return {children: [], ...extractPluginProps()};
+            return {children: [], ...extractPluginProps(el)};
         case ELEMENTS.SC_GROUP:
             return {children: [], ...extractGroupProps(el)};
         case ELEMENTS.SC_SYNTH:

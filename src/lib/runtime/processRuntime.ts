@@ -7,17 +7,18 @@ import {
     processUgenRuntime, processControlRuntime, processRunRuntime, processVisualRuntime,
 } from "./handlers";
 
-function dispatchRuntime(node: ScElementNode, ctx: RuntimeContext): void {
+function dispatchRuntime(node: ScElementNode, ctx: RuntimeContext): ScElementNode["runtime"] {
     switch (node.type) {
-        case ELEMENTS.SC_GROUP:    processGroupRuntime(node, ctx); break;
-        case ELEMENTS.SC_SYNTH:    processSynthRuntime(node, ctx); break;
-        case ELEMENTS.SC_SYNTHDEF: processSynthDefRuntime(node, ctx); break;
-        case ELEMENTS.SC_UGEN:     processUgenRuntime(node, ctx); break;
+        case ELEMENTS.SC_GROUP:    return processGroupRuntime(node, ctx);
+        case ELEMENTS.SC_SYNTH:    return processSynthRuntime(node, ctx);
+        case ELEMENTS.SC_SYNTHDEF: return processSynthDefRuntime(node, ctx);
+        case ELEMENTS.SC_UGEN:     return processUgenRuntime(node, ctx);
         case ELEMENTS.SC_RANGE:
-        case ELEMENTS.SC_CHECKBOX: processControlRuntime(node, ctx); break;
-        case ELEMENTS.SC_RUN:      processRunRuntime(node, ctx); break;
+        case ELEMENTS.SC_CHECKBOX: return processControlRuntime(node, ctx);
+        case ELEMENTS.SC_RUN:      return processRunRuntime(node, ctx);
         case ELEMENTS.SC_DISPLAY:
-        case ELEMENTS.SC_IF:       processVisualRuntime(node, ctx); break;
+        case ELEMENTS.SC_IF:       return processVisualRuntime(node, ctx);
+        default: throw new Error(`Unknown element type: ${node.type}`);
     }
 }
 
@@ -35,7 +36,7 @@ function walkTree(
     // 2. Then process all siblings at this level
     const levelCtx: RuntimeContext = {...ctx, scope: siblings, parentNode};
     for (const node of siblings) {
-        dispatchRuntime(node, levelCtx);
+        node.runtime = dispatchRuntime(node, levelCtx);
     }
 }
 
