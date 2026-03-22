@@ -1,7 +1,7 @@
 import {ELEMENTS} from "@/constants/sc-elements";
 import {randomId} from "@/lib/utils/randomId";
 import {deepEqual} from "@/lib/utils/deepEqual";
-import type {ScElementNode, ScElementNodeBase, ScParentNode, NodeType} from "@/types/parsers";
+import type {ScElementNode, ScElementNodeBase, ScParentNode, NodeType, RuntimeValueEntry} from "@/types/parsers";
 import {isNodeType, isParent} from "@/lib/utils/guards";
 import {type HtmlProps, extractProps} from "./handlers";
 
@@ -31,13 +31,14 @@ function propsMatch(fresh: HtmlProps<ScElementNodeBase>, saved: ScElementNodeBas
 
 
 export interface WalkContext {
-    node: {id: string, type: NodeType};
-    element: Element;
-    saved?: ScElementNodeBase;
+    scope: ScElementNode[];
+    elements: Element[];
+    saved: ScElementNodeBase[];
     nodesMap: Map<string, ScElementNode>;
+    entries: Map<string, RuntimeValueEntry>;
+    persistedEntries: Record<string, RuntimeValueEntry>;
     offset: number;
     parentNode?: ScParentNode;
-    scope: ScElementNode[];
 }
 
 function hydrate<T extends ScElementNode>(
@@ -64,7 +65,7 @@ function hydrateNode(node: {id: string, type: NodeType}, element: Element, saved
 }
 
 function processElement(ctx: WalkContext): ScElementNode {
-    const node = ctx.node as unknown as ScElementNode;
+    const node = ctx.scope[ctx.offset];
 
     Object.assign(node, {runtime: defaultRuntime(node.type)});
 
@@ -79,32 +80,43 @@ function processElement(ctx: WalkContext): ScElementNode {
 }
 
 function walk(ctx: WalkContext): WalkContext[] {
-    const result: WalkContext[] = [];
+    const element = ctx.elements[ctx.offset];
+    const currentSaved = ctx.saved[ctx.offset];
+    const savedChildren = currentSaved && isParent(currentSaved) ? currentSaved.children : [];
+    const parentNode = ctx.scope[ctx.offset] as ScParentNode;
 
-    const savedChildren = ctx.saved && isParent(ctx.saved) ? ctx.saved.children : [];
-    const parentNode = ctx.node as unknown as ScParentNode;
     const scope: ScElementNode[] = [];
+    const elements: Element[] = [];
+    const saved: ScElementNodeBase[] = [];
 
-    let offset = ctx.offset;
-    for (const child of Array.from(ctx.element.children)) {
-        const tag = child.tagName.toLowerCase();
-        if (isNodeType(tag)) {
-            const savedChild = savedChildren[offset];
-            const node = hydrateNode({id: randomId(), type: tagToType(tag)}, child, savedChild);
-            result.push({node, element: child, saved: savedChild, nodesMap: ctx.nodesMap, offset: 0, parentNode, scope});
-            scope.push(node as unknown as ScElementNode);
-            offset++;
-        } else {
-            const nested = walk({...ctx, element: child, offset});
-            result.push(...nested);
-            offset += nested.length;
+    let savedOffset = 0;
+    function collect(el: Element): void {
+        for (const child of Array.from(el.children)) {
+            const tag = child.tagName.toLowerCase();
+            if (isNodeType(tag)) {
+                const s = savedChildren[savedOffset];
+                const node = hydrateNode({id: randomId(), type: tagToType(tag)}, child, s);
+                scope.push(node as unknown as ScElementNode);
+                elements.push(child);
+                saved.push(s);
+                savedOffset++;
+            } else {
+                collect(child);
+            }
         }
     }
+    collect(element);
 
-    return result;
+    return scope.map((_, i) => ({
+        scope, elements, saved, nodesMap: ctx.nodesMap, entries: ctx.entries, persistedEntries: ctx.persistedEntries, offset: i, parentNode,
+    }));
 }
 
 export function processHtml<T extends ScElementNode = ScElementNode>(ctx: WalkContext): T {
-    hydrateNode(ctx.node, ctx.element, ctx.saved);
+    hydrateNode(
+        ctx.scope[ctx.offset] as unknown as {id: string, type: NodeType},
+        ctx.elements[ctx.offset],
+        ctx.saved[ctx.offset],
+    );
     return processElement(ctx) as T;
 }

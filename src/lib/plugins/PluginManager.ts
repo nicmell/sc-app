@@ -49,16 +49,24 @@ export class PluginManager {
         const nodesMap = new Map<string, ScElementNode>();
 
         const root = processHtml<ScPluginNode>({
-            node: {id: boxId, type: ELEMENTS.SC_PLUGIN},
-            element: doc.documentElement,
-            saved,
+            scope: [{id: boxId, type: ELEMENTS.SC_PLUGIN} as unknown as ScElementNode],
+            elements: [doc.documentElement],
+            saved: saved ? [saved] : [],
             nodesMap,
+            entries,
+            persistedEntries: runtimeApi.entries,
             offset: 0,
-            scope: [],
         });
 
         // Phase 2: Runtime processing
-        processRuntime({rootId: boxId, entries, persistedEntries: runtimeApi.entries, nodesMap, scope: [root], offset: 0});
+        processRuntime({
+            rootId: boxId,
+            entries,
+            persistedEntries: runtimeApi.entries,
+            nodesMap,
+            scope: [root],
+            offset: 0
+        });
 
         const entriesRecord: Record<string, RuntimeValueEntry> = {};
         for (const [id, entry] of entries) {
