@@ -31,6 +31,7 @@ function propsMatch(fresh: HtmlProps<ScElementNodeBase>, saved: ScElementNodeBas
 
 
 export interface WalkContext {
+    rootId: string;
     scope: ScElementNode[];
     elements: Element[];
     saved: ScElementNodeBase[];
@@ -91,7 +92,7 @@ function walk(ctx: WalkContext): WalkContext[] {
     const result: WalkContext[] = [];
 
     let savedOffset = 0;
-    function collect(el: Element): void {
+    function visit(el: Element): void {
         for (const child of Array.from(el.children)) {
             const tag = child.tagName.toLowerCase();
             if (isNodeType(tag)) {
@@ -103,11 +104,11 @@ function walk(ctx: WalkContext): WalkContext[] {
                 result.push({...ctx, scope, elements, saved, offset: savedOffset, parentNode});
                 savedOffset++;
             } else {
-                collect(child);
+                visit(child);
             }
         }
     }
-    collect(element);
+    visit(element);
 
     return result;
 }

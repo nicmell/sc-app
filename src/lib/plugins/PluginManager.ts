@@ -49,6 +49,7 @@ export class PluginManager {
         const nodesMap = new Map<string, ScElementNode>();
 
         const root = processHtml<ScPluginNode>({
+            rootId: boxId,
             scope: [{id: boxId, type: ELEMENTS.SC_PLUGIN} as unknown as ScElementNode],
             elements: [doc.documentElement],
             saved: saved ? [saved] : [],
