@@ -6,8 +6,8 @@ export interface UGenSpec {
 }
 
 export type RuntimeValueEntry =
-  | { type: "control"; targetNode: string; name: string; value: number }
-  | { type: "run"; targetNode: string; name: string; value: number };
+  | { type: "control"; rootId: string; targetNode: string; name: string; value: number }
+  | { type: "run"; rootId: string; targetNode: string; name: string; value: number };
 
 export interface NodeRuntime {
   run: string;

@@ -10,10 +10,10 @@ import {ELEMENTS} from "@/constants/sc-elements";
 
 export interface RuntimeContext<T extends ScElementNode = ScElementNode> {
     node: T;
-    boxId: string;
+    rootId: string;
     entries: Map<string, RuntimeValueEntry>;
     persistedEntries: Record<string, RuntimeValueEntry>;
-    nodes: Map<string, ScElementNode>;
+    nodesMap: Map<string, ScElementNode>;
     scope: ScElementNode[];
     parentNode?: ScParentNode;
 }
@@ -42,7 +42,7 @@ function findOrCreateEntry(
 
     // 3. Create new entry
     const id = crypto.randomUUID();
-    ctx.entries.set(id, {type, targetNode, name, value: defaultValue});
+    ctx.entries.set(id, {type, rootId: ctx.rootId, targetNode, name, value: defaultValue});
     return id;
 }
 
@@ -67,7 +67,7 @@ function processSynthRuntime(ctx: RuntimeContext<ScSynthNode>): NodeRuntime {
     const n = ctx.node;
     if (n.bind) {
         let found = false;
-        for (const node of ctx.nodes.values()) {
+        for (const node of ctx.nodesMap.values()) {
             if (isSynthDef(node) && node.name === n.bind) { found = true; break; }
         }
         if (!found) {
@@ -93,7 +93,7 @@ function processSynthDefRuntime(ctx: RuntimeContext<ScSynthDefNode>): UgenRuntim
         const specsMap = new Map(ugenChildren.map(c => {
             return [c.name, {name: c.name, type: c.ugen, rate: c.rate, inputs: c.controls}];
         }));
-        synthDefManager.compile(ctx.boxId, n.id, n.name, n.controls, specsMap);
+        synthDefManager.compile(ctx.rootId, n.id, n.name, n.controls, specsMap);
     }
     return {} as UgenRuntime;
 }

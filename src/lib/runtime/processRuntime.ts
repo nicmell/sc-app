@@ -21,18 +21,18 @@ function walkTree(
 }
 
 export function processRuntime(
-    boxId: string,
+    rootId: string,
     tree: ScElementNode[],
     nodes: Map<string, ScElementNode>,
     persistedEntries: Record<string, RuntimeValueEntry>,
 ): {tree: ScElementNode[]; entries: Record<string, RuntimeValueEntry>; pluginRuntime: PluginRuntime} {
     const entries = new Map<string, RuntimeValueEntry>();
 
-    walkTree(tree, undefined, {boxId, entries, persistedEntries, nodes});
+    walkTree(tree, undefined, {rootId, entries, persistedEntries, nodesMap: nodes});
 
     // Create runtime entries for the plugin node itself
-    const pluginNode = {type: 'sc-plugin', id: boxId, children: tree, runtime: {run: '', controls: {}, loaded: false}} as ScPluginNode;
-    const pluginRuntime = processPluginRuntime({node: pluginNode, boxId, entries, persistedEntries, nodes, scope: tree});
+    const pluginNode = {type: 'sc-plugin', id: rootId, children: tree, runtime: {run: '', controls: {}, loaded: false}} as ScPluginNode;
+    const pluginRuntime = processPluginRuntime({node: pluginNode, rootId, entries, persistedEntries, nodesMap: nodes, scope: tree});
 
     const values: Record<string, RuntimeValueEntry> = {};
     for (const [id, entry] of entries) {
