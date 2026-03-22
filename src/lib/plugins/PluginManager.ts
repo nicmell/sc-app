@@ -53,12 +53,12 @@ export class PluginManager {
         });
 
         // Phase 2: Runtime processing
-        const runtimeResult = processRuntime(boxId, root.children, nodes, runtimeApi.values);
+        const runtimeResult = processRuntime(boxId, root.children, nodes, runtimeApi.entries);
 
         return {
             title: doc.title,
             tree: runtimeResult.tree,
-            values: runtimeResult.entries,
+            entries: runtimeResult.entries,
             runtime: runtimeResult.pluginRuntime,
             html: doc.documentElement.innerHTML,
         };

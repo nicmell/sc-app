@@ -86,7 +86,7 @@ export interface ConfigFile {
   layout: { items: BoxItem[]; options: LayoutOptions };
   scsynth: Pick<ScsynthState, 'options'>;
   plugins: PersistedPlugin[];
-  runtime: { items: ScPluginNode[]; values: Record<string, RuntimeValueEntry> };
+  runtime: { tree: ScPluginNode[]; entries: Record<string, RuntimeValueEntry> };
 }
 
 export interface PluginsState {
@@ -94,8 +94,8 @@ export interface PluginsState {
 }
 
 export interface RuntimeState {
-  items: ScPluginNode[];
-  values: Record<string, RuntimeValueEntry>;
+  tree: ScPluginNode[];
+  entries: Record<string, RuntimeValueEntry>;
 }
 
 export interface RootState {

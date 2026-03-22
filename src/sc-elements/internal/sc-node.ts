@@ -32,7 +32,7 @@ export abstract class ScNode extends LitElement implements IScNode {
         if (!plugin) return {};
         const el = findElementById(plugin.children, this.id);
         if (!el || !isSynth(el)) return {};
-        const values = runtimeApi.values;
+        const values = runtimeApi.entries;
         const params: Record<string, number> = {};
         for (const [name, entryId] of Object.entries(el.runtime.controls)) {
             const entry = values[entryId];
@@ -79,7 +79,7 @@ export abstract class ScNode extends LitElement implements IScNode {
     }
 
     getInputValue(entryId: string): number | undefined {
-        const values = runtimeApi.values;
+        const values = runtimeApi.entries;
         const entry = values[entryId];
         if (!entry) return undefined;
         if (entry.type === 'control' || entry.type === 'run') return entry.value;
@@ -114,9 +114,9 @@ export abstract class ScNode extends LitElement implements IScNode {
             getInputValue: (entryId) => this.getInputValue(entryId),
         };
         const provider = new ContextProvider(this, {context: nodeContext, initialValue: ctx});
-        let prevValues = store.getState().runtime.values;
+        let prevValues = store.getState().runtime.entries;
         this._unsubscribe = store.subscribe(() => {
-            const values = store.getState().runtime.values;
+            const values = store.getState().runtime.entries;
             if (values !== prevValues) {
                 prevValues = values;
                 provider.setValue(ctx, true);

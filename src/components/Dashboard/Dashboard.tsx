@@ -80,14 +80,14 @@ export function Dashboard() {
         setModalOpen(undefined);
     }, [modalOpen])
 
-    const runtimeItems = useSelector(runtimeStore.selectors.items);
-    const runtimeValues = useSelector(runtimeStore.selectors.values);
+    const runtimeTree = useSelector(runtimeStore.selectors.tree);
+    const runtimeEntries = useSelector(runtimeStore.selectors.entries);
 
     const renderDashboardPanel = (item: BoxItem) => {
         const plugin = item.plugin ? pluginsApi.getById(item.plugin) : undefined;
-        const rt = runtimeItems.find(r => r.id === item.i);
+        const rt = runtimeTree.find(r => r.id === item.i);
         const runEntryId = rt?.runtime.loaded ? rt.runtime.run : undefined;
-        const isRunning = runEntryId ? runtimeValues[runEntryId]?.value === 1 : undefined;
+        const isRunning = runEntryId ? runtimeEntries[runEntryId]?.value === 1 : undefined;
 
         const handleToggleRun = runEntryId ? () => {
             const el = document.getElementById(item.i);

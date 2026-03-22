@@ -25,16 +25,14 @@ function findOrCreateEntry(
 ): string {
     // 1. Check ctx.entries for existing entry created this parse session
     for (const [id, entry] of ctx.entries) {
-        if (entry.type === type && entry.targetNode === targetNode && entry.boxId === ctx.boxId
-            && 'name' in entry && entry.name === name) {
+        if (entry.type === type && entry.targetNode === targetNode && entry.name === name) {
             return id;
         }
     }
 
     // 2. Check persisted entries
     for (const [id, entry] of Object.entries(ctx.persistedEntries)) {
-        if (entry.type === type && entry.targetNode === targetNode && entry.boxId === ctx.boxId
-            && 'name' in entry && entry.name === name) {
+        if (entry.type === type && entry.targetNode === targetNode && entry.name === name) {
             ctx.entries.set(id, entry);
             return id;
         }
@@ -42,7 +40,7 @@ function findOrCreateEntry(
 
     // 3. Create new entry
     const id = crypto.randomUUID();
-    ctx.entries.set(id, {type, boxId: ctx.boxId, targetNode, name, value: defaultValue});
+    ctx.entries.set(id, {type, targetNode, name, value: defaultValue});
     return id;
 }
 

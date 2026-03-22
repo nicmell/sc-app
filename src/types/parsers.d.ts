@@ -6,8 +6,8 @@ export interface UGenSpec {
 }
 
 export type RuntimeValueEntry =
-  | { type: "control"; boxId: string; targetNode: string; name: string; value: number }
-  | { type: "run"; boxId: string; targetNode: string; name: string; value: number };
+  | { type: "control"; targetNode: string; name: string; value: number }
+  | { type: "run"; targetNode: string; name: string; value: number };
 
 export interface NodeRuntime {
   run: string;
@@ -129,6 +129,6 @@ export interface PluginTreeEntry {
   title: string;
   html: string;
   tree: ScElementNode[];
-  values: Record<string, RuntimeValueEntry>;
+  entries: Record<string, RuntimeValueEntry>;
   runtime: PluginRuntime;
 }

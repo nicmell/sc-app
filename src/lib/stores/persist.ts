@@ -18,8 +18,8 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
     plugins: plugins.items
         .map(({loaded: _loaded, error: _error, ...plugin}) => ({...plugin})),
     runtime: {
-      items: runtime.items.map(item => ({...item, runtime: {...item.runtime, loaded: false, error: undefined}})),
-      values: runtime.values,
+      tree: runtime.tree.map(item => ({...item, runtime: {...item.runtime, loaded: false, error: undefined}})),
+      entries: runtime.entries,
     },
   }),
   merge: (persisted, current: RootState): RootState => {
@@ -39,8 +39,8 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
       },
       runtime: {
         ...current.runtime,
-        items: p?.runtime?.items ?? current.runtime.items,
-        values: p?.runtime?.values ?? current.runtime.values,
+        tree: p?.runtime?.tree ?? current.runtime.tree,
+        entries: p?.runtime?.entries ?? current.runtime.entries,
       },
     };
   },

@@ -26,7 +26,7 @@ export class ScPlugin extends ScGroup {
       const result = await pluginManager.loadPlugin(this.id);
       this.innerHTML = result.html;
       this._loading = false;
-      runtimeApi.loadPlugin({id: this.id, elements: result.tree, values: result.values, runtime: {...result.runtime, loaded: true, title: result.title}});
+      runtimeApi.loadPlugin({id: this.id, elements: result.tree, entries: result.entries, runtime: {...result.runtime, loaded: true, title: result.title}});
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);
       this._loading = false;
