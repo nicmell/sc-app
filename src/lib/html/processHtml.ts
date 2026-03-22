@@ -69,7 +69,7 @@ function extractProps(type: string, el: Element): Omit<ScElementNodeBase, 'id' |
 }
 
 export interface WalkContext {
-    node: ScElementNodeBase;
+    node: {id: string, type: NodeType};
     element: Element;
     saved?: ScElementNodeBase;
     nodes: Map<string, ScElementNode>;
@@ -94,20 +94,18 @@ function hydrate<T extends ScElementNode>(
 }
 
 function processElement(ctx: WalkContext): ScElementNode {
-    const node = hydrate(
-        ctx.node as {id: string, type: ScElementNode["type"]},
-        extractProps(ctx.node.type, ctx.element),
-        ctx.saved,
-    );
-    Object.assign(node, {runtime: defaultRuntime(node.type)});
+    const node = hydrate(ctx.node, extractProps(ctx.node.type, ctx.element), ctx.saved);
     ctx.element.setAttribute('id', node.id);
+
+    Object.assign(node, {runtime: defaultRuntime(node.type)});
+
     for (const child of walk(ctx)) {
         if (isParent(node)) {
             node.children.push(child);
         }
     }
-    ctx.nodes.set(node.id, node as unknown as ScElementNode);
-    return node as unknown as ScElementNode;
+    ctx.nodes.set(node.id, node);
+    return node;
 }
 
 function walk(ctx: WalkContext): ScElementNode[] {
@@ -118,8 +116,9 @@ function walk(ctx: WalkContext): ScElementNode[] {
         const tag = child.tagName.toLowerCase();
         if (isNodeType(tag)) {
             const savedChild = savedChildren[ctx.offset];
-            const type = tagToType(tag);
-            result.push(processElement({node: {id: randomId(), type} as ScElementNodeBase, element: child, saved: savedChild, nodes: ctx.nodes, offset: 0}));
+            const node = {id: randomId(), type: tagToType(tag)}
+            const childCtx = {node, element: child, saved: savedChild, nodes: ctx.nodes, offset: 0}
+            result.push(processElement(childCtx));
             ctx.offset++;
         } else {
             const nested = walk({...ctx, element: child});

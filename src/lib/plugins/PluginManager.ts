@@ -46,7 +46,7 @@ export class PluginManager {
         const saved = runtimeApi.getById(boxId);
         const nodes = new Map<string, ScElementNode>();
         const root = processHtml<ScParentNode>({
-            node: {id: boxId, type: ELEMENTS.SC_PLUGIN, children: []},
+            node: {id: boxId, type: ELEMENTS.SC_PLUGIN},
             element: doc.documentElement,
             saved,
             nodes,
