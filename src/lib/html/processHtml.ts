@@ -79,10 +79,11 @@ function processElement(ctx: WalkContext): ScElementNode {
 }
 
 function walk(ctx: WalkContext): WalkContext[] {
+    const result: WalkContext[] = [];
+
     const savedChildren = ctx.saved && isParent(ctx.saved) ? ctx.saved.children : [];
     const parentNode = ctx.node as unknown as ScParentNode;
     const scope: ScElementNode[] = [];
-    const result: WalkContext[] = [];
 
     let offset = ctx.offset;
     for (const child of Array.from(ctx.element.children)) {
@@ -90,8 +91,8 @@ function walk(ctx: WalkContext): WalkContext[] {
         if (isNodeType(tag)) {
             const savedChild = savedChildren[offset];
             const node = hydrateNode({id: randomId(), type: tagToType(tag)}, child, savedChild);
-            scope.push(node as unknown as ScElementNode);
             result.push({node, element: child, saved: savedChild, nodes: ctx.nodes, offset: 0, parentNode, scope});
+            scope.push(node as unknown as ScElementNode);
             offset++;
         } else {
             const nested = walk({...ctx, element: child, offset});
