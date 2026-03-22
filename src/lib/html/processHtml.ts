@@ -73,6 +73,7 @@ export interface WalkContext {
     element: Element;
     saved?: ScElementNodeBase;
     nodes: Map<string, ScElementNode>;
+    offset: number;
 }
 
 function hydrate<T extends ScElementNode>(
@@ -92,47 +93,40 @@ function hydrate<T extends ScElementNode>(
     return Object.assign(node, props) as unknown as T;
 }
 
-function visit(ctx: WalkContext): WalkContext[] {
-    const {saved, nodes} = ctx;
-    const savedChildren =
-        saved?.type === ctx.node.type && isParent(saved) ? saved.children : [];
-    const result: WalkContext[] = [];
-    let offset = 0;
+function walk(ctx: WalkContext): ScElementNode[] {
+    const savedChildren = ctx.saved && isParent(ctx.saved) ? ctx.saved.children : [];
+    const result: ScElementNode[] = [];
 
-    function walk(element: Element): void {
-        for (const child of Array.from(element.children)) {
-            const tag = child.tagName.toLowerCase();
-            if (isNodeType(tag)) {
-                const savedChild = savedChildren[offset];
-                const type = tagToType(tag);
-                const node = hydrate({id: randomId(), type}, extractProps(type, child), savedChild);
-                child.setAttribute('id', node.id);
-                result.push({node, element: child, saved: savedChild, nodes});
-                offset++;
-            } else {
-                walk(child);
+    for (const child of Array.from(ctx.element.children)) {
+        const tag = child.tagName.toLowerCase();
+        if (isNodeType(tag)) {
+            const savedChild = savedChildren[ctx.offset];
+            const type = tagToType(tag);
+            const node = hydrate({id: randomId(), type}, extractProps(type, child), savedChild);
+            child.setAttribute('id', node.id);
+            Object.assign(node, {runtime: defaultRuntime(type)});
+            if (isParent(node)) {
+                node.children.push(...walk({node, element: child, saved: savedChild, nodes: ctx.nodes, offset: 0}));
             }
+            ctx.nodes.set(node.id, node as unknown as ScElementNode);
+            result.push(node as unknown as ScElementNode);
+            ctx.offset++;
+        } else {
+            const nested = walk({...ctx, element: child});
+            result.push(...nested);
+            ctx.offset += nested.length;
         }
     }
 
-    walk(ctx.element);
     return result;
 }
 
 export function processHtml<T extends ScElementNode = ScElementNode>(ctx: WalkContext): T {
     const node = ctx.node as T;
-
-    Object.assign(ctx.node, {
-        runtime: defaultRuntime(ctx.node.type),
-    })
-
-    for (const childCtx of visit(ctx)) {
-        const childNode = processHtml<ScElementNode>(childCtx);
-        if (isParent(node)) {
-            node.children.push(childNode);
-        }
+    Object.assign(node, {runtime: defaultRuntime(node.type)});
+    if (isParent(node)) {
+        node.children.push(...walk(ctx));
     }
-
     ctx.nodes.set(node.id, node as unknown as ScElementNode);
     return node;
 }

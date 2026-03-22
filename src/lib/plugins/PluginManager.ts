@@ -50,6 +50,7 @@ export class PluginManager {
             element: doc.documentElement,
             saved,
             nodes,
+            offset: 0,
         });
 
         // Phase 2: Runtime processing
