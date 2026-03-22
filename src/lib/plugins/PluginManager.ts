@@ -51,6 +51,7 @@ export class PluginManager {
             saved,
             nodes,
             offset: 0,
+            scope: [],
         });
 
         // Phase 2: Runtime processing

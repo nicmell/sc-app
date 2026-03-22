@@ -1,7 +1,7 @@
 import {ELEMENTS} from "@/constants/sc-elements";
 import {randomId} from "@/lib/utils/randomId";
 import {deepEqual} from "@/lib/utils/deepEqual";
-import type {ScElementNode, ScElementNodeBase, NodeType} from "@/types/parsers";
+import type {ScElementNode, ScElementNodeBase, ScParentNode, NodeType} from "@/types/parsers";
 import {isNodeType, isParent} from "@/lib/utils/guards";
 import {type HtmlProps, extractProps} from "./handlers";
 
@@ -36,6 +36,8 @@ export interface WalkContext {
     saved?: ScElementNodeBase;
     nodes: Map<string, ScElementNode>;
     offset: number;
+    parentNode?: ScParentNode;
+    scope: ScElementNode[];
 }
 
 function hydrate<T extends ScElementNode>(
@@ -65,7 +67,7 @@ function processElement(ctx: WalkContext): ScElementNode {
     const node = ctx.node as unknown as ScElementNode;
 
     Object.assign(node, {runtime: defaultRuntime(node.type)});
-    
+
     for (const childCtx of walk(ctx)) {
         const child = processElement(childCtx);
         if (isParent(node)) {
@@ -78,6 +80,8 @@ function processElement(ctx: WalkContext): ScElementNode {
 
 function walk(ctx: WalkContext): WalkContext[] {
     const savedChildren = ctx.saved && isParent(ctx.saved) ? ctx.saved.children : [];
+    const parentNode = ctx.node as unknown as ScParentNode;
+    const scope: ScElementNode[] = [];
     const result: WalkContext[] = [];
 
     let offset = ctx.offset;
@@ -86,7 +90,8 @@ function walk(ctx: WalkContext): WalkContext[] {
         if (isNodeType(tag)) {
             const savedChild = savedChildren[offset];
             const node = hydrateNode({id: randomId(), type: tagToType(tag)}, child, savedChild);
-            result.push({node, element: child, saved: savedChild, nodes: ctx.nodes, offset: 0});
+            scope.push(node as unknown as ScElementNode);
+            result.push({node, element: child, saved: savedChild, nodes: ctx.nodes, offset: 0, parentNode, scope});
             offset++;
         } else {
             const nested = walk({...ctx, element: child, offset});
