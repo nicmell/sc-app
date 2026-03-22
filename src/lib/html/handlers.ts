@@ -3,23 +3,24 @@ import type {
     ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode,
 } from "@/types/parsers";
 
+export type HtmlProps<T> = Omit<StripRuntime<T>, 'id' | 'type' | 'children'>;
+
 const SYNTH_SKIP_ATTRS = new Set(['id', 'name', 'bind', 'running', 'class', 'style', 'slot', 'title']);
 const SYNTHDEF_SKIP_ATTRS = new Set(['id', 'name', 'class', 'style', 'slot']);
 const UGEN_SKIP_ATTRS = new Set(['id', 'name', 'type', 'rate', 'class', 'style', 'slot']);
 
-export function extractPluginProps(): Omit<StripRuntime<ScPluginNode>, 'id' | 'type'> {
-    return {children: []};
+export function extractPluginProps(): HtmlProps<ScPluginNode> {
+    return {};
 }
 
-export function extractGroupProps(el: Element): Omit<StripRuntime<ScGroupNode>, 'id' | 'type'> {
+export function extractGroupProps(el: Element): HtmlProps<ScGroupNode> {
     return {
         name: el.getAttribute('name') ?? '',
         running: el.getAttribute('running') !== 'false',
-        children: [],
     };
 }
 
-export function extractSynthProps(el: Element): Omit<StripRuntime<ScSynthNode>, 'id' | 'type'> {
+export function extractSynthProps(el: Element): HtmlProps<ScSynthNode> {
     return {
         name: el.getAttribute('name') ?? '',
         bind: el.getAttribute('bind') ?? '',
@@ -28,15 +29,14 @@ export function extractSynthProps(el: Element): Omit<StripRuntime<ScSynthNode>, 
     };
 }
 
-export function extractSynthDefProps(el: Element): Omit<StripRuntime<ScSynthDefNode>, 'id' | 'type'> {
+export function extractSynthDefProps(el: Element): HtmlProps<ScSynthDefNode> {
     return {
         name: el.getAttribute('name') ?? '',
         controls: collectNumericAttrs(el, SYNTHDEF_SKIP_ATTRS),
-        children: [],
     };
 }
 
-export function extractUgenProps(el: Element): Omit<StripRuntime<ScUgenNode>, 'id' | 'type'> {
+export function extractUgenProps(el: Element): HtmlProps<ScUgenNode> {
     return {
         name: el.getAttribute('name') ?? '',
         ugen: el.getAttribute('type') ?? '',
@@ -45,27 +45,27 @@ export function extractUgenProps(el: Element): Omit<StripRuntime<ScUgenNode>, 'i
     };
 }
 
-export function extractRangeProps(el: Element): Omit<StripRuntime<ScRangeNode>, 'id' | 'type'> {
+export function extractRangeProps(el: Element): HtmlProps<ScRangeNode> {
     return {bind: el.getAttribute('bind') ?? ''};
 }
 
-export function extractCheckboxProps(el: Element): Omit<StripRuntime<ScCheckboxNode>, 'id' | 'type'> {
+export function extractCheckboxProps(el: Element): HtmlProps<ScCheckboxNode> {
     return {bind: el.getAttribute('bind') ?? ''};
 }
 
-export function extractRunProps(el: Element): Omit<StripRuntime<ScRunNode>, 'id' | 'type'> {
+export function extractRunProps(el: Element): HtmlProps<ScRunNode> {
     return {bind: el.getAttribute('bind') ?? ''};
 }
 
-export function extractDisplayProps(el: Element): Omit<StripRuntime<ScDisplayNode>, 'id' | 'type'> {
+export function extractDisplayProps(el: Element): HtmlProps<ScDisplayNode> {
     return {
         bind: el.getAttribute('bind') ?? '',
         format: el.getAttribute('format') ?? '',
     };
 }
 
-export function extractIfProps(el: Element): Omit<StripRuntime<ScIfNode>, 'id' | 'type'> {
-    return {bind: el.getAttribute('bind') ?? '', children: []};
+export function extractIfProps(el: Element): HtmlProps<ScIfNode> {
+    return {bind: el.getAttribute('bind') ?? ''};
 }
 
 function collectNumericAttrs(el: Element, skip: Set<string>): Record<string, number> {
