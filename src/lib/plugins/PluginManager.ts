@@ -1,5 +1,5 @@
 import type {PluginInfo} from "@/types/stores";
-import type {ScElementNode, ScParentNode, PluginTreeEntry} from "@/types/parsers";
+import type {ScElementNode, ScPluginNode, PluginTreeEntry, RuntimeValueEntry} from "@/types/parsers";
 import {ELEMENTS} from "@/constants/sc-elements";
 import {layoutApi, pluginsApi, runtimeApi} from "@/lib/stores/api";
 import {get, post, del} from "@/lib/http";
@@ -44,8 +44,11 @@ export class PluginManager {
 
         // Phase 1: HTML parsing
         const saved = runtimeApi.getById(boxId);
+
+        const entries = new Map<string, RuntimeValueEntry>();
         const nodesMap = new Map<string, ScElementNode>();
-        const root = processHtml<ScParentNode>({
+
+        const root = processHtml<ScPluginNode>({
             node: {id: boxId, type: ELEMENTS.SC_PLUGIN},
             element: doc.documentElement,
             saved,
@@ -55,13 +58,18 @@ export class PluginManager {
         });
 
         // Phase 2: Runtime processing
-        const runtimeResult = processRuntime(boxId, root.children, nodesMap, runtimeApi.entries);
+        processRuntime({rootId: boxId, entries, persistedEntries: runtimeApi.entries, nodesMap, scope: [root], offset: 0});
+
+        const entriesRecord: Record<string, RuntimeValueEntry> = {};
+        for (const [id, entry] of entries) {
+            entriesRecord[id] = entry;
+        }
 
         return {
             title: doc.title,
-            tree: runtimeResult.tree,
-            entries: runtimeResult.entries,
-            runtime: runtimeResult.pluginRuntime,
+            tree: root.children,
+            entries: entriesRecord,
+            runtime: root.runtime,
             html: doc.documentElement.innerHTML,
         };
     }
