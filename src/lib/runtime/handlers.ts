@@ -66,8 +66,7 @@ function processGroupRuntime(ctx: RuntimeContext): NodeRuntime {
 function processSynthRuntime(ctx: RuntimeContext): NodeRuntime {
     const n = ctx.scope[ctx.offset] as ScSynthNode;
     if (n.bind) {
-        const found = ctx.scope.some(e => isSynthDef(e) && e.name === n.bind)
-            || Array.from(ctx.nodesMap.values()).some(e => isSynthDef(e) && e.name === n.bind);
+        const found = ctx.scope.some(e => isSynthDef(e) && e.name === n.bind);
         if (!found) {
             throw new Error(`<sc-synth bind="${n.bind}">: does not match any <sc-synthdef>`);
         }
