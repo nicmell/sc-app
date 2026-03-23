@@ -1,8 +1,8 @@
 import {ELEMENTS} from "@/constants/sc-elements";
 import {randomId} from "@/lib/utils/randomId";
 import {deepEqual} from "@/lib/utils/deepEqual";
-import type {ScElementNode, ScElementNodeBase, ScParentNode, NodeType, RuntimeValueEntry} from "@/types/parsers";
-import {isNodeType, isParent, isNode} from "@/lib/utils/guards";
+import type {ScElementNode, ScElementNodeBase, ScParentNode, ScSynthDefNode, NodeType, RuntimeValueEntry} from "@/types/parsers";
+import {isNodeType, isParent} from "@/lib/utils/guards";
 import {type HtmlProps, extractProps} from "./handlers";
 import {dispatchRuntime} from "@/lib/runtime/handlers";
 
@@ -32,6 +32,7 @@ export interface WalkContext {
     elements: Element[];
     saved: ScElementNodeBase[];
     nodesMap: Map<string, ScElementNode>;
+    synthdefs: ScSynthDefNode[];
     entries: Map<string, RuntimeValueEntry>;
     persistedEntries: Record<string, RuntimeValueEntry>;
     offset: number;
@@ -78,10 +79,8 @@ export function processHtml<T extends ScElementNode = ScElementNode>(ctx: WalkCo
     const saved = ctx.saved[ctx.offset];
     const element = ctx.elements[ctx.offset];
 
-    // Initialize minimal runtime so children can write into parent's controls/run
-    if (isNode(node)) {
-        (node as any).runtime = {run: '', controls: {}};
-    }
+    node.runtime = dispatchRuntime(ctx);
+    ctx.nodesMap.set(node.id, node);
 
     if (isParent(node)) {
         const elements = Array.from(visit(element));
@@ -97,10 +96,6 @@ export function processHtml<T extends ScElementNode = ScElementNode>(ctx: WalkCo
             node.children.push(processHtml({...ctx, scope, elements, saved: savedChildren, parentNode: node, offset: i}));
         }
     }
-
-    // Full dispatch after children — synthdef can now read ugen children, group/synth preserves children's writes
-    node.runtime = dispatchRuntime(ctx);
-    ctx.nodesMap.set(node.id, node);
 
     return node as T;
 }

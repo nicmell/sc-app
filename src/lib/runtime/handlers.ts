@@ -5,7 +5,6 @@ import type {
 } from "@/types/parsers";
 import {findElementByPath} from "@/lib/utils/elementTree";
 import {isSynthDef, isSynth, isGroup, isNode} from "@/lib/utils/guards";
-import {synthDefManager} from "@/lib/synthdef";
 import {ELEMENTS} from "@/constants/sc-elements";
 
 export interface RuntimeContext {
@@ -13,6 +12,7 @@ export interface RuntimeContext {
     entries: Map<string, RuntimeValueEntry>;
     persistedEntries: Record<string, RuntimeValueEntry>;
     nodesMap: Map<string, ScElementNode>;
+    synthdefs: ScSynthDefNode[];
     scope: ScElementNode[];
     offset: number;
     parentNode?: ScParentNode;
@@ -88,13 +88,7 @@ function processSynthRuntime(ctx: RuntimeContext): NodeRuntime {
 
 function processSynthDefRuntime(ctx: RuntimeContext): UgenRuntime {
     const n = ctx.scope[ctx.offset] as ScSynthDefNode;
-    const ugenChildren = n.children.filter((c): c is ScUgenNode => c.type === 'sc-ugen');
-    if (ugenChildren.length > 0) {
-        const specsMap = new Map(ugenChildren.map(c => {
-            return [c.name, {name: c.name, type: c.ugen, rate: c.rate, inputs: c.controls}];
-        }));
-        synthDefManager.compile(ctx.rootId, n.id, n.name, n.controls, specsMap);
-    }
+    ctx.synthdefs.push(n);
     return {} as UgenRuntime;
 }
 
