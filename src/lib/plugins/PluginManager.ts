@@ -44,7 +44,7 @@ export class PluginManager {
 
         const entries: Record<string, RuntimeValueEntry> = {};
         const synthdefs: ScSynthDefNode[] = [];
-        const nodesMap = new Map<string, ScElementNode>();
+        const nodesMap: Record<string, ScElementNode> = {};
 
         const root = processHtml<ScPluginNode>({
             rootId: boxId,

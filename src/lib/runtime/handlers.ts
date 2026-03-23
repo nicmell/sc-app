@@ -14,7 +14,7 @@ export interface RuntimeContext<T extends ScElementNode = ScElementNode> {
     rootId: string;
     entries: Record<string, RuntimeValueEntry>;
     persistedEntries: Record<string, RuntimeValueEntry>;
-    nodesMap: Map<string, ScElementNode>;
+    nodesMap: Record<string, ScElementNode>;
     synthdefs: ScSynthDefNode[];
     scope: ScElementNode[];
     node: T;

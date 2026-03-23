@@ -59,7 +59,7 @@ export interface ProcessHtmlArgs {
     saved?: ScElementNodeBase;
     entries: Record<string, RuntimeValueEntry>;
     synthdefs: ScSynthDefNode[];
-    nodesMap: Map<string, ScElementNode>;
+    nodesMap: Record<string, ScElementNode>;
     persistedEntries: Record<string, RuntimeValueEntry>;
 }
 
@@ -108,6 +108,6 @@ export function processElement<T extends ScElementNode = ScElementNode>(ctx: Run
     };
 
     visit();
-    ctx.nodesMap.set(ctx.node.id, ctx.node);
+    ctx.nodesMap[ctx.node.id] = ctx.node;
     return ctx.node;
 }
