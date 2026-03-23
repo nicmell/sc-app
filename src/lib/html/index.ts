@@ -1,2 +1,2 @@
-export {processHtml} from "./processHtml";
-export type {WalkContext} from "./processHtml";
+export {processHtml, processElement} from "./processHtml";
+export type {ProcessHtmlArgs} from "./processHtml";

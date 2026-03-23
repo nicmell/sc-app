@@ -1,5 +1,5 @@
 import type {PluginInfo} from "@/types/stores";
-import type {ScElementNode, ScPluginNode, ScUgenNode, ScSynthDefNode, PluginTreeEntry, RuntimeValueEntry} from "@/types/parsers";
+import type {ScElementNode, ScUgenNode, ScSynthDefNode, PluginTreeEntry, RuntimeValueEntry, ScPluginNode} from "@/types/parsers";
 import {ELEMENTS} from "@/constants/sc-elements";
 import {layoutApi, pluginsApi, runtimeApi} from "@/lib/stores/api";
 import {get, post, del} from "@/lib/http";
@@ -42,23 +42,19 @@ export class PluginManager {
             throw new Error(error.textContent ?? "Invalid XHTML")
         }
 
-        // Phase 1: HTML parsing
-        const saved = runtimeApi.getById(boxId);
-
         const entries = new Map<string, RuntimeValueEntry>();
-        const nodesMap = new Map<string, ScElementNode>();
         const synthdefs: ScSynthDefNode[] = [];
+        const nodesMap = new Map<string, ScElementNode>();
 
         const root = processHtml<ScPluginNode>({
             rootId: boxId,
-            scope: [{id: boxId, type: ELEMENTS.SC_PLUGIN, children: []} as unknown as ScElementNode],
-            elements: [doc.documentElement],
-            saved: saved ? [saved] : [],
-            nodesMap,
-            synthdefs,
+            node: {id: boxId, type: ELEMENTS.SC_PLUGIN},
+            element: doc.documentElement,
+            saved: runtimeApi.getById(boxId) ?? undefined,
             entries,
+            synthdefs,
+            nodesMap,
             persistedEntries: runtimeApi.entries,
-            offset: 0,
         });
 
         // Compile synthdefs — deferred until after processHtml so children (ugens) are populated

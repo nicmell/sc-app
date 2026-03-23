@@ -4,7 +4,7 @@ import {deepEqual} from "@/lib/utils/deepEqual";
 import type {ScElementNode, ScElementNodeBase, ScParentNode, ScSynthDefNode, NodeType, RuntimeValueEntry} from "@/types/parsers";
 import {isNodeType, isParent} from "@/lib/utils/guards";
 import {type HtmlProps, extractProps} from "./handlers";
-import {dispatchRuntime} from "@/lib/runtime/handlers";
+import {dispatchRuntime, type RuntimeContext} from "@/lib/runtime/handlers";
 
 const EXCLUDE_KEYS = new Set(['id', 'type', 'runtime', 'children']);
 
@@ -26,20 +26,7 @@ function propsMatch(fresh: HtmlProps<ScElementNodeBase>, saved: ScElementNodeBas
 }
 
 
-export interface WalkContext {
-    rootId: string;
-    scope: ScElementNode[];
-    elements: Element[];
-    saved: ScElementNodeBase[];
-    nodesMap: Map<string, ScElementNode>;
-    synthdefs: ScSynthDefNode[];
-    entries: Map<string, RuntimeValueEntry>;
-    persistedEntries: Record<string, RuntimeValueEntry>;
-    offset: number;
-    parentNode?: ScParentNode;
-}
-
-function *visit(el: Element): Generator<Element> {
+function* visit(el: Element): Generator<Element> {
     for (const child of Array.from(el.children)) {
         const tag = child.tagName.toLowerCase();
         if (isNodeType(tag)) {
@@ -50,7 +37,7 @@ function *visit(el: Element): Generator<Element> {
     }
 }
 
-function hydrate(node: {id: string, type: NodeType}, element: Element, saved?: ScElementNodeBase) {
+function hydrate(node: { id: string, type: NodeType }, element: Element, saved?: ScElementNodeBase) {
     const props = extractProps(node.type, element);
     const matched = saved?.type === node.type ? saved : undefined;
     if (saved && !matched) {
@@ -65,29 +52,52 @@ function hydrate(node: {id: string, type: NodeType}, element: Element, saved?: S
     return Object.assign(node, props);
 }
 
-export function processHtml<T extends ScElementNode = ScElementNode>(ctx: WalkContext): T {
+export interface ProcessHtmlArgs {
+    rootId: string;
+    node: { id: string; type: NodeType };
+    element: Element;
+    saved?: ScElementNodeBase;
+    entries: Map<string, RuntimeValueEntry>;
+    synthdefs: ScSynthDefNode[];
+    nodesMap: Map<string, ScElementNode>;
+    persistedEntries: Record<string, RuntimeValueEntry>;
+}
 
-    const node = ctx.scope[ctx.offset] as T;
-    const saved = ctx.saved[ctx.offset];
-    const element = ctx.elements[ctx.offset];
+export function processHtml<T extends ScElementNode>(args: ProcessHtmlArgs): T {
 
-    node.runtime = dispatchRuntime(ctx);
+    const node = hydrate(args.node, args.element, args.saved) as unknown as T;
 
-    if (isParent(node)) {
-        const elements = Array.from(visit(element));
-        const s = saved && isParent(saved) ? saved.children : [];
+    return processElement({
+        rootId: args.rootId,
+        scope: [node],
+        node,
+        element: args.element,
+        saved: args.saved,
+        nodesMap: args.nodesMap,
+        synthdefs: args.synthdefs,
+        entries: args.entries,
+        persistedEntries: args.persistedEntries,
+        walk: () => [],
+    });
+}
 
-        const scope = elements
-            .map((el, i) => {
-                const type = tagToType(el.tagName.toLowerCase());
-                return hydrate({id: randomId(), type}, elements[i], s[i]) as ScElementNode
-            });
+export function processElement<T extends ScElementNode = ScElementNode>(ctx: RuntimeContext<T>): T {
 
-        for (let i = 0; i < scope.length; i++) {
-            node.children.push(processHtml({...ctx, scope, elements, saved: s, parentNode: node, offset: i}));
-        }
-    }
+    const elements = Array.from(visit(ctx.element));
+    const s = ctx.saved && isParent(ctx.saved) ? ctx.saved.children : [];
 
-    ctx.nodesMap.set(node.id, node);
-    return node;
+    const scope = elements
+        .map((el, i) => {
+            const type = tagToType(el.tagName.toLowerCase());
+            return hydrate({id: randomId(), type}, elements[i], s[i]) as ScElementNode
+        });
+
+    dispatchRuntime({
+        ...ctx,
+        walk: () => scope.map((_, i) =>
+            processElement({...ctx, scope, node: scope[i], element: elements[i], saved: s[i], parentNode: ctx.node as ScParentNode})
+        )
+    });
+
+    return ctx.node;
 }
