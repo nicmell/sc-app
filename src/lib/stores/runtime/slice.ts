@@ -21,12 +21,8 @@ function collectEntries(
 
     function walk(node: ScElementNode) {
         const rt = node.runtime;
-        if ('run' in rt) {
-            addEntry(rt.run)
-        }
-        if ('value' in rt) {
-            addEntry(rt.value)
-        }
+        if ('run' in rt) addEntry(rt.run)
+        if ('value' in rt) addEntry(rt.value)
         if ('controls' in rt) {
             for (const id of Object.values(rt.controls)) {
                 addEntry(id)
