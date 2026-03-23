@@ -4,7 +4,7 @@ import {deepEqual} from "@/lib/utils/deepEqual";
 import type {ScElementNode, ScElementNodeBase, ScParentNode, ScSynthDefNode, NodeType, RuntimeValueEntry} from "@/types/parsers";
 import {isNodeType, isParent} from "@/lib/utils/guards";
 import {type HtmlProps, extractProps} from "./handlers";
-import {handlers, type RuntimeContext} from "@/lib/runtime/handlers";
+import {handlers, checkDuplicateNames, type RuntimeContext} from "@/lib/runtime/handlers";
 
 const EXCLUDE_KEYS = new Set(['id', 'type', 'runtime', 'children']);
 
@@ -91,6 +91,8 @@ export function processElement<T extends ScElementNode = ScElementNode>(ctx: Run
             const type = tagToType(el.tagName.toLowerCase());
             return hydrate({id: randomId(), type}, elements[i], s[i]) as ScElementNode
         });
+
+    checkDuplicateNames(scope);
 
     const visit = () => {
         const handler = handlers[ctx.node.type];

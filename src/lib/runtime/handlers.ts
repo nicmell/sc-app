@@ -54,6 +54,18 @@ function findOrCreateEntry(
     return id;
 }
 
+export function checkDuplicateNames(scope: ScElementNode[]): void {
+    const seen = new Set<string>();
+    for (const el of scope) {
+        if ('name' in el && el.name) {
+            if (seen.has(el.name as string)) {
+                throw new Error(`<${el.type} name="${el.name}">: duplicate name in scope`);
+            }
+            seen.add(el.name as string);
+        }
+    }
+}
+
 function resolveControlBind(n: {bind: string; type: string}, ctx: RuntimeContext): {target: ScElementNode; controlName: string; defaultValue: number} {
     const segments = n.bind.split('.');
     const controlName = segments.pop()!;
