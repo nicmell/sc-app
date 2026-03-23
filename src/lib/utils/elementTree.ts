@@ -1,4 +1,4 @@
-import type {ScElementNodeBase} from "../../types/parsers";
+import type {ScElementNodeBase, ScParentNode} from "../../types/parsers";
 import {isParent} from "./guards";
 
 export function findElementById<T extends ScElementNodeBase>(elements: T[], id: string): T | undefined {
@@ -14,20 +14,18 @@ export function findElementById<T extends ScElementNodeBase>(elements: T[], id: 
   return undefined;
 }
 
-export function findElementByPath<T extends ScElementNodeBase>(elements: T[], path: string[]): T | undefined {
-  if (path.length === 0) return undefined;
+export function findElementByPath(parent: ScParentNode, path: string[]): ScElementNodeBase | undefined {
+  if (path.length === 0) return parent;
   const [name, ...rest] = path;
-  const el = elements.find(e => 'name' in e && e.name === name);
+  const el = parent.children.find(e => 'name' in e && e.name === name);
   if (el) {
     if (rest.length === 0) return el;
-    if (isParent(el)) {
-      return findElementByPath(el.children as T[], rest)
-    }
+    if (isParent(el)) return findElementByPath(el, rest);
     return undefined;
   }
-  for (const child of elements) {
+  for (const child of parent.children) {
     if (isParent(child)) {
-      const found = findElementByPath(child.children as T[], path);
+      const found = findElementByPath(child, path);
       if (found) return found;
     }
   }

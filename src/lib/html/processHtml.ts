@@ -67,12 +67,11 @@ function hydrate(node: {id: string, type: NodeType}, element: Element, saved?: S
 
 export function processHtml<T extends ScElementNode = ScElementNode>(ctx: WalkContext): T {
 
-    const node = ctx.scope[ctx.offset];
+    const node = ctx.scope[ctx.offset] as T;
     const saved = ctx.saved[ctx.offset];
     const element = ctx.elements[ctx.offset];
 
     node.runtime = dispatchRuntime(ctx);
-    ctx.nodesMap.set(node.id, node);
 
     if (isParent(node)) {
         const elements = Array.from(visit(element));
@@ -89,5 +88,6 @@ export function processHtml<T extends ScElementNode = ScElementNode>(ctx: WalkCo
         }
     }
 
-    return node as T;
+    ctx.nodesMap.set(node.id, node);
+    return node;
 }

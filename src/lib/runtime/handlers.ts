@@ -120,14 +120,11 @@ function processControlRuntime(ctx: RuntimeContext): InputRuntime {
 function processRunRuntime(ctx: RuntimeContext): InputRuntime {
     const n = ctx.scope[ctx.offset] as ScRunNode;
     let target: ScElementNode | undefined;
-    if (n.bind) {
-        const nodes = ctx.scope.filter(e => isSynth(e) || isGroup(e));
-        target = findElementByPath(nodes, n.bind.split('.'));
-        if (!target || (!isSynth(target) && !isGroup(target))) {
-            throw new Error(`<sc-run>: bind "${n.bind}" does not match any <sc-synth> or <sc-group> in scope`);
-        }
-    } else if (ctx.parentNode && isNode(ctx.parentNode)) {
-        target = ctx.parentNode;
+    if (ctx.parentNode) {
+        target = findElementByPath(ctx.parentNode, n.bind ? n.bind.split('.') : []) as ScElementNode | undefined;
+    }
+    if (n.bind && (!target || !isNode(target))) {
+        throw new Error(`<sc-run>: bind "${n.bind}" does not match any <sc-synth> or <sc-group> in scope`);
     }
     const targetId = target ? target.id : '';
     const targetName = target && 'name' in target ? (target as {name: string}).name : '';
@@ -147,14 +144,8 @@ function processVisualRuntime(ctx: RuntimeContext): InputRuntime {
 
 function resolveControlBind(n: {bind: string; type: string}, ctx: RuntimeContext): {target: ScElementNode; controlName: string; defaultValue: number} {
     const segments = n.bind.split('.');
-    const controlName = segments[segments.length - 1];
-    let target: ScElementNode | undefined;
-    if (segments.length > 1) {
-        const nodes = ctx.scope.filter(e => isSynth(e) || isGroup(e));
-        target = findElementByPath(nodes, segments.slice(0, -1));
-    } else if (ctx.parentNode && isNode(ctx.parentNode)) {
-        target = ctx.parentNode;
-    }
+    const controlName = segments.pop()!;
+    const target = (ctx.parentNode ? findElementByPath(ctx.parentNode, segments) : undefined) as ScElementNode | undefined;
     if (!target || (!isSynth(target) && !isGroup(target))) {
         throw new Error(`<${n.type} bind="${n.bind}">: does not match any <sc-synth> or <sc-group> in scope`);
     }
