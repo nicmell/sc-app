@@ -39,6 +39,10 @@ export function isVisual<T extends ScElementNodeBase>(el: T): el is Extract<T, {
   return el.type === 'sc-display' || el.type === 'sc-if';
 }
 
+export function isUgen<T extends ScElementNodeBase>(el: T): el is Extract<T, { type: 'sc-ugen' }> {
+  return el.type === 'sc-ugen';
+}
+
 export function isRun<T extends ScElementNodeBase>(el: T): el is Extract<T, { type: 'sc-run' }> {
   return el.type === 'sc-run';
 }

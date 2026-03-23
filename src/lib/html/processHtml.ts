@@ -4,7 +4,7 @@ import {deepEqual} from "@/lib/utils/deepEqual";
 import type {ScElementNode, ScElementNodeBase, ScParentNode, ScSynthDefNode, NodeType, RuntimeValueEntry} from "@/types/parsers";
 import {isNodeType, isParent} from "@/lib/utils/guards";
 import {type HtmlProps, extractProps} from "./handlers";
-import {dispatchRuntime, type RuntimeContext} from "@/lib/runtime/handlers";
+import {handlers, type RuntimeContext} from "@/lib/runtime/handlers";
 
 const EXCLUDE_KEYS = new Set(['id', 'type', 'runtime', 'children']);
 
@@ -26,13 +26,13 @@ function propsMatch(fresh: HtmlProps<ScElementNodeBase>, saved: ScElementNodeBas
 }
 
 
-function* visit(el: Element): Generator<Element> {
+function* walkDom(el: Element): Generator<Element> {
     for (const child of Array.from(el.children)) {
         const tag = child.tagName.toLowerCase();
         if (isNodeType(tag)) {
             yield child;
         } else {
-            yield* visit(child);
+            yield* walkDom(child);
         }
     }
 }
@@ -77,13 +77,13 @@ export function processHtml<T extends ScElementNode>(args: ProcessHtmlArgs): T {
         synthdefs: args.synthdefs,
         entries: args.entries,
         persistedEntries: args.persistedEntries,
-        walk: () => [],
+        visit: () => {},
     });
 }
 
 export function processElement<T extends ScElementNode = ScElementNode>(ctx: RuntimeContext<T>): T {
 
-    const elements = Array.from(visit(ctx.element));
+    const elements = Array.from(walkDom(ctx.element));
     const s = ctx.saved && isParent(ctx.saved) ? ctx.saved.children : [];
 
     const scope = elements
@@ -92,12 +92,20 @@ export function processElement<T extends ScElementNode = ScElementNode>(ctx: Run
             return hydrate({id: randomId(), type}, elements[i], s[i]) as ScElementNode
         });
 
-    dispatchRuntime({
-        ...ctx,
-        walk: () => scope.map((_, i) =>
-            processElement({...ctx, scope, node: scope[i], element: elements[i], saved: s[i], parentNode: ctx.node as ScParentNode})
-        )
-    });
+    const visit = () => {
+        const handler = handlers[ctx.node.type];
+        if (!handler) throw new Error(`Unknown element type: ${ctx.node.type}`);
+        ctx.node.runtime = handler({...ctx, visit}).runtime;
 
+        const parent = ctx.node as ScParentNode;
+        for (let i = 0; i < scope.length; i++) {
+            parent.children.push(
+                processElement({...ctx, scope, node: scope[i], element: elements[i], saved: s[i], parentNode: parent})
+            );
+        }
+    };
+
+    visit();
+    ctx.nodesMap.set(ctx.node.id, ctx.node);
     return ctx.node;
 }
