@@ -2,7 +2,7 @@ import {ELEMENTS} from "@/constants/sc-elements";
 import {randomId} from "@/lib/utils/randomId";
 import {deepEqual} from "@/lib/utils/deepEqual";
 import type {ScElementNode, ScElementNodeBase, ScParentNode, NodeType, RuntimeValueEntry} from "@/types/parsers";
-import {isNodeType, isParent} from "@/lib/utils/guards";
+import {isNodeType, isParent, isNode} from "@/lib/utils/guards";
 import {type HtmlProps, extractProps} from "./handlers";
 import {dispatchRuntime} from "@/lib/runtime/handlers";
 
@@ -14,11 +14,15 @@ function tagToType(tag: string): NodeType {
 }
 
 function propsMatch(fresh: HtmlProps<ScElementNodeBase>, saved: ScElementNodeBase): boolean {
+    const freshProps: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(fresh)) {
+        if (!EXCLUDE_KEYS.has(key)) freshProps[key] = val;
+    }
     const savedProps: Record<string, unknown> = {};
     for (const [key, val] of Object.entries(saved)) {
         if (!EXCLUDE_KEYS.has(key)) savedProps[key] = val;
     }
-    return deepEqual(fresh, savedProps);
+    return deepEqual(freshProps, savedProps);
 }
 
 
@@ -57,59 +61,46 @@ function hydrateNode(node: {id: string, type: NodeType}, element: Element, saved
     return hydrated;
 }
 
-function processElement(ctx: WalkContext): ScElementNode {
-    const node = ctx.scope[ctx.offset];
-
-    node.runtime = dispatchRuntime(ctx);
-
-    for (const childCtx of walk(ctx)) {
-        const child = processElement(childCtx);
-        if (isParent(node)) {
-            node.children.push(child);
+function *visit(el: Element): Generator<Element> {
+    for (const child of Array.from(el.children)) {
+        const tag = child.tagName.toLowerCase();
+        if (isNodeType(tag)) {
+            yield child;
+        } else {
+            yield* visit(child);
         }
     }
-    ctx.nodesMap.set(node.id, node);
-    return node;
-}
-
-function walk(ctx: WalkContext): WalkContext[] {
-    const element = ctx.elements[ctx.offset];
-    const currentSaved = ctx.saved[ctx.offset];
-    const savedChildren = currentSaved && isParent(currentSaved) ? currentSaved.children : [];
-    const parentNode = ctx.scope[ctx.offset] as ScParentNode;
-
-    const scope: ScElementNode[] = [];
-    const elements: Element[] = [];
-    const saved: ScElementNodeBase[] = [];
-    const result: WalkContext[] = [];
-
-    let savedOffset = 0;
-    function visit(el: Element): void {
-        for (const child of Array.from(el.children)) {
-            const tag = child.tagName.toLowerCase();
-            if (isNodeType(tag)) {
-                const s = savedChildren[savedOffset];
-                const node = hydrateNode({id: randomId(), type: tagToType(tag)}, child, s);
-                scope.push(node as unknown as ScElementNode);
-                elements.push(child);
-                saved.push(s);
-                result.push({...ctx, scope, elements, saved, offset: savedOffset, parentNode});
-                savedOffset++;
-            } else {
-                visit(child);
-            }
-        }
-    }
-    visit(element);
-
-    return result;
 }
 
 export function processHtml<T extends ScElementNode = ScElementNode>(ctx: WalkContext): T {
-    hydrateNode(
-        ctx.scope[ctx.offset] as unknown as {id: string, type: NodeType},
-        ctx.elements[ctx.offset],
-        ctx.saved[ctx.offset],
-    );
-    return processElement(ctx) as T;
+
+    const node = ctx.scope[ctx.offset];
+    const saved = ctx.saved[ctx.offset];
+    const element = ctx.elements[ctx.offset];
+
+    // Initialize minimal runtime so children can write into parent's controls/run
+    if (isNode(node)) {
+        (node as any).runtime = {run: '', controls: {}};
+    }
+
+    if (isParent(node)) {
+        const elements = Array.from(visit(element));
+        const savedChildren = saved && isParent(saved) ? saved.children : [];
+
+        const scope = elements
+            .map((el, i) => {
+                const type = tagToType(el.tagName.toLowerCase());
+                return hydrateNode({id: randomId(), type}, elements[i], savedChildren[i]) as ScElementNode
+            });
+
+        for (let i = 0; i < scope.length; i++) {
+            node.children.push(processHtml({...ctx, scope, elements, saved: savedChildren, parentNode: node, offset: i}));
+        }
+    }
+
+    // Full dispatch after children — synthdef can now read ugen children, group/synth preserves children's writes
+    node.runtime = dispatchRuntime(ctx);
+    ctx.nodesMap.set(node.id, node);
+
+    return node as T;
 }

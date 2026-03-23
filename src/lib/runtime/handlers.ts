@@ -93,6 +93,7 @@ function processSynthDefRuntime(ctx: RuntimeContext): UgenRuntime {
         const specsMap = new Map(ugenChildren.map(c => {
             return [c.name, {name: c.name, type: c.ugen, rate: c.rate, inputs: c.controls}];
         }));
+        console.log("compile")
         synthDefManager.compile(ctx.rootId, n.id, n.name, n.controls, specsMap);
     }
     return {} as UgenRuntime;
@@ -132,7 +133,8 @@ function processRunRuntime(ctx: RuntimeContext): InputRuntime {
     const n = ctx.scope[ctx.offset] as ScRunNode;
     let target: ScElementNode | undefined;
     if (n.bind) {
-        target = findElementByPath(ctx.scope, n.bind.split('.'));
+        const nodes = ctx.scope.filter(e => isSynth(e) || isGroup(e));
+        target = findElementByPath(nodes, n.bind.split('.'));
         if (!target || (!isSynth(target) && !isGroup(target))) {
             throw new Error(`<sc-run>: bind "${n.bind}" does not match any <sc-synth> or <sc-group> in scope`);
         }
@@ -160,7 +162,8 @@ function resolveControlBind(n: {bind: string; type: string}, ctx: RuntimeContext
     const controlName = segments[segments.length - 1];
     let target: ScElementNode | undefined;
     if (segments.length > 1) {
-        target = findElementByPath(ctx.scope, segments.slice(0, -1));
+        const nodes = ctx.scope.filter(e => isSynth(e) || isGroup(e));
+        target = findElementByPath(nodes, segments.slice(0, -1));
     } else if (ctx.parentNode && isNode(ctx.parentNode)) {
         target = ctx.parentNode;
     }
