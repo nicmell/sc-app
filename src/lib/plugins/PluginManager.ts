@@ -42,7 +42,7 @@ export class PluginManager {
             throw new Error(error.textContent ?? "Invalid XHTML")
         }
 
-        const entries = new Map<string, RuntimeValueEntry>();
+        const entries: Record<string, RuntimeValueEntry> = {};
         const synthdefs: ScSynthDefNode[] = [];
         const nodesMap = new Map<string, ScElementNode>();
 
@@ -68,15 +68,10 @@ export class PluginManager {
             }
         }
 
-        const entriesRecord: Record<string, RuntimeValueEntry> = {};
-        for (const [id, entry] of entries) {
-            entriesRecord[id] = entry;
-        }
-
         return {
             title: doc.title,
             tree: root.children,
-            entries: entriesRecord,
+            entries,
             runtime: root.runtime,
             html: doc.documentElement.innerHTML,
         };

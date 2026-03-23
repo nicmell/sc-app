@@ -12,7 +12,7 @@ export type RuntimeHandler<T extends ScElementNode> =
 
 export interface RuntimeContext<T extends ScElementNode = ScElementNode> {
     rootId: string;
-    entries: Map<string, RuntimeValueEntry>;
+    entries: Record<string, RuntimeValueEntry>;
     persistedEntries: Record<string, RuntimeValueEntry>;
     nodesMap: Map<string, ScElementNode>;
     synthdefs: ScSynthDefNode[];
@@ -34,7 +34,7 @@ function findOrCreateEntry(
     defaultValue: number,
 ): string {
     // 1. Check ctx.entries for existing entry created this parse session
-    for (const [id, entry] of ctx.entries) {
+    for (const [id, entry] of Object.entries(ctx.entries)) {
         if (entry.type === type && entry.targetNode === targetNode && entry.name === name) {
             return id;
         }
@@ -43,14 +43,14 @@ function findOrCreateEntry(
     // 2. Check persisted entries
     for (const [id, entry] of Object.entries(ctx.persistedEntries)) {
         if (entry.type === type && entry.targetNode === targetNode && entry.name === name) {
-            ctx.entries.set(id, entry);
+            ctx.entries[id] = entry;
             return id;
         }
     }
 
     // 3. Create new entry
     const id = crypto.randomUUID();
-    ctx.entries.set(id, {type, rootId: ctx.rootId, targetNode, name, value: defaultValue});
+    ctx.entries[id] = {type, rootId: ctx.rootId, targetNode, name, value: defaultValue};
     return id;
 }
 

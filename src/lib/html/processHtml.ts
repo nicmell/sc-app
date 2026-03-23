@@ -57,7 +57,7 @@ export interface ProcessHtmlArgs {
     node: { id: string; type: NodeType };
     element: Element;
     saved?: ScElementNodeBase;
-    entries: Map<string, RuntimeValueEntry>;
+    entries: Record<string, RuntimeValueEntry>;
     synthdefs: ScSynthDefNode[];
     nodesMap: Map<string, ScElementNode>;
     persistedEntries: Record<string, RuntimeValueEntry>;
