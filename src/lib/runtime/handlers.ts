@@ -49,8 +49,8 @@ function findOrCreateEntry(
 function processPluginRuntime(ctx: RuntimeContext): PluginRuntime {
     const n = ctx.scope[ctx.offset] as ScPluginNode;
     return {
-        run: n.runtime?.run || findOrCreateEntry(ctx, "run", n.id, n.id, 1),
-        controls: {...n.runtime?.controls},
+        run: findOrCreateEntry(ctx, "run", n.id, n.id, 1),
+        controls: {},
         loaded: false,
     };
 }
@@ -58,8 +58,8 @@ function processPluginRuntime(ctx: RuntimeContext): PluginRuntime {
 function processGroupRuntime(ctx: RuntimeContext): NodeRuntime {
     const n = ctx.scope[ctx.offset] as ScGroupNode;
     return {
-        run: n.runtime?.run || findOrCreateEntry(ctx, "run", n.id, n.name, n.running ? 1 : 0),
-        controls: {...n.runtime?.controls},
+        run: findOrCreateEntry(ctx, "run", n.id, n.name, n.running ? 1 : 0),
+        controls: {},
     };
 }
 
@@ -74,14 +74,12 @@ function processSynthRuntime(ctx: RuntimeContext): NodeRuntime {
             throw new Error(`<sc-synth bind="${n.bind}">: does not match any <sc-synthdef>`);
         }
     }
-    const controls: Record<string, string> = {...n.runtime?.controls};
+    const controls: Record<string, string> = {};
     for (const [name, value] of Object.entries(n.controls)) {
-        if (!controls[name]) {
-            controls[name] = findOrCreateEntry(ctx, "control", n.id, name, value);
-        }
+        controls[name] = findOrCreateEntry(ctx, "control", n.id, name, value);
     }
     return {
-        run: n.runtime?.run || findOrCreateEntry(ctx, "run", n.id, n.name, n.running ? 1 : 0),
+        run: findOrCreateEntry(ctx, "run", n.id, n.name, n.running ? 1 : 0),
         controls,
     };
 }
