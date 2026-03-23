@@ -39,29 +39,6 @@ export interface WalkContext {
     parentNode?: ScParentNode;
 }
 
-function hydrate<T extends ScElementNode>(
-    node: {id: string, type: T["type"]},
-    props: HtmlProps<T>,
-    saved?: ScElementNodeBase
-) {
-    const matched = saved?.type === node.type ? saved : undefined;
-    if (saved && !matched) {
-        console.warn(`[plugin hydration] type mismatch: ${node.type} vs saved ${saved.type}`);
-    }
-    if (matched && propsMatch(props, matched)) {
-        node.id = matched.id;
-    } else if (matched) {
-        console.warn(`[plugin hydration] props mismatch for ${node.type}`);
-    }
-    return Object.assign(node, props);
-}
-
-function hydrateNode(node: {id: string, type: NodeType}, element: Element, saved?: ScElementNodeBase) {
-    const hydrated = hydrate(node, extractProps(node.type, element), saved);
-    element.setAttribute('id', hydrated.id);
-    return hydrated;
-}
-
 function *visit(el: Element): Generator<Element> {
     for (const child of Array.from(el.children)) {
         const tag = child.tagName.toLowerCase();
@@ -71,6 +48,21 @@ function *visit(el: Element): Generator<Element> {
             yield* visit(child);
         }
     }
+}
+
+function hydrate(node: {id: string, type: NodeType}, element: Element, saved?: ScElementNodeBase) {
+    const props = extractProps(node.type, element);
+    const matched = saved?.type === node.type ? saved : undefined;
+    if (saved && !matched) {
+        console.warn(`[plugin hydration] type mismatch: ${node.type} vs saved ${saved.type}`);
+    }
+    if (matched && propsMatch(props, matched)) {
+        node.id = matched.id;
+    } else if (matched) {
+        console.warn(`[plugin hydration] props mismatch for ${node.type}`);
+    }
+    element.setAttribute('id', node.id);
+    return Object.assign(node, props);
 }
 
 export function processHtml<T extends ScElementNode = ScElementNode>(ctx: WalkContext): T {
@@ -84,16 +76,16 @@ export function processHtml<T extends ScElementNode = ScElementNode>(ctx: WalkCo
 
     if (isParent(node)) {
         const elements = Array.from(visit(element));
-        const savedChildren = saved && isParent(saved) ? saved.children : [];
+        const s = saved && isParent(saved) ? saved.children : [];
 
         const scope = elements
             .map((el, i) => {
                 const type = tagToType(el.tagName.toLowerCase());
-                return hydrateNode({id: randomId(), type}, elements[i], savedChildren[i]) as ScElementNode
+                return hydrate({id: randomId(), type}, elements[i], s[i]) as ScElementNode
             });
 
         for (let i = 0; i < scope.length; i++) {
-            node.children.push(processHtml({...ctx, scope, elements, saved: savedChildren, parentNode: node, offset: i}));
+            node.children.push(processHtml({...ctx, scope, elements, saved: s, parentNode: node, offset: i}));
         }
     }
 
