@@ -66,10 +66,8 @@ function processGroupRuntime(ctx: RuntimeContext): NodeRuntime {
 function processSynthRuntime(ctx: RuntimeContext): NodeRuntime {
     const n = ctx.scope[ctx.offset] as ScSynthNode;
     if (n.bind) {
-        let found = false;
-        for (const node of ctx.nodesMap.values()) {
-            if (isSynthDef(node) && node.name === n.bind) { found = true; break; }
-        }
+        const found = ctx.scope.some(e => isSynthDef(e) && e.name === n.bind)
+            || Array.from(ctx.nodesMap.values()).some(e => isSynthDef(e) && e.name === n.bind);
         if (!found) {
             throw new Error(`<sc-synth bind="${n.bind}">: does not match any <sc-synthdef>`);
         }
@@ -114,7 +112,7 @@ function processControlRuntime(ctx: RuntimeContext): InputRuntime {
     const n = ctx.scope[ctx.offset] as ScRangeNode | ScCheckboxNode;
     const {target, controlName, defaultValue} = resolveControlBind(n, ctx);
     const entryId = findOrCreateEntry(ctx, "control", target.id, controlName, defaultValue);
-    if (isNode(target)) {
+    if (isNode(target) && target.runtime) {
         target.runtime.controls[controlName] = entryId;
     }
     return {value: entryId};
@@ -135,7 +133,7 @@ function processRunRuntime(ctx: RuntimeContext): InputRuntime {
     const targetId = target ? target.id : '';
     const targetName = target && 'name' in target ? (target as {name: string}).name : '';
     const entryId = findOrCreateEntry(ctx, "run", targetId, targetName, 1);
-    if (target && isNode(target)) {
+    if (target && isNode(target) && target.runtime) {
         target.runtime.run = entryId;
     }
     return {value: entryId};
