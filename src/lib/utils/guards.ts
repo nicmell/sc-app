@@ -1,4 +1,4 @@
-import type {NodeType, ScElementNodeBase} from "../../types/parsers";
+import type {NodeType, ScElementNodeBase, RuntimeValueEntry} from "../../types/parsers";
 import {ELEMENTS} from "../../constants/sc-elements";
 
 const NODE_TYPES: ReadonlySet<string> = new Set(Object.values(ELEMENTS));
@@ -45,4 +45,12 @@ export function isUgen<T extends ScElementNodeBase>(el: T): el is Extract<T, { t
 
 export function isRun<T extends ScElementNodeBase>(el: T): el is Extract<T, { type: 'sc-run' }> {
   return el.type === 'sc-run';
+}
+
+export function isControlEntry(entry: RuntimeValueEntry): entry is Extract<RuntimeValueEntry, { type: 'control' }> {
+  return entry.type === 'control';
+}
+
+export function isRunEntry(entry: RuntimeValueEntry): entry is Extract<RuntimeValueEntry, { type: 'run' }> {
+  return entry.type === 'run';
 }

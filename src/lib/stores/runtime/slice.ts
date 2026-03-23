@@ -1,7 +1,7 @@
 import type {RuntimeState} from "@/types/stores";
 import type {ScElementNode, PluginRuntime, RuntimeValueEntry} from "@/types/parsers";
 import {findElementById} from "@/lib/utils/elementTree";
-import {isParent} from "@/lib/utils/guards";
+import {isParent, isControlEntry, isRunEntry} from "@/lib/utils/guards";
 import {createSlice} from "@/lib/stores/utils";
 import {SliceName, RuntimeAction} from "@/constants/store";
 
@@ -76,11 +76,11 @@ export const runtimeSlice = createSlice({
     },
     [RuntimeAction.SET_CONTROL]: (state, action: { payload: { entryId: string; value: number } }) => {
       const entry = state.entries[action.payload.entryId];
-      if (entry && entry.type === 'control') {
+      if (entry && isControlEntry(entry)) {
         entry.value = action.payload.value;
         // Propagate to children if target is a parent node
         for (const [id, e] of collectEntries(state, entry.targetNode)) {
-          if (e.type === 'control' && e.name === entry.name && id !== action.payload.entryId) {
+          if (isControlEntry(e) && e.name === entry.name && id !== action.payload.entryId) {
             e.value = action.payload.value;
           }
         }
@@ -88,7 +88,7 @@ export const runtimeSlice = createSlice({
     },
     [RuntimeAction.SET_RUNNING]: (state, action: { payload: { entryId: string; value: number } }) => {
       const entry = state.entries[action.payload.entryId];
-      if (entry && entry.type === 'run') {
+      if (entry && isRunEntry(entry)) {
         entry.value = action.payload.value;
       }
     },

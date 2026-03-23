@@ -3,7 +3,7 @@ import {ContextProvider, ContextConsumer} from '@lit/context';
 import {oscService} from '@/lib/osc';
 import {nodeRunMessage, nodeSetMessage} from '@/lib/osc/messages.ts';
 import {runtimeApi} from '@/lib/stores/api';
-import {isSynth} from '@/lib/utils/guards';
+import {isSynth, isControlEntry, isRunEntry} from '@/lib/utils/guards';
 import {findElementById} from '@/lib/utils/elementTree';
 import {store} from '@/lib/stores/store';
 import {nodeContext, type NodeContext, type ScNode as IScNode, type ScElement} from '../context.ts';
@@ -36,7 +36,7 @@ export abstract class ScNode extends LitElement implements IScNode {
         const params: Record<string, number> = {};
         for (const [name, entryId] of Object.entries(el.runtime.controls)) {
             const entry = values[entryId];
-            if (entry && entry.type === 'control') {
+            if (entry && isControlEntry(entry)) {
                 params[name] = entry.value;
             }
         }
@@ -82,7 +82,7 @@ export abstract class ScNode extends LitElement implements IScNode {
         const values = runtimeApi.entries;
         const entry = values[entryId];
         if (!entry) return undefined;
-        if (entry.type === 'control' || entry.type === 'run') return entry.value;
+        if (isControlEntry(entry) || isRunEntry(entry)) return entry.value;
         return undefined;
     }
 

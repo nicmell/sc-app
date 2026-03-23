@@ -84,12 +84,12 @@ export function processHtml<T extends ScElementNode>(args: ProcessHtmlArgs): T {
 export function processElement<T extends ScElementNode = ScElementNode>(ctx: RuntimeContext<T>): T {
 
     const elements = Array.from(walkDom(ctx.element));
-    const s = ctx.saved && isParent(ctx.saved) ? ctx.saved.children : [];
+    const saved = ctx.saved && isParent(ctx.saved) ? ctx.saved.children : [];
 
     const scope = elements
         .map((el, i) => {
             const type = tagToType(el.tagName.toLowerCase());
-            return hydrate({id: randomId(), type}, elements[i], s[i]) as ScElementNode
+            return hydrate({id: randomId(), type}, elements[i], saved[i]) as ScElementNode
         });
 
     checkDuplicateNames(scope);
@@ -102,7 +102,7 @@ export function processElement<T extends ScElementNode = ScElementNode>(ctx: Run
         const parent = ctx.node as ScParentNode;
         for (let i = 0; i < scope.length; i++) {
             parent.children.push(
-                processElement({...ctx, scope, node: scope[i], element: elements[i], saved: s[i], parentNode: parent})
+                processElement({...ctx, scope, node: scope[i], element: elements[i], saved: saved[i], parentNode: parent})
             );
         }
     };
