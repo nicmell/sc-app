@@ -49,8 +49,8 @@ function findOrCreateEntry(
 function processPluginRuntime(ctx: RuntimeContext): PluginRuntime {
     const n = ctx.scope[ctx.offset] as ScPluginNode;
     return {
-        run: findOrCreateEntry(ctx, "run", n.id, n.id, 1),
-        controls: {},
+        run: n.runtime?.run || findOrCreateEntry(ctx, "run", n.id, n.id, 1),
+        controls: {...n.runtime?.controls},
         loaded: false,
     };
 }
@@ -93,7 +93,6 @@ function processSynthDefRuntime(ctx: RuntimeContext): UgenRuntime {
         const specsMap = new Map(ugenChildren.map(c => {
             return [c.name, {name: c.name, type: c.ugen, rate: c.rate, inputs: c.controls}];
         }));
-        console.log("compile")
         synthDefManager.compile(ctx.rootId, n.id, n.name, n.controls, specsMap);
     }
     return {} as UgenRuntime;
