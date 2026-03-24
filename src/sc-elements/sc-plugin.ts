@@ -2,6 +2,8 @@ import {html} from 'lit';
 import {pluginManager} from '@/lib/plugins/PluginManager';
 import {runtimeApi} from '@/lib/stores/api';
 import {synthDefManager} from '@/lib/synthdef';
+import {store} from '@/lib/stores/store';
+import {isPlugin} from '@/lib/utils/guards';
 import {ScGroup} from './sc-group.ts';
 
 export class ScPlugin extends ScGroup {
@@ -13,6 +15,7 @@ export class ScPlugin extends ScGroup {
 
   declare _loading: boolean;
   declare _error: string;
+  private _unsubscribePlugin?: () => void;
 
   constructor() {
     super();
@@ -22,27 +25,27 @@ export class ScPlugin extends ScGroup {
 
   protected async firstUpdated() {
     super.firstUpdated();
+
+    this._unsubscribePlugin = store.subscribe(() => {
+      const node = runtimeApi.getById(this.id);
+      if (!node || !isPlugin(node)) return;
+      const error = node.runtime.error ?? '';
+      if (error !== this._error) this._error = error;
+    });
+
     try {
-      const result = await pluginManager.loadPlugin(this.id);
-      this.innerHTML = result.html;
+      const html = await pluginManager.loadPlugin(this.id);
+      this.innerHTML = html;
       this._loading = false;
-      const plugin = result.nodes[this.id];
-      if (plugin && 'runtime' in plugin && 'loaded' in plugin.runtime) {
-        (plugin.runtime as {loaded: boolean}).loaded = true;
-      }
-      runtimeApi.loadPlugin({id: this.id, nodes: result.nodes, entries: result.entries});
     } catch (e) {
-      const error = e instanceof Error ? e.message : String(e);
       this._loading = false;
-      this._error = error;
-      runtimeApi.loadPlugin({id: this.id, nodes: {
-        [this.id]: {type: 'sc-plugin' as const, id: this.id, children: [], runtime: {rootId: this.id, run: '', controls: {}, loaded: false, error}},
-      }});
+      this._error = e instanceof Error ? e.message : String(e);
     }
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    this._unsubscribePlugin?.();
     synthDefManager.clearBox(this.id);
     runtimeApi.unloadPlugin(this.id);
   }

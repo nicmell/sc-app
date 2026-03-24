@@ -1,5 +1,5 @@
 import type {PluginInfo} from "@/types/stores";
-import type {ScElementNode, ScUgenNode, ScSynthDefNode, PluginTreeEntry, RuntimeValueEntry, ScPluginNode} from "@/types/parsers";
+import type {ScElementNode, ScUgenNode, ScSynthDefNode, RuntimeValueEntry, ScPluginNode} from "@/types/parsers";
 import {ELEMENTS} from "@/constants/sc-elements";
 import {layoutApi, pluginsApi, runtimeApi} from "@/lib/stores/api";
 import {get, post, del} from "@/lib/http";
@@ -27,7 +27,7 @@ export class PluginManager {
         pluginsApi.removePlugin(plugin.id);
     }
 
-    async loadPlugin(boxId: string): Promise<PluginTreeEntry> {
+    async loadPlugin(boxId: string): Promise<string> {
         const box = layoutApi.getById(boxId);
         if (!box?.plugin) {
             throw new Error(`No plugin assigned for ${boxId}`);
@@ -68,11 +68,8 @@ export class PluginManager {
             }
         }
 
-        return {
-            html: doc.documentElement.innerHTML,
-            nodes,
-            entries,
-        };
+        runtimeApi.loadPlugin({id: boxId, nodes, entries});
+        return doc.documentElement.innerHTML;
     }
 }
 

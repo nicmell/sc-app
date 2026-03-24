@@ -93,7 +93,17 @@ const pluginHandler = (ctx: RuntimeContext<ScPluginNode>): PluginRuntime => {
         loaded: false,
     };
     ctx.tree.runtime = runtime;
-    ctx.visit();
+    try {
+        ctx.visit();
+        runtime.loaded = true;
+    } catch (e) {
+        ctx.tree.children = [];
+        ctx.scope.length = 0;
+        for (const id of Object.keys(ctx.nodes)) {
+            if (id !== ctx.tree.id) delete ctx.nodes[id];
+        }
+        runtime.error = e instanceof Error ? e.message : String(e);
+    }
     return runtime;
 };
 
