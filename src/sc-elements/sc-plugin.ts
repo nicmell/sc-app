@@ -26,12 +26,18 @@ export class ScPlugin extends ScGroup {
       const result = await pluginManager.loadPlugin(this.id);
       this.innerHTML = result.html;
       this._loading = false;
-      runtimeApi.loadPlugin({id: this.id, elements: result.tree, entries: result.entries, runtime: {...result.runtime, loaded: true, title: result.title}});
+      const plugin = result.nodes[this.id];
+      if (plugin && 'runtime' in plugin && 'loaded' in plugin.runtime) {
+        (plugin.runtime as {loaded: boolean}).loaded = true;
+      }
+      runtimeApi.loadPlugin({id: this.id, nodes: result.nodes, entries: result.entries});
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);
       this._loading = false;
       this._error = error;
-      runtimeApi.loadPlugin({id: this.id, runtime: {run: '', controls: {}, loaded: false, error}});
+      runtimeApi.loadPlugin({id: this.id, nodes: {
+        [this.id]: {type: 'sc-plugin' as const, id: this.id, children: [], runtime: {rootId: this.id, run: '', controls: {}, loaded: false, error}},
+      }});
     }
   }
 

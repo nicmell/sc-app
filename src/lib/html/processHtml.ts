@@ -54,26 +54,26 @@ function hydrate(node: { id: string, type: NodeType }, element: Element, saved?:
 
 export interface ProcessHtmlArgs {
     rootId: string;
-    node: { id: string; type: NodeType };
+    tree: { id: string; type: NodeType };
     element: Element;
     saved?: ScElementNodeBase;
     entries: Record<string, RuntimeValueEntry>;
     synthdefs: ScSynthDefNode[];
-    nodesMap: Record<string, ScElementNode>;
+    nodes: Record<string, ScElementNode>;
     persistedEntries: Record<string, RuntimeValueEntry>;
 }
 
 export function processHtml<T extends ScElementNode>(args: ProcessHtmlArgs): T {
 
-    const node = hydrate(args.node, args.element, args.saved) as unknown as T;
+    const node = hydrate(args.tree, args.element, args.saved) as unknown as T;
 
     return processElement({
         rootId: args.rootId,
         scope: [node],
-        node,
+        tree: node,
         element: args.element,
         saved: args.saved,
-        nodesMap: args.nodesMap,
+        nodes: args.nodes,
         synthdefs: args.synthdefs,
         entries: args.entries,
         persistedEntries: args.persistedEntries,
@@ -95,19 +95,19 @@ export function processElement<T extends ScElementNode = ScElementNode>(ctx: Run
     checkDuplicateNames(scope);
 
     const visit = () => {
-        const handler = handlers[ctx.node.type];
-        if (!handler) throw new Error(`Unknown element type: ${ctx.node.type}`);
-        ctx.node.runtime = handler({...ctx, visit}).runtime;
+        const handler = handlers[ctx.tree.type];
+        if (!handler) throw new Error(`Unknown element type: ${ctx.tree.type}`);
+        ctx.tree.runtime = handler({...ctx, visit}).runtime;
 
-        const parent = ctx.node as ScParentNode;
+        const parent = ctx.tree as ScParentNode;
         for (let i = 0; i < scope.length; i++) {
             parent.children.push(
-                processElement({...ctx, scope, node: scope[i], element: elements[i], saved: saved[i], parentNode: parent})
+                processElement({...ctx, scope, tree: scope[i], element: elements[i], saved: saved[i], parentNode: parent})
             );
         }
     };
 
     visit();
-    ctx.nodesMap[ctx.node.id] = ctx.node;
-    return ctx.node;
+    ctx.nodes[ctx.tree.id] = ctx.tree;
+    return ctx.tree;
 }

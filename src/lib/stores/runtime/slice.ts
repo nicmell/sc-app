@@ -1,6 +1,5 @@
 import type {RuntimeState} from "@/types/stores";
-import type {ScElementNode, PluginRuntime, RuntimeValueEntry} from "@/types/parsers";
-import {findElementById} from "@/lib/utils/elementTree";
+import type {ScElementNode, RuntimeValueEntry} from "@/types/parsers";
 import {isParent, isControlEntry, isRunEntry} from "@/lib/utils/guards";
 import {createSlice} from "@/lib/stores/utils";
 import {SliceName, RuntimeAction} from "@/constants/store";
@@ -10,7 +9,7 @@ function collectEntries(
     nodeId: string,
 ): Map<string, RuntimeValueEntry> {
     const result = new Map<string, RuntimeValueEntry>();
-    const target = findElementById(state.tree, nodeId);
+    const target = state.tree[nodeId];
     if (!target) return result;
 
     function addEntry(id: string) {
@@ -39,22 +38,8 @@ function collectEntries(
     return result;
 }
 
-function cleanupEntries(state: RuntimeState) {
-    const referenced = new Set<string>();
-    for (const plugin of state.tree) {
-        for (const id of collectEntries(state, plugin.id).keys()) {
-            referenced.add(id);
-        }
-    }
-    for (const id of Object.keys(state.entries)) {
-        if (!referenced.has(id)) {
-            delete state.entries[id];
-        }
-    }
-}
-
 const initialState: RuntimeState = {
-  tree: [],
+  tree: {},
   entries: {},
 };
 
@@ -62,17 +47,24 @@ export const runtimeSlice = createSlice({
   name: SliceName.RUNTIME,
   initialState,
   reducers: {
-    [RuntimeAction.LOAD_PLUGIN]: (state, action: { payload: { id: string; elements?: ScElementNode[]; entries?: Record<string, RuntimeValueEntry>; runtime: PluginRuntime } }) => {
-      state.tree = state.tree.filter(item => item.id !== action.payload.id);
-      state.tree.push({type: 'sc-plugin', id: action.payload.id, children: action.payload.elements ?? [], runtime: action.payload.runtime});
+    [RuntimeAction.LOAD_PLUGIN]: (state, action: { payload: { id: string; nodes: Record<string, ScElementNode>; entries?: Record<string, RuntimeValueEntry> } }) => {
+      Object.assign(state.tree, action.payload.nodes);
       if (action.payload.entries) {
         Object.assign(state.entries, action.payload.entries);
       }
-      cleanupEntries(state);
     },
     [RuntimeAction.UNLOAD_PLUGIN]: (state, action: { payload: string }) => {
-      state.tree = state.tree.filter(item => item.id !== action.payload);
-      cleanupEntries(state);
+      for (const [id, node] of Object.entries(state.tree)) {
+        if (node.runtime.rootId === action.payload) {
+          delete state.tree[id];
+        }
+      }
+      // Clean up entries for this rootId
+      for (const [id, entry] of Object.entries(state.entries)) {
+        if (entry.rootId === action.payload) {
+          delete state.entries[id];
+        }
+      }
     },
     [RuntimeAction.SET_CONTROL]: (state, action: { payload: { entryId: string; value: number } }) => {
       const entry = state.entries[action.payload.entryId];

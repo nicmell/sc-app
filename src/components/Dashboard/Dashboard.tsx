@@ -85,8 +85,8 @@ export function Dashboard() {
 
     const renderDashboardPanel = (item: BoxItem) => {
         const plugin = item.plugin ? pluginsApi.getById(item.plugin) : undefined;
-        const rt = runtimeTree.find(r => r.id === item.i);
-        const runEntryId = rt?.runtime.loaded ? rt.runtime.run : undefined;
+        const rt = runtimeTree[item.i];
+        const runEntryId = rt && 'loaded' in rt.runtime && rt.runtime.loaded ? rt.runtime.run : undefined;
         const isRunning = runEntryId ? runtimeEntries[runEntryId]?.value === 1 : undefined;
 
         const handleToggleRun = runEntryId ? () => {
@@ -99,7 +99,7 @@ export function Dashboard() {
         return (
             <DashboardPanel
                 key={item.i}
-                title={rt?.runtime.loaded ? rt.runtime.title : undefined}
+                title={rt && 'title' in rt ? rt.title as string : undefined}
                 running={isRunning}
                 onClose={() => layoutApi.removeBox(item.i)}
                 onEdit={() => setModalOpen(item)}

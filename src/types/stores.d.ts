@@ -5,7 +5,7 @@ import type {layoutSlice} from "@/lib/stores/layout/slice";
 import type {themeSlice} from "@/lib/stores/theme/slice";
 import type {pluginsSlice} from "@/lib/stores/plugins/slice";
 import type {runtimeSlice} from "@/lib/stores/runtime/slice";
-import type {ScPluginNode, RuntimeValueEntry} from "@/types/parsers";
+import type {ScPluginNode, ScElementNode, RuntimeValueEntry} from "@/types/parsers";
 
 export interface BoxItem {
   i: string;
@@ -94,7 +94,7 @@ export interface PluginsState {
 }
 
 export interface RuntimeState {
-  tree: ScPluginNode[];
+  tree: Record<string, ScElementNode>;
   entries: Record<string, RuntimeValueEntry>;
 }
 

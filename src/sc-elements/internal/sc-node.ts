@@ -4,7 +4,6 @@ import {oscService} from '@/lib/osc';
 import {nodeRunMessage, nodeSetMessage} from '@/lib/osc/messages.ts';
 import {runtimeApi} from '@/lib/stores/api';
 import {isSynth, isControlEntry, isRunEntry} from '@/lib/utils/guards';
-import {findElementById} from '@/lib/utils/elementTree';
 import {store} from '@/lib/stores/store';
 import {nodeContext, type NodeContext, type ScNode as IScNode, type ScElement} from '../context.ts';
 
@@ -28,9 +27,7 @@ export abstract class ScNode extends LitElement implements IScNode {
     }
 
     getParams(): Record<string, number> {
-        const plugin = runtimeApi.getById(this.boxId());
-        if (!plugin) return {};
-        const el = findElementById(plugin.children, this.id);
+        const el = runtimeApi.getById(this.id);
         if (!el || !isSynth(el)) return {};
         const values = runtimeApi.entries;
         const params: Record<string, number> = {};

@@ -1,5 +1,4 @@
 import {runtimeApi} from '@/lib/stores/api';
-import {findElementById} from '@/lib/utils/elementTree';
 import type {ContextConsumer} from '@lit/context';
 import type {NodeContext} from './context.ts';
 
@@ -10,9 +9,7 @@ export function resolveEntryId(
 ): string | undefined {
     const boxId = nodeCtx.value?.boxId();
     if (!boxId) return undefined;
-    const plugin = runtimeApi.getById(boxId);
-    if (!plugin) return undefined;
-    const el = findElementById(plugin.children, elementId);
+    const el = runtimeApi.getById(elementId);
     if (!el || el.type !== type) return undefined;
     return 'value' in el.runtime ? el.runtime.value : undefined;
 }

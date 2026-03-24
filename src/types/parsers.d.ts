@@ -10,6 +10,7 @@ export type RuntimeValueEntry =
   | { type: "run"; rootId: string; targetNode: string; name: string; value: number };
 
 export interface NodeRuntime {
+  rootId: string;
   run: string;
   controls: Record<string, string>;
 }
@@ -33,7 +34,7 @@ export interface ScSynthNode {
   runtime: NodeRuntime;
 }
 
-export type UgenRuntime = Record<string, never>;
+export type UgenRuntime = { rootId: string };
 
 export interface ScUgenNode {
   type: 'sc-ugen';
@@ -55,6 +56,7 @@ export interface ScSynthDefNode {
 }
 
 export interface InputRuntime {
+  rootId: string;
   value: string;
 }
 
@@ -98,12 +100,12 @@ export interface ScIfNode {
 export interface PluginRuntime extends NodeRuntime {
   loaded: boolean;
   error?: string;
-  title?: string;
 }
 
 export interface ScPluginNode {
   type: 'sc-plugin';
   id: string;
+  title?: string;
   children: ScElementNode[];
   runtime: PluginRuntime;
 }
@@ -126,9 +128,7 @@ export interface ProcessHtmlResult {
 }
 
 export interface PluginTreeEntry {
-  title: string;
   html: string;
-  tree: ScElementNode[];
+  nodes: Record<string, ScElementNode>;
   entries: Record<string, RuntimeValueEntry>;
-  runtime: PluginRuntime;
 }

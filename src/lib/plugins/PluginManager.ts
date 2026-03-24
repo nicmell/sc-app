@@ -44,16 +44,16 @@ export class PluginManager {
 
         const entries: Record<string, RuntimeValueEntry> = {};
         const synthdefs: ScSynthDefNode[] = [];
-        const nodesMap: Record<string, ScElementNode> = {};
+        const nodes: Record<string, ScElementNode> = {};
 
-        const root = processHtml<ScPluginNode>({
+        processHtml<ScPluginNode>({
             rootId: boxId,
-            node: {id: boxId, type: ELEMENTS.SC_PLUGIN},
+            tree: {id: boxId, type: ELEMENTS.SC_PLUGIN},
             element: doc.documentElement,
             saved: runtimeApi.getById(boxId) ?? undefined,
             entries,
             synthdefs,
-            nodesMap,
+            nodes,
             persistedEntries: runtimeApi.entries,
         });
 
@@ -69,11 +69,9 @@ export class PluginManager {
         }
 
         return {
-            title: doc.title,
-            tree: root.children,
-            entries,
-            runtime: root.runtime,
             html: doc.documentElement.innerHTML,
+            nodes,
+            entries,
         };
     }
 }
