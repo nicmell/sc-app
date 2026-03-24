@@ -9,7 +9,7 @@ function collectEntries(
     nodeId: string,
 ): Map<string, RuntimeValueEntry> {
     const result = new Map<string, RuntimeValueEntry>();
-    const target = state.tree[nodeId];
+    const target = state.nodes[nodeId];
     if (!target) return result;
 
     function addEntry(id: string) {
@@ -39,7 +39,7 @@ function collectEntries(
 }
 
 const initialState: RuntimeState = {
-  tree: {},
+  nodes: {},
   entries: {},
 };
 
@@ -48,15 +48,15 @@ export const runtimeSlice = createSlice({
   initialState,
   reducers: {
     [RuntimeAction.LOAD_PLUGIN]: (state, action: { payload: { id: string; nodes: Record<string, ScElementNode>; entries?: Record<string, RuntimeValueEntry> } }) => {
-      Object.assign(state.tree, action.payload.nodes);
+      Object.assign(state.nodes, action.payload.nodes);
       if (action.payload.entries) {
         Object.assign(state.entries, action.payload.entries);
       }
     },
     [RuntimeAction.UNLOAD_PLUGIN]: (state, action: { payload: string }) => {
-      for (const [id, node] of Object.entries(state.tree)) {
+      for (const [id, node] of Object.entries(state.nodes)) {
         if (node.runtime.rootId === action.payload) {
-          delete state.tree[id];
+          delete state.nodes[id];
         }
       }
       // Clean up entries for this rootId

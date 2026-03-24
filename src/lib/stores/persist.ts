@@ -19,7 +19,7 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
     plugins: plugins.items
         .map(({loaded: _loaded, error: _error, ...plugin}) => ({...plugin})),
     runtime: {
-      tree: marshalTree(runtime.tree).map(item => ({...item, runtime: {...item.runtime, loaded: false, error: undefined}})),
+      tree: marshalTree(runtime.nodes).map(item => ({...item, runtime: {...item.runtime, loaded: false, error: undefined}})),
       entries: runtime.entries,
     },
   }),
@@ -40,7 +40,7 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
       },
       runtime: {
         ...current.runtime,
-        tree: p?.runtime?.tree ? unmarshalTree(p.runtime.tree) : current.runtime.tree,
+        nodes: p?.runtime?.tree ? unmarshalTree(p.runtime.tree) : current.runtime.nodes,
         entries: p?.runtime?.entries ?? current.runtime.entries,
       },
     };

@@ -94,7 +94,7 @@ export interface PluginsState {
 }
 
 export interface RuntimeState {
-  tree: Record<string, ScElementNode>;
+  nodes: Record<string, ScElementNode>;
   entries: Record<string, RuntimeValueEntry>;
 }
 
