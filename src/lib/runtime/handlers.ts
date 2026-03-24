@@ -85,18 +85,28 @@ function resolveVisualBind(ctx: RuntimeContext<ScDisplayNode | ScIfNode>): Input
 
 // --- Handlers ---
 
-const pluginHandler = (ctx: RuntimeContext<ScPluginNode>): PluginRuntime => ({
-    rootId: ctx.rootId,
-    run: findOrCreateEntry(ctx, "run", ctx.tree.id, ctx.tree.id, 1),
-    controls: {},
-    loaded: false,
-});
+const pluginHandler = (ctx: RuntimeContext<ScPluginNode>): PluginRuntime => {
+    const runtime: PluginRuntime = {
+        rootId: ctx.rootId,
+        run: findOrCreateEntry(ctx, "run", ctx.tree.id, ctx.tree.id, 1),
+        controls: {},
+        loaded: false,
+    };
+    ctx.tree.runtime = runtime;
+    ctx.visit();
+    return runtime;
+};
 
-const groupHandler = (ctx: RuntimeContext<ScGroupNode>): NodeRuntime => ({
-    rootId: ctx.rootId,
-    run: findOrCreateEntry(ctx, "run", ctx.tree.id, ctx.tree.name, ctx.tree.running ? 1 : 0),
-    controls: {},
-});
+const groupHandler = (ctx: RuntimeContext<ScGroupNode>): NodeRuntime => {
+    const runtime: NodeRuntime = {
+        rootId: ctx.rootId,
+        run: findOrCreateEntry(ctx, "run", ctx.tree.id, ctx.tree.name, ctx.tree.running ? 1 : 0),
+        controls: {},
+    };
+    ctx.tree.runtime = runtime;
+    ctx.visit();
+    return runtime;
+};
 
 const synthHandler = (ctx: RuntimeContext<ScSynthNode>): NodeRuntime => {
     const n = ctx.tree;
@@ -118,7 +128,10 @@ const synthHandler = (ctx: RuntimeContext<ScSynthNode>): NodeRuntime => {
 
 const synthDefHandler = (ctx: RuntimeContext<ScSynthDefNode>): UgenRuntime => {
     ctx.synthdefs.push(ctx.tree);
-    return {rootId: ctx.rootId};
+    const runtime: UgenRuntime = {rootId: ctx.rootId};
+    ctx.tree.runtime = runtime;
+    ctx.visit();
+    return runtime;
 };
 
 const ugenHandler = (ctx: RuntimeContext<ScUgenNode>): UgenRuntime => {
@@ -165,8 +178,12 @@ const runHandler = (ctx: RuntimeContext<ScRunNode>): InputRuntime => {
 const displayHandler = (ctx: RuntimeContext<ScDisplayNode>): InputRuntime =>
     resolveVisualBind(ctx);
 
-const ifHandler = (ctx: RuntimeContext<ScIfNode>): InputRuntime =>
-    resolveVisualBind(ctx);
+const ifHandler = (ctx: RuntimeContext<ScIfNode>): InputRuntime => {
+    const runtime = resolveVisualBind(ctx);
+    ctx.tree.runtime = runtime;
+    ctx.visit();
+    return runtime;
+};
 
 // --- Handler map ---
 

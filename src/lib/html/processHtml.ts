@@ -95,10 +95,6 @@ export function processElement<T extends ScElementNode = ScElementNode>(ctx: Run
     checkDuplicateNames(scope);
 
     const visit = () => {
-        const handler = handlers[ctx.tree.type];
-        if (!handler) throw new Error(`Unknown element type: ${ctx.tree.type}`);
-        ctx.tree.runtime = handler({...ctx, visit});
-
         const parent = ctx.tree as ScParentNode;
         for (let i = 0; i < scope.length; i++) {
             parent.children.push(
@@ -107,7 +103,12 @@ export function processElement<T extends ScElementNode = ScElementNode>(ctx: Run
         }
     };
 
-    visit();
+    const handler = handlers[ctx.tree.type];
+    if (!handler) {
+        throw new Error(`Unknown element type: ${ctx.tree.type}`)
+    };
+    ctx.tree.runtime = handler({...ctx, visit});
+
     ctx.nodes[ctx.tree.id] = ctx.tree;
     return ctx.tree;
 }
