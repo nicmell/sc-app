@@ -106,8 +106,8 @@ export function processElement<T extends ScElementNode = ScElementNode>(ctx: Run
     const handler = handlers[ctx.tree.type];
     if (!handler) {
         throw new Error(`Unknown element type: ${ctx.tree.type}`)
-    };
-    ctx.tree.runtime = handler({...ctx, visit});
+    }
+    handler({...ctx, visit});
 
     ctx.nodes[ctx.tree.id] = ctx.tree;
     return ctx.tree;
