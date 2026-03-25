@@ -84,7 +84,9 @@ export function processHtml<T extends ScElementNode>(args: ProcessHtmlArgs): T {
 export function processElement<T extends ScElementNode = ScElementNode>(ctx: RuntimeContext<T>): T {
 
     const elements = Array.from(walkDom(ctx.element));
-    const saved = ctx.saved && isParent(ctx.saved) ? ctx.saved.children : [];
+
+    const parentMatch = ctx.tree.id === ctx.saved?.id;
+    const saved = parentMatch && ctx.saved && isParent(ctx.saved) ? ctx.saved.children : [];
 
     const scope = elements
         .map((el, i) => {
@@ -107,6 +109,7 @@ export function processElement<T extends ScElementNode = ScElementNode>(ctx: Run
     if (!handler) {
         throw new Error(`Unknown element type: ${ctx.tree.type}`)
     }
+
     handler({...ctx, visit});
 
     ctx.nodes[ctx.tree.id] = ctx.tree;
