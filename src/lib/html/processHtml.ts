@@ -4,7 +4,7 @@ import {deepEqual} from "@/lib/utils/deepEqual";
 import type {ScElementNode, ScElementNodeBase, ScParentNode, ScSynthDefNode, NodeType, RuntimeValueEntry} from "@/types/parsers";
 import {isNodeType, isParent} from "@/lib/utils/guards";
 import {type HtmlProps, extractProps} from "./handlers";
-import {handlers, checkDuplicateNames, type RuntimeContext} from "@/lib/runtime/handlers";
+import {checkDuplicateNames, type RuntimeContext, getHandler} from "@/lib/runtime/handlers";
 
 const EXCLUDE_KEYS = new Set(['id', 'type', 'runtime', 'children']);
 
@@ -71,6 +71,7 @@ export function processHtml<T extends ScElementNode>(args: ProcessHtmlArgs): T {
         rootId: args.rootId,
         scope: [node],
         tree: node,
+        parentNode: undefined,
         element: args.element,
         saved: args.saved,
         nodes: args.nodes,
@@ -105,7 +106,7 @@ export function processElement<T extends ScElementNode = ScElementNode>(ctx: Run
         }
     };
 
-    const handler = handlers[ctx.tree.type];
+    const handler = getHandler(ctx.tree.type);
     if (!handler) {
         throw new Error(`Unknown element type: ${ctx.tree.type}`)
     }

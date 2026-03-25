@@ -1,14 +1,14 @@
 import type {
     ScElementNode, ScElementNodeBase, ScParentNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScUgenNode,
     ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode,
-    ScPluginNode, InputRuntime, RuntimeValueEntry,
+    ScPluginNode, InputRuntime, RuntimeValueEntry, NodeType,
 } from "@/types/parsers";
 import {findElementByPath} from "@/lib/utils/elementTree";
 import {isSynthDef, isSynth, isGroup, isNode} from "@/lib/utils/guards";
 import {ELEMENTS} from "@/constants/sc-elements";
 import {synthDefManager} from "@/lib/synthdef";
 
-export type RuntimeHandler<T extends ScElementNode> =
+export type RuntimeHandler<T extends ScElementNode = ScElementNode> =
     (ctx: RuntimeContext<T>) => void;
 
 export interface RuntimeContext<T extends ScElementNode = ScElementNode> {
@@ -207,7 +207,7 @@ const ifHandler = (ctx: RuntimeContext<ScIfNode>): void => {
 
 // --- Handler map ---
 
-export const handlers: Record<string, RuntimeHandler<any>> = {
+export const handlers: {[Key in NodeType]: RuntimeHandler<Extract<ScElementNode, { type: Key }>>} = {
     [ELEMENTS.SC_PLUGIN]: pluginHandler,
     [ELEMENTS.SC_GROUP]: groupHandler,
     [ELEMENTS.SC_SYNTH]: synthHandler,
@@ -219,3 +219,7 @@ export const handlers: Record<string, RuntimeHandler<any>> = {
     [ELEMENTS.SC_DISPLAY]: displayHandler,
     [ELEMENTS.SC_IF]: ifHandler,
 };
+
+export function getHandler<T extends NodeType>(type: T): RuntimeHandler<Extract<ScElementNode, { type: T }>> {
+    return handlers[type];
+}
