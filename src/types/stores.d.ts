@@ -83,10 +83,9 @@ export type PersistedPlugin = Omit<PluginInfo, 'loaded' | 'error'>;
 
 export interface ConfigFile {
   theme: Pick<ThemeState, 'mode' | 'primaryColor'>;
-  layout: { items: BoxItem[]; options: LayoutOptions };
   scsynth: Pick<ScsynthState, 'options'>;
   plugins: PersistedPlugin[];
-  runtime: { tree: ScPluginNode[]; entries: Record<string, RuntimeValueEntry> };
+  runtime: { layout: { items: BoxItem[]; options: LayoutOptions }; tree: ScPluginNode[]; entries: Record<string, RuntimeValueEntry> };
 }
 
 export interface PluginsState {
