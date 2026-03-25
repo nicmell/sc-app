@@ -1,11 +1,12 @@
 import type {
     ScElementNode, ScElementNodeBase, ScParentNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScUgenNode,
     ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode,
-    ScPluginNode, PluginRuntime, InputRuntime, RuntimeValueEntry,
+    ScPluginNode, InputRuntime, RuntimeValueEntry,
 } from "@/types/parsers";
 import {findElementByPath} from "@/lib/utils/elementTree";
 import {isSynthDef, isSynth, isGroup, isNode} from "@/lib/utils/guards";
 import {ELEMENTS} from "@/constants/sc-elements";
+import {synthDefManager} from "@/lib/synthdef";
 
 export type RuntimeHandler<T extends ScElementNode> =
     (ctx: RuntimeContext<T>) => void;
@@ -66,7 +67,7 @@ export function checkDuplicateNames(scope: ScElementNode[]): void {
     }
 }
 
-function resolveControlBind(n: {bind: string; type: string}, ctx: RuntimeContext): {target: ScElementNode; controlName: string; defaultValue: number} {
+function resolveControlBind(n: { bind: string; type: string }, ctx: RuntimeContext): { target: ScElementNode; controlName: string; defaultValue: number } {
     const segments = n.bind.split('.');
     const controlName = segments.pop()!;
     const target = (ctx.parentNode ? findElementByPath(ctx.parentNode, segments) : undefined) as ScElementNode | undefined;
@@ -86,23 +87,22 @@ function resolveVisualBind(ctx: RuntimeContext<ScDisplayNode | ScIfNode>): Input
 // --- Handlers ---
 
 const pluginHandler = (ctx: RuntimeContext<ScPluginNode>): void => {
-    const runtime: PluginRuntime = {
-        rootId: ctx.rootId,
-        run: findOrCreateEntry(ctx, "run", ctx.tree.id, ctx.tree.id, 1),
-        controls: {},
-        loaded: false,
-    };
-    ctx.tree.runtime = runtime;
     try {
+        ctx.tree.runtime = {
+            rootId: ctx.rootId,
+            run: findOrCreateEntry(ctx, "run", ctx.tree.id, ctx.tree.id, 1),
+            loaded: false,
+            controls: {},
+        };
         ctx.visit();
-        runtime.loaded = true;
+        ctx.tree.runtime.loaded = true;
     } catch (e) {
+        ctx.tree.runtime.error = e instanceof Error ? e.message : String(e);
         ctx.tree.children = [];
         ctx.scope.length = 0;
         for (const id of Object.keys(ctx.nodes)) {
             if (id !== ctx.tree.id) delete ctx.nodes[id];
         }
-        runtime.error = e instanceof Error ? e.message : String(e);
     }
 };
 
@@ -137,17 +137,33 @@ const synthDefHandler = (ctx: RuntimeContext<ScSynthDefNode>): void => {
     ctx.synthdefs.push(ctx.tree);
     ctx.tree.runtime = {rootId: ctx.rootId};
     ctx.visit();
+
+    const ugenChildren = ctx.tree.children.filter((c): c is ScUgenNode => c.type === 'sc-ugen');
+    if (ugenChildren.length > 0) {
+        const specsMap = new Map(ugenChildren.map(c =>
+            [c.name, {name: c.name, type: c.ugen, rate: c.rate, inputs: c.controls}]
+        ));
+        synthDefManager.compile(ctx.rootId, ctx.tree.id, ctx.tree.name, ctx.tree.controls, specsMap);
+    }
 };
 
 const ugenHandler = (ctx: RuntimeContext<ScUgenNode>): void => {
     const n = ctx.tree;
     for (const [key, value] of Object.entries(n.controls)) {
-        if (key === 'op') continue;
+        if (key === 'op') {
+            continue
+        }
         const num = Number(value);
-        if (!isNaN(num) && value.trim() !== '') continue;
+        if (!isNaN(num) && value.trim() !== '') {
+            continue
+        }
         const refId = value.split(':')[0];
-        if (ctx.scope.some(s => s.type === 'sc-ugen' && s.name === refId)) continue;
-        if (ctx.parentNode?.type === 'sc-synthdef' && refId in ctx.parentNode.controls) continue;
+        if (ctx.scope.some(s => s.type === 'sc-ugen' && s.name === refId)) {
+            continue
+        }
+        if (ctx.parentNode?.type === 'sc-synthdef' && refId in ctx.parentNode.controls) {
+            continue
+        }
         throw new Error(`<sc-ugen name="${n.name}">: input "${key}" references unknown "${refId}"`);
     }
     ctx.tree.runtime = {rootId: ctx.rootId};
@@ -172,7 +188,7 @@ const runHandler = (ctx: RuntimeContext<ScRunNode>): void => {
         throw new Error(`<sc-run>: bind "${n.bind}" does not match any <sc-synth> or <sc-group> in scope`);
     }
     const targetId = target ? target.id : '';
-    const targetName = target && 'name' in target ? (target as {name: string}).name : '';
+    const targetName = target && 'name' in target ? (target as { name: string }).name : '';
     const entryId = findOrCreateEntry(ctx, "run", targetId, targetName, 1);
     if (target && isNode(target) && target.runtime) {
         target.runtime.run = entryId;
