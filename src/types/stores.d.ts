@@ -94,6 +94,7 @@ export interface PluginsState {
 }
 
 export interface RuntimeState {
+  layout: LayoutState;
   nodes: Record<string, ScElementNode>;
   entries: Record<string, RuntimeValueEntry>;
 }
@@ -101,7 +102,6 @@ export interface RuntimeState {
 export interface RootState {
   isRunning: boolean;
   theme: ThemeState;
-  layout: LayoutState;
   scsynth: ScsynthState;
   plugins: PluginsState;
   runtime: RuntimeState;

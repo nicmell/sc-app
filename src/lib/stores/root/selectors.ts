@@ -4,7 +4,7 @@ export default {
   // state
   isRunning: (s: RootState) => s.isRunning,
   scsynth: (s: RootState) => s.scsynth,
-  layout: (s: RootState) => s.layout,
+  layout: (s: RootState) => s.runtime.layout,
   theme: (s: RootState) => s.theme,
   plugins: (s: RootState) => s.plugins,
   runtime: (s: RootState) => s.runtime,

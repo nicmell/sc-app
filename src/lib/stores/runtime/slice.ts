@@ -1,8 +1,9 @@
 import type {RuntimeState} from "@/types/stores";
 import type {ScElementNode, RuntimeValueEntry} from "@/types/parsers";
 import {isParent, isControlEntry, isRunEntry} from "@/lib/utils/guards";
-import {createSlice} from "@/lib/stores/utils";
+import {combineReducers, createSlice, type CaseReducer} from "@/lib/stores/utils";
 import {SliceName, RuntimeAction} from "@/constants/store";
+import layout from "../layout";
 
 function collectEntries(
     state: RuntimeState,
@@ -39,6 +40,7 @@ function collectEntries(
 }
 
 const initialState: RuntimeState = {
+  layout: layout.getInitialState(),
   nodes: {},
   entries: {},
 };
@@ -85,4 +87,7 @@ export const runtimeSlice = createSlice({
       }
     },
   },
+  defaultReducer: combineReducers({
+    layout: layout.reducer,
+  }) as unknown as CaseReducer<RuntimeState>,
 });

@@ -1,5 +1,4 @@
 import scsynth from "../scsynth";
-import layout from "../layout";
 import theme from "../theme";
 import plugins from "../plugins";
 import runtime from "../runtime";
@@ -10,7 +9,6 @@ import type {RootState} from "@/types/stores";
 const initialState: RootState = {
   isRunning: false,
   scsynth: scsynth.getInitialState(),
-  layout: layout.getInitialState(),
   theme: theme.getInitialState(),
   plugins: plugins.getInitialState(),
   runtime: runtime.getInitialState(),
@@ -26,7 +24,6 @@ export const rootSlice = createSlice({
   },
   defaultReducer: combineReducers({
     scsynth: scsynth.reducer,
-    layout: layout.reducer,
     theme: theme.reducer,
     plugins: plugins.reducer,
     runtime: runtime.reducer,

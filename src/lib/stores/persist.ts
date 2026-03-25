@@ -9,11 +9,11 @@ import {marshalTree, unmarshalTree} from "@/lib/runtime";
 export const persistConfig: PersistOptions<any, ConfigFile> = {
   name: "config",
   storage: tauriStorage,
-  partialize: ({theme, layout, scsynth, plugins, runtime}: RootState): ConfigFile => ({ // isRunning excluded
+  partialize: ({theme, scsynth, plugins, runtime}: RootState): ConfigFile => ({ // isRunning excluded
     theme: {mode: theme.mode, primaryColor: theme.primaryColor},
     layout: {
-      items: layout.items,
-      options: layout.options,
+      items: runtime.layout.items,
+      options: runtime.layout.options,
     },
     scsynth: {options: scsynth.options},
     plugins: plugins.items
@@ -28,7 +28,6 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
     return {
       ...current,
       theme: {...current.theme, ...p?.theme},
-      layout: {...current.layout, ...p?.layout},
       scsynth: {...current.scsynth, ...p?.scsynth},
       plugins: {
         items: Array.isArray(p?.plugins)
@@ -40,6 +39,7 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
       },
       runtime: {
         ...current.runtime,
+        layout: p?.layout ? {...current.runtime.layout, ...p.layout} : current.runtime.layout,
         nodes: p?.runtime?.tree ? unmarshalTree(p.runtime.tree) : current.runtime.nodes,
         entries: p?.runtime?.entries ?? current.runtime.entries,
       },
