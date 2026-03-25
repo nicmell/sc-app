@@ -39,6 +39,20 @@ function collectEntries(
     return result;
 }
 
+function cleanupEntries(state: RuntimeState) {
+    const referenced = new Set<string>();
+    for (const box of state.layout.items) {
+        for (const id of collectEntries(state, box.i).keys()) {
+            referenced.add(id);
+        }
+    }
+    for (const id of Object.keys(state.entries)) {
+        if (!referenced.has(id)) {
+            delete state.entries[id];
+        }
+    }
+}
+
 const initialState: RuntimeState = {
   layout: layout.getInitialState(),
   nodes: {},
@@ -54,6 +68,7 @@ export const runtimeSlice = createSlice({
       if (action.payload.entries) {
         Object.assign(state.entries, action.payload.entries);
       }
+      cleanupEntries(state);
     },
     [RuntimeAction.UNLOAD_PLUGIN]: (state, action: { payload: string }) => {
       for (const [id, node] of Object.entries(state.nodes)) {
@@ -61,12 +76,7 @@ export const runtimeSlice = createSlice({
           delete state.nodes[id];
         }
       }
-      // Clean up entries for this rootId
-      for (const [id, entry] of Object.entries(state.entries)) {
-        if (entry.rootId === action.payload) {
-          delete state.entries[id];
-        }
-      }
+      cleanupEntries(state);
     },
     [RuntimeAction.SET_CONTROL]: (state, action: { payload: { entryId: string; value: number } }) => {
       const entry = state.entries[action.payload.entryId];
