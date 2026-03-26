@@ -63,6 +63,18 @@ export interface ProcessHtmlArgs {
     persistedEntries: Record<string, RuntimeValueEntry>;
 }
 
+function processElement<T extends ScElementNode = ScElementNode>(ctx: RuntimeContext<T>): T {
+    const handler = getHandler(ctx.tree.type);
+    if (!handler) {
+        throw new Error(`Unknown element type: ${ctx.tree.type}`)
+    }
+
+    handler(ctx);
+
+    ctx.nodes[ctx.tree.id] = ctx.tree;
+    return ctx.tree;
+}
+
 export function processHtml<T extends ScElementNode>(args: ProcessHtmlArgs): T {
 
     const node = hydrate(args.tree, args.element, args.saved) as unknown as T;
@@ -78,41 +90,26 @@ export function processHtml<T extends ScElementNode>(args: ProcessHtmlArgs): T {
         synthdefs: args.synthdefs,
         entries: args.entries,
         persistedEntries: args.persistedEntries,
-        visit: () => {},
+        visit(this: RuntimeContext) {
+            const elements = Array.from(walkDom(this.element));
+
+            const parentMatch = this.tree.id === this.saved?.id;
+            const savedChildren = parentMatch && this.saved && isParent(this.saved) ? this.saved.children : [];
+
+            const scope = elements
+                .map((el, i) => {
+                    const type = tagToType(el.tagName.toLowerCase());
+                    return hydrate({id: randomId(), type}, elements[i], savedChildren[i]) as ScElementNode
+                });
+
+            checkDuplicateNames(scope);
+
+            const parent = this.tree as ScParentNode;
+            for (let i = 0; i < scope.length; i++) {
+                parent.children.push(
+                    processElement({...this, scope, tree: scope[i], element: elements[i], saved: savedChildren[i], parentNode: parent})
+                );
+            }
+        },
     });
-}
-
-export function processElement<T extends ScElementNode = ScElementNode>(ctx: RuntimeContext<T>): T {
-
-    const elements = Array.from(walkDom(ctx.element));
-
-    const parentMatch = ctx.tree.id === ctx.saved?.id;
-    const saved = parentMatch && ctx.saved && isParent(ctx.saved) ? ctx.saved.children : [];
-
-    const scope = elements
-        .map((el, i) => {
-            const type = tagToType(el.tagName.toLowerCase());
-            return hydrate({id: randomId(), type}, elements[i], saved[i]) as ScElementNode
-        });
-
-    checkDuplicateNames(scope);
-
-    const visit = () => {
-        const parent = ctx.tree as ScParentNode;
-        for (let i = 0; i < scope.length; i++) {
-            parent.children.push(
-                processElement({...ctx, scope, tree: scope[i], element: elements[i], saved: saved[i], parentNode: parent})
-            );
-        }
-    };
-
-    const handler = getHandler(ctx.tree.type);
-    if (!handler) {
-        throw new Error(`Unknown element type: ${ctx.tree.type}`)
-    }
-
-    handler({...ctx, visit});
-
-    ctx.nodes[ctx.tree.id] = ctx.tree;
-    return ctx.tree;
 }

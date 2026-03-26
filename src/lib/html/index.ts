@@ -1,2 +1,2 @@
-export {processHtml, processElement} from "./processHtml";
+export {processHtml} from "./processHtml";
 export type {ProcessHtmlArgs} from "./processHtml";
