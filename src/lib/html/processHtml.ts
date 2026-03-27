@@ -93,7 +93,6 @@ export function processHtml<T extends ScElementNode>(args: ProcessHtmlArgs<T>): 
                     processElement({...this, scope, tree: scope[i], element: elements[i], saved: savedChildren[i], parentNode: parent})
                 );
             }
-            return parent.children;
         },
     });
 }

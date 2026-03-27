@@ -17,7 +17,7 @@ export interface RuntimeContext<T extends ScElementNode = ScElementNode> {
     tree: StripRuntime<T>;
     element: Element;
     saved?: ScElementNodeBase;
-    visit: () => ScElementNode[];
+    visit: () => void;
     parentNode?: ScParentNode;
 }
 
