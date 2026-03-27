@@ -1,9 +1,10 @@
 import type {PluginInfo} from "@/types/stores";
-import type {ScElementNode, ScSynthDefNode, RuntimeValueEntry, ScPluginNode} from "@/types/parsers";
+import type {ScElementNode, ScSynthDefNode, RuntimeValueEntry, ScPluginNode, StripRuntime} from "@/types/parsers";
 import {ELEMENTS} from "@/constants/sc-elements";
 import {layoutApi, pluginsApi, runtimeApi} from "@/lib/stores/api";
 import {get, post, del} from "@/lib/http";
 import {processHtml} from "@/lib/html";
+import {hydrate} from "@/lib/html/processHtml.ts";
 
 export const PLUGINS_URL = "app://plugins";
 
@@ -48,15 +49,12 @@ export class PluginManager {
         const synthdefs: ScSynthDefNode[] = [];
         const nodes: Record<string, ScElementNode> = {};
 
-        processHtml<ScPluginNode>({
-            rootId: boxId,
-            tree: {id: boxId, type: ELEMENTS.SC_PLUGIN},
-            element: doc.documentElement,
-            saved: runtimeApi.getById(boxId) ?? undefined,
-            entries,
-            synthdefs,
-            nodes,
-        });
+        const element = doc.documentElement;
+        const saved = runtimeApi.getById(boxId) ?? undefined
+
+        const tree = hydrate({id: boxId, type: ELEMENTS.SC_PLUGIN}, element, saved) as StripRuntime<ScPluginNode>
+
+        processHtml<ScPluginNode>({rootId: boxId, tree, element, saved, entries, synthdefs, nodes});
 
         runtimeApi.loadPlugin({id: boxId, nodes, entries});
         return doc.documentElement.innerHTML;
