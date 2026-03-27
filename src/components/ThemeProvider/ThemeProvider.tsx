@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore, type ReactNode } from "react";
 import { useSelector } from "@/lib/stores/store";
-import theme from "@/lib/stores/theme";
+import options from "@/lib/stores/options";
 
 const darkPalette = {
   "--color-bg": "#2f2f2f",
@@ -34,8 +34,8 @@ function useSystemDark() {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const mode = useSelector(theme.selectors.mode);
-  const primaryColor = useSelector(theme.selectors.primaryColor);
+  const mode = useSelector(options.selectors.mode);
+  const primaryColor = useSelector(options.selectors.primaryColor);
   const systemDark = useSystemDark();
 
   const effectiveMode = mode === "adaptive" ? (systemDark ? "dark" : "light") : mode;

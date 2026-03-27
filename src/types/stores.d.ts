@@ -2,7 +2,7 @@ import type {SliceActions} from "@/lib/stores/utils";
 import type {rootSlice} from "@/lib/stores/root/slice";
 import type {scsynthSlice} from "@/lib/stores/scsynth/slice";
 import type {layoutSlice} from "@/lib/stores/layout/slice";
-import type {themeSlice} from "@/lib/stores/theme/slice";
+import type {optionsSlice} from "@/lib/stores/options/slice";
 import type {pluginsSlice} from "@/lib/stores/plugins/slice";
 import type {runtimeSlice} from "@/lib/stores/runtime/slice";
 import type {ScPluginNode, ScElementNode, RuntimeValueEntry} from "@/types/parsers";
@@ -19,6 +19,11 @@ export interface BoxItem {
 export type ConnectionStatus = "disconnected" | "connecting" | "connected";
 
 export type Mode = "dark" | "light" | "adaptive";
+
+export interface ThemeOptions {
+  mode: Mode;
+  primaryColor: string;
+}
 
 export interface ScsynthOptions {
   host: string;
@@ -41,7 +46,6 @@ export interface ScsynthStatus {
 
 export interface ScsynthState {
   clientId: number;
-  options: ScsynthOptions;
   connectionStatus: ConnectionStatus;
   status: ScsynthStatus;
   version: string;
@@ -54,12 +58,12 @@ export interface LayoutOptions {
 
 export interface LayoutState {
   items: BoxItem[];
-  options: LayoutOptions;
 }
 
-export interface ThemeState {
-  mode: Mode;
-  primaryColor: string;
+export interface OptionsState {
+  theme: ThemeOptions;
+  layout: LayoutOptions;
+  scsynth: ScsynthOptions;
 }
 
 export interface AssetInfo {
@@ -81,11 +85,14 @@ export interface PluginInfo {
 
 export type PersistedPlugin = Omit<PluginInfo, 'loaded' | 'error'>;
 
+type Preset = {
+  items: (BoxItem & {tree: ScPluginNode, entries: Record<string, RuntimeValueEntry>}) [];
+}
+
 export interface ConfigFile {
-  theme: Pick<ThemeState, 'mode' | 'primaryColor'>;
-  scsynth: Pick<ScsynthState, 'options'>;
+  options: OptionsState;
   plugins: PersistedPlugin[];
-  runtime: { layout: { items: BoxItem[]; options: LayoutOptions }; tree: ScPluginNode[]; entries: Record<string, RuntimeValueEntry> };
+  runtime: { layout: { items: BoxItem[] }; tree: ScPluginNode[]; entries: Record<string, RuntimeValueEntry> };
 }
 
 export interface PluginsState {
@@ -100,16 +107,16 @@ export interface RuntimeState {
 
 export interface RootState {
   isRunning: boolean;
-  theme: ThemeState;
+  options: OptionsState;
   scsynth: ScsynthState;
   plugins: PluginsState;
   runtime: RuntimeState;
 }
 
 export type RootOwnAction = SliceActions<typeof rootSlice.actions>;
+export type OptionsAction = SliceActions<typeof optionsSlice.actions>;
 export type ScsynthAction = SliceActions<typeof scsynthSlice.actions>;
 export type LayoutAction = SliceActions<typeof layoutSlice.actions>;
-export type ThemeAction = SliceActions<typeof themeSlice.actions>;
 export type PluginsAction = SliceActions<typeof pluginsSlice.actions>;
 export type RuntimeAction = SliceActions<typeof runtimeSlice.actions>;
-export type RootAction = RootOwnAction | ScsynthAction | LayoutAction | ThemeAction | PluginsAction | RuntimeAction;
+export type RootAction = RootOwnAction | OptionsAction | ScsynthAction | LayoutAction | PluginsAction | RuntimeAction;

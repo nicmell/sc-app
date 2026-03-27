@@ -1,8 +1,8 @@
 import {store} from "@/lib/stores/store";
 import root from "./root";
+import options from "./options";
 import scsynth from "./scsynth";
 import layout from "./layout";
-import theme from "./theme";
 import plugins from "./plugins";
 import runtime from "./runtime";
 import {createApi} from "./utils";
@@ -23,6 +23,11 @@ export const rootApi = createApi(wrappedStore, {
   actions: root.actions,
 });
 
+export const optionsApi = createApi(wrappedStore, {
+  selectors: options.selectors,
+  actions: options.actions,
+});
+
 export const scsynthApi = createApi(wrappedStore, {
   selectors: scsynth.selectors,
   actions: scsynth.actions,
@@ -31,11 +36,6 @@ export const scsynthApi = createApi(wrappedStore, {
 export const layoutApi = createApi(wrappedStore, {
   selectors: layout.selectors,
   actions: layout.actions,
-});
-
-export const themeApi = createApi(wrappedStore, {
-  selectors: theme.selectors,
-  actions: theme.actions,
 });
 
 export const pluginsApi = createApi(wrappedStore, {

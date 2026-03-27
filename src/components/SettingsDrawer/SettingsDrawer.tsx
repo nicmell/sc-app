@@ -1,8 +1,8 @@
 import {useState} from "react";
 import {useSelector} from "@/lib/stores/store";
-import {layoutApi, themeApi} from "@/lib/stores/api";
+import {optionsApi} from "@/lib/stores/api";
 import layoutStore from "@/lib/stores/layout";
-import themeStore from "@/lib/stores/theme";
+import optionsStore from "@/lib/stores/options";
 import type {Mode, PluginInfo} from "@/types/stores";
 import {pluginManager} from "@/lib/plugins/PluginManager";
 import {oscService} from "@/lib/osc";
@@ -19,9 +19,9 @@ interface SettingsDrawerProps {
 }
 
 export function SettingsDrawer({open, onClose}: SettingsDrawerProps) {
-  const mode = useSelector(themeStore.selectors.mode);
-  const primaryColor = useSelector(themeStore.selectors.primaryColor);
-  const {numRows, numColumns} = useSelector(layoutStore.selectors.options);
+  const mode = useSelector(optionsStore.selectors.mode);
+  const primaryColor = useSelector(optionsStore.selectors.primaryColor);
+  const {numRows, numColumns} = useSelector(optionsStore.selectors.layout);
   const layoutItems = useSelector(layoutStore.selectors.items);
   const [confirmPlugin, setConfirmPlugin] = useState<PluginInfo | null>(null);
 
@@ -57,7 +57,7 @@ export function SettingsDrawer({open, onClose}: SettingsDrawerProps) {
               <span>Mode</span>
               <select
                 value={mode}
-                onChange={(e) => themeApi.setMode(e.target.value as Mode)}
+                onChange={(e) => optionsApi.setThemeOptions({mode: e.target.value as Mode})}
               >
                 <option value="adaptive">Adaptive</option>
                 <option value="dark">Dark</option>
@@ -69,7 +69,7 @@ export function SettingsDrawer({open, onClose}: SettingsDrawerProps) {
               <input
                 type="color"
                 value={primaryColor}
-                onChange={(e) => themeApi.setPrimaryColor(e.target.value)}
+                onChange={(e) => optionsApi.setThemeOptions({primaryColor: e.target.value})}
               />
             </label>
           </section>
@@ -83,7 +83,7 @@ export function SettingsDrawer({open, onClose}: SettingsDrawerProps) {
                 min={1}
                 max={24}
                 value={numRows}
-                onChange={(e) => layoutApi.setOptions({numRows: Number(e.target.value)})}
+                onChange={(e) => optionsApi.setLayoutOptions({numRows: Number(e.target.value)})}
               />
             </label>
             <label className="settings-field">
@@ -93,7 +93,7 @@ export function SettingsDrawer({open, onClose}: SettingsDrawerProps) {
                 min={1}
                 max={24}
                 value={numColumns}
-                onChange={(e) => layoutApi.setOptions({numColumns: Number(e.target.value)})}
+                onChange={(e) => optionsApi.setLayoutOptions({numColumns: Number(e.target.value)})}
               />
             </label>
           </section>

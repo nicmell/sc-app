@@ -11,7 +11,7 @@ import {
 } from './messages';
 import type {ScsynthOptions} from '@/types/stores';
 import {OSC_MESSAGES, OSC_REPLIES} from '@/constants/osc.ts';
-import {scsynthApi} from '@/lib/stores/api';
+import {scsynthApi, optionsApi} from '@/lib/stores/api';
 import {logger} from '@/lib/logger';
 
 import {ConnectionStatus, DEFAULT_CLIENT_ID} from '@/constants/osc';
@@ -102,11 +102,11 @@ export class OscService {
   }
 
   getOptions(): ScsynthOptions {
-    return scsynthApi.options;
+    return optionsApi.scsynth;
   }
 
   setOptions(opts: Partial<ScsynthOptions>): void {
-    scsynthApi.setOptions(opts);
+    optionsApi.setScsynthOptions(opts);
   }
 
   private isReady(): boolean {
@@ -116,7 +116,7 @@ export class OscService {
   }
 
   connect(): void {
-    const {host, port} = scsynthApi.options;
+    const {host, port} = optionsApi.scsynth;
     scsynthApi.setConnectionStatus(ConnectionStatus.CONNECTING);
     this.osc.open({host, port});
   }
@@ -157,7 +157,7 @@ export class OscService {
         logger.log('No status.reply received for 3 seconds, disconnecting.');
       }
       void this.disconnect();
-    }, scsynthApi.options.replyTimeoutMs);
+    }, optionsApi.scsynth.replyTimeoutMs);
   }
 
   private clearTimeout(): void {
@@ -172,7 +172,7 @@ export class OscService {
     if (filtered.length === 1) {
       return this.osc.send(filtered[0]);
     } else if (filtered.length > 1) {
-      const bundle = new OSC.Bundle(filtered, Date.now() + scsynthApi.options.msgLatencyMs);
+      const bundle = new OSC.Bundle(filtered, Date.now() + optionsApi.scsynth.msgLatencyMs);
       return this.osc.send(bundle);
     }
   }
@@ -186,7 +186,7 @@ export class OscService {
   }
 
   defaultClientId() {
-    return scsynthApi.options.clientId || DEFAULT_CLIENT_ID;
+    return optionsApi.scsynth.clientId || DEFAULT_CLIENT_ID;
   }
 
   on(event: string, handler: (...args: unknown[]) => void): number {

@@ -1,11 +1,10 @@
-import type {LayoutState, LayoutOptions, BoxItem} from "@/types/stores";
+import type {LayoutState, BoxItem} from "@/types/stores";
 import {createSlice} from "@/lib/stores/utils";
 import {SliceName, LayoutAction} from "@/constants/store";
-import {DEFAULT_LAYOUT, DEFAULT_OPTIONS} from "@/constants/layout.ts";
+import {DEFAULT_LAYOUT} from "@/constants/layout.ts";
 
 const initialState: LayoutState = {
   items: DEFAULT_LAYOUT,
-  options: DEFAULT_OPTIONS,
 };
 
 export const layoutSlice = createSlice({
@@ -24,9 +23,6 @@ export const layoutSlice = createSlice({
     [LayoutAction.ADD_BOX]: (state, action: { payload: BoxItem }) => {
       const item = action.payload;
       state.items = [...state.items, item];
-    },
-    [LayoutAction.SET_OPTIONS]: (state, action: { payload: Partial<LayoutOptions> }) => {
-      state.options = {...state.options, ...action.payload};
     },
     [LayoutAction.SET_BOX_PLUGIN]: (state, action: { payload: { id: string; plugin?: string } }) => {
       const box = state.items.find(item => item.i === action.payload.id);

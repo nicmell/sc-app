@@ -1,5 +1,5 @@
+import options from "../options";
 import scsynth from "../scsynth";
-import theme from "../theme";
 import plugins from "../plugins";
 import runtime from "../runtime";
 import {combineReducers, createSlice, type CaseReducer} from "../utils";
@@ -8,8 +8,8 @@ import type {RootState} from "@/types/stores";
 
 const initialState: RootState = {
   isRunning: false,
+  options: options.getInitialState(),
   scsynth: scsynth.getInitialState(),
-  theme: theme.getInitialState(),
   plugins: plugins.getInitialState(),
   runtime: runtime.getInitialState(),
 };
@@ -23,8 +23,8 @@ export const rootSlice = createSlice({
     },
   },
   defaultReducer: combineReducers({
+    options: options.reducer,
     scsynth: scsynth.reducer,
-    theme: theme.reducer,
     plugins: plugins.reducer,
     runtime: runtime.reducer,
   }) as unknown as CaseReducer<RootState>

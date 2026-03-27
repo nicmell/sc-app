@@ -9,7 +9,7 @@ export function marshalTree(state: RuntimeState): PersistedRuntime {
         .filter(isPlugin)
         .map(item => ({...item, runtime: {...item.runtime, loaded: false, error: undefined}}));
     return {
-        layout: {items: state.layout.items, options: state.layout.options},
+        layout: {items: state.layout.items},
         entries: state.entries,
         tree,
     };

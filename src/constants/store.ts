@@ -1,15 +1,20 @@
 export const SliceName = {
   ROOT: "root",
+  OPTIONS: "options",
   SCSYNTH: "scsynth",
   LAYOUT: "layout",
-  THEME: "theme",
   PLUGINS: "plugins",
   RUNTIME: "runtime",
 } as const;
 
+export const OptionsAction = {
+  SET_THEME: "setThemeOptions",
+  SET_LAYOUT: "setLayoutOptions",
+  SET_SCSYNTH: "setScsynthOptions",
+} as const;
+
 export const ScsynthAction = {
   SET_CLIENT: "setClient",
-  SET_OPTIONS: "setOptions",
   SET_CONNECTION_STATUS: "setConnectionStatus",
   SET_STATUS: "setStatus",
   SET_VERSION: "setVersion",
@@ -21,7 +26,6 @@ export const LayoutAction = {
   RESET_LAYOUT: "resetLayout",
   REMOVE_BOX: "removeBox",
   ADD_BOX: "addBox",
-  SET_OPTIONS: "setOptions",
   SET_BOX_PLUGIN: "setBoxPlugin",
 } as const;
 
@@ -34,11 +38,6 @@ export const RuntimeAction = {
 
 export const RootAction = {
   SET_RUNNING: "setRunning",
-} as const;
-
-export const ThemeAction = {
-  SET_MODE: "setMode",
-  SET_PRIMARY_COLOR: "setPrimaryColor",
 } as const;
 
 export const PluginsAction = {

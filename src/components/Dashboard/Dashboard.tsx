@@ -5,6 +5,7 @@ import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import {useSelector} from "@/lib/stores/store";
 import layoutStore from "@/lib/stores/layout";
+import optionsStore from "@/lib/stores/options";
 import runtimeStore from "@/lib/stores/runtime";
 import {layoutApi, pluginsApi, runtimeApi} from "@/lib/stores/api";
 import {ScNode} from "@/sc-elements/internal/sc-node";
@@ -41,7 +42,7 @@ function computeRowHeight(numRows: number, viewportHeight: number): number {
 
 export function Dashboard() {
     const layout = useSelector(layoutStore.selectors.items);
-    const {numRows, numColumns} = useSelector(layoutStore.selectors.options);
+    const {numRows, numColumns} = useSelector(optionsStore.selectors.layout);
     const {width: containerWidth, containerRef, mounted} = useContainerWidth({measureBeforeMount: true});
     const viewportHeight = useSyncExternalStore(subscribeToResize, getViewportHeight);
     const rowHeight = computeRowHeight(numRows, viewportHeight);

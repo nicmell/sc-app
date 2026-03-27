@@ -1,12 +1,11 @@
-import type {ScsynthOptions, ScsynthState, ScsynthStatus} from "@/types/stores";
+import type {ScsynthState, ScsynthStatus} from "@/types/stores";
 import type {ConnectionStatus} from "@/types/stores";
-import {ConnectionStatus as Status, DEFAULT_CLIENT_ID, DEFAULT_OPTIONS, DEFAULT_STATUS, DEFAULT_VERSION} from "@/constants/osc";
+import {ConnectionStatus as Status, DEFAULT_CLIENT_ID, DEFAULT_STATUS, DEFAULT_VERSION} from "@/constants/osc";
 import {createSlice} from "@/lib/stores/utils";
 import {SliceName, ScsynthAction} from "@/constants/store";
 
 const initialState: ScsynthState = {
   clientId: DEFAULT_CLIENT_ID,
-  options: DEFAULT_OPTIONS,
   connectionStatus: Status.DISCONNECTED,
   status: DEFAULT_STATUS,
   version: DEFAULT_VERSION,
@@ -18,9 +17,6 @@ export const scsynthSlice = createSlice({
   reducers: {
     [ScsynthAction.SET_CLIENT]: (state, action: { payload: number }) => {
       state.clientId = action.payload;
-    },
-    [ScsynthAction.SET_OPTIONS]: (state, action: { payload: Partial<ScsynthOptions> }) => {
-      Object.assign(state.options, action.payload);
     },
     [ScsynthAction.SET_CONNECTION_STATUS]: (state, action: { payload: ConnectionStatus }) => {
       state.connectionStatus = action.payload;

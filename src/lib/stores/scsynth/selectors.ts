@@ -16,7 +16,6 @@ function formatStatus(s: ScsynthStatus): string {
 export default {
   // state
   clientId: createScsynthSelector(s => s.clientId),
-  options: createScsynthSelector(s => s.options),
   connectionStatus: createScsynthSelector(s => s.connectionStatus),
   status: createScsynthSelector(s => s.status),
   version: createScsynthSelector(s => s.version),
@@ -24,6 +23,5 @@ export default {
   // derived
   isConnected: createScsynthSelector(s => s.connectionStatus === ConnectionStatus.CONNECTED),
   isConnecting: createScsynthSelector(s => s.connectionStatus === ConnectionStatus.CONNECTING),
-  address: createScsynthSelector(s => `${s.options.host}:${s.options.port}`),
   statusText: createScsynthSelector(s => formatStatus(s.status)),
 };
