@@ -1,10 +1,10 @@
 import {ELEMENTS} from "@/constants/sc-elements";
 import {randomId} from "@/lib/utils/randomId";
 import {deepEqual} from "@/lib/utils/deepEqual";
-import type {ScElementNode, ScElementNodeBase, ScSynthDefNode, NodeType, RuntimeValueEntry, StripRuntime, ScParentNode} from "@/types/parsers";
+import type {ScElementNode, ScElementNodeBase, NodeType, ScParentNode} from "@/types/parsers";
 import {isNodeType, isParent} from "@/lib/utils/guards";
 import {type HtmlProps, extractProps} from "./handlers";
-import {checkDuplicateNames, type RuntimeContext, processElement} from "@/lib/runtime/handlers";
+import {type RuntimeContext, processElement} from "@/lib/runtime/handlers";
 
 const EXCLUDE_KEYS = new Set(['id', 'type', 'runtime', 'children']);
 
@@ -52,32 +52,20 @@ export function hydrate<T extends ScElementNode>(node: { id: string, type: T["ty
     return Object.assign(node, props);
 }
 
-export interface ProcessHtmlArgs<T extends ScElementNode> {
-    rootId: string;
-    tree: StripRuntime<T>;
+export type HtmlRuntimeContext<T extends ScElementNode = ScElementNode> = Omit<RuntimeContext<T>, 'visit'> & {
     element: Element;
     saved?: ScElementNodeBase;
-    entries: Record<string, RuntimeValueEntry>;
-    synthdefs: ScSynthDefNode[];
-    nodes: Record<string, ScElementNode>;
-}
+};
 
-export function processHtml<T extends ScElementNode>(args: ProcessHtmlArgs<T>): T {
+export function processHtml<T extends ScElementNode>(args: HtmlRuntimeContext<T>): T {
+    const {element, saved, ...rest} = args;
     return processElement({
-        rootId: args.rootId,
-        scope: [args.tree],
-        tree: args.tree,
-        parentNode: undefined,
-        element: args.element,
-        saved: args.saved,
-        nodes: args.nodes,
-        synthdefs: args.synthdefs,
-        entries: args.entries,
-        visit(this: RuntimeContext) {
-            const elements = Array.from(walkDom(this.element));
+        ...rest,
+        visit() {
+            const elements = Array.from(walkDom(element));
 
-            const parentMatch = this.tree.id === this.saved?.id;
-            const savedChildren = parentMatch && this.saved && isParent(this.saved) ? this.saved.children : [];
+            const parentMatch = rest.tree.id === saved?.id;
+            const savedChildren = parentMatch && saved && isParent(saved) ? saved.children : [];
 
             const scope = elements
                 .map((el, i) => {
@@ -85,12 +73,10 @@ export function processHtml<T extends ScElementNode>(args: ProcessHtmlArgs<T>): 
                     return hydrate({id: randomId(), type}, elements[i], savedChildren[i]) as ScElementNode
                 });
 
-            checkDuplicateNames(scope);
-
-            const parent = this.tree as ScParentNode;
+            const parent = rest.tree as ScParentNode;
             for (let i = 0; i < scope.length; i++) {
                 parent.children.push(
-                    processElement({...this, scope, tree: scope[i], element: elements[i], saved: savedChildren[i], parentNode: parent})
+                    processHtml({...args, scope, tree: scope[i], element: elements[i], saved: savedChildren[i], parentNode: parent})
                 );
             }
         },

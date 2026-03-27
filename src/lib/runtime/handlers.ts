@@ -15,8 +15,6 @@ export interface RuntimeContext<T extends ScElementNode = ScElementNode> {
     synthdefs: ScSynthDefNode[];
     scope: ScElementNodeBase[];
     tree: StripRuntime<T>;
-    element: Element;
-    saved?: ScElementNodeBase;
     visit: () => void;
     parentNode?: ScParentNode;
 }
@@ -40,7 +38,7 @@ function findOrCreateEntry(
     return id;
 }
 
-export function checkDuplicateNames(scope: ScElementNode[]): void {
+export function checkDuplicateNames(scope: ScElementNodeBase[]): void {
     const seen = new Set<string>();
     for (const el of scope) {
         if ('name' in el && el.name) {
@@ -203,6 +201,7 @@ const ifHandler = (ctx: RuntimeContext<ScIfNode>): InputRuntime => {
 export function processElement<T extends ScElementNode = ScElementNode>(ctx: RuntimeContext<T>): T {
     const c = ctx as RuntimeContext<any>;
     let runtime: unknown;
+    checkDuplicateNames(ctx.scope);
     switch (ctx.tree.type) {
         case ELEMENTS.SC_PLUGIN: runtime = pluginHandler(c); break;
         case ELEMENTS.SC_GROUP: runtime = groupHandler(c); break;

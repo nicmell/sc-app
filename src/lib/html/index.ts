@@ -1,2 +1,2 @@
 export {processHtml} from "./processHtml";
-export type {ProcessHtmlArgs} from "./processHtml";
+export type {HtmlRuntimeContext} from "./processHtml";
