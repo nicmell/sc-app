@@ -6,18 +6,20 @@ import {ELEMENTS} from "@/constants/sc-elements";
 
 export type HtmlProps<T> = Omit<StripRuntime<T>, 'id' | 'type' | 'children'>;
 
+const GROUP_SKIP_ATTRS = new Set(['id', 'name', 'running', 'class', 'style', 'slot', 'title']);
 const SYNTH_SKIP_ATTRS = new Set(['id', 'name', 'bind', 'running', 'class', 'style', 'slot', 'title']);
 const SYNTHDEF_SKIP_ATTRS = new Set(['id', 'name', 'class', 'style', 'slot']);
 const UGEN_SKIP_ATTRS = new Set(['id', 'name', 'type', 'rate', 'class', 'style', 'slot']);
 
 function extractPluginProps(el: Element): HtmlProps<ScPluginNode> {
-    return {title: el.querySelector('title')?.textContent ?? ''};
+    return {title: el.querySelector('title')?.textContent ?? '', controls: {}};
 }
 
 function extractGroupProps(el: Element): HtmlProps<ScGroupNode> {
     return {
         name: el.getAttribute('name') ?? '',
         running: el.getAttribute('running') !== 'false',
+        controls: collectNumericAttrs(el, GROUP_SKIP_ATTRS),
     };
 }
 
