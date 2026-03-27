@@ -6,19 +6,23 @@ import {ELEMENTS} from "@/constants/sc-elements";
 
 export type HtmlProps<T> = Omit<StripRuntime<T>, 'id' | 'type' | 'children'>;
 
-const GROUP_SKIP_ATTRS = new Set(['id', 'name', 'running', 'class', 'style', 'slot', 'title']);
-const SYNTH_SKIP_ATTRS = new Set(['id', 'name', 'bind', 'running', 'class', 'style', 'slot', 'title']);
+const GROUP_SKIP_ATTRS = new Set(['id', 'name', 'run', 'class', 'style', 'slot', 'title']);
+const SYNTH_SKIP_ATTRS = new Set(['id', 'name', 'bind', 'run', 'class', 'style', 'slot', 'title']);
 const SYNTHDEF_SKIP_ATTRS = new Set(['id', 'name', 'class', 'style', 'slot']);
 const UGEN_SKIP_ATTRS = new Set(['id', 'name', 'type', 'rate', 'class', 'style', 'slot']);
 
 function extractPluginProps(el: Element): HtmlProps<ScPluginNode> {
-    return {title: el.querySelector('title')?.textContent ?? '', controls: {}};
+    return {
+        title: el.querySelector('title')?.textContent ?? '',
+        run: el.getAttribute('run') !== 'false',
+        controls: {}
+    };
 }
 
 function extractGroupProps(el: Element): HtmlProps<ScGroupNode> {
     return {
         name: el.getAttribute('name') ?? '',
-        running: el.getAttribute('running') !== 'false',
+        run: el.getAttribute('run') !== 'false',
         controls: collectNumericAttrs(el, GROUP_SKIP_ATTRS),
     };
 }
@@ -28,7 +32,7 @@ function extractSynthProps(el: Element): HtmlProps<ScSynthNode> {
         name: el.getAttribute('name') ?? '',
         bind: el.getAttribute('bind') ?? '',
         controls: collectNumericAttrs(el, SYNTH_SKIP_ATTRS),
-        running: el.getAttribute('running') !== 'false',
+        run: el.getAttribute('run') !== 'false',
     };
 }
 

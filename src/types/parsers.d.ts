@@ -19,7 +19,7 @@ export interface ScGroupNode {
   type: 'sc-group';
   id: string;
   name: string;
-  running: boolean;
+  run: boolean;
   controls: Record<string, number>;
   children: ScElementNode[];
   runtime: NodeRuntime;
@@ -31,7 +31,7 @@ export interface ScSynthNode {
   name: string;
   bind: string;
   controls: Record<string, number>;
-  running: boolean;
+  run: boolean;
   runtime: NodeRuntime;
 }
 
@@ -107,6 +107,7 @@ export interface ScPluginNode {
   type: 'sc-plugin';
   id: string;
   title?: string;
+  run: boolean;
   controls: Record<string, number>;
   children: ScElementNode[];
   runtime: PluginRuntime;

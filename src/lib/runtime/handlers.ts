@@ -77,7 +77,7 @@ const pluginHandler = (ctx: RuntimeContext<ScPluginNode>): PluginRuntime => {
         ctx.visit();
         return {
             rootId: ctx.rootId,
-            run: findOrCreateEntry(ctx, "run", ctx.tree.id, ctx.tree.id, 1),
+            run: findOrCreateEntry(ctx, "run", ctx.tree.id, ctx.tree.id, ctx.tree.run ? 1 : 0),
             loaded: true,
             controls: {},
         };
@@ -109,7 +109,7 @@ const groupHandler = (ctx: RuntimeContext<ScGroupNode>): NodeRuntime => {
     }
     return {
         rootId: ctx.rootId,
-        run: findOrCreateEntry(ctx, "run", n.id, n.name, n.running ? 1 : 0),
+        run: findOrCreateEntry(ctx, "run", n.id, n.name, n.run ? 1 : 0),
         controls,
     };
 };
@@ -127,7 +127,7 @@ const synthHandler = (ctx: RuntimeContext<ScSynthNode>): NodeRuntime => {
     }
     return {
         rootId: ctx.rootId,
-        run: findOrCreateEntry(ctx, "run", n.id, n.name, n.running ? 1 : 0),
+        run: findOrCreateEntry(ctx, "run", n.id, n.name, n.run ? 1 : 0),
         controls,
     };
 };

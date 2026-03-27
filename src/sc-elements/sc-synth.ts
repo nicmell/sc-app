@@ -23,7 +23,7 @@ export class ScSynth extends ScNode {
     protected firstUpdated() {
         oscService.send(
             newSynthMessage(this.bind, this.nodeId, 0, 0, this.getParams()),
-            nodeRunMessage(this.nodeId, this.running ? 1 : 0),
+            nodeRunMessage(this.nodeId, this.run ? 1 : 0),
             groupTailMessage(this.groupId, -1),
         );
         this._loaded = true;
