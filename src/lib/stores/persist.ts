@@ -14,11 +14,7 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
     scsynth: {options: scsynth.options},
     plugins: plugins.items
         .map(({loaded: _loaded, error: _error, ...plugin}) => ({...plugin})),
-    runtime: {
-      layout: {items: runtime.layout.items, options: runtime.layout.options},
-      tree: marshalTree(runtime.nodes).map(item => ({...item, runtime: {...item.runtime, loaded: false, error: undefined}})),
-      entries: runtime.entries,
-    },
+    runtime: marshalTree(runtime),
   }),
   merge: (persisted, current: RootState): RootState => {
     const p = persisted as ConfigFile | undefined;
@@ -34,12 +30,7 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
             })
           : current.plugins.items,
       },
-      runtime: {
-        ...current.runtime,
-        layout: p?.runtime?.layout ? {...current.runtime.layout, ...p.runtime.layout} : current.runtime.layout,
-        nodes: p?.runtime?.tree ? unmarshalTree(p.runtime.tree) : current.runtime.nodes,
-        entries: p?.runtime?.entries ?? current.runtime.entries,
-      },
+      runtime: p?.runtime ? unmarshalTree(p.runtime) : current.runtime,
     };
   },
 };

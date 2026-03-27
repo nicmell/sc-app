@@ -1,15 +1,25 @@
-import type {ScElementNode, ScPluginNode} from "@/types/parsers";
+import type {ScElementNode} from "@/types/parsers";
+import type {RuntimeState, ConfigFile} from "@/types/stores";
 import {isParent, isPlugin} from "@/lib/utils/guards";
 
-export function marshalTree(tree: Record<string, ScElementNode>): ScPluginNode[] {
-    return Object.values(tree).filter(isPlugin);
+type PersistedRuntime = ConfigFile['runtime'];
+
+export function marshalTree(state: RuntimeState): PersistedRuntime {
+    const tree = Object.values(state.nodes)
+        .filter(isPlugin)
+        .map(item => ({...item, runtime: {...item.runtime, loaded: false, error: undefined}}));
+    return {
+        layout: {items: state.layout.items, options: state.layout.options},
+        entries: state.entries,
+        tree,
+    };
 }
 
-export function unmarshalTree(tree: ScPluginNode[]): Record<string, ScElementNode> {
-    const result: Record<string, ScElementNode> = {};
+export function unmarshalTree(persisted: PersistedRuntime): RuntimeState {
+    const nodes: Record<string, ScElementNode> = {};
 
     function walk(node: ScElementNode) {
-        result[node.id] = node;
+        nodes[node.id] = node;
         if (isParent(node)) {
             for (const child of node.children) {
                 walk(child);
@@ -17,8 +27,12 @@ export function unmarshalTree(tree: ScPluginNode[]): Record<string, ScElementNod
         }
     }
 
-    for (const plugin of tree) {
+    for (const plugin of persisted.tree) {
         walk(plugin);
     }
-    return result;
+    return {
+        layout: persisted.layout,
+        entries: persisted.entries,
+        nodes,
+    };
 }
