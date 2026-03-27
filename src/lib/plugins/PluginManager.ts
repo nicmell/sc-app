@@ -42,6 +42,9 @@ export class PluginManager {
         }
 
         const entries: Record<string, RuntimeValueEntry> = {};
+        for (const [id, entry] of Object.entries(runtimeApi.entries)) {
+            if (entry.rootId === boxId) entries[id] = entry;
+        }
         const synthdefs: ScSynthDefNode[] = [];
         const nodes: Record<string, ScElementNode> = {};
 
@@ -53,7 +56,6 @@ export class PluginManager {
             entries,
             synthdefs,
             nodes,
-            persistedEntries: runtimeApi.entries,
         });
 
         runtimeApi.loadPlugin({id: boxId, nodes, entries});

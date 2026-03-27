@@ -14,7 +14,6 @@ export type RuntimeHandler<T extends ScElementNode = ScElementNode> =
 export interface RuntimeContext<T extends ScElementNode = ScElementNode> {
     rootId: string;
     entries: Record<string, RuntimeValueEntry>;
-    persistedEntries: Record<string, RuntimeValueEntry>;
     nodes: Record<string, ScElementNode>;
     synthdefs: ScSynthDefNode[];
     scope: ScElementNode[];
@@ -34,22 +33,11 @@ function findOrCreateEntry(
     name: string,
     defaultValue: number,
 ): string {
-    // 1. Check ctx.entries for existing entry created this parse session
     for (const [id, entry] of Object.entries(ctx.entries)) {
         if (entry.type === type && entry.targetNode === targetNode && entry.name === name) {
             return id;
         }
     }
-
-    // 2. Check persisted entries
-    for (const [id, entry] of Object.entries(ctx.persistedEntries)) {
-        if (entry.type === type && entry.targetNode === targetNode && entry.name === name) {
-            ctx.entries[id] = entry;
-            return id;
-        }
-    }
-
-    // 3. Create new entry
     const id = crypto.randomUUID();
     ctx.entries[id] = {type, rootId: ctx.rootId, targetNode, name, value: defaultValue};
     return id;
@@ -91,25 +79,35 @@ function resolveVisualBind(ctx: RuntimeContext<ScDisplayNode | ScIfNode>): Input
 
 const pluginHandler = (ctx: RuntimeContext<ScPluginNode>): void => {
     try {
+        ctx.visit();
         ctx.tree.runtime = {
             rootId: ctx.rootId,
             run: findOrCreateEntry(ctx, "run", ctx.tree.id, ctx.tree.id, 1),
-            loaded: false,
+            loaded: true,
             controls: {},
         };
-        ctx.visit();
         ctx.tree.runtime.loaded = true;
     } catch (e) {
-        ctx.tree.runtime.error = e instanceof Error ? e.message : String(e);
+        ctx.tree.runtime = {
+            rootId: ctx.rootId,
+            run: "",
+            loaded: false,
+            controls: {},
+            error: e instanceof Error ? e.message : String(e),
+        };
         ctx.tree.children = [];
         ctx.scope.length = 0;
         for (const id of Object.keys(ctx.nodes)) {
             if (id !== ctx.tree.id) delete ctx.nodes[id];
         }
+        for (const id of Object.keys(ctx.entries)) {
+            delete ctx.entries[id];
+        }
     }
 };
 
 const groupHandler = (ctx: RuntimeContext<ScGroupNode>): void => {
+    ctx.visit();
     const n = ctx.tree;
     const controls: Record<string, string> = {};
     for (const [name, value] of Object.entries(n.controls)) {
@@ -120,7 +118,6 @@ const groupHandler = (ctx: RuntimeContext<ScGroupNode>): void => {
         run: findOrCreateEntry(ctx, "run", n.id, n.name, n.running ? 1 : 0),
         controls,
     };
-    ctx.visit();
 };
 
 const synthHandler = (ctx: RuntimeContext<ScSynthNode>): void => {
@@ -142,10 +139,10 @@ const synthHandler = (ctx: RuntimeContext<ScSynthNode>): void => {
 };
 
 const synthDefHandler = (ctx: RuntimeContext<ScSynthDefNode>): void => {
-    ctx.synthdefs.push(ctx.tree);
-    ctx.tree.runtime = {rootId: ctx.rootId};
     ctx.visit();
+    ctx.tree.runtime = {rootId: ctx.rootId};
 
+    ctx.synthdefs.push(ctx.tree);
     const ugenChildren = ctx.tree.children.filter((c): c is ScUgenNode => c.type === 'sc-ugen');
     if (ugenChildren.length > 0) {
         const specsMap = new Map(ugenChildren.map(c =>
@@ -201,8 +198,8 @@ const displayHandler = (ctx: RuntimeContext<ScDisplayNode>): void => {
 };
 
 const ifHandler = (ctx: RuntimeContext<ScIfNode>): void => {
-    ctx.tree.runtime = resolveVisualBind(ctx);
     ctx.visit();
+    ctx.tree.runtime = resolveVisualBind(ctx);
 };
 
 // --- Handler map ---

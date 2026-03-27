@@ -60,7 +60,6 @@ export interface ProcessHtmlArgs {
     entries: Record<string, RuntimeValueEntry>;
     synthdefs: ScSynthDefNode[];
     nodes: Record<string, ScElementNode>;
-    persistedEntries: Record<string, RuntimeValueEntry>;
 }
 
 function processElement<T extends ScElementNode = ScElementNode>(ctx: RuntimeContext<T>): T {
@@ -89,7 +88,6 @@ export function processHtml<T extends ScElementNode>(args: ProcessHtmlArgs): T {
         nodes: args.nodes,
         synthdefs: args.synthdefs,
         entries: args.entries,
-        persistedEntries: args.persistedEntries,
         visit(this: RuntimeContext) {
             const elements = Array.from(walkDom(this.element));
 
