@@ -1,7 +1,7 @@
 import {LitElement, html, css} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
-import {resolveEntryId} from './resolve.ts';
+import {resolveInputRuntime} from './resolve.ts';
 
 function formatValue(template: string, value: unknown): string {
   if (typeof value === 'boolean') return template.replace('%b', value ? 'true' : 'false');
@@ -42,13 +42,13 @@ export class ScDisplay extends LitElement {
     this.format = '';
   }
 
-  private get _entryId(): string | undefined {
-    return resolveEntryId(this._node, this.id, 'sc-display');
+  private get _runtime() {
+    return resolveInputRuntime(this._node, this.id, 'sc-display');
   }
 
   render() {
-    const entryId = this._entryId;
-    const value = entryId ? this._node.value?.getInputValue(entryId) : undefined;
+    const rt = this._runtime;
+    const value = rt ? this._node.value?.getControlValue(rt.targetNode, rt.name) : undefined;
     const text = this.format ? formatValue(this.format, value) : String(value ?? '');
     return html`${text}`;
   }

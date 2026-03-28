@@ -1,7 +1,7 @@
 import {LitElement, html, css} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
-import {resolveEntryId} from './resolve.ts';
+import {resolveInputRuntime} from './resolve.ts';
 
 export class ScIf extends LitElement {
   static properties = {
@@ -40,13 +40,13 @@ export class ScIf extends LitElement {
     this.isLesserThan = null;
   }
 
-  private get _entryId(): string | undefined {
-    return resolveEntryId(this._node, this.id, 'sc-if');
+  private get _runtime() {
+    return resolveInputRuntime(this._node, this.id, 'sc-if');
   }
 
   private _test(): boolean {
-    const entryId = this._entryId;
-    const value = entryId ? this._node.value?.getInputValue(entryId) : undefined;
+    const rt = this._runtime;
+    const value = rt ? this._node.value?.getControlValue(rt.targetNode, rt.name) : undefined;
     const num = typeof value === 'number' ? value : Number(value);
     if (this.isEqual !== null) return String(value) === this.isEqual;
     if (this.isNotEqual !== null) return String(value) !== this.isNotEqual;

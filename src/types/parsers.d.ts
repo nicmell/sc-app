@@ -5,14 +5,10 @@ export interface UGenSpec {
   inputs: Record<string, string>;
 }
 
-export type RuntimeValueEntry =
-  | { type: "control"; rootId: string; targetNode: string; name: string; value: number }
-  | { type: "run"; rootId: string; targetNode: string; name: string; value: number };
-
 export interface NodeRuntime {
   rootId: string;
-  run: string;
-  controls: Record<string, string>;
+  run: number;
+  controls: Record<string, number>;
 }
 
 export interface ScGroupNode {
@@ -58,7 +54,8 @@ export interface ScSynthDefNode {
 
 export interface InputRuntime {
   rootId: string;
-  value: string;
+  targetNode: string;
+  name: string;
 }
 
 export interface ScRangeNode {
@@ -128,10 +125,4 @@ export type ScElementNodeBase = StripRuntime<ScElementNode>;
 export interface ProcessHtmlResult {
   tree: ScElementNode[];
   nodes: Map<string, ScElementNode>;
-}
-
-export interface PluginTreeEntry {
-  html: string;
-  nodes: Record<string, ScElementNode>;
-  entries: Record<string, RuntimeValueEntry>;
 }

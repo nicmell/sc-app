@@ -1,7 +1,7 @@
 import {html, svg, css, LitElement} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
-import {resolveEntryId} from './resolve.ts';
+import {resolveInputRuntime} from './resolve.ts';
 
 export class ScRun extends LitElement {
     static properties = {
@@ -40,20 +40,20 @@ export class ScRun extends LitElement {
         this.bgcolor = 'var(--color-bg-secondary, #e8e8e8)';
     }
 
-    private get _entryId(): string | undefined {
-        return resolveEntryId(this._node, this.id, 'sc-run');
+    private get _runtime() {
+        return resolveInputRuntime(this._node, this.id, 'sc-run');
     }
 
     get run(): boolean {
-        const entryId = this._entryId;
-        if (!entryId) return true;
-        return (this._node.value?.getInputValue(entryId) ?? 1) !== 0;
+        const rt = this._runtime;
+        if (!rt) return true;
+        return (this._node.value?.getRunValue(rt.targetNode) ?? 1) !== 0;
     }
 
     private _onClick = () => {
-        const entryId = this._entryId;
-        if (entryId) {
-            this._node.value?.onRun(entryId, this.bind, this.run ? 0 : 1);
+        const rt = this._runtime;
+        if (rt) {
+            this._node.value?.onRun(rt.targetNode, this.bind, this.run ? 0 : 1);
         }
     };
 

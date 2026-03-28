@@ -10,7 +10,6 @@ export function marshalTree(state: RuntimeState): PersistedRuntime {
         .map(item => ({...item, runtime: {...item.runtime, loaded: false, error: undefined}}));
     return {
         layout: {items: state.layout.items},
-        entries: state.entries,
         tree,
     };
 }
@@ -32,7 +31,6 @@ export function unmarshalTree(persisted: PersistedRuntime): RuntimeState {
     }
     return {
         layout: persisted.layout,
-        entries: persisted.entries,
         nodes,
     };
 }

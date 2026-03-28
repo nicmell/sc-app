@@ -1,7 +1,7 @@
 import {html, css, LitElement} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
-import {resolveEntryId} from './resolve.ts';
+import {resolveInputRuntime} from './resolve.ts';
 import './internal/sc-switch.ts';
 
 export class ScCheckbox extends LitElement {
@@ -27,14 +27,14 @@ export class ScCheckbox extends LitElement {
         :host { display: inline-block; }
     `;
 
-    private get _entryId(): string | undefined {
-        return resolveEntryId(this._node, this.id, 'sc-checkbox');
+    private get _runtime() {
+        return resolveInputRuntime(this._node, this.id, 'sc-checkbox');
     }
 
     get checked(): boolean {
-        const entryId = this._entryId;
-        if (!entryId) return false;
-        return (this._node.value?.getInputValue(entryId) ?? 0) !== 0;
+        const rt = this._runtime;
+        if (!rt) return false;
+        return (this._node.value?.getControlValue(rt.targetNode, rt.name) ?? 0) !== 0;
     }
 
     constructor() {
@@ -48,9 +48,9 @@ export class ScCheckbox extends LitElement {
     }
 
     onChange = (checked: boolean) => {
-        const entryId = this._entryId;
-        if (checked !== this.checked && this.bind && entryId) {
-            this._node.value?.onChange(entryId, this.bind, checked ? 1 : 0);
+        const rt = this._runtime;
+        if (checked !== this.checked && this.bind && rt) {
+            this._node.value?.onChange(rt.targetNode, this.bind, checked ? 1 : 0);
         }
     };
 

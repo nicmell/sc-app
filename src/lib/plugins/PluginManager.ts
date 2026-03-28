@@ -1,5 +1,5 @@
 import type {PluginInfo} from "@/types/stores";
-import type {ScElementNode, ScSynthDefNode, RuntimeValueEntry, ScPluginNode, StripRuntime} from "@/types/parsers";
+import type {ScElementNode, ScSynthDefNode, ScPluginNode, StripRuntime} from "@/types/parsers";
 import {ELEMENTS} from "@/constants/sc-elements";
 import {layoutApi, pluginsApi, runtimeApi} from "@/lib/stores/api";
 import {get, post, del} from "@/lib/http";
@@ -42,10 +42,6 @@ export class PluginManager {
             throw new Error(error.textContent ?? "Invalid XHTML")
         }
 
-        const entries: Record<string, RuntimeValueEntry> = {};
-        for (const [id, entry] of Object.entries(runtimeApi.entries)) {
-            if (entry.rootId === boxId) entries[id] = entry;
-        }
         const synthdefs: ScSynthDefNode[] = [];
         const nodes: Record<string, ScElementNode> = {};
 
@@ -54,9 +50,9 @@ export class PluginManager {
 
         const tree = hydrate({id: boxId, type: ELEMENTS.SC_PLUGIN}, element, saved) as StripRuntime<ScPluginNode>
 
-        processHtml<ScPluginNode>({rootId: boxId, scope: [tree], tree, element, saved, entries, synthdefs, nodes});
+        processHtml<ScPluginNode>({rootId: boxId, scope: [tree], tree, element, saved, synthdefs, nodes});
 
-        runtimeApi.loadPlugin({id: boxId, nodes, entries});
+        runtimeApi.loadPlugin({id: boxId, nodes});
         return doc.documentElement.innerHTML;
     }
 }

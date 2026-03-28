@@ -1,7 +1,7 @@
 import {css, html, LitElement} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
-import {resolveEntryId} from './resolve.ts';
+import {resolveInputRuntime} from './resolve.ts';
 import './internal/sc-knob.ts';
 import './internal/sc-slider.ts';
 
@@ -42,14 +42,14 @@ export class ScRange extends LitElement {
         }
     `;
 
-    private get _entryId(): string | undefined {
-        return resolveEntryId(this._node, this.id, 'sc-range');
+    private get _runtime() {
+        return resolveInputRuntime(this._node, this.id, 'sc-range');
     }
 
     get value(): number {
-        const entryId = this._entryId;
-        if (!entryId) return 0;
-        return this._node.value?.getInputValue(entryId) ?? 0;
+        const rt = this._runtime;
+        if (!rt) return 0;
+        return this._node.value?.getControlValue(rt.targetNode, rt.name) ?? 0;
     }
 
     constructor() {
@@ -69,9 +69,9 @@ export class ScRange extends LitElement {
     }
 
     onChange = (value: number) => {
-        const entryId = this._entryId;
-        if (value !== this.value && this.bind && entryId) {
-            this._node.value?.onChange(entryId, this.bind, value);
+        const rt = this._runtime;
+        if (value !== this.value && this.bind && rt) {
+            this._node.value?.onChange(rt.targetNode, this.bind, value);
         }
     };
 

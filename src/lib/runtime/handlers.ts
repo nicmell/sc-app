@@ -1,7 +1,7 @@
 import type {
     ScElementNode, ScElementNodeBase, ScParentNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScUgenNode,
     ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode,
-    ScPluginNode, PluginRuntime, NodeRuntime, UgenRuntime, InputRuntime, RuntimeValueEntry, StripRuntime,
+    ScPluginNode, PluginRuntime, NodeRuntime, UgenRuntime, InputRuntime, StripRuntime,
 } from "@/types/parsers";
 import {findElementByPath} from "@/lib/utils/elementTree";
 import {isSynthDef, isSynth, isNode} from "@/lib/utils/guards";
@@ -10,7 +10,6 @@ import {synthDefManager} from "@/lib/synthdef";
 
 export interface RuntimeContext<T extends ScElementNode = ScElementNode> {
     rootId: string;
-    entries: Record<string, RuntimeValueEntry>;
     nodes: Record<string, ScElementNode>;
     synthdefs: ScSynthDefNode[];
     scope: ScElementNodeBase[];
@@ -20,23 +19,6 @@ export interface RuntimeContext<T extends ScElementNode = ScElementNode> {
 }
 
 // --- Helpers ---
-
-function findOrCreateEntry(
-    ctx: RuntimeContext,
-    type: "control" | "run",
-    targetNode: string,
-    name: string,
-    defaultValue: number,
-): string {
-    for (const [id, entry] of Object.entries(ctx.entries)) {
-        if (entry.type === type && entry.targetNode === targetNode && entry.name === name) {
-            return id;
-        }
-    }
-    const id = crypto.randomUUID();
-    ctx.entries[id] = {type, rootId: ctx.rootId, targetNode, name, value: defaultValue};
-    return id;
-}
 
 export function checkDuplicateNames(scope: ScElementNodeBase[]): void {
     const seen = new Set<string>();
@@ -65,9 +47,8 @@ function resolveControlBind(n: { bind: string; type: string }, ctx: RuntimeConte
 }
 
 function resolveVisualBind(ctx: RuntimeContext<ScDisplayNode | ScIfNode>): InputRuntime {
-    const {target, controlName, defaultValue} = resolveControlBind(ctx.tree, ctx);
-    const entryId = findOrCreateEntry(ctx, "control", target.id, controlName, defaultValue);
-    return {rootId: ctx.rootId, value: entryId};
+    const {target, controlName} = resolveControlBind(ctx.tree, ctx);
+    return {rootId: ctx.rootId, targetNode: target.id, name: controlName};
 }
 
 // --- Handlers ---
@@ -77,7 +58,7 @@ const pluginHandler = (ctx: RuntimeContext<ScPluginNode>): PluginRuntime => {
         ctx.visit();
         return {
             rootId: ctx.rootId,
-            run: findOrCreateEntry(ctx, "run", ctx.tree.id, ctx.tree.id, ctx.tree.run ? 1 : 0),
+            run: ctx.tree.run ? 1 : 0,
             loaded: true,
             controls: {},
         };
@@ -87,12 +68,9 @@ const pluginHandler = (ctx: RuntimeContext<ScPluginNode>): PluginRuntime => {
         for (const id of Object.keys(ctx.nodes)) {
             if (id !== ctx.tree.id) delete ctx.nodes[id];
         }
-        for (const id of Object.keys(ctx.entries)) {
-            delete ctx.entries[id];
-        }
         return {
             rootId: ctx.rootId,
-            run: "",
+            run: 0,
             loaded: false,
             controls: {},
             error: e instanceof Error ? e.message : String(e),
@@ -103,14 +81,10 @@ const pluginHandler = (ctx: RuntimeContext<ScPluginNode>): PluginRuntime => {
 const groupHandler = (ctx: RuntimeContext<ScGroupNode>): NodeRuntime => {
     ctx.visit();
     const n = ctx.tree;
-    const controls: Record<string, string> = {};
-    for (const [name, value] of Object.entries(n.controls)) {
-        controls[name] = findOrCreateEntry(ctx, "control", n.id, name, value);
-    }
     return {
         rootId: ctx.rootId,
-        run: findOrCreateEntry(ctx, "run", n.id, n.name, n.run ? 1 : 0),
-        controls,
+        run: n.run ? 1 : 0,
+        controls: {...n.controls},
     };
 };
 
@@ -121,14 +95,10 @@ const synthHandler = (ctx: RuntimeContext<ScSynthNode>): NodeRuntime => {
             throw new Error(`<sc-synth bind="${n.bind}">: does not match any <sc-synthdef>`);
         }
     }
-    const controls: Record<string, string> = {};
-    for (const [name, value] of Object.entries(n.controls)) {
-        controls[name] = findOrCreateEntry(ctx, "control", n.id, name, value);
-    }
     return {
         rootId: ctx.rootId,
-        run: findOrCreateEntry(ctx, "run", n.id, n.name, n.run ? 1 : 0),
-        controls,
+        run: n.run ? 1 : 0,
+        controls: {...n.controls},
     };
 };
 
@@ -169,8 +139,8 @@ const ugenHandler = (ctx: RuntimeContext<ScUgenNode>): UgenRuntime => {
 };
 
 const inputHandler = (ctx: RuntimeContext<ScRangeNode | ScCheckboxNode>): InputRuntime => {
-    const {target, controlName, defaultValue} = resolveControlBind(ctx.tree, ctx);
-    return {rootId: ctx.rootId, value: findOrCreateEntry(ctx, "control", target.id, controlName, defaultValue)};
+    const {target, controlName} = resolveControlBind(ctx.tree, ctx);
+    return {rootId: ctx.rootId, targetNode: target.id, name: controlName};
 };
 
 const runHandler = (ctx: RuntimeContext<ScRunNode>): InputRuntime => {
@@ -184,7 +154,7 @@ const runHandler = (ctx: RuntimeContext<ScRunNode>): InputRuntime => {
     }
     const targetId = target ? target.id : '';
     const targetName = target && 'name' in target ? (target as { name: string }).name : '';
-    return {rootId: ctx.rootId, value: findOrCreateEntry(ctx, "run", targetId, targetName, 1)};
+    return {rootId: ctx.rootId, targetNode: targetId, name: targetName};
 };
 
 const displayHandler = (ctx: RuntimeContext<ScDisplayNode>): InputRuntime => {

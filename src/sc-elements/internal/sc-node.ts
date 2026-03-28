@@ -3,7 +3,7 @@ import {ContextProvider, ContextConsumer} from '@lit/context';
 import {oscService} from '@/lib/osc';
 import {nodeRunMessage, nodeSetMessage} from '@/lib/osc/messages.ts';
 import {runtimeApi} from '@/lib/stores/api';
-import {isSynth, isControlEntry, isRunEntry} from '@/lib/utils/guards';
+import {isNode} from '@/lib/utils/guards';
 import {store} from '@/lib/stores/store';
 import {nodeContext, type NodeContext, type ScNode as IScNode, type ScElement} from '../context.ts';
 
@@ -28,16 +28,8 @@ export abstract class ScNode extends LitElement implements IScNode {
 
     getParams(): Record<string, number> {
         const el = runtimeApi.getById(this.id);
-        if (!el || !isSynth(el)) return {};
-        const values = runtimeApi.entries;
-        const params: Record<string, number> = {};
-        for (const [name, entryId] of Object.entries(el.runtime.controls)) {
-            const entry = values[entryId];
-            if (entry && isControlEntry(entry)) {
-                params[name] = entry.value;
-            }
-        }
-        return params;
+        if (!el || !isNode(el)) return {};
+        return {...el.runtime.controls};
     }
 
     registerElement(el: ScElement) {
@@ -48,16 +40,16 @@ export abstract class ScNode extends LitElement implements IScNode {
         this.registeredElements.delete(el);
     }
 
-    onChange(entryId: string, target: string, value: number) {
-        runtimeApi.setControl({entryId, value});
+    onChange(targetNode: string, target: string, value: number) {
         const segments = target.split('.');
         const control = segments.pop()!;
+        runtimeApi.setControl({nodeId: targetNode, name: control, value});
         const nodeId = this.resolveNodeId(segments);
         oscService.send(nodeSetMessage(nodeId, {[control]: value}));
     }
 
-    onRun(entryId: string, target: string, value: number) {
-        runtimeApi.setRunning({entryId, value});
+    onRun(targetNode: string, target: string, value: number) {
+        runtimeApi.setRunning({nodeId: targetNode, value});
         const nodeId = this.resolveNodeId(target ? target.split('.') : []);
         oscService.send(nodeRunMessage(nodeId, value));
     }
@@ -75,12 +67,14 @@ export abstract class ScNode extends LitElement implements IScNode {
         return current.nodeId;
     }
 
-    getInputValue(entryId: string): number | undefined {
-        const values = runtimeApi.entries;
-        const entry = values[entryId];
-        if (!entry) return undefined;
-        if (isControlEntry(entry) || isRunEntry(entry)) return entry.value;
-        return undefined;
+    getControlValue(targetNode: string, name: string): number | undefined {
+        const node = runtimeApi.getById(targetNode);
+        return node && isNode(node) ? node.runtime.controls[name] : undefined;
+    }
+
+    getRunValue(targetNode: string): number | undefined {
+        const node = runtimeApi.getById(targetNode);
+        return node && isNode(node) ? node.runtime.run : undefined;
     }
 
     protected get groupId(): number {
@@ -106,16 +100,17 @@ export abstract class ScNode extends LitElement implements IScNode {
             boxId: () => this.boxId(),
             registerElement: (el) => this.registerElement(el),
             unregisterElement: (el) => this.unregisterElement(el),
-            onChange: (entryId, target, value) => this.onChange(entryId, target, value),
-            onRun: (entryId, target, value) => this.onRun(entryId, target, value),
-            getInputValue: (entryId) => this.getInputValue(entryId),
+            onChange: (targetNode, target, value) => this.onChange(targetNode, target, value),
+            onRun: (targetNode, target, value) => this.onRun(targetNode, target, value),
+            getControlValue: (targetNode, name) => this.getControlValue(targetNode, name),
+            getRunValue: (targetNode) => this.getRunValue(targetNode),
         };
         const provider = new ContextProvider(this, {context: nodeContext, initialValue: ctx});
-        let prevValues = store.getState().runtime.entries;
+        let prevNodes = store.getState().runtime.nodes;
         this._unsubscribe = store.subscribe(() => {
-            const values = store.getState().runtime.entries;
-            if (values !== prevValues) {
-                prevValues = values;
+            const nodes = store.getState().runtime.nodes;
+            if (nodes !== prevNodes) {
+                prevNodes = nodes;
                 provider.setValue(ctx, true);
             }
         });

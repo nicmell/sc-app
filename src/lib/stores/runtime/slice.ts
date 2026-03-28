@@ -1,74 +1,41 @@
 import type {RuntimeState} from "@/types/stores";
-import type {ScElementNode, RuntimeValueEntry} from "@/types/parsers";
-import {isParent, isControlEntry, isRunEntry} from "@/lib/utils/guards";
+import type {ScElementNode} from "@/types/parsers";
+import {isParent, isNode} from "@/lib/utils/guards";
 import {combineReducers, createSlice, type CaseReducer} from "@/lib/stores/utils";
 import {SliceName, RuntimeAction} from "@/constants/store";
 import layout from "../layout";
 
-function collectEntries(
-    state: RuntimeState,
-    nodeId: string,
-): Map<string, RuntimeValueEntry> {
-    const result = new Map<string, RuntimeValueEntry>();
+function propagateControl(state: RuntimeState, nodeId: string, name: string, value: number) {
     const target = state.nodes[nodeId];
-    if (!target) return result;
-
-    function addEntry(id: string) {
-        if (id && id in state.entries) {
-            result.set(id, state.entries[id])
-        }
-    }
+    if (!target || !isParent(target)) return;
 
     function walk(node: ScElementNode) {
-        const rt = node.runtime;
-        if ('run' in rt) addEntry(rt.run)
-        if ('value' in rt) addEntry(rt.value)
-        if ('controls' in rt) {
-            for (const id of Object.values(rt.controls)) {
-                addEntry(id)
-            }
+        if (isNode(node) && name in node.runtime.controls) {
+            node.runtime.controls[name] = value;
         }
         if (isParent(node)) {
             for (const child of node.children) {
-                walk(child)
+                walk(child);
             }
         }
     }
 
-    walk(target);
-    return result;
-}
-
-function cleanupEntries(state: RuntimeState) {
-    const referenced = new Set<string>();
-    for (const box of state.layout.items) {
-        for (const id of collectEntries(state, box.i).keys()) {
-            referenced.add(id);
-        }
-    }
-    for (const id of Object.keys(state.entries)) {
-        if (!referenced.has(id)) {
-            delete state.entries[id];
-        }
+    for (const child of target.children) {
+        walk(child);
     }
 }
 
 const initialState: RuntimeState = {
   layout: layout.getInitialState(),
   nodes: {},
-  entries: {},
 };
 
 export const runtimeSlice = createSlice({
   name: SliceName.RUNTIME,
   initialState,
   reducers: {
-    [RuntimeAction.LOAD_PLUGIN]: (state, action: { payload: { id: string; nodes: Record<string, ScElementNode>; entries?: Record<string, RuntimeValueEntry> } }) => {
+    [RuntimeAction.LOAD_PLUGIN]: (state, action: { payload: { id: string; nodes: Record<string, ScElementNode> } }) => {
       Object.assign(state.nodes, action.payload.nodes);
-      if (action.payload.entries) {
-        Object.assign(state.entries, action.payload.entries);
-      }
-      cleanupEntries(state);
     },
     [RuntimeAction.UNLOAD_PLUGIN]: (state, action: { payload: string }) => {
       for (const [id, node] of Object.entries(state.nodes)) {
@@ -76,24 +43,20 @@ export const runtimeSlice = createSlice({
           delete state.nodes[id];
         }
       }
-      cleanupEntries(state);
     },
-    [RuntimeAction.SET_CONTROL]: (state, action: { payload: { entryId: string; value: number } }) => {
-      const entry = state.entries[action.payload.entryId];
-      if (entry && isControlEntry(entry)) {
-        entry.value = action.payload.value;
-        // Propagate to children if target is a parent node
-        for (const [id, e] of collectEntries(state, entry.targetNode)) {
-          if (isControlEntry(e) && e.name === entry.name && id !== action.payload.entryId) {
-            e.value = action.payload.value;
-          }
-        }
+    [RuntimeAction.SET_CONTROL]: (state, action: { payload: { nodeId: string; name: string; value: number } }) => {
+      const {nodeId, name, value} = action.payload;
+      const node = state.nodes[nodeId];
+      if (node && isNode(node)) {
+        node.runtime.controls[name] = value;
+        propagateControl(state, nodeId, name, value);
       }
     },
-    [RuntimeAction.SET_RUNNING]: (state, action: { payload: { entryId: string; value: number } }) => {
-      const entry = state.entries[action.payload.entryId];
-      if (entry && isRunEntry(entry)) {
-        entry.value = action.payload.value;
+    [RuntimeAction.SET_RUNNING]: (state, action: { payload: { nodeId: string; value: number } }) => {
+      const {nodeId, value} = action.payload;
+      const node = state.nodes[nodeId];
+      if (node && isNode(node)) {
+        node.runtime.run = value;
       }
     },
   },
