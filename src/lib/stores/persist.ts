@@ -1,7 +1,7 @@
 import type {PersistOptions} from "zustand/middleware";
 import {tauriStorage} from "@/lib/storage/tauriStorage";
 import type {RootState, ConfigFile} from "@/types/stores";
-import {marshalTree, unmarshalTree} from "@/lib/runtime";
+import {marshalPreset, unmarshalPreset} from "@/lib/runtime";
 
 // State generic uses `any` because the redux middleware adds `dispatch` to the
 // actual store state, which isn't part of RootState.  The partialize/merge
@@ -13,7 +13,7 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
     options,
     plugins: plugins.items
         .map(({loaded: _loaded, error: _error, ...plugin}) => ({...plugin})),
-    runtime: marshalTree(runtime),
+    activePreset: marshalPreset(runtime),
   }),
   merge: (persisted, current: RootState): RootState => {
     const p = persisted as ConfigFile | undefined;
@@ -21,7 +21,7 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
       ...current,
       options: p?.options ?? current.options,
       plugins: {items: p?.plugins ?? current.plugins.items},
-      runtime: p?.runtime ? unmarshalTree(p.runtime) : current.runtime,
+      runtime: p?.activePreset ? unmarshalPreset(p.activePreset) : current.runtime,
     };
   },
 };

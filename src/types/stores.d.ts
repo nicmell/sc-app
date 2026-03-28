@@ -5,7 +5,7 @@ import type {layoutSlice} from "@/lib/stores/layout/slice";
 import type {optionsSlice} from "@/lib/stores/options/slice";
 import type {pluginsSlice} from "@/lib/stores/plugins/slice";
 import type {runtimeSlice} from "@/lib/stores/runtime/slice";
-import type {ScPluginNode, ScElementNode} from "@/types/parsers";
+import type {ScPluginNode, ScElementNode, ScElementNodeBase, StripRuntime} from "@/types/parsers";
 
 export interface BoxItem {
   i: string;
@@ -83,10 +83,18 @@ export interface PluginInfo {
 
 export type PersistedPlugin = Omit<PluginInfo, 'loaded' | 'error'>;
 
+export interface PresetItem extends BoxItem {
+  tree?: StripRuntime<ScPluginNode>;
+}
+
+export interface Preset {
+  layout: PresetItem[];
+}
+
 export interface ConfigFile {
   options: OptionsState;
   plugins: PersistedPlugin[];
-  runtime: { layout: BoxItem[]; tree: ScPluginNode[] };
+  activePreset: Preset;
 }
 
 export interface PluginsState {
@@ -96,6 +104,7 @@ export interface PluginsState {
 export interface RuntimeState {
   layout: LayoutState;
   nodes: Record<string, ScElementNode>;
+  savedTrees: Record<string, ScElementNodeBase>;
 }
 
 export interface RootState {

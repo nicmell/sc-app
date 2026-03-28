@@ -1,36 +1,47 @@
-import type {ScElementNode} from "@/types/parsers";
-import type {RuntimeState, ConfigFile} from "@/types/stores";
-import {isParent, isPlugin} from "@/lib/utils/guards";
+import type {ScElementNode, ScElementNodeBase, StripRuntime} from "@/types/parsers";
+import type {RuntimeState, Preset} from "@/types/stores";
+import {isParent, isPlugin, isNode} from "@/lib/utils/guards";
+import {cyrb53} from "@/lib/utils/randomId";
 
-type PersistedRuntime = ConfigFile['runtime'];
+function marshalNode(node: ScElementNode, nodes: Record<string, ScElementNode>): StripRuntime<ScElementNode> {
+    const {id, type, runtime, children, ...props} = node as any;
 
-export function marshalTree(state: RuntimeState): PersistedRuntime {
-    const tree = Object.values(state.nodes)
-        .filter(isPlugin)
-        .map(item => ({...item, runtime: {...item.runtime, loaded: false, error: undefined}}));
+    const hash = cyrb53(JSON.stringify(props));
+
+    if (isNode(node)) {
+        props.controls = {...node.runtime.controls};
+        props.run = node.runtime.run !== 0;
+    }
+
+    if (isParent(node)) {
+        const marshaledChildren = node.children.map((c: ScElementNode) =>
+            marshalNode(nodes[c.id] ?? c, nodes)
+        );
+        return {id, type, hash, ...props, children: marshaledChildren} as StripRuntime<ScElementNode>;
+    }
+
+    return {id, type, hash, ...props} as StripRuntime<ScElementNode>;
+}
+
+export function marshalPreset(state: RuntimeState): Preset {
     return {
-        layout: state.layout,
-        tree,
+        layout: state.layout.map(box => {
+            const node = state.nodes[box.i];
+            const tree = node && isPlugin(node)
+                ? marshalNode(node, state.nodes)
+                : state.savedTrees[box.i] ?? undefined;
+            return {...box, tree} as any;
+        }),
     };
 }
 
-export function unmarshalTree(persisted: PersistedRuntime): RuntimeState {
-    const nodes: Record<string, ScElementNode> = {};
-
-    function walk(node: ScElementNode) {
-        nodes[node.id] = node;
-        if (isParent(node)) {
-            for (const child of node.children) {
-                walk(child);
-            }
+export function unmarshalPreset(preset: Preset): RuntimeState {
+    const layout = preset.layout.map(({tree, ...box}) => box);
+    const savedTrees: Record<string, ScElementNodeBase> = {};
+    for (const item of preset.layout) {
+        if (item.tree) {
+            savedTrees[item.i] = item.tree as ScElementNodeBase;
         }
     }
-
-    for (const plugin of persisted.tree) {
-        walk(plugin);
-    }
-    return {
-        layout: persisted.layout,
-        nodes,
-    };
+    return {layout, nodes: {}, savedTrees};
 }

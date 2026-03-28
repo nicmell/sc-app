@@ -117,8 +117,8 @@ export type ScElementNode = ScPluginNode | ScGroupNode | ScSynthNode | ScSynthDe
 export type NodeType = ScElementNode["type"]
 
 export type StripRuntime<T> = T extends { children: ScElementNode[] }
-  ? Omit<T, 'runtime' | 'children'> & { children: StripRuntime<ScElementNode>[] }
-  : Omit<T, 'runtime'>;
+  ? Omit<T, 'runtime' | 'children'> & { hash?: string; children: StripRuntime<ScElementNode>[] }
+  : Omit<T, 'runtime'> & { hash?: string };
 
 export type ScElementNodeBase = StripRuntime<ScElementNode>;
 

@@ -46,7 +46,7 @@ export class PluginManager {
         const nodes: Record<string, ScElementNode> = {};
 
         const element = doc.documentElement;
-        const saved = runtimeApi.getById(boxId) ?? undefined
+        const saved = runtimeApi.savedTrees[boxId] ?? undefined
 
         const tree = hydrate({id: boxId, type: ELEMENTS.SC_PLUGIN}, element, saved) as StripRuntime<ScPluginNode>
 

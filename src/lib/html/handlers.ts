@@ -1,5 +1,5 @@
 import type {
-    ScElementNodeBase, StripRuntime, ScPluginNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScUgenNode,
+    StripRuntime, ScPluginNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScUgenNode,
     ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode,
 } from "@/types/parsers";
 import {ELEMENTS} from "@/constants/sc-elements";
@@ -75,7 +75,7 @@ function extractIfProps(el: Element): HtmlProps<ScIfNode> {
     return {bind: el.getAttribute('bind') ?? ''};
 }
 
-export function extractProps(type: string, el: Element): Omit<ScElementNodeBase, 'id' | 'type'> {
+export function extractProps(type: string, el: Element): Record<string, unknown> {
     switch (type) {
         case ELEMENTS.SC_PLUGIN:
             return {children: [], ...extractPluginProps(el)};

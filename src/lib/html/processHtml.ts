@@ -1,30 +1,14 @@
 import {ELEMENTS} from "@/constants/sc-elements";
-import {randomId} from "@/lib/utils/randomId";
-import {deepEqual} from "@/lib/utils/deepEqual";
+import {randomId, cyrb53} from "@/lib/utils/randomId";
 import type {ScElementNode, ScElementNodeBase, NodeType, ScParentNode} from "@/types/parsers";
 import {isNodeType, isParent} from "@/lib/utils/guards";
-import {type HtmlProps, extractProps} from "./handlers";
+import {extractProps} from "./handlers";
 import {type RuntimeContext, processElement} from "@/lib/runtime/handlers";
-
-const EXCLUDE_KEYS = new Set(['id', 'type', 'runtime', 'children']);
 
 function tagToType(tag: string): NodeType {
     if (tag === 'html') return ELEMENTS.SC_PLUGIN;
     return tag as NodeType;
 }
-
-function propsMatch(fresh: HtmlProps<ScElementNodeBase>, saved: ScElementNodeBase): boolean {
-    const freshProps: Record<string, unknown> = {};
-    for (const [key, val] of Object.entries(fresh)) {
-        if (!EXCLUDE_KEYS.has(key)) freshProps[key] = val;
-    }
-    const savedProps: Record<string, unknown> = {};
-    for (const [key, val] of Object.entries(saved)) {
-        if (!EXCLUDE_KEYS.has(key)) savedProps[key] = val;
-    }
-    return deepEqual(freshProps, savedProps);
-}
-
 
 function* walkDom(el: Element): Generator<Element> {
     for (const child of Array.from(el.children)) {
@@ -39,15 +23,17 @@ function* walkDom(el: Element): Generator<Element> {
 
 export function hydrate<T extends ScElementNode>(node: { id: string, type: T["type"] }, element: Element, saved?: ScElementNodeBase) {
     const props = extractProps(node.type, element);
-    const matched = saved?.type === node.type ? saved : undefined;
-    if (saved && !matched) {
-        console.warn(`[plugin hydration] type mismatch: ${node.type} vs saved ${saved.type}`);
-    }
-    if (matched && propsMatch(props, matched)) {
+    const {children: _children, ...identityProps} = props as any;
+    const hash = cyrb53(JSON.stringify(identityProps));
+    const matched = saved?.type === node.type && saved.hash === hash ? saved : undefined;
+
+    if (matched) {
         node.id = matched.id;
-    } else if (matched) {
-        console.warn(`[plugin hydration] props mismatch for ${node.type}`);
+        const {id: _id, type: _type, hash: _hash, children: _children, ...restoredProps} = matched as any;
+        element.setAttribute('id', node.id);
+        return Object.assign(node, props, restoredProps);
     }
+
     element.setAttribute('id', node.id);
     return Object.assign(node, props);
 }
