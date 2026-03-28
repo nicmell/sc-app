@@ -17,10 +17,10 @@ function marshalNode(node: ScElementNode, nodes: Record<string, ScElementNode>):
         const marshaledChildren = node.children.map((c: ScElementNode) =>
             marshalNode(nodes[c.id] ?? c, nodes)
         );
-        return {id, type, hash, ...props, children: marshaledChildren} as StripRuntime<ScElementNode>;
+        return {type, hash, ...props, children: marshaledChildren} as StripRuntime<ScElementNode>;
     }
 
-    return {id, type, hash, ...props} as StripRuntime<ScElementNode>;
+    return {type, hash, ...props} as StripRuntime<ScElementNode>;
 }
 
 export function marshalPreset(state: RuntimeState): Preset {

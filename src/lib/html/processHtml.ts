@@ -21,20 +21,21 @@ function* walkDom(el: Element): Generator<Element> {
     }
 }
 
-export function hydrate<T extends ScElementNode>(node: { id: string, type: T["type"] }, element: Element, saved?: ScElementNodeBase) {
+export function hydrate<T extends ScElementNode>(
+    node: { id: string, type: T["type"] },
+    element: Element,
+    saved?: ScElementNodeBase
+) {
     const props = extractProps(node.type, element);
     const {children: _children, ...identityProps} = props as any;
     const hash = cyrb53(JSON.stringify(identityProps));
     const matched = saved?.type === node.type && saved.hash === hash ? saved : undefined;
 
+    element.setAttribute('id', node.id);
     if (matched) {
-        node.id = matched.id;
-        const {id: _id, type: _type, hash: _hash, children: _children, ...restoredProps} = matched as any;
-        element.setAttribute('id', node.id);
+        const {type: _type, hash: _hash, children: _children, ...restoredProps} = matched as any;
         return Object.assign(node, props, restoredProps);
     }
-
-    element.setAttribute('id', node.id);
     return Object.assign(node, props);
 }
 
@@ -50,8 +51,7 @@ export function processHtml<T extends ScElementNode>(args: HtmlRuntimeContext<T>
         visit() {
             const elements = Array.from(walkDom(element));
 
-            const parentMatch = rest.tree.id === saved?.id;
-            const savedChildren = parentMatch && saved && isParent(saved) ? saved.children : [];
+            const savedChildren = saved && isParent(saved) ? saved.children : [];
 
             const scope = elements
                 .map((el, i) => {
