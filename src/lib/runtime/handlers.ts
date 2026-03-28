@@ -168,7 +168,7 @@ const ugenHandler = (ctx: RuntimeContext<ScUgenNode>): UgenRuntime => {
     return {rootId: ctx.rootId};
 };
 
-const controlHandler = (ctx: RuntimeContext<ScRangeNode | ScCheckboxNode>): InputRuntime => {
+const inputHandler = (ctx: RuntimeContext<ScRangeNode | ScCheckboxNode>): InputRuntime => {
     const {target, controlName, defaultValue} = resolveControlBind(ctx.tree, ctx);
     return {rootId: ctx.rootId, value: findOrCreateEntry(ctx, "control", target.id, controlName, defaultValue)};
 };
@@ -209,7 +209,7 @@ export function processElement<T extends ScElementNode = ScElementNode>(ctx: Run
         case ELEMENTS.SC_SYNTHDEF: runtime = synthDefHandler(c); break;
         case ELEMENTS.SC_UGEN: runtime = ugenHandler(c); break;
         case ELEMENTS.SC_RANGE:
-        case ELEMENTS.SC_CHECKBOX: runtime = controlHandler(c); break;
+        case ELEMENTS.SC_CHECKBOX: runtime = inputHandler(c); break;
         case ELEMENTS.SC_RUN: runtime = runHandler(c); break;
         case ELEMENTS.SC_DISPLAY: runtime = displayHandler(c); break;
         case ELEMENTS.SC_IF: runtime = ifHandler(c); break;
