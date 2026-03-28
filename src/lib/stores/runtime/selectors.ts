@@ -7,6 +7,6 @@ const createRuntimeSelector: SliceSelector<typeof root.runtime> = (fn) =>
 export default {
   layout: createRuntimeSelector(s => s.layout),
   nodes: createRuntimeSelector(s => s.nodes),
-  savedTrees: createRuntimeSelector(s => s.savedTrees),
+  overrides: createRuntimeSelector(s => s.overrides),
   getById: (id: string) => createRuntimeSelector(s => s.nodes[id]),
 };

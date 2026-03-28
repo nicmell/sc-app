@@ -1,7 +1,7 @@
 import {ELEMENTS} from "@/constants/sc-elements";
-import {randomId, cyrb53} from "@/lib/utils/randomId";
-import type {ScElementNode, ScElementNodeBase, NodeType, ScParentNode} from "@/types/parsers";
-import {isNodeType, isParent} from "@/lib/utils/guards";
+import {randomId} from "@/lib/utils/randomId";
+import type {ScElementNode, NodeType, ScParentNode} from "@/types/parsers";
+import {isNodeType} from "@/lib/utils/guards";
 import {extractProps} from "./handlers";
 import {type RuntimeContext, processElement} from "@/lib/runtime/handlers";
 
@@ -21,48 +21,36 @@ function* walkDom(el: Element): Generator<Element> {
     }
 }
 
-export function hydrate<T extends ScElementNode>(
-    node: { id: string, type: T["type"] },
-    element: Element,
-    saved?: ScElementNodeBase
-) {
+export function hydrate<T extends ScElementNode>(node: { id: string, type: T["type"] }, element: Element) {
     const props = extractProps(node.type, element);
-    const {children: _children, ...identityProps} = props as any;
-    const hash = cyrb53(JSON.stringify(identityProps));
-    const matched = saved?.type === node.type && saved.hash === hash ? saved : undefined;
-
     element.setAttribute('id', node.id);
-    if (matched) {
-        const {type: _type, hash: _hash, children: _children, ...restoredProps} = matched as any;
-        return Object.assign(node, props, restoredProps);
-    }
     return Object.assign(node, props);
 }
 
 export type HtmlRuntimeContext<T extends ScElementNode = ScElementNode> = Omit<RuntimeContext<T>, 'visit'> & {
     element: Element;
-    saved?: ScElementNodeBase;
 };
 
 export function processHtml<T extends ScElementNode>(args: HtmlRuntimeContext<T>): T {
-    const {element, saved, ...rest} = args;
+    const {element, ...rest} = args;
     return processElement({
         ...rest,
         visit() {
             const elements = Array.from(walkDom(element));
 
-            const savedChildren = saved && isParent(saved) ? saved.children : [];
-
             const scope = elements
-                .map((el, i) => {
+                .map((el) => {
                     const type = tagToType(el.tagName.toLowerCase());
-                    return hydrate({id: randomId(), type}, elements[i], savedChildren[i]) as ScElementNode
+                    return hydrate({id: randomId(), type}, el) as unknown as ScElementNode
                 });
 
             const parent = rest.tree as ScParentNode;
             for (let i = 0; i < scope.length; i++) {
+                const s = scope[i] as unknown as Record<string, unknown>;
+                const childName = typeof s.name === 'string' ? s.name : '';
+                const childPath = childName ? (rest.path ? `${rest.path}.${childName}` : childName) : rest.path;
                 parent.children.push(
-                    processHtml({...args, scope, tree: scope[i], element: elements[i], saved: savedChildren[i], parentNode: parent})
+                    processHtml({...args, scope, tree: scope[i], element: elements[i], parentNode: parent, path: childPath})
                 );
             }
         },

@@ -116,9 +116,15 @@ export type ScElementNode = ScPluginNode | ScGroupNode | ScSynthNode | ScSynthDe
 
 export type NodeType = ScElementNode["type"]
 
+export type OverrideEntry =
+  | { type: "control"; rootId: string; targetNode: string; name: string; value: number }
+  | { type: "run"; rootId: string; targetNode: string; name: string; value: number };
+
+export type PersistedOverrideEntry = Omit<OverrideEntry, 'rootId'>;
+
 export type StripRuntime<T> = T extends { children: ScElementNode[] }
-  ? Omit<T, 'runtime' | 'children'> & { hash?: string; children: StripRuntime<ScElementNode>[] }
-  : Omit<T, 'runtime'> & { hash?: string };
+  ? Omit<T, 'runtime' | 'children'> & { children: StripRuntime<ScElementNode>[] }
+  : Omit<T, 'runtime'>;
 
 export type ScElementNodeBase = StripRuntime<ScElementNode>;
 

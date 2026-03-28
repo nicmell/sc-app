@@ -1,7 +1,7 @@
 import type {
     ScElementNode, ScElementNodeBase, ScParentNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScUgenNode,
     ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode,
-    ScPluginNode, PluginRuntime, NodeRuntime, UgenRuntime, InputRuntime, StripRuntime,
+    ScPluginNode, PluginRuntime, NodeRuntime, UgenRuntime, InputRuntime, OverrideEntry, StripRuntime,
 } from "@/types/parsers";
 import {findElementByPath} from "@/lib/utils/elementTree";
 import {isSynthDef, isSynth, isNode} from "@/lib/utils/guards";
@@ -16,6 +16,8 @@ export interface RuntimeContext<T extends ScElementNode = ScElementNode> {
     tree: StripRuntime<T>;
     visit: () => void;
     parentNode?: ScParentNode;
+    overrides?: OverrideEntry[];
+    path: string;
 }
 
 // --- Helpers ---
@@ -30,6 +32,10 @@ export function checkDuplicateNames(scope: ScElementNodeBase[]): void {
             seen.add(el.name as string);
         }
     }
+}
+
+function findOverride(ctx: RuntimeContext, type: "control" | "run", name: string): number | undefined {
+    return ctx.overrides?.find(e => e.type === type && e.targetNode === ctx.path && e.name === name)?.value;
 }
 
 function resolveControlBind(n: { bind: string; type: string }, ctx: RuntimeContext): { target: ScElementNode; controlName: string; defaultValue: number } {
@@ -58,7 +64,7 @@ const pluginHandler = (ctx: RuntimeContext<ScPluginNode>): PluginRuntime => {
         ctx.visit();
         return {
             rootId: ctx.rootId,
-            run: ctx.tree.run ? 1 : 0,
+            run: findOverride(ctx, "run", ctx.tree.id) ?? (ctx.tree.run ? 1 : 0),
             loaded: true,
             controls: {},
         };
@@ -81,10 +87,14 @@ const pluginHandler = (ctx: RuntimeContext<ScPluginNode>): PluginRuntime => {
 const groupHandler = (ctx: RuntimeContext<ScGroupNode>): NodeRuntime => {
     ctx.visit();
     const n = ctx.tree;
+    const controls = {...n.controls};
+    for (const name of Object.keys(controls)) {
+        controls[name] = findOverride(ctx, "control", name) ?? controls[name];
+    }
     return {
         rootId: ctx.rootId,
-        run: n.run ? 1 : 0,
-        controls: {...n.controls},
+        run: findOverride(ctx, "run", n.name) ?? (n.run ? 1 : 0),
+        controls,
     };
 };
 
@@ -95,10 +105,14 @@ const synthHandler = (ctx: RuntimeContext<ScSynthNode>): NodeRuntime => {
             throw new Error(`<sc-synth bind="${n.bind}">: does not match any <sc-synthdef>`);
         }
     }
+    const controls = {...n.controls};
+    for (const name of Object.keys(controls)) {
+        controls[name] = findOverride(ctx, "control", name) ?? controls[name];
+    }
     return {
         rootId: ctx.rootId,
-        run: n.run ? 1 : 0,
-        controls: {...n.controls},
+        run: findOverride(ctx, "run", n.name) ?? (n.run ? 1 : 0),
+        controls,
     };
 };
 

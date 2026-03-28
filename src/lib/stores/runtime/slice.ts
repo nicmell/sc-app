@@ -28,7 +28,7 @@ function propagateControl(state: RuntimeState, nodeId: string, name: string, val
 const initialState: RuntimeState = {
   layout: layout.getInitialState(),
   nodes: {},
-  savedTrees: {},
+  overrides: [],
 };
 
 export const runtimeSlice = createSlice({
@@ -37,7 +37,7 @@ export const runtimeSlice = createSlice({
   reducers: {
     [RuntimeAction.LOAD_PLUGIN]: (state, action: { payload: { id: string; nodes: Record<string, ScElementNode> } }) => {
       Object.assign(state.nodes, action.payload.nodes);
-      delete state.savedTrees[action.payload.id];
+      state.overrides = state.overrides.filter(e => e.rootId !== action.payload.id);
     },
     [RuntimeAction.UNLOAD_PLUGIN]: (state, action: { payload: string }) => {
       for (const [id, node] of Object.entries(state.nodes)) {

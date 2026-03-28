@@ -44,13 +44,12 @@ export class PluginManager {
 
         const synthdefs: ScSynthDefNode[] = [];
         const nodes: Record<string, ScElementNode> = {};
+        const overrides = runtimeApi.overrides.filter(e => e.rootId === boxId);
 
         const element = doc.documentElement;
-        const saved = runtimeApi.savedTrees[boxId] ?? undefined
+        const tree = hydrate({id: boxId, type: ELEMENTS.SC_PLUGIN}, element) as StripRuntime<ScPluginNode>
 
-        const tree = hydrate({id: boxId, type: ELEMENTS.SC_PLUGIN}, element, saved) as StripRuntime<ScPluginNode>
-
-        processHtml<ScPluginNode>({rootId: boxId, scope: [tree], tree, element, saved, synthdefs, nodes});
+        processHtml<ScPluginNode>({rootId: boxId, scope: [tree], tree, element, synthdefs, nodes, overrides, path: ''});
 
         runtimeApi.loadPlugin({id: boxId, nodes});
         return doc.documentElement.innerHTML;

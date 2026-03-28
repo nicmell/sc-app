@@ -5,7 +5,7 @@ import type {layoutSlice} from "@/lib/stores/layout/slice";
 import type {optionsSlice} from "@/lib/stores/options/slice";
 import type {pluginsSlice} from "@/lib/stores/plugins/slice";
 import type {runtimeSlice} from "@/lib/stores/runtime/slice";
-import type {ScPluginNode, ScElementNode, ScElementNodeBase, StripRuntime} from "@/types/parsers";
+import type {ScElementNode, OverrideEntry, PersistedOverrideEntry} from "@/types/parsers";
 
 export interface BoxItem {
   i: string;
@@ -84,7 +84,7 @@ export interface PluginInfo {
 export type PersistedPlugin = Omit<PluginInfo, 'loaded' | 'error'>;
 
 export interface PresetItem extends BoxItem {
-  tree?: StripRuntime<ScPluginNode>;
+  overrides?: PersistedOverrideEntry[];
 }
 
 export interface Preset {
@@ -104,7 +104,7 @@ export interface PluginsState {
 export interface RuntimeState {
   layout: LayoutState;
   nodes: Record<string, ScElementNode>;
-  savedTrees: Record<string, ScElementNodeBase>;
+  overrides: OverrideEntry[];
 }
 
 export interface RootState {
