@@ -1,6 +1,6 @@
 import type {PersistOptions} from "zustand/middleware";
 import {tauriStorage} from "@/lib/storage/tauriStorage";
-import type {RootState, ConfigFile, OptionsState, ThemeOptions, ScsynthOptions} from "@/types/stores";
+import type {RootState, ConfigFile} from "@/types/stores";
 import {marshalTree, unmarshalTree} from "@/lib/runtime";
 
 // State generic uses `any` because the redux middleware adds `dispatch` to the
@@ -16,36 +16,11 @@ export const persistConfig: PersistOptions<any, ConfigFile> = {
     runtime: marshalTree(runtime),
   }),
   merge: (persisted, current: RootState): RootState => {
-    const p = persisted as (ConfigFile & {
-      // backward compat: old config shape
-      theme?: ThemeOptions;
-      scsynth?: { options?: ScsynthOptions };
-    }) | undefined;
-
-    // Migration: build options from old shape if new shape not present
-    const persistedOptions: OptionsState | undefined = p?.options ?? (p?.theme || p?.scsynth?.options ? {
-      theme: p?.theme ?? current.options.theme,
-      layout: current.options.layout,
-      scsynth: p?.scsynth?.options ?? current.options.scsynth,
-    } : undefined);
-
+    const p = persisted as ConfigFile | undefined;
     return {
       ...current,
-      options: persistedOptions
-        ? {
-            theme: {...current.options.theme, ...persistedOptions.theme},
-            layout: {...current.options.layout, ...persistedOptions.layout},
-            scsynth: {...current.options.scsynth, ...persistedOptions.scsynth},
-          }
-        : current.options,
-      plugins: {
-        items: Array.isArray(p?.plugins)
-          ? p.plugins.map(pp => {
-              const cur = current.plugins.items.find(c => c.id === pp.id);
-              return cur ? {...cur, ...pp} : pp;
-            })
-          : current.plugins.items,
-      },
+      options: p?.options ?? current.options,
+      plugins: {items: p?.plugins ?? current.plugins.items},
       runtime: p?.runtime ? unmarshalTree(p.runtime) : current.runtime,
     };
   },
