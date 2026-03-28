@@ -56,9 +56,7 @@ export interface LayoutOptions {
   numColumns: number;
 }
 
-export interface LayoutState {
-  items: BoxItem[];
-}
+export type LayoutState = BoxItem[];
 
 export interface OptionsState {
   theme: ThemeOptions;
@@ -88,7 +86,7 @@ export type PersistedPlugin = Omit<PluginInfo, 'loaded' | 'error'>;
 export interface ConfigFile {
   options: OptionsState;
   plugins: PersistedPlugin[];
-  runtime: { layout: { items: BoxItem[] }; tree: ScPluginNode[] };
+  runtime: { layout: BoxItem[]; tree: ScPluginNode[] };
 }
 
 export interface PluginsState {

@@ -4,7 +4,6 @@ const createLayoutSelector: SliceSelector<typeof root.layout> = (fn) =>
   createSelector(root.layout, fn);
 
 export default {
-  // state
-  items: createLayoutSelector(s => s.items),
-  getById: (id: string) => createLayoutSelector(s => s.items.find(item => item.i === id)),
+  items: createLayoutSelector(s => s),
+  getById: (id: string) => createLayoutSelector(s => s.find(item => item.i === id)),
 };
