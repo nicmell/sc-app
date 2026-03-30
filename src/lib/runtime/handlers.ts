@@ -3,7 +3,7 @@ import type {
     ScRunNode,
     ScPluginNode, PluginRuntime, NodeRuntime, UgenRuntime, InputRuntime, OverrideEntry, StripRuntime,
 } from "@/types/parsers";
-import {isSynth, isNode, isParent, isControl} from "@/lib/utils/guards";
+import {isNode, isParent, isControl} from "@/lib/utils/guards";
 import {ELEMENTS} from "@/constants/sc-elements";
 import {synthDefManager} from "@/lib/synthdef";
 
@@ -37,7 +37,7 @@ function findOverride(ctx: RuntimeContext, type: "control" | "run", name: string
     return ctx.overrides?.find(e => e.type === type && e.targetNode === ctx.path && e.name === name)?.value;
 }
 
-function collectControls(node: ScParentNode): Record<string, number> {
+function collectControls(node: { children: ScElementNodeBase[] }): Record<string, number> {
     const controls: Record<string, number> = {};
     for (const child of node.children) {
         if (isControl(child)) {
@@ -54,7 +54,7 @@ function resolve(ctx: RuntimeContext, path: string[]): ScElementNode | undefined
 
     const childPath = ctx.path ? `${ctx.path}.${name}` : name;
 
-    // Same-level resolve: change offset, processElement uses correct visit/elements
+    // Same-level resolve: processElement uses correct visit since scope/elements match
     const target = ctx.nodes[ctx.scope[idx].id] ?? processElement({...ctx, tree: ctx.scope[idx], path: childPath});
 
     if (rest.length === 0) return target;
@@ -77,12 +77,13 @@ function resolveControlBind(ctx: RuntimeContext): { target: ScElementNode; contr
     const segments = n.bind.split('.');
     const controlName = segments.pop()!;
     const target = segments.length > 0 ? resolve(ctx, segments) : ctx.parentNode as ScElementNode | undefined;
-    if (!target || (!isSynth(target) && target.type !== 'sc-group')) {
-        throw new Error(`<${n.type} bind="${n.bind}">: does not match any <sc-synth> or <sc-group> in scope`);
+    if (!target || !isNode(target)) {
+        throw new Error(`<${n.type} bind="${n.bind}">: does not match any node in scope`);
     }
-    const controls = isParent(target) ? collectControls(target as unknown as ScParentNode) : {};
+    const controls = collectControls(target);
     if (!(controlName in controls)) {
-        throw new Error(`<${n.type} bind="${n.bind}">: control "${controlName}" is not declared on <${target.type} name="${target.name}">`);
+        const targetName = 'name' in target ? target.name : target.id;
+        throw new Error(`<${n.type} bind="${n.bind}">: control "${controlName}" is not declared on <${target.type} name="${targetName}">`);
     }
     return {target, controlName};
 }
@@ -98,42 +99,30 @@ const pluginHandler = (ctx: RuntimeContext): PluginRuntime => {
     const n = ctx.tree as StripRuntime<ScPluginNode>;
     try {
         ctx.visit(ctx.tree);
-        const controls = collectControls(n as unknown as ScParentNode);
+        const run = findOverride(ctx, "run", n.id) ?? (n.run ? 1 : 0)
+        const controls = collectControls(n);
         for (const name of Object.keys(controls)) {
             controls[name] = findOverride(ctx, "control", name) ?? controls[name];
         }
-        return {
-            rootId: ctx.rootId,
-            run: findOverride(ctx, "run", n.id) ?? (n.run ? 1 : 0),
-            loaded: true,
-            controls,
-        };
+        return {rootId: ctx.rootId, run, loaded: true, controls};
     } catch (e) {
+        const error = e instanceof Error ? e.message : String(e)
         Object.assign(n, {children: []});
         for (const id of Object.keys(ctx.nodes)) {
             if (id !== n.id) delete ctx.nodes[id];
         }
-        return {
-            rootId: ctx.rootId,
-            run: 0,
-            loaded: false,
-            controls: {},
-            error: e instanceof Error ? e.message : String(e),
-        };
+        return {rootId: ctx.rootId, run: 0, loaded: false, controls: {}, error};
     }
 };
 
 function nodeRuntime(ctx: RuntimeContext): NodeRuntime {
     const n = ctx.tree as StripRuntime<ScGroupNode | ScSynthNode>;
-    const controls = collectControls(n as unknown as ScParentNode);
+    const run = findOverride(ctx, "run", n.name) ?? (n.run ? 1 : 0)
+    const controls = collectControls(n);
     for (const name of Object.keys(controls)) {
         controls[name] = findOverride(ctx, "control", name) ?? controls[name];
     }
-    return {
-        rootId: ctx.rootId,
-        run: findOverride(ctx, "run", n.name) ?? (n.run ? 1 : 0),
-        controls,
-    };
+    return {rootId: ctx.rootId, run, controls};
 }
 
 const groupHandler = (ctx: RuntimeContext): NodeRuntime => {
@@ -193,9 +182,9 @@ const inputHandler = (ctx: RuntimeContext): InputRuntime => {
 
 const runHandler = (ctx: RuntimeContext): InputRuntime => {
     const n = ctx.tree as StripRuntime<ScRunNode>;
-    const target = n.bind ? resolve(ctx, n.bind.split('.')) : ctx.parentNode as ScElementNode | undefined;
+    const target = n.bind ? resolve(ctx, n.bind.split('.')) : ctx.parentNode;
     if (n.bind && (!target || !isNode(target))) {
-        throw new Error(`<sc-run>: bind "${n.bind}" does not match any <sc-synth> or <sc-group> in scope`);
+        throw new Error(`<sc-run>: bind "${n.bind}" does not match any node in scope`);
     }
     const targetId = target ? target.id : '';
     const targetName = target && 'name' in target ? (target as { name: string }).name : '';
