@@ -27,7 +27,9 @@ export function hydrate<T extends ScElementNode>(node: { id: string, type: T["ty
     return Object.assign(node, props);
 }
 
-export type HtmlRuntimeContext<T extends ScElementNode = ScElementNode> = Omit<RuntimeContext<T>, 'visit'>
+export type HtmlRuntimeContext<T extends ScElementNode = ScElementNode> = Omit<RuntimeContext<T>, 'visit'> & {
+    elements: Element[];
+}
 
 export function processHtml<T extends ScElementNode>(args: HtmlRuntimeContext<T>): T {
     return processElement({

@@ -12,7 +12,6 @@ export interface RuntimeContext<T extends ScElementNode = ScElementNode> {
     offset: number;
     nodes: Record<string, ScElementNode>;
     synthdefs: ScSynthDefNode[];
-    elements: Element[];
     scope: ScElementNodeBase[];
     tree: StripRuntime<T>;
     visit: (i: number) => ScElementNode;
