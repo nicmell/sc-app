@@ -49,7 +49,7 @@ export function processHtml(args: HtmlRuntimeContext): ScElementNode {
                 const s = scope[j] as Record<string, unknown>;
                 const childName = typeof s.name === 'string' ? s.name : '';
                 const childPath = childName ? (args.path ? `${args.path}.${childName}` : childName) : args.path;
-                processHtml({...args, offset: j, scope, tree: scope[j], elements, parentNode: node, path: childPath});
+                processHtml({...args, offset: j, scope, elements, parentNode: node, path: childPath});
             }
 
             return node;

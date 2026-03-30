@@ -49,7 +49,7 @@ export class PluginManager {
         const element = doc.documentElement;
         const tree = hydrate({id: boxId, type: ELEMENTS.SC_PLUGIN}, element);
 
-        processHtml({rootId: boxId, scope: [tree], tree, elements: [element], synthdefs, nodes, overrides, offset: 0, path: ''});
+        processHtml({rootId: boxId, scope: [tree], elements: [element], synthdefs, nodes, overrides, offset: 0, path: ''});
 
         runtimeApi.loadPlugin({id: boxId, nodes});
         return doc.documentElement.innerHTML;
