@@ -1,6 +1,6 @@
 import type {ScElementNode, OverrideEntry, PersistedOverrideEntry} from "@/types/parsers";
 import type {RuntimeState, Preset} from "@/types/stores";
-import {isParent, isPlugin, isNode} from "@/lib/utils/guards";
+import {isParent, isPlugin, isNode, isControl} from "@/lib/utils/guards";
 
 function collectEntries(node: ScElementNode, nodes: Record<string, ScElementNode>, path: string): PersistedOverrideEntry[] {
     const entries: PersistedOverrideEntry[] = [];
@@ -10,14 +10,18 @@ function collectEntries(node: ScElementNode, nodes: Record<string, ScElementNode
         if (n.runtime.run !== (n.run ? 1 : 0)) {
             entries.push({type: "run", targetNode: path, name: nodeName, value: n.runtime.run});
         }
-        for (const [name, def] of Object.entries(n.controls)) {
-            if (n.runtime.controls[name] !== def) {
-                entries.push({type: "control", targetNode: path, name, value: n.runtime.controls[name]});
+        // Get defaults from sc-control children
+        if (isParent(n)) {
+            for (const child of n.children) {
+                if (isControl(child) && n.runtime.controls[child.name] !== child.value) {
+                    entries.push({type: "control", targetNode: path, name: child.name, value: n.runtime.controls[child.name]});
+                }
             }
         }
     }
     if (isParent(n)) {
         for (const child of n.children) {
+            if (isControl(child)) continue;
             const c = nodes[child.id] ?? child;
             const childName = 'name' in c ? c.name as string : '';
             const childPath = childName ? (path ? `${path}.${childName}` : childName) : path;

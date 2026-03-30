@@ -1,13 +1,11 @@
 import type {
-    StripRuntime, ScPluginNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScUgenNode,
+    StripRuntime, ScPluginNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScUgenNode, ScControlNode,
     ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode,
 } from "@/types/parsers";
 import {ELEMENTS} from "@/constants/sc-elements";
 
 export type HtmlProps<T> = Omit<StripRuntime<T>, 'id' | 'type' | 'children'>;
 
-const GROUP_SKIP_ATTRS = new Set(['id', 'name', 'run', 'class', 'style', 'slot', 'title']);
-const SYNTH_SKIP_ATTRS = new Set(['id', 'name', 'bind', 'run', 'class', 'style', 'slot', 'title']);
 const SYNTHDEF_SKIP_ATTRS = new Set(['id', 'name', 'class', 'style', 'slot']);
 const UGEN_SKIP_ATTRS = new Set(['id', 'name', 'type', 'rate', 'class', 'style', 'slot']);
 
@@ -15,7 +13,6 @@ function extractPluginProps(el: Element): Omit<HtmlProps<ScPluginNode>, 'name'> 
     return {
         title: el.querySelector('title')?.textContent ?? '',
         run: el.getAttribute('run') !== 'false',
-        controls: {}
     };
 }
 
@@ -23,7 +20,6 @@ function extractGroupProps(el: Element): HtmlProps<ScGroupNode> {
     return {
         name: el.getAttribute('name') ?? '',
         run: el.getAttribute('run') !== 'false',
-        controls: collectNumericAttrs(el, GROUP_SKIP_ATTRS),
     };
 }
 
@@ -31,7 +27,6 @@ function extractSynthProps(el: Element): HtmlProps<ScSynthNode> {
     return {
         name: el.getAttribute('name') ?? '',
         bind: el.getAttribute('bind') ?? '',
-        controls: collectNumericAttrs(el, SYNTH_SKIP_ATTRS),
         run: el.getAttribute('run') !== 'false',
     };
 }
@@ -49,6 +44,13 @@ function extractUgenProps(el: Element): HtmlProps<ScUgenNode> {
         ugen: el.getAttribute('type') ?? '',
         rate: el.getAttribute('rate') ?? 'ar',
         controls: collectUgenInputs(el),
+    };
+}
+
+function extractControlProps(el: Element): HtmlProps<ScControlNode> {
+    return {
+        name: el.getAttribute('name') ?? '',
+        value: Number(el.getAttribute('value') ?? '0'),
     };
 }
 
@@ -82,11 +84,13 @@ export function extractProps(type: string, el: Element): Record<string, unknown>
         case ELEMENTS.SC_GROUP:
             return {children: [], ...extractGroupProps(el)};
         case ELEMENTS.SC_SYNTH:
-            return extractSynthProps(el);
+            return {children: [], ...extractSynthProps(el)};
         case ELEMENTS.SC_SYNTHDEF:
             return {children: [], ...extractSynthDefProps(el)};
         case ELEMENTS.SC_UGEN:
             return extractUgenProps(el);
+        case ELEMENTS.SC_CONTROL:
+            return extractControlProps(el);
         case ELEMENTS.SC_RANGE:
             return extractRangeProps(el);
         case ELEMENTS.SC_CHECKBOX:

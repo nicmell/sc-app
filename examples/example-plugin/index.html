@@ -11,7 +11,12 @@
     <sc-ugen name="muted" type="BinaryOpUGen" op="*" a="panned" b="mute"/>
     <sc-ugen name="out" type="Out" bus="0" channelsarray="muted"/>
 </sc-synthdef>
-<sc-synth name="s1" bind="sine" freq="440" amp="0.2" pan="0" mute="0" class="example-plugin"/>
+<sc-synth name="s1" bind="sine">
+    <sc-control name="freq" value="440"/>
+    <sc-control name="amp" value="0.2"/>
+    <sc-control name="pan" value="0"/>
+    <sc-control name="mute" value="0"/>
+</sc-synth>
 <label>
     <sc-run size="24"/>
 </label>

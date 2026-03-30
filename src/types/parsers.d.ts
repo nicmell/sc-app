@@ -16,7 +16,6 @@ export interface ScGroupNode {
   id: string;
   name: string;
   run: boolean;
-  controls: Record<string, number>;
   children: ScElementNode[];
   runtime: NodeRuntime;
 }
@@ -26,8 +25,8 @@ export interface ScSynthNode {
   id: string;
   name: string;
   bind: string;
-  controls: Record<string, number>;
   run: boolean;
+  children: ScElementNode[];
   runtime: NodeRuntime;
 }
 
@@ -40,6 +39,14 @@ export interface ScUgenNode {
   ugen: string;
   rate: string;
   controls: Record<string, string>;
+  runtime: UgenRuntime;
+}
+
+export interface ScControlNode {
+  type: 'sc-control';
+  id: string;
+  name: string;
+  value: number;
   runtime: UgenRuntime;
 }
 
@@ -105,14 +112,13 @@ export interface ScPluginNode {
   id: string;
   title?: string;
   run: boolean;
-  controls: Record<string, number>;
   children: ScElementNode[];
   runtime: PluginRuntime;
 }
 
-export type ScParentNode = ScPluginNode | ScGroupNode | ScIfNode | ScSynthDefNode;
+export type ScParentNode = ScPluginNode | ScGroupNode | ScSynthNode | ScIfNode | ScSynthDefNode;
 
-export type ScElementNode = ScPluginNode | ScGroupNode | ScSynthNode | ScSynthDefNode | ScUgenNode | ScRangeNode | ScCheckboxNode | ScRunNode | ScDisplayNode | ScIfNode;
+export type ScElementNode = ScPluginNode | ScGroupNode | ScSynthNode | ScSynthDefNode | ScUgenNode | ScControlNode | ScRangeNode | ScCheckboxNode | ScRunNode | ScDisplayNode | ScIfNode;
 
 export type NodeType = ScElementNode["type"]
 

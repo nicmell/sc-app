@@ -28,15 +28,15 @@ export function hydrate(node: { id: string, type: string, [key: string]: unknown
 }
 
 export interface HtmlRuntimeContext extends Omit<RuntimeContext, 'visit'> {
-    element: Element;
+    elements: Element[];
 }
 
 export function processHtml(args: HtmlRuntimeContext): ScElementNode {
     return processElement({
         ...args,
-        visit(): void {
-            const node = args.tree as ScParentNode;
-            const elements = Array.from(walkDom(args.element));
+        visit(i: number): ScElementNode {
+            const node = args.scope[i] as ScParentNode;
+            const elements = Array.from(walkDom(args.elements[i]));
 
             const scope = elements.map((el) => {
                 const type = tagToType(el.tagName.toLowerCase());
@@ -49,8 +49,10 @@ export function processHtml(args: HtmlRuntimeContext): ScElementNode {
             for (let j = 0; j < scope.length; j++) {
                 const s = scope[j];
                 const childPath = 'name' in s ? (args.path ? `${args.path}.${s.name}` : s.name) : args.path;
-                processHtml({...args, tree: scope[j], scope: childScope, element: elements[j], parentNode: node, path: childPath});
+                processHtml({...args, offset: j, tree: scope[j], scope: childScope, elements, parentNode: node, path: childPath});
             }
+
+            return node;
         },
     });
 }

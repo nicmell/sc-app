@@ -27,6 +27,9 @@
 </div>
 
 <!-- Synth defined AFTER the controls that reference it -->
-<sc-synth name="s1" bind="sine" freq="440" amp="0.2"/>
+<sc-synth name="s1" bind="sine">
+    <sc-control name="freq" value="440"/>
+    <sc-control name="amp" value="0.2"/>
+</sc-synth>
 </body>
 </html>

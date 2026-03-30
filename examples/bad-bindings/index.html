@@ -9,7 +9,10 @@
     <sc-ugen name="sig" type="BinaryOpUGen" op="*" a="osc" b="amp"/>
     <sc-ugen name="out" type="Out" bus="0" channelsarray="sig"/>
 </sc-synthdef>
-<sc-synth name="sine" bind="sine" freq="440" amp="0.2"/>
+<sc-synth name="sine" bind="sine">
+    <sc-control name="freq" value="440"/>
+    <sc-control name="amp" value="0.2"/>
+</sc-synth>
 
 <!-- Typo in bind path: "freqq" instead of "freq" -->
 <sc-range type="knob" bind="sine.freqq" min="20" max="2000" step="1" diameter="48"/>

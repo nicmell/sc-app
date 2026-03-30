@@ -13,8 +13,18 @@
         <sc-ugen name="out" type="Out" bus="0" channelsarray="muted"/>
     </sc-synthdef>
 
-    <sc-synth name="osc1" bind="sine" freq="261" amp="0.15" pan="-0.5" mute="0"/>
-    <sc-synth name="osc2" bind="sine" freq="329" amp="0.15" pan="0.5" mute="0"/>
+    <sc-synth name="osc1" bind="sine">
+        <sc-control name="freq" value="261"/>
+        <sc-control name="amp" value="0.15"/>
+        <sc-control name="pan" value="-0.5"/>
+        <sc-control name="mute" value="0"/>
+    </sc-synth>
+    <sc-synth name="osc2" bind="sine">
+        <sc-control name="freq" value="329"/>
+        <sc-control name="amp" value="0.15"/>
+        <sc-control name="pan" value="0.5"/>
+        <sc-control name="mute" value="0"/>
+    </sc-synth>
 
     <label>
         <sc-run size="24"/>
