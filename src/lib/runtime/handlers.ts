@@ -42,8 +42,7 @@ function resolve(ctx: RuntimeContext, path: string[]): ScElementNode | undefined
     const idx = ctx.scope.findIndex(s => 'name' in s && s.name === name);
     if (idx < 0) return undefined;
 
-    const scopeName = (ctx.scope[idx] as { name?: string }).name ?? '';
-    const childPath = scopeName ? (ctx.path ? `${ctx.path}.${scopeName}` : scopeName) : ctx.path;
+    const childPath = ctx.path ? `${ctx.path}.${name}` : name;
 
     const target = ctx.nodes[ctx.scope[idx].id] ?? processElement({...ctx, tree: ctx.scope[idx], path: childPath});
 
@@ -99,9 +98,8 @@ const pluginHandler = (ctx: RuntimeContext): PluginRuntime => {
     }
 };
 
-const groupHandler = (ctx: RuntimeContext): NodeRuntime => {
-    ctx.visit();
-    const n = ctx.tree as StripRuntime<ScGroupNode>;
+function nodeRuntime(ctx: RuntimeContext): NodeRuntime {
+    const n = ctx.tree as StripRuntime<ScGroupNode | ScSynthNode>;
     const controls = {...n.controls};
     for (const name of Object.keys(controls)) {
         controls[name] = findOverride(ctx, "control", name) ?? controls[name];
@@ -111,24 +109,19 @@ const groupHandler = (ctx: RuntimeContext): NodeRuntime => {
         run: findOverride(ctx, "run", n.name) ?? (n.run ? 1 : 0),
         controls,
     };
+}
+
+const groupHandler = (ctx: RuntimeContext): NodeRuntime => {
+    ctx.visit();
+    return nodeRuntime(ctx);
 };
 
 const synthHandler = (ctx: RuntimeContext): NodeRuntime => {
     const n = ctx.tree as StripRuntime<ScSynthNode>;
-    if (n.bind) {
-        if (!resolve(ctx, [n.bind])) {
-            throw new Error(`<sc-synth bind="${n.bind}">: does not match any <sc-synthdef>`);
-        }
+    if (n.bind && !resolve(ctx, [n.bind])) {
+        throw new Error(`<sc-synth bind="${n.bind}">: does not match any <sc-synthdef>`);
     }
-    const controls = {...n.controls};
-    for (const name of Object.keys(controls)) {
-        controls[name] = findOverride(ctx, "control", name) ?? controls[name];
-    }
-    return {
-        rootId: ctx.rootId,
-        run: findOverride(ctx, "run", n.name) ?? (n.run ? 1 : 0),
-        controls,
-    };
+    return nodeRuntime(ctx);
 };
 
 const synthDefHandler = (ctx: RuntimeContext): UgenRuntime => {
@@ -183,10 +176,6 @@ const runHandler = (ctx: RuntimeContext): InputRuntime => {
     return {rootId: ctx.rootId, targetNode: targetId, name: targetName};
 };
 
-const displayHandler = (ctx: RuntimeContext): InputRuntime => {
-    return resolveVisualBind(ctx);
-};
-
 const ifHandler = (ctx: RuntimeContext): InputRuntime => {
     ctx.visit();
     return resolveVisualBind(ctx);
@@ -209,7 +198,7 @@ export function processElement(ctx: RuntimeContext): ScElementNode {
         case ELEMENTS.SC_RANGE:
         case ELEMENTS.SC_CHECKBOX: runtime = inputHandler(ctx); break;
         case ELEMENTS.SC_RUN: runtime = runHandler(ctx); break;
-        case ELEMENTS.SC_DISPLAY: runtime = displayHandler(ctx); break;
+        case ELEMENTS.SC_DISPLAY: runtime = resolveVisualBind(ctx); break;
         case ELEMENTS.SC_IF: runtime = ifHandler(ctx); break;
         default: {
             throw new Error(`Unknown element type: ${(ctx.tree as ScElementNodeBase).type}`);
