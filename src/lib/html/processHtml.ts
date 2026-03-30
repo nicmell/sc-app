@@ -34,13 +34,13 @@ export interface HtmlRuntimeContext extends Omit<RuntimeContext, 'visit'> {
 export function processHtml(args: HtmlRuntimeContext): ScElementNode {
     return processElement({
         ...args,
-        visit(i: number): ScElementNode {
-            const node = args.scope[i] as ScParentNode;
+        visit(node: ScElementNodeBase): ScElementNode {
+            const i = args.scope.indexOf(node);
+            const parent = node as ScParentNode;
             const elements = Array.from(walkDom(args.elements[i]));
 
             const scope = elements.map((el) => {
-                const type = tagToType(el.tagName.toLowerCase());
-                return hydrate({id: randomId(), type}, el);
+                return hydrate({id: randomId(), type: tagToType(el.tagName.toLowerCase())}, el);
             });
 
             checkDuplicateNames(scope);
@@ -49,10 +49,10 @@ export function processHtml(args: HtmlRuntimeContext): ScElementNode {
             for (let j = 0; j < scope.length; j++) {
                 const s = scope[j];
                 const childPath = 'name' in s ? (args.path ? `${args.path}.${s.name}` : s.name) : args.path;
-                processHtml({...args, offset: j, tree: scope[j], scope: childScope, elements, parentNode: node, path: childPath});
+                processHtml({...args, tree: scope[j], scope: childScope, elements, parentNode: parent, path: childPath});
             }
 
-            return node;
+            return parent;
         },
     });
 }

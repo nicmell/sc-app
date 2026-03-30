@@ -9,12 +9,11 @@ import {synthDefManager} from "@/lib/synthdef";
 
 export interface RuntimeContext {
     rootId: string;
-    offset: number;
     tree: ScElementNodeBase;
     nodes: Record<string, ScElementNode>;
     synthdefs: ScSynthDefNode[];
     scope: ScElementNodeBase[];
-    visit: (i: number) => ScElementNode;
+    visit: (node: ScElementNodeBase) => ScElementNode;
     parentNode?: ScParentNode;
     overrides?: OverrideEntry[];
     path: string;
@@ -56,7 +55,7 @@ function resolve(ctx: RuntimeContext, path: string[]): ScElementNode | undefined
     const childPath = ctx.path ? `${ctx.path}.${name}` : name;
 
     // Same-level resolve: change offset, processElement uses correct visit/elements
-    const target = ctx.nodes[ctx.scope[idx].id] ?? processElement({...ctx, tree: ctx.scope[idx], offset: idx, path: childPath});
+    const target = ctx.nodes[ctx.scope[idx].id] ?? processElement({...ctx, tree: ctx.scope[idx], path: childPath});
 
     if (rest.length === 0) return target;
     if (!isParent(target)) return undefined;
@@ -98,7 +97,7 @@ function resolveVisualBind(ctx: RuntimeContext): InputRuntime {
 const pluginHandler = (ctx: RuntimeContext): PluginRuntime => {
     const n = ctx.tree as StripRuntime<ScPluginNode>;
     try {
-        ctx.visit(ctx.offset);
+        ctx.visit(ctx.tree);
         const controls = collectControls(n as unknown as ScParentNode);
         for (const name of Object.keys(controls)) {
             controls[name] = findOverride(ctx, "control", name) ?? controls[name];
@@ -138,7 +137,7 @@ function nodeRuntime(ctx: RuntimeContext): NodeRuntime {
 }
 
 const groupHandler = (ctx: RuntimeContext): NodeRuntime => {
-    ctx.visit(ctx.offset);
+    ctx.visit(ctx.tree);
     return nodeRuntime(ctx);
 };
 
@@ -147,12 +146,12 @@ const synthHandler = (ctx: RuntimeContext): NodeRuntime => {
     if (n.bind && !resolve(ctx, [n.bind])) {
         throw new Error(`<sc-synth bind="${n.bind}">: does not match any <sc-synthdef>`);
     }
-    ctx.visit(ctx.offset);
+    ctx.visit(ctx.tree);
     return nodeRuntime(ctx);
 };
 
 const synthDefHandler = (ctx: RuntimeContext): UgenRuntime => {
-    ctx.visit(ctx.offset);
+    ctx.visit(ctx.tree);
     const n = ctx.tree as StripRuntime<ScSynthDefNode>;
     ctx.synthdefs.push(n as unknown as ScSynthDefNode);
     const ugenChildren = n.children.filter((c): c is ScUgenNode => c.type === 'sc-ugen');
@@ -204,7 +203,7 @@ const runHandler = (ctx: RuntimeContext): InputRuntime => {
 };
 
 const ifHandler = (ctx: RuntimeContext): InputRuntime => {
-    ctx.visit(ctx.offset);
+    ctx.visit(ctx.tree);
     return resolveVisualBind(ctx);
 };
 
