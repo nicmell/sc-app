@@ -27,16 +27,14 @@ export function hydrate<T extends ScElementNode>(node: { id: string, type: T["ty
     return Object.assign(node, props);
 }
 
-export type HtmlRuntimeContext<T extends ScElementNode = ScElementNode> = Omit<RuntimeContext<T>, 'visit'> & {
-    element: Element;
-};
+export type HtmlRuntimeContext<T extends ScElementNode = ScElementNode> = Omit<RuntimeContext<T>, 'visit'>
 
 export function processHtml<T extends ScElementNode>(args: HtmlRuntimeContext<T>): T {
-    const {element, ...rest} = args;
     return processElement({
-        ...rest,
-        visit() {
-            const elements = Array.from(walkDom(element));
+        ...args,
+        visit(i: number): ScElementNode {
+            const node = args.scope[i] as ScParentNode;
+            const elements = Array.from(walkDom(args.elements[i]));
 
             const scope = elements
                 .map((el) => {
@@ -44,15 +42,14 @@ export function processHtml<T extends ScElementNode>(args: HtmlRuntimeContext<T>
                     return hydrate({id: randomId(), type}, el) as unknown as ScElementNode
                 });
 
-            const parent = rest.tree as ScParentNode;
-            for (let i = 0; i < scope.length; i++) {
-                const s = scope[i] as unknown as Record<string, unknown>;
+            for (let j = 0; j < scope.length; j++) {
+                const s = scope[j] as unknown as Record<string, unknown>;
                 const childName = typeof s.name === 'string' ? s.name : '';
-                const childPath = childName ? (rest.path ? `${rest.path}.${childName}` : childName) : rest.path;
-                parent.children.push(
-                    processHtml({...args, scope, tree: scope[i], element: elements[i], parentNode: parent, path: childPath})
-                );
+                const childPath = childName ? (args.path ? `${args.path}.${childName}` : childName) : args.path;
+                processHtml({...args, offset: j, scope, tree: scope[j], elements, parentNode: node, path: childPath});
             }
+
+            return node;
         },
     });
 }
