@@ -47,10 +47,8 @@ export function processHtml(args: HtmlRuntimeContext): ScElementNode {
 
             const childScope = [...scope, ...args.scope];
             for (let j = 0; j < scope.length; j++) {
-                const s = scope[j] as Record<string, unknown>;
-                const childPath = 'name' in s
-                    ? ((p) => (name?: string) => name ? `${p}.${name}` : p)(args.path(s.name as string))
-                    : args.path;
+                const s = scope[j];
+                const childPath = 'name' in s ? (args.path ? `${args.path}.${s.name}` : s.name) : args.path;
                 processHtml({...args, tree: scope[j], scope: childScope, element: elements[j], parentNode: node, path: childPath});
             }
         },
