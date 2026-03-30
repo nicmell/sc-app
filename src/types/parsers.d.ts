@@ -103,6 +103,7 @@ export interface PluginRuntime extends NodeRuntime {
 export interface ScPluginNode {
   type: 'sc-plugin';
   id: string;
+  name: string;
   title?: string;
   run: boolean;
   controls: Record<string, number>;

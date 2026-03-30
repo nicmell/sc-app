@@ -11,7 +11,7 @@ const SYNTH_SKIP_ATTRS = new Set(['id', 'name', 'bind', 'run', 'class', 'style',
 const SYNTHDEF_SKIP_ATTRS = new Set(['id', 'name', 'class', 'style', 'slot']);
 const UGEN_SKIP_ATTRS = new Set(['id', 'name', 'type', 'rate', 'class', 'style', 'slot']);
 
-function extractPluginProps(el: Element): HtmlProps<ScPluginNode> {
+function extractPluginProps(el: Element): Omit<HtmlProps<ScPluginNode>, 'name'> {
     return {
         title: el.querySelector('title')?.textContent ?? '',
         run: el.getAttribute('run') !== 'false',

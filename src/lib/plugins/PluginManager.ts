@@ -47,9 +47,9 @@ export class PluginManager {
         const overrides = runtimeApi.overrides.filter(e => e.rootId === boxId);
 
         const element = doc.documentElement;
-        const tree = hydrate({id: boxId, type: ELEMENTS.SC_PLUGIN}, element);
+        const tree = hydrate({id: boxId, name: boxId, type: ELEMENTS.SC_PLUGIN}, element);
 
-        processHtml({rootId: boxId, scope: [tree], elements: [element], synthdefs, nodes, overrides, offset: 0, path: ''});
+        processHtml({rootId: boxId, tree, scope: [tree], element, synthdefs, nodes, overrides, path: ''});
 
         runtimeApi.loadPlugin({id: boxId, nodes});
         return doc.documentElement.innerHTML;

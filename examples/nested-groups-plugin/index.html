@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>Nested Groups Plugin</title>
+</head>
+<body>
+<!-- Tests multi-segment resolve paths through nested groups -->
+<sc-group name="outer" amp="0.5">
+    <sc-synthdef name="tone" freq="440" amp="0.2">
+        <sc-ugen name="osc" type="SinOsc" freq="freq"/>
+        <sc-ugen name="sig" type="BinaryOpUGen" op="*" a="osc" b="amp"/>
+        <sc-ugen name="out" type="Out" bus="0" channelsarray="sig"/>
+    </sc-synthdef>
+
+    <sc-group name="inner" amp="0.3">
+        <sc-synthdef name="inner-tone" freq="440" amp="0.2">
+            <sc-ugen name="osc" type="SinOsc" freq="freq"/>
+            <sc-ugen name="sig" type="BinaryOpUGen" op="*" a="osc" b="amp"/>
+            <sc-ugen name="out" type="Out" bus="0" channelsarray="sig"/>
+        </sc-synthdef>
+        <sc-synth name="deep" bind="inner-tone" freq="330" amp="0.2"/>
+    </sc-group>
+    <sc-synth name="shallow" bind="tone" freq="660" amp="0.15"/>
+</sc-group>
+
+<div>
+    <h3>Nested: outer.inner.deep</h3>
+    <label>
+        <sc-run bind="outer.inner.deep" size="20"/>
+    </label>
+    <label>
+        <span>Freq: <sc-display bind="outer.inner.deep.freq" format="%d Hz"/></span>
+        <sc-range type="knob" bind="outer.inner.deep.freq" min="20" max="1000" step="1" diameter="48"/>
+    </label>
+    <label>
+        <span>Amp: <sc-display bind="outer.inner.deep.amp" format="%.2f"/></span>
+        <sc-range type="knob" bind="outer.inner.deep.amp" min="0" max="1" step="0.01" diameter="48"/>
+    </label>
+</div>
+
+<div>
+    <h3>Shallow: outer.shallow</h3>
+    <label>
+        <sc-run bind="outer.shallow" size="20"/>
+    </label>
+    <label>
+        <span>Freq: <sc-display bind="outer.shallow.freq" format="%d Hz"/></span>
+        <sc-range type="knob" bind="outer.shallow.freq" min="20" max="2000" step="1" diameter="48"/>
+    </label>
+</div>
+
+<div>
+    <h3>Group controls</h3>
+    <label>
+        <span>Outer run</span>
+        <sc-run bind="outer" size="24"/>
+    </label>
+    <label>
+        <span>Outer amp: <sc-display bind="outer.amp" format="%.2f"/></span>
+        <sc-range type="slider" bind="outer.amp" min="0" max="1" step="0.01" width="120" height="16"/>
+    </label>
+    <label>
+        <span>Inner amp: <sc-display bind="outer.inner.amp" format="%.2f"/></span>
+        <sc-range type="slider" bind="outer.inner.amp" min="0" max="1" step="0.01" width="120" height="16"/>
+    </label>
+</div>
+</body>
+</html>

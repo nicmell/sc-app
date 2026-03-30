@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>Conditional Plugin</title>
+</head>
+<body>
+<!-- Tests sc-if (nameless parent) with controls binding to siblings -->
+<sc-synthdef name="sine" freq="440" amp="0.2" gate="1">
+    <sc-ugen name="osc" type="SinOsc" freq="freq"/>
+    <sc-ugen name="env" type="Linen" gate="gate" attacktime="0.01" susLevel="1" releasetime="0.1"/>
+    <sc-ugen name="sig" type="BinaryOpUGen" op="*" a="osc" b="amp"/>
+    <sc-ugen name="gated" type="BinaryOpUGen" op="*" a="sig" b="env"/>
+    <sc-ugen name="out" type="Out" bus="0" channelsarray="gated"/>
+</sc-synthdef>
+
+<sc-synth name="osc" bind="sine" freq="440" amp="0.2" gate="1"/>
+<label>
+    <sc-run size="24"/>
+</label>
+
+<div>
+    <label>
+        <span>Freq: <sc-display bind="osc.freq" format="%d Hz"/></span>
+        <sc-range type="knob" bind="osc.freq" min="20" max="2000" step="1" diameter="48"/>
+    </label>
+    <label>
+        <span>Amp: <sc-display bind="osc.amp" format="%.2f"/></span>
+        <sc-range type="knob" bind="osc.amp" min="0" max="1" step="0.01" diameter="48"/>
+    </label>
+</div>
+
+<!-- sc-if wraps controls — path should pass through the nameless sc-if -->
+<sc-if bind="osc.gate" is-truthy="">
+    <div>
+        <h3>Gate is ON</h3>
+        <label>
+            <span>Gate: <sc-display bind="osc.gate" format="%d"/></span>
+            <sc-checkbox bind="osc.gate"/>
+        </label>
+    </div>
+</sc-if>
+<sc-if bind="osc.gate" is-falsy="">
+    <div>
+        <h3>Gate is OFF — click to re-enable</h3>
+        <label>
+            <sc-checkbox bind="osc.gate"/>
+        </label>
+    </div>
+</sc-if>
+</body>
+</html>

@@ -21,22 +21,22 @@ function* walkDom(el: Element): Generator<Element> {
     }
 }
 
-export function hydrate(node: { id: string, type: string }, element: Element): ScElementNodeBase {
-    const props = extractProps(node.type, element);
+export function hydrate(node: { id: string, type: string, [key: string]: unknown }, element: Element): ScElementNodeBase {
     element.setAttribute('id', node.id);
+    const props = extractProps(node.type, element);
     return Object.assign(node, props) as ScElementNodeBase;
 }
 
 export interface HtmlRuntimeContext extends Omit<RuntimeContext, 'visit'> {
-    elements: Element[];
+    element: Element;
 }
 
 export function processHtml(args: HtmlRuntimeContext): ScElementNode {
     return processElement({
         ...args,
-        visit(i: number): ScElementNode {
-            const node = args.scope[i] as ScParentNode;
-            const elements = Array.from(walkDom(args.elements[i]));
+        visit(): void {
+            const node = args.tree as ScParentNode;
+            const elements = Array.from(walkDom(args.element));
 
             const scope = elements.map((el) => {
                 const type = tagToType(el.tagName.toLowerCase());
@@ -45,14 +45,14 @@ export function processHtml(args: HtmlRuntimeContext): ScElementNode {
 
             checkDuplicateNames(scope);
 
+            const childScope = 'name' in node ? scope : args.scope;
+
             for (let j = 0; j < scope.length; j++) {
                 const s = scope[j] as Record<string, unknown>;
                 const childName = typeof s.name === 'string' ? s.name : '';
                 const childPath = childName ? (args.path ? `${args.path}.${childName}` : childName) : args.path;
-                processHtml({...args, offset: j, scope, elements, parentNode: node, path: childPath});
+                processHtml({...args, tree: scope[j], scope: childScope, element: elements[j], parentNode: node, path: childPath});
             }
-
-            return node;
         },
     });
 }
