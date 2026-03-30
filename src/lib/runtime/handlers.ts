@@ -16,7 +16,7 @@ export interface RuntimeContext {
     visit: () => void;
     parentNode?: ScParentNode;
     overrides?: OverrideEntry[];
-    path: string;
+    path: (name?: string) => string;
 }
 
 // --- Helpers ---
@@ -34,7 +34,7 @@ export function checkDuplicateNames(scope: ScElementNodeBase[]): void {
 }
 
 function findOverride(ctx: RuntimeContext, type: "control" | "run", name: string): number | undefined {
-    return ctx.overrides?.find(e => e.type === type && e.targetNode === ctx.path && e.name === name)?.value;
+    return ctx.overrides?.find(e => e.type === type && e.targetNode === ctx.path() && e.name === name)?.value;
 }
 
 function resolve(ctx: RuntimeContext, path: string[]): ScElementNode | undefined {
@@ -42,7 +42,8 @@ function resolve(ctx: RuntimeContext, path: string[]): ScElementNode | undefined
     const idx = ctx.scope.findIndex(s => 'name' in s && s.name === name);
     if (idx < 0) return undefined;
 
-    const childPath = ctx.path ? `${ctx.path}.${name}` : name;
+    const nodePath = ctx.path(name);
+    const childPath = (child?: string) => child ? `${nodePath}.${child}` : nodePath;
 
     const target = ctx.nodes[ctx.scope[idx].id] ?? processElement({...ctx, tree: ctx.scope[idx], path: childPath});
 
