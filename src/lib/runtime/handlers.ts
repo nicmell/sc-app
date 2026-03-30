@@ -46,15 +46,14 @@ function resolve(ctx: RuntimeContext, path: string[]): ScElementNode | undefined
     const childName = typeof (ctx.scope[idx] as any).name === 'string' ? (ctx.scope[idx] as any).name : '';
     const childPath = childName ? (ctx.path ? `${ctx.path}.${childName}` : childName) : ctx.path;
 
-    const target = processElement({
-        ...ctx,
-        tree: ctx.scope[idx] as any,
-        offset: idx,
-        path: childPath,
-    });
+    const target = processElement({...ctx, tree: ctx.scope[idx] as any, offset: idx, path: childPath});
 
-    if (rest.length === 0) return target;
-    if (!isParent(target)) return undefined;
+    if (rest.length === 0) {
+        return target
+    }
+    if (!isParent(target)) {
+        return undefined
+    }
     return resolve({...ctx, scope: target.children, parentNode: target, path: childPath}, rest);
 }
 
@@ -206,7 +205,6 @@ export function processElement<T extends ScElementNode = ScElementNode>(ctx: Run
     }
     const c = ctx as RuntimeContext<any>;
     let runtime: unknown;
-    checkDuplicateNames(ctx.scope);
     switch (ctx.tree.type) {
         case ELEMENTS.SC_PLUGIN: runtime = pluginHandler(c); break;
         case ELEMENTS.SC_GROUP: runtime = groupHandler(c); break;

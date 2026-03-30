@@ -3,7 +3,7 @@ import {randomId} from "@/lib/utils/randomId";
 import type {ScElementNode, NodeType, ScParentNode} from "@/types/parsers";
 import {isNodeType} from "@/lib/utils/guards";
 import {extractProps} from "./handlers";
-import {type RuntimeContext, processElement} from "@/lib/runtime/handlers";
+import {type RuntimeContext, processElement, checkDuplicateNames} from "@/lib/runtime/handlers";
 
 function tagToType(tag: string): NodeType {
     if (tag === 'html') return ELEMENTS.SC_PLUGIN;
@@ -43,6 +43,8 @@ export function processHtml<T extends ScElementNode>(args: HtmlRuntimeContext<T>
                     const type = tagToType(el.tagName.toLowerCase());
                     return hydrate({id: randomId(), type}, el) as unknown as ScElementNode
                 });
+
+            checkDuplicateNames(scope);
 
             for (let j = 0; j < scope.length; j++) {
                 const s = scope[j] as unknown as Record<string, unknown>;
