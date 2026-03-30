@@ -6,7 +6,7 @@ function collectEntries(node: ScElementNode, nodes: Record<string, ScElementNode
     const entries: PersistedOverrideEntry[] = [];
     const n = nodes[node.id] ?? node;
     if (isNode(n)) {
-        const nodeName = n.name;
+        const nodeName = 'name' in n ? n.name : n.id;
         if (n.runtime.run !== (n.run ? 1 : 0)) {
             entries.push({type: "run", targetNode: path, name: nodeName, value: n.runtime.run});
         }

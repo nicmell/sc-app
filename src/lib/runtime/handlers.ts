@@ -3,7 +3,7 @@ import type {
     ScRunNode,
     ScPluginNode, PluginRuntime, NodeRuntime, UgenRuntime, InputRuntime, OverrideEntry, StripRuntime,
 } from "@/types/parsers";
-import {isSynthDef, isSynth, isNode, isParent} from "@/lib/utils/guards";
+import {isSynth, isNode, isParent} from "@/lib/utils/guards";
 import {ELEMENTS} from "@/constants/sc-elements";
 import {synthDefManager} from "@/lib/synthdef";
 
@@ -45,11 +45,11 @@ function resolve(ctx: RuntimeContext, path: string[]): ScElementNode | undefined
     const scopeName = (ctx.scope[idx] as { name?: string }).name ?? '';
     const childPath = scopeName ? (ctx.path ? `${ctx.path}.${scopeName}` : scopeName) : ctx.path;
 
-    const target = processElement({...ctx, tree: ctx.scope[idx], path: childPath});
+    const target = ctx.nodes[ctx.scope[idx].id] ?? processElement({...ctx, tree: ctx.scope[idx], path: childPath});
 
     if (rest.length === 0) return target;
     if (!isParent(target)) return undefined;
-    return resolve({...ctx, scope: target.children, parentNode: target, path: childPath}, rest);
+    return resolve({...ctx, scope: [...target.children, ...ctx.scope], parentNode: target, path: childPath}, rest);
 }
 
 function resolveControlBind(ctx: RuntimeContext): { target: ScElementNode; controlName: string; defaultValue: number } {
@@ -116,7 +116,7 @@ const groupHandler = (ctx: RuntimeContext): NodeRuntime => {
 const synthHandler = (ctx: RuntimeContext): NodeRuntime => {
     const n = ctx.tree as StripRuntime<ScSynthNode>;
     if (n.bind) {
-        if (!ctx.scope.some(e => isSynthDef(e) && e.name === n.bind)) {
+        if (!resolve(ctx, [n.bind])) {
             throw new Error(`<sc-synth bind="${n.bind}">: does not match any <sc-synthdef>`);
         }
     }
@@ -156,7 +156,7 @@ const ugenHandler = (ctx: RuntimeContext): UgenRuntime => {
             continue
         }
         const refId = value.split(':')[0];
-        if (ctx.scope.some(s => s.type === 'sc-ugen' && s.name === refId)) {
+        if (resolve(ctx, [refId])) {
             continue
         }
         if (ctx.parentNode?.type === 'sc-synthdef' && refId in ctx.parentNode.controls) {

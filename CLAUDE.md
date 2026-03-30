@@ -176,6 +176,84 @@ All element-to-data references use `bind`:
 - **sc-display/sc-if** `bind="synthName.controlName"` — read-only dot-path reference
 - **sc-run** `bind="synthOrGroupName"` — references a synth or group (empty = parent context)
 
+### Bind Resolution & Scoping
+
+Bind paths are resolved by the `resolve` function in `src/lib/runtime/handlers.ts`. Resolution uses **cumulative scopes** — each scope level contains its own siblings prepended onto the parent scope.
+
+#### Scope Construction
+
+When `processHtml`'s visit function processes a parent node's children:
+1. Walk the DOM to find SC elements → hydrate into a local scope
+2. Build cumulative scope: `[...localScope, ...parentScope]`
+3. Each child receives this cumulative scope as `ctx.scope`
+
+This means nodes can see:
+- Their own siblings (innermost, found first by `findIndex`)
+- Parent-level elements
+- Grandparent-level elements, etc. up to the plugin root
+
+#### How `resolve(ctx, path)` Works
+
+1. Takes a dot-separated path split into segments (e.g., `["outer", "inner", "deep"]`)
+2. Searches `ctx.scope` (cumulative) for the first segment by `name`
+3. If found, ensures the target is processed (on-demand via `processElement` with idempotency)
+4. For remaining segments, recurses with `scope: [...target.children, ...ctx.scope]`
+5. Returns the final resolved `ScElementNode`
+
+#### Resolution Examples
+
+**Simple bind** — `<sc-range bind="synth.freq"/>`:
+- Split: segments = `["synth"]`, controlName = `"freq"`
+- `resolve(ctx, ["synth"])` finds "synth" in cumulative scope
+- Validates "freq" exists in synth's controls
+
+**Nested path** — `<sc-range bind="outer.inner.deep.freq"/>`:
+- `resolve` finds "outer" → processes it (and subtree) → recurses into outer.children
+- Finds "inner" → recurses into inner.children → finds "deep"
+- Validates "freq" on deep synth
+
+**Cross-level synthdef** — synthdef at root, synth nested in groups:
+```xml
+<sc-synthdef name="tone" .../>
+<sc-group name="outer">
+  <sc-synth name="s1" bind="tone"/>
+</sc-group>
+```
+Synth's cumulative scope: `[s1, ...outer_scope, synthdef(tone), ...root_scope]`. `resolve(ctx, ["tone"])` finds the synthdef via ancestor visibility.
+
+**Shadowing** — inner names shadow outer:
+```xml
+<sc-synthdef name="tone" .../>
+<sc-group name="a">
+  <sc-synthdef name="tone" .../>  <!-- shadows root-level "tone" -->
+  <sc-synth bind="tone"/>         <!-- resolves to inner "tone" -->
+</sc-group>
+```
+`findIndex` returns the first (innermost) match.
+
+**Cross-group isolation** — siblings can't see into each other:
+```xml
+<sc-group name="a"><sc-synth name="s1"/></sc-group>
+<sc-group name="b"><sc-range bind="s1.freq"/></sc-group>  <!-- ERROR: s1 not visible -->
+```
+"s1" is only in group "a"'s children, not in the root scope. Use `bind="a.s1.freq"` for the full path.
+
+**sc-if transparency** — nameless parents don't create scope boundaries:
+```xml
+<sc-synth name="osc" .../>
+<sc-if bind="osc.gate">
+  <sc-display bind="osc.gate"/>  <!-- finds "osc" via cumulative scope -->
+</sc-if>
+```
+sc-if's children scope: `[display, checkbox, ...parent_scope_with_osc]`.
+
+#### On-Demand Processing
+
+`resolve` triggers `processElement` for unprocessed targets. `processElement` is idempotent (early return if node already in `ctx.nodes`). This handles:
+- **Forward references**: controls appearing before their target synth in DOM order
+- **Cross-level references**: synthdefs at ancestor scope levels
+- **Nested resolution**: processing a group processes its entire subtree via `visit`
+
 ## Plugin System
 
 **Structure:** zip containing `metadata.json` + entry HTML + optional assets (png/jpeg).

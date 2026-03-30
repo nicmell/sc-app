@@ -45,7 +45,7 @@ export function processHtml(args: HtmlRuntimeContext): ScElementNode {
 
             checkDuplicateNames(scope);
 
-            const childScope = 'name' in node ? scope : args.scope;
+            const childScope = [...scope, ...args.scope];
 
             for (let j = 0; j < scope.length; j++) {
                 const s = scope[j] as Record<string, unknown>;
