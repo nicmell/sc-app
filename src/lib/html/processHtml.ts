@@ -24,20 +24,17 @@ function* walkDom(el: Element): Generator<Element> {
 export function hydrate(node: { id: string, type: string, [key: string]: unknown }, element: Element): ScElementNodeBase {
     element.setAttribute('id', node.id);
     const props = extractProps(node.type, element);
-    return Object.assign(node, props) as ScElementNodeBase;
+    return Object.assign(node, props, {_element: element}) as unknown as ScElementNodeBase;
 }
 
-export interface HtmlRuntimeContext extends Omit<RuntimeContext, 'visit'> {
-    elements: Element[];
-}
+export type HtmlRuntimeContext = Omit<RuntimeContext, 'visit'>
 
 export function processHtml(args: HtmlRuntimeContext): ScElementNode {
     return processElement({
         ...args,
         visit(node: ScElementNodeBase): ScElementNode {
-            const i = args.scope.indexOf(node);
             const parent = node as ScParentNode;
-            const elements = Array.from(walkDom(args.elements[i]));
+            const elements = Array.from(walkDom((node as any)._element));
 
             const scope = elements.map((el) => {
                 return hydrate({id: randomId(), type: tagToType(el.tagName.toLowerCase())}, el);
@@ -49,7 +46,7 @@ export function processHtml(args: HtmlRuntimeContext): ScElementNode {
             for (let j = 0; j < scope.length; j++) {
                 const s = scope[j];
                 const childPath = 'name' in s ? (args.path ? `${args.path}.${s.name}` : s.name) : args.path;
-                processHtml({...args, tree: scope[j], scope: childScope, elements, parentNode: parent, path: childPath});
+                processHtml({...args, tree: scope[j], scope: childScope, parentNode: parent, path: childPath});
             }
 
             return parent;
