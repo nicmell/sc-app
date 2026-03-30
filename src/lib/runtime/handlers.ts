@@ -156,7 +156,7 @@ const ugenHandler = (ctx: RuntimeContext): UgenRuntime => {
             continue
         }
         const refId = value.split(':')[0];
-        if (resolve(ctx, [refId])) {
+        if (ctx.scope.some(s => s.type === 'sc-ugen' && s.name === refId)) {
             continue
         }
         if (ctx.parentNode?.type === 'sc-synthdef' && refId in ctx.parentNode.controls) {
