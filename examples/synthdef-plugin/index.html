@@ -5,12 +5,30 @@
 </head>
 <body>
 
-<sc-synthdef name="fm-sine" freq="440" amp="0.2" mod-freq="2" mod-depth="200">
-    <sc-ugen name="mod" type="SinOsc" rate="kr" freq="mod-freq"/>
-    <sc-ugen name="mod-scaled" type="MulAdd" rate="kr" in="mod" mul="mod-depth" add="freq"/>
-    <sc-ugen name="osc" type="SinOsc" freq="mod-scaled"/>
-    <sc-ugen name="sig" type="BinaryOpUGen" op="*" a="osc" b="amp"/>
-    <sc-ugen name="out" type="Out" bus="0" channelsarray="sig"/>
+<sc-synthdef name="fm-sine">
+    <sc-control name="freq" value="440"/>
+    <sc-control name="amp" value="0.2"/>
+    <sc-control name="mod-freq" value="2"/>
+    <sc-control name="mod-depth" value="200"/>
+    <sc-ugen name="mod" type="SinOsc" rate="kr">
+        <sc-control name="freq" bind="mod-freq"/>
+    </sc-ugen>
+    <sc-ugen name="mod-scaled" type="MulAdd" rate="kr">
+        <sc-control name="in" bind="mod"/>
+        <sc-control name="mul" bind="mod-depth"/>
+        <sc-control name="add" bind="freq"/>
+    </sc-ugen>
+    <sc-ugen name="osc" type="SinOsc">
+        <sc-control name="freq" bind="mod-scaled"/>
+    </sc-ugen>
+    <sc-ugen name="sig" type="BinaryOpUGen" op="*">
+        <sc-control name="a" bind="osc"/>
+        <sc-control name="b" bind="amp"/>
+    </sc-ugen>
+    <sc-ugen name="out" type="Out">
+        <sc-control name="bus" value="0"/>
+        <sc-control name="channelsarray" bind="sig"/>
+    </sc-ugen>
 </sc-synthdef>
 
 <sc-synth name="fm" bind="fm-sine">

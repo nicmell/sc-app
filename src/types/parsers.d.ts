@@ -38,7 +38,8 @@ export interface ScUgenNode {
   name: string;
   ugen: string;
   rate: string;
-  controls: Record<string, string>;
+  op?: string;
+  children: ScElementNode[];
   runtime: UgenRuntime;
 }
 
@@ -47,6 +48,7 @@ export interface ScControlNode {
   id: string;
   name: string;
   value: number;
+  bind?: string;
   runtime: UgenRuntime;
 }
 
@@ -54,7 +56,6 @@ export interface ScSynthDefNode {
   type: 'sc-synthdef';
   id: string;
   name: string;
-  controls: Record<string, number>;
   children: ScElementNode[];
   runtime: UgenRuntime;
 }
@@ -116,7 +117,7 @@ export interface ScPluginNode {
   runtime: PluginRuntime;
 }
 
-export type ScParentNode = ScPluginNode | ScGroupNode | ScSynthNode | ScIfNode | ScSynthDefNode;
+export type ScParentNode = ScPluginNode | ScGroupNode | ScSynthNode | ScUgenNode | ScIfNode | ScSynthDefNode;
 
 export type ScElementNode = ScPluginNode | ScGroupNode | ScSynthNode | ScSynthDefNode | ScUgenNode | ScControlNode | ScRangeNode | ScCheckboxNode | ScRunNode | ScDisplayNode | ScIfNode;
 

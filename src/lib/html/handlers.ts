@@ -6,9 +6,6 @@ import {ELEMENTS} from "@/constants/sc-elements";
 
 export type HtmlProps<T> = Omit<StripRuntime<T>, 'id' | 'type' | 'children'>;
 
-const SYNTHDEF_SKIP_ATTRS = new Set(['id', 'name', 'class', 'style', 'slot']);
-const UGEN_SKIP_ATTRS = new Set(['id', 'name', 'type', 'rate', 'class', 'style', 'slot']);
-
 function extractPluginProps(el: Element): Omit<HtmlProps<ScPluginNode>, 'name'> {
     return {
         title: el.querySelector('title')?.textContent ?? '',
@@ -34,7 +31,6 @@ function extractSynthProps(el: Element): HtmlProps<ScSynthNode> {
 function extractSynthDefProps(el: Element): HtmlProps<ScSynthDefNode> {
     return {
         name: el.getAttribute('name') ?? '',
-        controls: collectNumericAttrs(el, SYNTHDEF_SKIP_ATTRS),
     };
 }
 
@@ -43,7 +39,7 @@ function extractUgenProps(el: Element): HtmlProps<ScUgenNode> {
         name: el.getAttribute('name') ?? '',
         ugen: el.getAttribute('type') ?? '',
         rate: el.getAttribute('rate') ?? 'ar',
-        controls: collectUgenInputs(el),
+        op: el.getAttribute('op') ?? undefined,
     };
 }
 
@@ -51,6 +47,7 @@ function extractControlProps(el: Element): HtmlProps<ScControlNode> {
     return {
         name: el.getAttribute('name') ?? '',
         value: Number(el.getAttribute('value') ?? '0'),
+        bind: el.getAttribute('bind') ?? undefined,
     };
 }
 
@@ -88,7 +85,7 @@ export function extractProps(type: string, el: Element): Record<string, unknown>
         case ELEMENTS.SC_SYNTHDEF:
             return {children: [], ...extractSynthDefProps(el)};
         case ELEMENTS.SC_UGEN:
-            return extractUgenProps(el);
+            return {children: [], ...extractUgenProps(el)};
         case ELEMENTS.SC_CONTROL:
             return extractControlProps(el);
         case ELEMENTS.SC_RANGE:
@@ -104,22 +101,4 @@ export function extractProps(type: string, el: Element): Record<string, unknown>
         default:
             throw new Error(`Unknown element type: ${type}`);
     }
-}
-
-function collectNumericAttrs(el: Element, skip: Set<string>): Record<string, number> {
-    const params: Record<string, number> = {};
-    for (const attr of Array.from(el.attributes)) {
-        if (skip.has(attr.name)) continue;
-        const val = Number(attr.value);
-        if (!isNaN(val)) params[attr.name] = val;
-    }
-    return params;
-}
-
-function collectUgenInputs(el: Element): Record<string, string> {
-    const inputs: Record<string, string> = {};
-    for (const attr of Array.from(el.attributes)) {
-        if (!UGEN_SKIP_ATTRS.has(attr.name)) inputs[attr.name] = attr.value;
-    }
-    return inputs;
 }

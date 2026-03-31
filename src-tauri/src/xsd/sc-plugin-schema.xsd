@@ -211,10 +211,11 @@
     <xs:attributeGroup ref="commonAttrs"/>
   </xs:complexType>
 
-  <!-- sc-control (declares a named control parameter with a default value) -->
+  <!-- sc-control (declares a named control parameter; value or bind, mutually exclusive) -->
   <xs:complexType name="scControlType">
     <xs:attribute name="name" type="xs:string" use="required"/>
-    <xs:attribute name="value" type="xs:decimal" use="required"/>
+    <xs:attribute name="value" type="xs:decimal"/>
+    <xs:attribute name="bind" type="xs:string"/>
     <xs:attributeGroup ref="commonAttrs"/>
   </xs:complexType>
 
@@ -239,23 +240,26 @@
     <xs:attributeGroup ref="commonAttrs"/>
   </xs:complexType>
 
-  <!-- sc-synthdef (container for sc-ugen elements, defines a synth graph) -->
+  <!-- sc-synthdef (container for sc-control and sc-ugen elements, defines a synth graph) -->
   <xs:complexType name="scSynthDefType">
     <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element ref="sc-control"/>
       <xs:element ref="sc-ugen"/>
     </xs:choice>
     <xs:attribute name="name" type="xs:string" use="required"/>
     <xs:attributeGroup ref="commonAttrs"/>
-    <xs:anyAttribute processContents="skip"/>
   </xs:complexType>
 
-  <!-- sc-ugen (a single UGen node within a sc-synthdef) -->
+  <!-- sc-ugen (a single UGen node within a sc-synthdef, accepts sc-control children for inputs) -->
   <xs:complexType name="scUGenType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element ref="sc-control"/>
+    </xs:choice>
     <xs:attribute name="name" type="xs:string" use="required"/>
     <xs:attribute name="type" type="xs:string" use="required"/>
     <xs:attribute name="rate" type="xs:string"/>
+    <xs:attribute name="op" type="xs:string"/>
     <xs:attributeGroup ref="commonAttrs"/>
-    <xs:anyAttribute processContents="skip"/>
   </xs:complexType>
 
 </xs:schema>

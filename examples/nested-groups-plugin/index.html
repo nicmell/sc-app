@@ -5,10 +5,20 @@
 </head>
 <body>
 <!-- Tests multi-segment resolve paths through nested groups -->
-<sc-synthdef name="tone" freq="440" amp="0.2">
-    <sc-ugen name="osc" type="SinOsc" freq="freq"/>
-    <sc-ugen name="sig" type="BinaryOpUGen" op="*" a="osc" b="amp"/>
-    <sc-ugen name="out" type="Out" bus="0" channelsarray="sig"/>
+<sc-synthdef name="tone">
+    <sc-control name="freq" value="440"/>
+    <sc-control name="amp" value="0.2"/>
+    <sc-ugen name="osc" type="SinOsc">
+        <sc-control name="freq" bind="freq"/>
+    </sc-ugen>
+    <sc-ugen name="sig" type="BinaryOpUGen" op="*">
+        <sc-control name="a" bind="osc"/>
+        <sc-control name="b" bind="amp"/>
+    </sc-ugen>
+    <sc-ugen name="out" type="Out">
+        <sc-control name="bus" value="0"/>
+        <sc-control name="channelsarray" bind="sig"/>
+    </sc-ugen>
 </sc-synthdef>
 
 <sc-group name="outer">

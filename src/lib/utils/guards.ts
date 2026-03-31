@@ -15,8 +15,8 @@ export function isGroup<T extends ScElementNodeBase>(el: T): el is Extract<T, { 
   return el.type === 'sc-group' || el.type === 'sc-plugin';
 }
 
-export function isParent<T extends ScElementNodeBase>(el: T): el is Extract<T, { type: 'sc-group' } | { type: 'sc-plugin' } | { type: 'sc-synth' } | { type: 'sc-if' } | { type: 'sc-synthdef' }> {
-  return el.type === 'sc-group' || el.type === 'sc-plugin' || el.type === 'sc-synth' || el.type === 'sc-if' || el.type === 'sc-synthdef';
+export function isParent<T extends ScElementNodeBase>(el: T): el is Extract<T, { type: 'sc-group' } | { type: 'sc-plugin' } | { type: 'sc-synth' } | { type: 'sc-ugen' } | { type: 'sc-if' } | { type: 'sc-synthdef' }> {
+  return el.type === 'sc-group' || el.type === 'sc-plugin' || el.type === 'sc-synth' || el.type === 'sc-ugen' || el.type === 'sc-if' || el.type === 'sc-synthdef';
 }
 
 export function isSynth<T extends ScElementNodeBase>(el: T): el is Extract<T, { type: 'sc-synth' }> {

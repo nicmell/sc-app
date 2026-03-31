@@ -73,17 +73,17 @@ Six top-level slices in `src/lib/stores/`:
 | Slice | Purpose |
 |-------|---------|
 | `root` | App-level state (`isRunning` flag) |
-| `scsynth` | Connection state, server status, options (host/port/polling/timeout/latency) |
-| `layout` | Dashboard grid items (BoxItem[]) + grid options (rows/columns). Each BoxItem holds plugin ref |
-| `theme` | Dark/light/adaptive mode, primary color |
+| `options` | Theme (mode/primaryColor), layout grid (rows/columns), scsynth connection (host/port/polling/timeout/latency) |
+| `scsynth` | Connection state, server status (no options — moved to `options` slice) |
+| `layout` | Dashboard grid items (BoxItem[]) |
 | `plugins` | Installed plugin registry (PluginInfo[]) |
-| `runtime` | Plugin element trees (ScPluginNode[]) + flat values map (RuntimeValueEntry keyed by entry ID). Synthdef bytes are stored separately in `synthDefManager`, not here |
+| `runtime` | Plugin element trees, flat nodes map, persisted overrides. Control values stored directly on `NodeRuntime.controls`. Synthdef bytes stored separately in `synthDefManager` |
 
 Each slice has: `slice.ts` (reducer + actions), `selectors.ts`, `index.ts` (barrel).
 
 API layer (`src/lib/stores/api.ts`) wraps each slice for ergonomic dispatch: `layoutApi.setLayout(...)`, `scsynthApi.isConnected`, etc.
 
-Persisted to `config.json` via Zustand persist middleware with custom `tauriStorage` adapter. The `partialize` function selects which fields to persist; runtime-only fields (`loaded`, `error`) are stripped from plugin nodes and plugin info before persistence.
+Persisted to `config.json` via Zustand persist middleware with custom `tauriStorage` adapter. The `partialize` function serializes state as `ConfigFile` with `activePreset: Preset`. The preset contains layout items with per-box `OverrideEntry[]` arrays (only non-default control/run values). Runtime-only fields (`loaded`, `error`) are stripped.
 
 ## Element Tree & Runtime System
 
@@ -91,44 +91,51 @@ Plugin HTML is processed in two phases: HTML parsing (`src/lib/html/`) builds a 
 
 ### Node Types (`types/parsers.d.ts`)
 
-| Type | Key Fields | Description |
-|------|-----------|-------------|
-| `ScPluginNode` | children, loaded, runtime | Plugin root container |
-| `ScGroupNode` | name, running, children, runtime | Group container |
-| `ScSynthNode` | name, bind, controls, running, runtime | Synth instance; `bind` references an `sc-synthdef` by name |
-| `ScSynthDefNode` | name, controls, children, runtime | SynthDef template; children are `ScUgenNode[]` |
-| `ScUgenNode` | name, ugen, rate, controls, runtime | UGen declaration; `ugen` is the UGen class name |
-| `ScRangeNode` | bind, runtime | Slider/knob input bound to a synth control |
-| `ScCheckboxNode` | bind, runtime | Toggle input bound to a synth control |
-| `ScRunNode` | bind, runtime | Play/pause control; bind references a synth or group |
-| `ScDisplayNode` | bind, format, runtime | Read-only value display |
-| `ScIfNode` | bind, children, runtime | Conditional rendering container |
+| Type | Key Fields | Runtime Type | Description |
+|------|-----------|-------------|-------------|
+| `ScPluginNode` | title, run, children | `PluginRuntime` (extends NodeRuntime + loaded/error) | Plugin root container |
+| `ScGroupNode` | name, run, children | `NodeRuntime` {rootId, run, controls} | Group container |
+| `ScSynthNode` | name, bind, run, children | `NodeRuntime` | Synth instance; `bind` references an `sc-synthdef` by name |
+| `ScSynthDefNode` | name, children | `UgenRuntime` {rootId} | SynthDef template; children are `ScControlNode[]` + `ScUgenNode[]` |
+| `ScUgenNode` | name, ugen, rate, op?, children | `UgenRuntime` | UGen node; children are `ScControlNode[]` for inputs |
+| `ScControlNode` | name, value, bind? | `UgenRuntime` | Control parameter declaration. `value` for constants, `bind` for references |
+| `ScRangeNode` | bind | `InputRuntime` {rootId, targetNode, name} | Slider/knob bound to a synth control |
+| `ScCheckboxNode` | bind | `InputRuntime` | Toggle bound to a synth control |
+| `ScRunNode` | bind | `InputRuntime` | Play/pause control |
+| `ScDisplayNode` | bind, format | `InputRuntime` | Read-only value display |
+| `ScIfNode` | bind, children | `InputRuntime` | Conditional rendering container |
 
-`StripRuntime<T>` removes `runtime` (and recursively from `children`) to produce `ScElementNodeBase` — the base type used during HTML parsing before runtime entries exist.
+All parent types (`ScParentNode`): plugin, group, synth, synthdef, ugen, sc-if. Controls are declared via `<sc-control>` children — not as HTML attributes (except for synthdef `name` and ugen `name`/`type`/`rate`/`op`).
+
+`StripRuntime<T>` removes `runtime` (and recursively from `children`) to produce `ScElementNodeBase` — the base type used during HTML parsing before runtime is assigned.
 
 ### HTML Parser (`src/lib/html/processHtml.ts`)
 
-- `processHtml(docElement, saved?)` → `ProcessHtmlResult { tree, nodes }`
-- Walks DOM, dispatches to per-tag extractors via `extractProps()` (`src/lib/html/handlers.ts`)
-- **Two-phase hydration**: generates fresh node → compares with saved node via `propsMatch()` → reuses saved ID only if props match (prevents stale state on changed nodes)
-- Returns `ScElementNodeBase[]` tree (no `runtime` fields yet) and a `Map<string, ScElementNodeBase>` of all nodes keyed by ID
+- `processHtml(args: HtmlRuntimeContext)` → `ScElementNode`
+- `hydrate(node, element)` — assigns ID, extracts props, stores `_element` reference on the node
+- `walkDom` yields SC elements from the DOM (recurses through non-SC elements like divs)
+- `visit(node)` — closure that walks the node's DOM children, hydrates them into a scope, checks for duplicate names, and recursively calls `processHtml` for each child
+- Cumulative scopes: each level prepends local scope onto parent scope for bind resolution
+- `checkDuplicateNames(scope)` runs once per scope after hydration
 
-### Runtime Processor (`src/lib/runtime/`)
+### Runtime Processor (`src/lib/runtime/handlers.ts`)
 
-- `processRuntime(boxId, tree, nodes, persistedEntries)` → `{ tree, entries, pluginRuntime }`
-- Walks tree **children-before-parents** (ensures synth runtime exists before range/checkbox handlers reference it)
-- Per-type handlers in `handlers.ts` create runtime entries via `findOrCreateEntry()`, which checks: (1) current session entries, (2) persisted entries from store, (3) creates new with default
-- **Bind validation**: `sc-range`, `sc-checkbox`, `sc-display`, `sc-if` throw if bind path doesn't resolve
-- **sc-synth bind validation**: throws if `bind` doesn't reference an `sc-synthdef` in scope
-- **sc-run bind validation**: throws if `bind` doesn't reference an `sc-synth` or `sc-group` in scope
-- Decoupled from store — receives `persistedEntries` as parameter, no direct store imports
-- After walking, casts mutated `ScElementNodeBase[]` tree to `ScElementNode[]` (safe: every node has `runtime` via `Object.assign`)
+- `processElement(ctx: RuntimeContext)` — idempotent dispatcher (early return if node already in `ctx.nodes`)
+- Per-type handlers compute runtime objects:
+  - **Plugin/group/synth**: call `visit()` to process children, then `collectControls()` reads `sc-control` children to build `NodeRuntime.controls`, applying overrides from persisted `OverrideEntry` values
+  - **SynthDef**: calls `visit()`, collects params from sc-control children, collects ugen specs from sc-ugen children (each ugen's inputs built from its own sc-control children), compiles via `synthDefManager`
+  - **UGen**: calls `visit()` to process sc-control children, validates bind references against sibling ugens and parent synthdef params
+  - **sc-control**: returns `UgenRuntime` (dummy, no processing needed)
+  - **Input/run/display/if**: resolve bind paths via `resolveControlBind`/`resolve`
+- `resolve(ctx, path)` — on-demand sibling processing with idempotency. Searches cumulative scope, processes unprocessed nodes via `processElement`, walks populated children for deeper segments
+- `collectControls(node)` — filters children for `sc-control` type, returns `Record<string, number>`
+- `findOverride(ctx, type, name)` — matches persisted overrides by `targetNode === ctx.path`
+- **Validation**: bind paths, synthdef references, ugen input references all validated during processing
 
 ### Utilities (`src/lib/utils/`)
 
-- **`guards.ts`** — Generic type guards (`isParent`, `isSynth`, `isNode`, etc.) over `<T extends ScElementNodeBase>` with `Extract<T, ...>` return types. Work with both `ScElementNode` and `ScElementNodeBase`
-- **`elementTree.ts`** — Generic `findElementById<T>(elements, id)` and `findElementByPath<T>(elements, path)` — preserve input type in return
-- **`extractProps.ts`** — Per-tag HTML attribute extractors (`extractSynthProps`, `extractGroupProps`, etc.)
+- **`guards.ts`** — Type guards (`isParent`, `isNode`, `isControl`, `isPlugin`, etc.) over `<T extends ScElementNodeBase>` with `Extract<T, ...>` return types
+- **`elementTree.ts`** — `findElementById` and `findElementByPath` for tree traversal
 
 ### SynthDef Manager (`src/lib/synthdef/`)
 
@@ -154,10 +161,11 @@ Lit-based custom elements for plugin authoring. All registered in `index.ts`.
 
 | Element | Key Properties | Behavior |
 |---------|---------------|----------|
-| `sc-plugin` | — | Plugin entry point (extends sc-group). Loads HTML, parses tree, updates layout |
+| `sc-plugin` | — | Plugin root. Loads HTML, parses tree, updates layout |
 | `sc-group` | name | Group container. Sends `/g_new` on create, `/g_freeAll` + `/n_free` on disconnect |
-| `sc-synth` | name, bind | Synth instance. `bind` references synthdef name. Sends `/s_new` on create, `/n_free` on disconnect |
-| `sc-synthdef` | name | SynthDef template. Looks up compiled bytes from PluginManager, sends `/d_recv` |
+| `sc-synth` | name, bind | Synth instance. Sends `/s_new` on create, `/n_free` on disconnect |
+| `sc-synthdef` | name | SynthDef template. Compiles and sends `/d_recv` |
+| `sc-control` | name, value, bind | **No web component.** Declares a control parameter (value-based or bind-based). Parsed only |
 | `sc-range` | bind, type (knob/slider), min, max, step | Slider or knob. Renders `sc-knob` or `sc-slider` internally |
 | `sc-checkbox` | bind | Toggle switch. Renders `sc-switch` internally |
 | `sc-run` | bind, run, size, src | Play/pause button. SVG icon or sprite sheet |
@@ -273,8 +281,11 @@ sc-if's children scope: `[display, checkbox, ...parent_scope_with_osc]`.
 - Caches as TrustedHTML, renders inside shadow DOM
 
 **Plugin HTML elements** (validated by XSD):
-- `<sc-synthdef name="..." param="value">` with `<sc-ugen>` children — defines a synth graph
-- `<sc-synth name="..." bind="synthdefName" control="value">` — creates a synth instance
+- `<sc-control name="..." value="..."/>` — declares a control parameter (on synth/group/plugin/synthdef)
+- `<sc-control name="..." bind="..."/>` — declares a ugen input bound to another ugen or synthdef param
+- `<sc-synthdef name="...">` with `<sc-control>` + `<sc-ugen>` children — defines a synth graph
+- `<sc-ugen name="..." type="..." rate="..." op="...">` with `<sc-control>` children — a UGen node
+- `<sc-synth name="..." bind="synthdefName">` with `<sc-control>` children — synth instance
 - `<sc-group name="...">` — groups synths/controls
 - `<sc-range>`, `<sc-checkbox>`, `<sc-run>`, `<sc-display>`, `<sc-if>` — UI controls
 
@@ -292,6 +303,10 @@ sc-if's children scope: `[display, checkbox, ...parent_scope_with_osc]`.
 | `example-plugin` | Basic synth with local synthdef, knobs, sliders, checkbox |
 | `group-plugin` | Two synths in a group with local synthdef, per-oscillator controls |
 | `synthdef-plugin` | FM synthesis with custom synthdef (SinOsc + MulAdd modulation) |
+| `group-bind-plugin` | Group with synths, group-level controls, per-synth run/range/display |
+| `forward-ref-plugin` | Controls appear before the synth they reference — tests on-demand resolve |
+| `nested-groups-plugin` | Multi-segment resolve paths through nested groups |
+| `conditional-plugin` | sc-if with controls binding to siblings — tests sc-if scope transparency |
 | `bad-bindings` | Intentional binding errors (typos, missing synths) for testing validation |
 | `bad-asset-type` | Invalid asset format for testing validation |
 | `bad-asset-mismatch` | Declared vs actual asset type mismatch |
@@ -345,7 +360,8 @@ export function Foo({variant = "a", size = "md", className, ...rest}: FooProps) 
 - Never mutate store directly — always dispatch actions via API layer
 - Selectors are memoized (`createSelector`) — use them for derived state
 - Runtime-only fields (`loaded`, `error`) are stripped during persistence via `partialize` in persist config
-- Element trees live on `ScPluginNode.children` in the runtime slice (`runtime.items`)
+- Control values live on `NodeRuntime.controls` (no separate entries map). Overrides persisted as `OverrideEntry[]` per layout box
+- Element trees live on `ScPluginNode.children` in the runtime slice
 
 ## Key Constants
 

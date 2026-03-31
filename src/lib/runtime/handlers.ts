@@ -139,38 +139,48 @@ const synthHandler = (ctx: RuntimeContext): NodeRuntime => {
     return nodeRuntime(ctx);
 };
 
+function collectUgenInputs(node: { children: ScElementNodeBase[] }): Record<string, string> {
+    const inputs: Record<string, string> = {};
+    for (const child of node.children) {
+        if (isControl(child)) {
+            inputs[child.name] = child.bind ?? String(child.value);
+        }
+    }
+    return inputs;
+}
+
 const synthDefHandler = (ctx: RuntimeContext): UgenRuntime => {
     ctx.visit(ctx.tree);
     const n = ctx.tree as StripRuntime<ScSynthDefNode>;
     ctx.synthdefs.push(n as unknown as ScSynthDefNode);
+    const params = collectControls(n);
     const ugenChildren = n.children.filter((c): c is ScUgenNode => c.type === 'sc-ugen');
     if (ugenChildren.length > 0) {
-        const specsMap = new Map(ugenChildren.map(c =>
-            [c.name, {name: c.name, type: c.ugen, rate: c.rate, inputs: c.controls}]
-        ));
-        synthDefManager.compile(ctx.rootId, n.id, n.name, n.controls, specsMap);
+        const specsMap = new Map(ugenChildren.map(c => {
+            const inputs = collectUgenInputs(c);
+            if (c.op) inputs['op'] = c.op;
+            return [c.name, {name: c.name, type: c.ugen, rate: c.rate, inputs}];
+        }));
+        synthDefManager.compile(ctx.rootId, n.id, n.name, params, specsMap);
     }
     return {rootId: ctx.rootId};
 };
 
 const ugenHandler = (ctx: RuntimeContext): UgenRuntime => {
+    ctx.visit(ctx.tree);
     const n = ctx.tree as StripRuntime<ScUgenNode>;
-    for (const [key, value] of Object.entries(n.controls)) {
-        if (key === 'op') {
-            continue
-        }
-        const num = Number(value);
-        if (!isNaN(num) && value.trim() !== '') {
-            continue
-        }
-        const refId = value.split(':')[0];
+    for (const child of n.children) {
+        if (!isControl(child) || !child.bind) continue;
+        const refId = child.bind.split(':')[0];
         if (ctx.scope.some(s => s.type === 'sc-ugen' && s.name === refId)) {
             continue
         }
-        if (ctx.parentNode?.type === 'sc-synthdef' && refId in ctx.parentNode.controls) {
+        const synthDefParams = ctx.parentNode && 'children' in ctx.parentNode
+            ? collectControls(ctx.parentNode) : {};
+        if (refId in synthDefParams) {
             continue
         }
-        throw new Error(`<sc-ugen name="${n.name}">: input "${key}" references unknown "${refId}"`);
+        throw new Error(`<sc-ugen name="${n.name}">: input "${child.name}" references unknown "${refId}"`);
     }
     return {rootId: ctx.rootId};
 };

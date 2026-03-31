@@ -5,12 +5,30 @@
 </head>
 <body>
 <sc-group name="oscillators">
-    <sc-synthdef name="sine" freq="440" amp="0.2" pan="0" mute="0">
-        <sc-ugen name="osc" type="SinOsc" freq="freq"/>
-        <sc-ugen name="sig" type="BinaryOpUGen" op="*" a="osc" b="amp"/>
-        <sc-ugen name="panned" type="Pan2" in="sig" pos="pan"/>
-        <sc-ugen name="muted" type="BinaryOpUGen" op="*" a="panned" b="mute"/>
-        <sc-ugen name="out" type="Out" bus="0" channelsarray="muted"/>
+    <sc-synthdef name="sine">
+        <sc-control name="freq" value="440"/>
+        <sc-control name="amp" value="0.2"/>
+        <sc-control name="pan" value="0"/>
+        <sc-control name="mute" value="0"/>
+        <sc-ugen name="osc" type="SinOsc">
+            <sc-control name="freq" bind="freq"/>
+        </sc-ugen>
+        <sc-ugen name="sig" type="BinaryOpUGen" op="*">
+            <sc-control name="a" bind="osc"/>
+            <sc-control name="b" bind="amp"/>
+        </sc-ugen>
+        <sc-ugen name="panned" type="Pan2">
+            <sc-control name="in" bind="sig"/>
+            <sc-control name="pos" bind="pan"/>
+        </sc-ugen>
+        <sc-ugen name="muted" type="BinaryOpUGen" op="*">
+            <sc-control name="a" bind="panned"/>
+            <sc-control name="b" bind="mute"/>
+        </sc-ugen>
+        <sc-ugen name="out" type="Out">
+            <sc-control name="bus" value="0"/>
+            <sc-control name="channelsarray" bind="muted"/>
+        </sc-ugen>
     </sc-synthdef>
 
     <sc-synth name="osc1" bind="sine">
