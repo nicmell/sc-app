@@ -1,4 +1,4 @@
-import type {NodeType, ScElementNodeBase} from "../../types/parsers";
+import type {NodeType, ScElementNodeBase, OverrideEntry, ControlOverrideEntry, RunOverrideEntry} from "../../types/parsers";
 import {ELEMENTS} from "../../constants/sc-elements";
 
 const NODE_TYPES: ReadonlySet<string> = new Set(Object.values(ELEMENTS));
@@ -49,4 +49,12 @@ export function isRun<T extends ScElementNodeBase>(el: T): el is Extract<T, { ty
 
 export function isControl<T extends ScElementNodeBase>(el: T): el is Extract<T, { type: 'sc-control' }> {
   return el.type === 'sc-control';
+}
+
+export function isControlOverride(e: OverrideEntry): e is ControlOverrideEntry {
+  return e.type === 'control';
+}
+
+export function isRunOverride(e: OverrideEntry): e is RunOverrideEntry {
+  return e.type === 'run';
 }

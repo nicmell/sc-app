@@ -3,7 +3,7 @@ import type {
     ScRunNode,
     ScPluginNode, PluginRuntime, NodeRuntime, UgenRuntime, InputRuntime, OverrideEntry, StripRuntime,
 } from "@/types/parsers";
-import {isNode, isParent, isControl} from "@/lib/utils/guards";
+import {isNode, isParent, isControl, isControlOverride, isRunOverride} from "@/lib/utils/guards";
 import {ELEMENTS} from "@/constants/sc-elements";
 import {synthDefManager} from "@/lib/synthdef";
 
@@ -33,8 +33,12 @@ export function checkDuplicateNames(scope: ScElementNodeBase[]): void {
     }
 }
 
-function findOverride(ctx: RuntimeContext, type: "control" | "run", name: string): number | undefined {
-    return ctx.overrides?.find(e => e.type === type && e.targetNode === ctx.path && e.name === name)?.value;
+function findRunOverride(ctx: RuntimeContext): number | undefined {
+    return ctx.overrides?.find(e => isRunOverride(e) && e.targetNode === ctx.path)?.value;
+}
+
+function findControlOverride(ctx: RuntimeContext, name: string): number | undefined {
+    return ctx.overrides?.find(e => isControlOverride(e) && e.targetNode === ctx.path && e.name === name)?.value;
 }
 
 function collectControls(node: { children: ScElementNodeBase[] }): Record<string, number> {
@@ -99,10 +103,10 @@ const pluginHandler = (ctx: RuntimeContext): PluginRuntime => {
     const n = ctx.tree as StripRuntime<ScPluginNode>;
     try {
         ctx.visit(ctx.tree);
-        const run = findOverride(ctx, "run", n.id) ?? (n.run ? 1 : 0)
+        const run = findRunOverride(ctx) ?? (n.run ? 1 : 0)
         const controls = collectControls(n);
         for (const name of Object.keys(controls)) {
-            controls[name] = findOverride(ctx, "control", name) ?? controls[name];
+            controls[name] = findControlOverride(ctx, name) ?? controls[name];
         }
         return {rootId: ctx.rootId, run, loaded: true, controls};
     } catch (e) {
@@ -117,10 +121,10 @@ const pluginHandler = (ctx: RuntimeContext): PluginRuntime => {
 
 function nodeRuntime(ctx: RuntimeContext): NodeRuntime {
     const n = ctx.tree as StripRuntime<ScGroupNode | ScSynthNode>;
-    const run = findOverride(ctx, "run", n.name) ?? (n.run ? 1 : 0)
+    const run = findRunOverride(ctx) ?? (n.run ? 1 : 0)
     const controls = collectControls(n);
     for (const name of Object.keys(controls)) {
-        controls[name] = findOverride(ctx, "control", name) ?? controls[name];
+        controls[name] = findControlOverride(ctx, name) ?? controls[name];
     }
     return {rootId: ctx.rootId, run, controls};
 }

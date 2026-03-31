@@ -6,9 +6,8 @@ function collectEntries(node: ScElementNode, nodes: Record<string, ScElementNode
     const entries: PersistedOverrideEntry[] = [];
     const n = nodes[node.id] ?? node;
     if (isNode(n)) {
-        const nodeName = 'name' in n ? n.name : n.id;
         if (n.runtime.run !== (n.run ? 1 : 0)) {
-            entries.push({type: "run", targetNode: path, name: nodeName, value: n.runtime.run});
+            entries.push({type: "run", targetNode: path, value: n.runtime.run});
         }
         // Get defaults from sc-control children
         if (isParent(n)) {
@@ -59,7 +58,7 @@ export function unmarshalPreset(preset: Preset): RuntimeState {
     for (const item of preset.layout) {
         if (item.overrides) {
             for (const entry of item.overrides) {
-                overrides.push({...entry, rootId: item.i});
+                overrides.push({...entry, rootId: item.i} as OverrideEntry);
             }
         }
     }
