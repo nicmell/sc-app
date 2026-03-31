@@ -172,15 +172,9 @@ const ugenHandler = (ctx: RuntimeContext): UgenRuntime => {
     for (const child of n.children) {
         if (!isControl(child) || !child.bind) continue;
         const refId = child.bind.split(':')[0];
-        if (ctx.scope.some(s => s.type === 'sc-ugen' && s.name === refId)) {
-            continue
+        if (!resolve(ctx, [refId])) {
+            throw new Error(`<sc-ugen name="${n.name}">: input "${child.name}" references unknown "${refId}"`);
         }
-        const synthDefParams = ctx.parentNode && 'children' in ctx.parentNode
-            ? collectControls(ctx.parentNode) : {};
-        if (refId in synthDefParams) {
-            continue
-        }
-        throw new Error(`<sc-ugen name="${n.name}">: input "${child.name}" references unknown "${refId}"`);
     }
     return {rootId: ctx.rootId};
 };
