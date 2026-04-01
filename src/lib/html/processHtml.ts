@@ -36,6 +36,10 @@ export function processHtml(args: HtmlRuntimeContext): ScElementNode {
             const parent = node as ScParentNode;
             const elements = Array.from(walkDom(node._element!));
 
+            const path = 'name' in node && node.name
+                ? (args.path ? `${args.path}.${node.name}` : node.name)
+                : args.path;
+
             const scope = elements.map((el) => {
                 return hydrate({id: randomId(), type: tagToType(el.tagName.toLowerCase())}, el);
             });
@@ -44,9 +48,7 @@ export function processHtml(args: HtmlRuntimeContext): ScElementNode {
 
             const childScope = [...scope, ...args.scope];
             for (let j = 0; j < scope.length; j++) {
-                const s = scope[j];
-                const childPath = 'name' in s ? (args.path ? `${args.path}.${s.name}` : s.name) : args.path;
-                processHtml({...args, tree: scope[j], scope: childScope, parentNode: parent, path: childPath});
+                processHtml({...args, tree: scope[j], scope: childScope, parentNode: parent, path});
             }
 
             return parent;

@@ -33,12 +33,12 @@ export function checkDuplicateNames(scope: ScElementNodeBase[]): void {
     }
 }
 
-function findRunOverride(ctx: RuntimeContext): number | undefined {
-    return ctx.overrides?.find(e => isRunOverride(e) && e.targetNode === ctx.path)?.value;
+function findRunOverride(ctx: RuntimeContext, path: string): number | undefined {
+    return ctx.overrides?.find(e => isRunOverride(e) && e.targetNode === path)?.value;
 }
 
-function findControlOverride(ctx: RuntimeContext, name: string): number | undefined {
-    return ctx.overrides?.find(e => isControlOverride(e) && e.targetNode === ctx.path && e.name === name)?.value;
+function findControlOverride(ctx: RuntimeContext, path: string, name: string): number | undefined {
+    return ctx.overrides?.find(e => isControlOverride(e) && e.targetNode === path && e.name === name)?.value;
 }
 
 function collectControls(node: { children: ScElementNodeBase[] }): Record<string, number> {
@@ -56,10 +56,8 @@ function resolve(ctx: RuntimeContext, path: string[]): ScElementNode | undefined
     const idx = ctx.scope.findIndex(s => 'name' in s && s.name === name);
     if (idx < 0) return undefined;
 
-    const childPath = ctx.path ? `${ctx.path}.${name}` : name;
-
-    // Same-level resolve: processElement uses correct visit since scope/elements match
-    const target = ctx.nodes[ctx.scope[idx].id] ?? processElement({...ctx, tree: ctx.scope[idx], path: childPath});
+    // Same-level resolve: sibling shares the same parent path
+    const target = ctx.nodes[ctx.scope[idx].id] ?? processElement({...ctx, tree: ctx.scope[idx]});
 
     if (rest.length === 0) return target;
     if (!isParent(target)) return undefined;
@@ -103,10 +101,10 @@ const pluginHandler = (ctx: RuntimeContext): PluginRuntime => {
     const n = ctx.tree as StripRuntime<ScPluginNode>;
     try {
         ctx.visit(ctx.tree);
-        const run = findRunOverride(ctx) ?? (n.run ? 1 : 0)
+        const run = findRunOverride(ctx, ctx.path) ?? (n.run ? 1 : 0)
         const controls = collectControls(n);
         for (const name of Object.keys(controls)) {
-            controls[name] = findControlOverride(ctx, name) ?? controls[name];
+            controls[name] = findControlOverride(ctx, ctx.path, name) ?? controls[name];
         }
         return {rootId: ctx.rootId, run, loaded: true, controls};
     } catch (e) {
@@ -121,10 +119,11 @@ const pluginHandler = (ctx: RuntimeContext): PluginRuntime => {
 
 function nodeRuntime(ctx: RuntimeContext): NodeRuntime {
     const n = ctx.tree as StripRuntime<ScGroupNode | ScSynthNode>;
-    const run = findRunOverride(ctx) ?? (n.run ? 1 : 0)
+    const path = ctx.path ? `${ctx.path}.${n.name}` : n.name;
+    const run = findRunOverride(ctx, path) ?? (n.run ? 1 : 0)
     const controls = collectControls(n);
     for (const name of Object.keys(controls)) {
-        controls[name] = findControlOverride(ctx, name) ?? controls[name];
+        controls[name] = findControlOverride(ctx, path, name) ?? controls[name];
     }
     return {rootId: ctx.rootId, run, controls};
 }
