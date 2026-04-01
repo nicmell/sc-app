@@ -134,7 +134,6 @@ export interface ControlOverrideEntry {
   type: "control";
   rootId: string;
   targetNode: string;
-  name: string;
   value: number
 }
 

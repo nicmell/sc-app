@@ -36,9 +36,7 @@ export function processHtml(args: HtmlRuntimeContext): ScElementNode {
             const parent = node as ScParentNode;
             const elements = Array.from(walkDom(node._element!));
 
-            const path = 'name' in node && node.name
-                ? (args.path ? `${args.path}.${node.name}` : node.name)
-                : args.path;
+            const path = 'name' in node && node.name ? [...args.path, node.name] : args.path;
 
             const scope = elements.map((el) => {
                 return hydrate({id: randomId(), type: tagToType(el.tagName.toLowerCase())}, el);

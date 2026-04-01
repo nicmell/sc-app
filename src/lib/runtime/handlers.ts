@@ -16,7 +16,7 @@ export interface RuntimeContext {
     visit: (node: ScElementNodeBase) => ScElementNode;
     parentNode?: ScParentNode;
     overrides?: OverrideEntry[];
-    path: string;
+    path: string[];
 }
 
 // --- Helpers ---
@@ -33,12 +33,14 @@ export function checkDuplicateNames(scope: ScElementNodeBase[]): void {
     }
 }
 
-function findRunOverride(ctx: RuntimeContext, path: string): number | undefined {
-    return ctx.overrides?.find(e => isRunOverride(e) && e.targetNode === path)?.value;
+function findRunOverride(ctx: RuntimeContext, path: string[]): number | undefined {
+    const target = path.join('.');
+    return ctx.overrides?.find(e => isRunOverride(e) && e.targetNode === target)?.value;
 }
 
-function findControlOverride(ctx: RuntimeContext, path: string, name: string): number | undefined {
-    return ctx.overrides?.find(e => isControlOverride(e) && e.targetNode === path && e.name === name)?.value;
+function findControlOverride(ctx: RuntimeContext, path: string[]): number | undefined {
+    const target = path.join('.');
+    return ctx.overrides?.find(e => isControlOverride(e) && e.targetNode === target)?.value;
 }
 
 function collectControls(node: { children: ScElementNodeBase[] }): Record<string, number> {
@@ -104,7 +106,7 @@ const pluginHandler = (ctx: RuntimeContext): PluginRuntime => {
         const run = findRunOverride(ctx, ctx.path) ?? (n.run ? 1 : 0)
         const controls = collectControls(n);
         for (const name of Object.keys(controls)) {
-            controls[name] = findControlOverride(ctx, ctx.path, name) ?? controls[name];
+            controls[name] = findControlOverride(ctx, [...ctx.path, name]) ?? controls[name];
         }
         return {rootId: ctx.rootId, run, loaded: true, controls};
     } catch (e) {
@@ -119,11 +121,11 @@ const pluginHandler = (ctx: RuntimeContext): PluginRuntime => {
 
 function nodeRuntime(ctx: RuntimeContext): NodeRuntime {
     const n = ctx.tree as StripRuntime<ScGroupNode | ScSynthNode>;
-    const path = ctx.path ? `${ctx.path}.${n.name}` : n.name;
+    const path = [...ctx.path, n.name];
     const run = findRunOverride(ctx, path) ?? (n.run ? 1 : 0)
     const controls = collectControls(n);
     for (const name of Object.keys(controls)) {
-        controls[name] = findControlOverride(ctx, path, name) ?? controls[name];
+        controls[name] = findControlOverride(ctx, [...path, name]) ?? controls[name];
     }
     return {rootId: ctx.rootId, run, controls};
 }
