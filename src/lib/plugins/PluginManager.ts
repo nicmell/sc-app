@@ -43,7 +43,7 @@ export class PluginManager {
         }
 
         const synthdefs: ScSynthDefNode[] = [];
-        const nodes: Record<string, ScElementNode> = {};
+        const nodes = new Map<string, ScElementNode>();
         const overrides = runtimeApi.overrides.filter(e => e.rootId === boxId);
 
         const element = doc.documentElement;

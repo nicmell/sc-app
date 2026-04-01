@@ -10,7 +10,7 @@ import {synthDefManager} from "@/lib/synthdef";
 export interface RuntimeContext {
     rootId: string;
     tree: ScElementNodeBase;
-    nodes: Record<string, ScElementNode>;
+    nodes: Map<string, ScElementNode>;
     synthdefs: ScSynthDefNode[];
     scope: ScElementNodeBase[];
     visit: (node: ScElementNodeBase) => ScElementNode;
@@ -59,7 +59,7 @@ function resolve(ctx: RuntimeContext, path: string[]): ScElementNode | undefined
     if (idx < 0) return undefined;
 
     // Same-level resolve: sibling shares the same parent path
-    const target = ctx.nodes[ctx.scope[idx].id] ?? processElement({...ctx, tree: ctx.scope[idx]});
+    const target = ctx.nodes.get(ctx.scope[idx].id) ?? processElement({...ctx, tree: ctx.scope[idx]});
 
     return walkPath(target, rest);
 }
@@ -110,8 +110,8 @@ const pluginHandler = (ctx: RuntimeContext): PluginRuntime => {
     } catch (e) {
         const error = e instanceof Error ? e.message : String(e)
         Object.assign(n, {children: []});
-        for (const id of Object.keys(ctx.nodes)) {
-            if (id !== n.id) delete ctx.nodes[id];
+        for (const id of ctx.nodes.keys()) {
+            if (id !== n.id) ctx.nodes.delete(id);
         }
         return {rootId: ctx.rootId, path: ctx.path, run: 0, loaded: false, controls: {}, error};
     }
@@ -208,7 +208,7 @@ const ifHandler = (ctx: RuntimeContext): InputRuntime => {
 // --- Dispatch ---
 
 export function processElement(ctx: RuntimeContext): ScElementNode {
-    const existing = ctx.nodes[ctx.tree.id];
+    const existing = ctx.nodes.get(ctx.tree.id);
     if (existing) {
         return existing
     }
@@ -231,7 +231,7 @@ export function processElement(ctx: RuntimeContext): ScElementNode {
     }
     Object.assign(ctx.tree, {runtime});
     const node = ctx.tree as unknown as ScElementNode;
-    ctx.nodes[node.id] = node;
+    ctx.nodes.set(node.id, node);
     if (ctx.parentNode) {
         ctx.parentNode.children.push(node);
     }

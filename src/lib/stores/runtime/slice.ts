@@ -35,9 +35,10 @@ export const runtimeSlice = createSlice({
   name: SliceName.RUNTIME,
   initialState,
   reducers: {
-    [RuntimeAction.LOAD_PLUGIN]: (state, action: { payload: { id: string; nodes: Record<string, ScElementNode> } }) => {
-      Object.assign(state.nodes, action.payload.nodes);
-      state.overrides = state.overrides.filter(e => e.rootId !== action.payload.id);
+    [RuntimeAction.LOAD_PLUGIN]: (state, action: { payload: { id: string; nodes: Map<string, ScElementNode> } }) => {
+      for (const [id, node] of action.payload.nodes) {
+        state.nodes[id] = node;
+      }
     },
     [RuntimeAction.UNLOAD_PLUGIN]: (state, action: { payload: string }) => {
       for (const [id, node] of Object.entries(state.nodes)) {
