@@ -1,5 +1,5 @@
 import type {ScElementNode, OverrideEntry, PersistedOverrideEntry} from "@/types/parsers";
-import type {RuntimeState, Preset} from "@/types/stores";
+import type {RuntimeState, Preset, LayoutState} from "@/types/stores";
 import {isParent, isPlugin, isNode, isControl} from "@/lib/utils/guards";
 
 function collectEntries(node: ScElementNode, nodes: Record<string, ScElementNode>): PersistedOverrideEntry[] {
@@ -26,17 +26,6 @@ function collectEntries(node: ScElementNode, nodes: Record<string, ScElementNode
 }
 
 export function marshalPreset(state: RuntimeState): Preset {
-    const savedByRoot = new Map<string, PersistedOverrideEntry[]>();
-    for (const entry of state.overrides) {
-        const {rootId, ...rest} = entry;
-        let list = savedByRoot.get(rootId);
-        if (!list) {
-            list = [];
-            savedByRoot.set(rootId, list);
-        }
-        list.push(rest);
-    }
-
     return {
         layout: state.layout.map(box => {
             const node = state.nodes[box.i];
@@ -44,20 +33,18 @@ export function marshalPreset(state: RuntimeState): Preset {
                 const entries = collectEntries(node, state.nodes);
                 return {...box, overrides: entries.length > 0 ? entries : undefined};
             }
-            const saved = savedByRoot.get(box.i);
-            return saved ? {...box, overrides: saved} : box;
+            return box;
         }),
     };
 }
 
 export function unmarshalPreset(preset: Preset): RuntimeState {
-    const layout = preset.layout.map(({overrides: _overrides, ...box}) => box);
+    const layout: LayoutState = [];
     const overrides: OverrideEntry[] = [];
-    for (const item of preset.layout) {
-        if (item.overrides) {
-            for (const entry of item.overrides) {
-                overrides.push({...entry, rootId: item.i} as OverrideEntry);
-            }
+    for (const {overrides: entries = [], ...box} of preset.layout) {
+        layout.push(box);
+        for (const entry of entries) {
+            overrides.push({...entry, rootId: box.i} as OverrideEntry);
         }
     }
     return {layout, nodes: {}, overrides};
