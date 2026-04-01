@@ -1,7 +1,7 @@
 import type {
     ScElementNode, ScElementNodeBase, ScParentNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScUgenNode,
     ScRunNode,
-    ScPluginNode, PluginRuntime, NodeRuntime, UgenRuntime, InputRuntime, OverrideEntry, StripRuntime,
+    ScPluginNode, PluginRuntime, NodeRuntime, ControlRuntime, UgenRuntime, InputRuntime, RunRuntime, OverrideEntry, StripRuntime,
 } from "@/types/parsers";
 import {isNode, isParent, isControl, isControlOverride, isRunOverride} from "@/lib/utils/guards";
 import {ELEMENTS} from "@/constants/sc-elements";
@@ -80,7 +80,7 @@ function resolveControlBind(ctx: RuntimeContext): { target: ScElementNode; contr
     const n = ctx.tree as { bind: string; type: string };
     const segments = n.bind.split('.');
     const controlName = segments.pop()!;
-    const target = segments.length > 0 ? resolve(ctx, segments) : ctx.parentNode as ScElementNode | undefined;
+    const target = segments.length > 0 ? resolve(ctx, segments) : ctx.parentNode;
     if (!target || !isNode(target)) {
         throw new Error(`<${n.type} bind="${n.bind}">: does not match any node in scope`);
     }
@@ -183,20 +183,22 @@ const ugenHandler = (ctx: RuntimeContext): UgenRuntime => {
     return {rootId: ctx.rootId};
 };
 
+const controlHandler = (ctx: RuntimeContext): ControlRuntime => {
+    return {rootId: ctx.rootId};
+};
+
 const inputHandler = (ctx: RuntimeContext): InputRuntime => {
     const {target, controlName} = resolveControlBind(ctx);
     return {rootId: ctx.rootId, targetNode: target.id, name: controlName};
 };
 
-const runHandler = (ctx: RuntimeContext): InputRuntime => {
+const runHandler = (ctx: RuntimeContext): RunRuntime => {
     const n = ctx.tree as StripRuntime<ScRunNode>;
     const target = n.bind ? resolve(ctx, n.bind.split('.')) : ctx.parentNode;
     if (n.bind && (!target || !isNode(target))) {
         throw new Error(`<sc-run>: bind "${n.bind}" does not match any node in scope`);
     }
-    const targetId = target ? target.id : '';
-    const targetName = target && 'name' in target ? (target as { name: string }).name : '';
-    return {rootId: ctx.rootId, targetNode: targetId, name: targetName};
+    return {rootId: ctx.rootId, targetNode: target ? target.id : ''};
 };
 
 const ifHandler = (ctx: RuntimeContext): InputRuntime => {
@@ -218,7 +220,7 @@ export function processElement(ctx: RuntimeContext): ScElementNode {
         case ELEMENTS.SC_SYNTH: runtime = synthHandler(ctx); break;
         case ELEMENTS.SC_SYNTHDEF: runtime = synthDefHandler(ctx); break;
         case ELEMENTS.SC_UGEN: runtime = ugenHandler(ctx); break;
-        case ELEMENTS.SC_CONTROL: runtime = {rootId: ctx.rootId}; break;
+        case ELEMENTS.SC_CONTROL: runtime = controlHandler(ctx); break;
         case ELEMENTS.SC_RANGE:
         case ELEMENTS.SC_CHECKBOX: runtime = inputHandler(ctx); break;
         case ELEMENTS.SC_RUN: runtime = runHandler(ctx); break;

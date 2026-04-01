@@ -24,7 +24,7 @@ function* walkDom(el: Element): Generator<Element> {
 export function hydrate(node: { id: string, type: string, [key: string]: unknown }, element: Element): ScElementNodeBase {
     element.setAttribute('id', node.id);
     const props = extractProps(node.type, element);
-    return Object.assign(node, props, {_element: element}) as unknown as ScElementNodeBase;
+    return Object.assign(node, props, {_element: element}) as ScElementNodeBase;
 }
 
 export type HtmlRuntimeContext = Omit<RuntimeContext, 'visit'>
@@ -34,7 +34,7 @@ export function processHtml(args: HtmlRuntimeContext): ScElementNode {
         ...args,
         visit(node: ScElementNodeBase): ScElementNode {
             const parent = node as ScParentNode;
-            const elements = Array.from(walkDom((node as any)._element));
+            const elements = Array.from(walkDom(node._element!));
 
             const scope = elements.map((el) => {
                 return hydrate({id: randomId(), type: tagToType(el.tagName.toLowerCase())}, el);

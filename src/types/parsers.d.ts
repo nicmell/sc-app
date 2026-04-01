@@ -30,6 +30,8 @@ export interface ScSynthNode {
   runtime: NodeRuntime;
 }
 
+export type ControlRuntime = { rootId: string };
+
 export type UgenRuntime = { rootId: string };
 
 export interface ScUgenNode {
@@ -49,7 +51,7 @@ export interface ScControlNode {
   name: string;
   value: number;
   bind?: string;
-  runtime: UgenRuntime;
+  runtime: ControlRuntime;
 }
 
 export interface ScSynthDefNode {
@@ -64,6 +66,11 @@ export interface InputRuntime {
   rootId: string;
   targetNode: string;
   name: string;
+}
+
+export interface RunRuntime {
+  rootId: string;
+  targetNode: string;
 }
 
 export interface ScRangeNode {
@@ -84,7 +91,7 @@ export interface ScRunNode {
   type: 'sc-run';
   id: string;
   bind: string;
-  runtime: InputRuntime;
+  runtime: RunRuntime;
 }
 
 export interface ScDisplayNode {
@@ -148,7 +155,7 @@ export type StripRuntime<T> = T extends { children: ScElementNode[] }
   ? Omit<T, 'runtime' | 'children'> & { children: StripRuntime<ScElementNode>[] }
   : Omit<T, 'runtime'>;
 
-export type ScElementNodeBase = StripRuntime<ScElementNode>;
+export type ScElementNodeBase = StripRuntime<ScElementNode> & { _element?: Element };
 
 export interface ProcessHtmlResult {
   tree: ScElementNode[];
