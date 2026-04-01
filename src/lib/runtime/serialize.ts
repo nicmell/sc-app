@@ -2,30 +2,24 @@ import type {ScElementNode, OverrideEntry, PersistedOverrideEntry} from "@/types
 import type {RuntimeState, Preset} from "@/types/stores";
 import {isParent, isPlugin, isNode, isControl} from "@/lib/utils/guards";
 
-function collectEntries(node: ScElementNode, nodes: Record<string, ScElementNode>, path: string): PersistedOverrideEntry[] {
+function collectEntries(node: ScElementNode, nodes: Record<string, ScElementNode>): PersistedOverrideEntry[] {
     const entries: PersistedOverrideEntry[] = [];
     const n = nodes[node.id] ?? node;
     if (isNode(n)) {
+        const nodeName = 'name' in n ? n.name : '';
+        const path = nodeName ? [...n.runtime.path, nodeName].join('.') : n.runtime.path.join('.');
         if (n.runtime.run !== (n.run ? 1 : 0)) {
             entries.push({type: "run", targetPath: path, value: n.runtime.run});
         }
-        // Get defaults from sc-control children
-        if (isParent(n)) {
-            for (const child of n.children) {
-                if (isControl(child) && child.value != null && n.runtime.controls[child.name] !== child.value) {
-                    const controlPath = path ? `${path}.${child.name}` : child.name;
-                    entries.push({type: "control", targetPath: controlPath, value: n.runtime.controls[child.name]});
-                }
+        for (const child of n.children) {
+            if (isControl(child) && child.value != null && n.runtime.controls[child.name] !== child.value) {
+                entries.push({type: "control", targetPath: [...child.runtime.path, child.name].join('.'), value: n.runtime.controls[child.name]});
             }
         }
     }
     if (isParent(n)) {
         for (const child of n.children) {
-            if (isControl(child)) continue;
-            const c = nodes[child.id] ?? child;
-            const childName = 'name' in c ? c.name as string : '';
-            const childPath = childName ? (path ? `${path}.${childName}` : childName) : path;
-            entries.push(...collectEntries(c, nodes, childPath));
+            entries.push(...collectEntries(nodes[child.id] ?? child, nodes));
         }
     }
     return entries;
@@ -36,7 +30,10 @@ export function marshalPreset(state: RuntimeState): Preset {
     for (const entry of state.overrides) {
         const {rootId, ...rest} = entry;
         let list = savedByRoot.get(rootId);
-        if (!list) { list = []; savedByRoot.set(rootId, list); }
+        if (!list) {
+            list = [];
+            savedByRoot.set(rootId, list);
+        }
         list.push(rest);
     }
 
@@ -44,7 +41,7 @@ export function marshalPreset(state: RuntimeState): Preset {
         layout: state.layout.map(box => {
             const node = state.nodes[box.i];
             if (node && isPlugin(node)) {
-                const entries = collectEntries(node, state.nodes, '');
+                const entries = collectEntries(node, state.nodes);
                 return {...box, overrides: entries.length > 0 ? entries : undefined};
             }
             const saved = savedByRoot.get(box.i);
