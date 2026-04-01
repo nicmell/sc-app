@@ -47,13 +47,13 @@ export class ScRun extends LitElement {
     get run(): boolean {
         const rt = this._runtime;
         if (!rt) return true;
-        return (this._node.value?.getRunValue(rt.targetNode) ?? 1) !== 0;
+        return (this._node.value?.getRunValue(rt.targetId) ?? 1) !== 0;
     }
 
     private _onClick = () => {
         const rt = this._runtime;
         if (rt) {
-            this._node.value?.onRun(rt.targetNode, this.bind, this.run ? 0 : 1);
+            this._node.value?.onRun(rt.targetId, this.bind, this.run ? 0 : 1);
         }
     };
 

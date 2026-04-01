@@ -64,13 +64,13 @@ export interface ScSynthDefNode {
 
 export interface InputRuntime {
   rootId: string;
-  targetNode: string;
+  targetId: string;
   name: string;
 }
 
 export interface RunRuntime {
   rootId: string;
-  targetNode: string;
+  targetId: string;
 }
 
 export interface ScRangeNode {
@@ -133,14 +133,14 @@ export type NodeType = ScElementNode["type"]
 export interface ControlOverrideEntry {
   type: "control";
   rootId: string;
-  targetNode: string;
+  targetPath: string;
   value: number
 }
 
 export interface RunOverrideEntry {
   type: "run";
   rootId: string;
-  targetNode: string;
+  targetPath: string;
   value: number
 }
 

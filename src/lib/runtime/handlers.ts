@@ -35,12 +35,12 @@ export function checkDuplicateNames(scope: ScElementNodeBase[]): void {
 
 function findRunOverride(ctx: RuntimeContext, path: string[]): number | undefined {
     const target = path.join('.');
-    return ctx.overrides?.find(e => isRunOverride(e) && e.targetNode === target)?.value;
+    return ctx.overrides?.find(e => isRunOverride(e) && e.targetPath === target)?.value;
 }
 
 function findControlOverride(ctx: RuntimeContext, path: string[]): number | undefined {
     const target = path.join('.');
-    return ctx.overrides?.find(e => isControlOverride(e) && e.targetNode === target)?.value;
+    return ctx.overrides?.find(e => isControlOverride(e) && e.targetPath === target)?.value;
 }
 
 function collectControls(node: { children: ScElementNodeBase[] }): Record<string, number> {
@@ -94,7 +94,7 @@ function resolveControlBind(ctx: RuntimeContext): { target: ScElementNode; contr
 
 function resolveVisualBind(ctx: RuntimeContext): InputRuntime {
     const {target, controlName} = resolveControlBind(ctx);
-    return {rootId: ctx.rootId, targetNode: target.id, name: controlName};
+    return {rootId: ctx.rootId, targetId: target.id, name: controlName};
 }
 
 // --- Handlers ---
@@ -190,7 +190,7 @@ const controlHandler = (ctx: RuntimeContext): ControlRuntime => {
 
 const inputHandler = (ctx: RuntimeContext): InputRuntime => {
     const {target, controlName} = resolveControlBind(ctx);
-    return {rootId: ctx.rootId, targetNode: target.id, name: controlName};
+    return {rootId: ctx.rootId, targetId: target.id, name: controlName};
 };
 
 const runHandler = (ctx: RuntimeContext): RunRuntime => {
@@ -199,7 +199,7 @@ const runHandler = (ctx: RuntimeContext): RunRuntime => {
     if (n.bind && (!target || !isNode(target))) {
         throw new Error(`<sc-run>: bind "${n.bind}" does not match any node in scope`);
     }
-    return {rootId: ctx.rootId, targetNode: target ? target.id : ''};
+    return {rootId: ctx.rootId, targetId: target ? target.id : ''};
 };
 
 const ifHandler = (ctx: RuntimeContext): InputRuntime => {

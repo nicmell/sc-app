@@ -40,16 +40,16 @@ export abstract class ScNode extends LitElement implements IScNode {
         this.registeredElements.delete(el);
     }
 
-    onChange(targetNode: string, target: string, value: number) {
+    onChange(targetId: string, target: string, value: number) {
         const segments = target.split('.');
         const control = segments.pop()!;
-        runtimeApi.setControl({nodeId: targetNode, name: control, value});
+        runtimeApi.setControl({nodeId: targetId, name: control, value});
         const nodeId = this.resolveNodeId(segments);
         oscService.send(nodeSetMessage(nodeId, {[control]: value}));
     }
 
-    onRun(targetNode: string, target: string, value: number) {
-        runtimeApi.setRunning({nodeId: targetNode, value});
+    onRun(targetId: string, target: string, value: number) {
+        runtimeApi.setRunning({nodeId: targetId, value});
         const nodeId = this.resolveNodeId(target ? target.split('.') : []);
         oscService.send(nodeRunMessage(nodeId, value));
     }
@@ -67,13 +67,13 @@ export abstract class ScNode extends LitElement implements IScNode {
         return current.nodeId;
     }
 
-    getControlValue(targetNode: string, name: string): number | undefined {
-        const node = runtimeApi.getById(targetNode);
+    getControlValue(targetId: string, name: string): number | undefined {
+        const node = runtimeApi.getById(targetId);
         return node && isNode(node) ? node.runtime.controls[name] : undefined;
     }
 
-    getRunValue(targetNode: string): number | undefined {
-        const node = runtimeApi.getById(targetNode);
+    getRunValue(targetId: string): number | undefined {
+        const node = runtimeApi.getById(targetId);
         return node && isNode(node) ? node.runtime.run : undefined;
     }
 
@@ -100,10 +100,10 @@ export abstract class ScNode extends LitElement implements IScNode {
             boxId: () => this.boxId(),
             registerElement: (el) => this.registerElement(el),
             unregisterElement: (el) => this.unregisterElement(el),
-            onChange: (targetNode, target, value) => this.onChange(targetNode, target, value),
-            onRun: (targetNode, target, value) => this.onRun(targetNode, target, value),
-            getControlValue: (targetNode, name) => this.getControlValue(targetNode, name),
-            getRunValue: (targetNode) => this.getRunValue(targetNode),
+            onChange: (targetId, target, value) => this.onChange(targetId, target, value),
+            onRun: (targetId, target, value) => this.onRun(targetId, target, value),
+            getControlValue: (targetId, name) => this.getControlValue(targetId, name),
+            getRunValue: (targetId) => this.getRunValue(targetId),
         };
         const provider = new ContextProvider(this, {context: nodeContext, initialValue: ctx});
         let prevNodes = store.getState().runtime.nodes;

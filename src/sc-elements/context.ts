@@ -13,10 +13,10 @@ export interface NodeContext {
   boxId(): string;
   registerElement(el: ScElement): void;
   unregisterElement(el: ScElement): void;
-  onChange(targetNode: string, target: string, value: number): void;
-  onRun(targetNode: string, target: string, value: number): void;
-  getControlValue(targetNode: string, name: string): number | undefined;
-  getRunValue(targetNode: string): number | undefined;
+  onChange(targetId: string, target: string, value: number): void;
+  onRun(targetId: string, target: string, value: number): void;
+  getControlValue(targetId: string, name: string): number | undefined;
+  getRunValue(targetId: string): number | undefined;
 }
 
 export const nodeContext = createContext<NodeContext>('node');

@@ -49,7 +49,7 @@ export class ScRange extends LitElement {
     get value(): number {
         const rt = this._runtime;
         if (!rt) return 0;
-        return this._node.value?.getControlValue(rt.targetNode, rt.name) ?? 0;
+        return this._node.value?.getControlValue(rt.targetId, rt.name) ?? 0;
     }
 
     constructor() {
@@ -71,7 +71,7 @@ export class ScRange extends LitElement {
     onChange = (value: number) => {
         const rt = this._runtime;
         if (value !== this.value && this.bind && rt) {
-            this._node.value?.onChange(rt.targetNode, this.bind, value);
+            this._node.value?.onChange(rt.targetId, this.bind, value);
         }
     };
 

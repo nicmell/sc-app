@@ -46,7 +46,7 @@ export class ScIf extends LitElement {
 
   private _test(): boolean {
     const rt = this._runtime;
-    const value = rt ? this._node.value?.getControlValue(rt.targetNode, rt.name) : undefined;
+    const value = rt ? this._node.value?.getControlValue(rt.targetId, rt.name) : undefined;
     const num = typeof value === 'number' ? value : Number(value);
     if (this.isEqual !== null) return String(value) === this.isEqual;
     if (this.isNotEqual !== null) return String(value) !== this.isNotEqual;

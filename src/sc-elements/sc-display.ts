@@ -48,7 +48,7 @@ export class ScDisplay extends LitElement {
 
   render() {
     const rt = this._runtime;
-    const value = rt ? this._node.value?.getControlValue(rt.targetNode, rt.name) : undefined;
+    const value = rt ? this._node.value?.getControlValue(rt.targetId, rt.name) : undefined;
     const text = this.format ? formatValue(this.format, value) : String(value ?? '');
     return html`${text}`;
   }

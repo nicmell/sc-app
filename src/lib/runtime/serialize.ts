@@ -7,14 +7,14 @@ function collectEntries(node: ScElementNode, nodes: Record<string, ScElementNode
     const n = nodes[node.id] ?? node;
     if (isNode(n)) {
         if (n.runtime.run !== (n.run ? 1 : 0)) {
-            entries.push({type: "run", targetNode: path, value: n.runtime.run});
+            entries.push({type: "run", targetPath: path, value: n.runtime.run});
         }
         // Get defaults from sc-control children
         if (isParent(n)) {
             for (const child of n.children) {
                 if (isControl(child) && child.value != null && n.runtime.controls[child.name] !== child.value) {
                     const controlPath = path ? `${path}.${child.name}` : child.name;
-                    entries.push({type: "control", targetNode: controlPath, value: n.runtime.controls[child.name]});
+                    entries.push({type: "control", targetPath: controlPath, value: n.runtime.controls[child.name]});
                 }
             }
         }

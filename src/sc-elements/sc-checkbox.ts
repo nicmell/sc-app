@@ -34,7 +34,7 @@ export class ScCheckbox extends LitElement {
     get checked(): boolean {
         const rt = this._runtime;
         if (!rt) return false;
-        return (this._node.value?.getControlValue(rt.targetNode, rt.name) ?? 0) !== 0;
+        return (this._node.value?.getControlValue(rt.targetId, rt.name) ?? 0) !== 0;
     }
 
     constructor() {
@@ -50,7 +50,7 @@ export class ScCheckbox extends LitElement {
     onChange = (checked: boolean) => {
         const rt = this._runtime;
         if (checked !== this.checked && this.bind && rt) {
-            this._node.value?.onChange(rt.targetNode, this.bind, checked ? 1 : 0);
+            this._node.value?.onChange(rt.targetId, this.bind, checked ? 1 : 0);
         }
     };
 
