@@ -44,11 +44,9 @@ function extractUgenProps(el: Element): HtmlProps<ScUgenNode> {
 }
 
 function extractControlProps(el: Element): HtmlProps<ScControlNode> {
-    return {
-        name: el.getAttribute('name') ?? '',
-        value: Number(el.getAttribute('value') ?? '0'),
-        bind: el.getAttribute('bind') ?? undefined,
-    };
+    const name = el.getAttribute('name') ?? '';
+    const bind = el.getAttribute('bind');
+    return bind ? {name, bind} : {name, value: Number(el.getAttribute('value') ?? '0')};
 }
 
 function extractRangeProps(el: Element): HtmlProps<ScRangeNode> {

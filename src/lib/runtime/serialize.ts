@@ -12,7 +12,7 @@ function collectEntries(node: ScElementNode, nodes: Record<string, ScElementNode
         // Get defaults from sc-control children
         if (isParent(n)) {
             for (const child of n.children) {
-                if (isControl(child) && n.runtime.controls[child.name] !== child.value) {
+                if (isControl(child) && child.value != null && n.runtime.controls[child.name] !== child.value) {
                     const controlPath = path ? `${path}.${child.name}` : child.name;
                     entries.push({type: "control", targetNode: controlPath, value: n.runtime.controls[child.name]});
                 }

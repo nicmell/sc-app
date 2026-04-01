@@ -49,7 +49,7 @@ export interface ScControlNode {
   type: 'sc-control';
   id: string;
   name: string;
-  value: number;
+  value?: number;
   bind?: string;
   runtime: ControlRuntime;
 }

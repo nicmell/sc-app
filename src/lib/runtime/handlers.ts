@@ -46,7 +46,7 @@ function findControlOverride(ctx: RuntimeContext, path: string[]): number | unde
 function collectControls(node: { children: ScElementNodeBase[] }): Record<string, number> {
     const controls: Record<string, number> = {};
     for (const child of node.children) {
-        if (isControl(child)) {
+        if (isControl(child) && child.value != null) {
             controls[child.name] = child.value;
         }
     }
@@ -222,7 +222,7 @@ export function processElement(ctx: RuntimeContext): ScElementNode {
         case ELEMENTS.SC_SYNTHDEF: runtime = synthDefHandler(ctx); break;
         case ELEMENTS.SC_UGEN: runtime = ugenHandler(ctx); break;
         case ELEMENTS.SC_CONTROL: runtime = controlHandler(ctx); break;
-        case ELEMENTS.SC_RANGE:
+        case ELEMENTS.SC_RANGE:  runtime = inputHandler(ctx); break;
         case ELEMENTS.SC_CHECKBOX: runtime = inputHandler(ctx); break;
         case ELEMENTS.SC_RUN: runtime = runHandler(ctx); break;
         case ELEMENTS.SC_DISPLAY: runtime = resolveVisualBind(ctx); break;
