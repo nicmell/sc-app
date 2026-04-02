@@ -3,6 +3,7 @@ import {ContextConsumer} from '@lit/context';
 import {defRecvMessage} from '@/lib/osc/messages.ts';
 import {oscService} from '@/lib/osc';
 import {synthDefManager} from '@/lib/synthdef';
+import {runtimeApi} from '@/lib/stores/api';
 import {nodeContext} from './context.ts';
 
 export class ScSynthDef extends LitElement {
@@ -30,6 +31,7 @@ export class ScSynthDef extends LitElement {
     }
 
     oscService.send(defRecvMessage(new Uint8Array(bytes)));
+    runtimeApi.loadSynthdef({id: this.id});
     this._sent = true;
   }
 

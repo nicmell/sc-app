@@ -1,7 +1,7 @@
 import type {
     ScElementNode, ScElementNodeBase, ScParentNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScUgenNode,
     ScRunNode, ScControlNode,
-    ScPluginNode, PluginRuntime, NodeRuntime, ControlRuntime, UgenRuntime, InputRuntime, RunRuntime, OverrideEntry, StripRuntime,
+    ScPluginNode, PluginRuntime, NodeRuntime, ControlRuntime, UgenRuntime, SynthDefRuntime, InputRuntime, RunRuntime, OverrideEntry, StripRuntime,
 } from "@/types/parsers";
 import {isNode, isParent, isControl, isControlOverride, isRunOverride} from "@/lib/utils/guards";
 import {ELEMENTS} from "@/constants/sc-elements";
@@ -148,7 +148,7 @@ function collectUgenInputs(node: { children: ScElementNodeBase[] }): Record<stri
     return inputs;
 }
 
-const synthDefHandler = (ctx: RuntimeContext): UgenRuntime => {
+const synthDefHandler = (ctx: RuntimeContext): SynthDefRuntime => {
     ctx.visit(ctx.tree);
     const n = ctx.tree as StripRuntime<ScSynthDefNode>;
     ctx.synthdefs.push(n as unknown as ScSynthDefNode);
@@ -162,7 +162,7 @@ const synthDefHandler = (ctx: RuntimeContext): UgenRuntime => {
         }));
         synthDefManager.compile(ctx.rootId, n.id, n.name, params, specsMap);
     }
-    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path};
+    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, loaded: false};
 };
 
 const ugenHandler = (ctx: RuntimeContext): UgenRuntime => {

@@ -37,6 +37,10 @@ export type ControlRuntime = { rootId: string; parentId: string; path: string[];
 
 export type UgenRuntime = { rootId: string; parentId: string; path: string[] };
 
+export interface SynthDefRuntime extends UgenRuntime {
+  loaded: boolean;
+}
+
 export interface ScUgenNode {
   type: 'sc-ugen';
   id: string;
@@ -62,7 +66,7 @@ export interface ScSynthDefNode {
   id: string;
   name: string;
   children: ScElementNode[];
-  runtime: UgenRuntime;
+  runtime: SynthDefRuntime;
 }
 
 export interface InputRuntime {
