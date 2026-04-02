@@ -1,4 +1,3 @@
-import {ELEMENTS} from "@/constants/sc-elements";
 import {randomId} from "@/lib/utils/randomId";
 import type {ScElementNode, ScElementNodeBase, NodeType, ScParentNode} from "@/types/parsers";
 import {isNodeType} from "@/lib/utils/guards";
@@ -6,7 +5,6 @@ import {extractProps} from "./handlers";
 import {type RuntimeContext, processElement, checkDuplicateNames} from "@/lib/runtime/handlers";
 
 function tagToType(tag: string): NodeType {
-    if (tag === 'html') return ELEMENTS.SC_PLUGIN;
     return tag as NodeType;
 }
 

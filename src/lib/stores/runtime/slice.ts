@@ -5,23 +5,34 @@ import {combineReducers, createSlice, type CaseReducer} from "@/lib/stores/utils
 import {SliceName, RuntimeAction} from "@/constants/store";
 import layout from "../layout";
 
-function propagateControl(state: RuntimeState, nodeId: string, name: string, value: number) {
-    const target = state.nodes[nodeId];
-    if (!target || !isParent(target)) return;
-
-    function walk(node: ScElementNode) {
-        if (isNode(node) && name in node.runtime.controls) {
-            node.runtime.controls[name] = value;
-        }
-        if (isParent(node)) {
-            for (const child of node.children) {
-                walk(child);
-            }
-        }
+function syncToTree(state: RuntimeState, id: string) {
+    const node = state.nodes[id];
+    if (!node) return;
+    const pid = node.runtime.parentId;
+    if (!pid) return;
+    const parent = state.nodes[pid];
+    if (!parent || !isParent(parent)) return;
+    const idx = parent.children.findIndex(c => c.id === id);
+    if (idx !== -1) {
+        parent.children[idx] = node;
     }
+}
 
-    for (const child of target.children) {
-        walk(child);
+function propagateControl(state: RuntimeState, targetId: string, name: string, value: number) {
+    for (const [id, node] of Object.entries(state.nodes)) {
+        if (!isNode(node) || !(name in node.runtime.controls)) continue;
+        // Walk up parentId chain to check if descendant of targetId
+        let pid = node.runtime.parentId;
+        while (pid) {
+            if (pid === targetId) {
+                node.runtime.controls[name] = value;
+                syncToTree(state, id);
+                break;
+            }
+            const parent = state.nodes[pid];
+            if (!parent) break;
+            pid = parent.runtime.parentId;
+        }
     }
 }
 
@@ -52,6 +63,7 @@ export const runtimeSlice = createSlice({
       const node = state.nodes[nodeId];
       if (node && isNode(node)) {
         node.runtime.controls[name] = value;
+        syncToTree(state, nodeId);
         propagateControl(state, nodeId, name, value);
       }
     },
@@ -60,6 +72,39 @@ export const runtimeSlice = createSlice({
       const node = state.nodes[nodeId];
       if (node && isNode(node)) {
         node.runtime.run = value;
+        syncToTree(state, nodeId);
+      }
+    },
+    [RuntimeAction.NEW_GROUP]: (state, action: { payload: { id: string; nodeId: number } }) => {
+      const node = state.nodes[action.payload.id];
+      if (node && isNode(node)) {
+        node.runtime.loaded = true;
+        node.runtime.nodeId = action.payload.nodeId;
+        syncToTree(state, action.payload.id);
+      }
+    },
+    [RuntimeAction.NEW_SYNTH]: (state, action: { payload: { id: string; nodeId: number } }) => {
+      const node = state.nodes[action.payload.id];
+      if (node && isNode(node)) {
+        node.runtime.loaded = true;
+        node.runtime.nodeId = action.payload.nodeId;
+        syncToTree(state, action.payload.id);
+      }
+    },
+    [RuntimeAction.FREE_GROUP]: (state, action: { payload: { id: string } }) => {
+      const node = state.nodes[action.payload.id];
+      if (node && isNode(node)) {
+        node.runtime.loaded = false;
+        node.runtime.nodeId = 0;
+        syncToTree(state, action.payload.id);
+      }
+    },
+    [RuntimeAction.FREE_SYNTH]: (state, action: { payload: { id: string } }) => {
+      const node = state.nodes[action.payload.id];
+      if (node && isNode(node)) {
+        node.runtime.loaded = false;
+        node.runtime.nodeId = 0;
+        syncToTree(state, action.payload.id);
       }
     },
   },

@@ -23,23 +23,24 @@ export class ScPlugin extends ScGroup {
     this._error = '';
   }
 
-  protected async firstUpdated() {
-    super.firstUpdated();
+  // ScPlugin manages its own enabled lifecycle — ignore parent context
+  protected _onParentEnabledChanged(): void {}
 
+  protected async firstUpdated() {
     this._unsubscribePlugin = store.subscribe(() => {
       const node = runtimeApi.getById(this.id);
       if (!node || !isPlugin(node)) return;
       const error = node.runtime.error ?? '';
       if (error !== this._error) this._error = error;
     });
-
     try {
-      const html = await pluginManager.loadPlugin(this.id);
-      this.innerHTML = html;
-      this._loading = false;
+      this.innerHTML = await pluginManager.fetchPluginHtml(this.id);
+      pluginManager.processPlugin(this.id, this);
+      this._sendCreate();
     } catch (e) {
-      this._loading = false;
       this._error = e instanceof Error ? e.message : String(e);
+    } finally {
+      this._loading = false;
     }
   }
 
@@ -51,12 +52,10 @@ export class ScPlugin extends ScGroup {
   }
 
   render() {
-    if (this._error) {
-      return html`<div style="color:#e57373;font-size:0.85rem;padding:0.5rem 0">${this._error}</div>`;
-    }
-    if (this._loading) {
-      return html`<div style="font-size:0.85rem;padding:0.5rem 0;opacity:0.6">Loading...</div>`;
-    }
-    return html`<slot></slot>`;
+    return html`
+      ${this._error ? html`<div style="color:#e57373;font-size:0.85rem;padding:0.5rem 0">${this._error}</div>` : ''}
+      ${this._loading ? html`<div style="font-size:0.85rem;padding:0.5rem 0;opacity:0.6">Loading...</div>` : ''}
+      <slot></slot>
+    `;
   }
 }

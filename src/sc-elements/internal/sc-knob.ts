@@ -89,7 +89,10 @@ export class ScKnob extends LitElement {
   };
 
   private _commit(v: number) {
+    const precision = Math.round(-Math.log10(this.step));
+    const factor = 10 ** Math.max(0, precision);
     v = Math.round((v - this.min) / this.step) * this.step + this.min;
+    v = Math.round(v * factor) / factor;
     v = Math.max(this.min, Math.min(this.max, v));
     this.onChange(v);
   }

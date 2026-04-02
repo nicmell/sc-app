@@ -90,9 +90,13 @@ function resolveControlBind(ctx: RuntimeContext): { target: ScElementNode; contr
     return {target, controlName};
 }
 
+function parentId(ctx: RuntimeContext): string {
+    return ctx.parentNode?.id ?? '';
+}
+
 function resolveVisualBind(ctx: RuntimeContext): InputRuntime {
     const {target, controlName} = resolveControlBind(ctx);
-    return {rootId: ctx.rootId, path: ctx.path, targetId: target.id, name: controlName};
+    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, targetId: target.id, name: controlName};
 }
 
 // --- Handlers ---
@@ -106,14 +110,14 @@ const pluginHandler = (ctx: RuntimeContext): PluginRuntime => {
         for (const name of Object.keys(controls)) {
             controls[name] = findControlOverride(ctx, [...ctx.path, name]) ?? controls[name];
         }
-        return {rootId: ctx.rootId, path: ctx.path, run, loaded: true, controls};
+        return {rootId: ctx.rootId, parentId: '', path: ctx.path, run, loaded: false, nodeId: 0, controls};
     } catch (e) {
         const error = e instanceof Error ? e.message : String(e)
         Object.assign(n, {children: []});
         for (const id of ctx.nodes.keys()) {
             if (id !== n.id) ctx.nodes.delete(id);
         }
-        return {rootId: ctx.rootId, path: ctx.path, run: 0, loaded: false, controls: {}, error};
+        return {rootId: ctx.rootId, parentId: '', path: ctx.path, run: 0, loaded: false, nodeId: 0, controls: {}, error};
     }
 };
 
@@ -125,7 +129,7 @@ function nodeRuntime(ctx: RuntimeContext): NodeRuntime {
     for (const name of Object.keys(controls)) {
         controls[name] = findControlOverride(ctx, [...path, name]) ?? controls[name];
     }
-    return {rootId: ctx.rootId, path: ctx.path, run, controls};
+    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, run, controls, loaded: false, nodeId: 0};
 }
 
 const groupHandler = (ctx: RuntimeContext): NodeRuntime => {
@@ -166,7 +170,7 @@ const synthDefHandler = (ctx: RuntimeContext): UgenRuntime => {
         }));
         synthDefManager.compile(ctx.rootId, n.id, n.name, params, specsMap);
     }
-    return {rootId: ctx.rootId, path: ctx.path};
+    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path};
 };
 
 const ugenHandler = (ctx: RuntimeContext): UgenRuntime => {
@@ -179,16 +183,16 @@ const ugenHandler = (ctx: RuntimeContext): UgenRuntime => {
             throw new Error(`<sc-ugen name="${n.name}">: input "${child.name}" references unknown "${refId}"`);
         }
     }
-    return {rootId: ctx.rootId, path: ctx.path};
+    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path};
 };
 
 const controlHandler = (ctx: RuntimeContext): ControlRuntime => {
-    return {rootId: ctx.rootId, path: ctx.path};
+    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path};
 };
 
 const inputHandler = (ctx: RuntimeContext): InputRuntime => {
     const {target, controlName} = resolveControlBind(ctx);
-    return {rootId: ctx.rootId, path: ctx.path, targetId: target.id, name: controlName};
+    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, targetId: target.id, name: controlName};
 };
 
 const runHandler = (ctx: RuntimeContext): RunRuntime => {
@@ -197,7 +201,7 @@ const runHandler = (ctx: RuntimeContext): RunRuntime => {
     if (n.bind && (!target || !isNode(target))) {
         throw new Error(`<sc-run>: bind "${n.bind}" does not match any node in scope`);
     }
-    return {rootId: ctx.rootId, path: ctx.path, targetId: target ? target.id : ''};
+    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, targetId: target ? target.id : ''};
 };
 
 const ifHandler = (ctx: RuntimeContext): InputRuntime => {

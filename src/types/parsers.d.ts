@@ -7,9 +7,12 @@ export interface UGenSpec {
 
 export interface NodeRuntime {
   rootId: string;
+  parentId: string;
   path: string[];
   run: number;
   controls: Record<string, number>;
+  loaded: boolean;
+  nodeId: number;
 }
 
 export interface ScGroupNode {
@@ -31,9 +34,9 @@ export interface ScSynthNode {
   runtime: NodeRuntime;
 }
 
-export type ControlRuntime = { rootId: string; path: string[] };
+export type ControlRuntime = { rootId: string; parentId: string; path: string[] };
 
-export type UgenRuntime = { rootId: string; path: string[] };
+export type UgenRuntime = { rootId: string; parentId: string; path: string[] };
 
 export interface ScUgenNode {
   type: 'sc-ugen';
@@ -65,6 +68,7 @@ export interface ScSynthDefNode {
 
 export interface InputRuntime {
   rootId: string;
+  parentId: string;
   path: string[];
   targetId: string;
   name: string;
@@ -72,6 +76,7 @@ export interface InputRuntime {
 
 export interface RunRuntime {
   rootId: string;
+  parentId: string;
   path: string[];
   targetId: string;
 }

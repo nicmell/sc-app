@@ -1,13 +1,24 @@
 import {LitElement, html} from 'lit';
+import {ContextConsumer} from '@lit/context';
 import {defRecvMessage} from '@/lib/osc/messages.ts';
 import {oscService} from '@/lib/osc';
 import {synthDefManager} from '@/lib/synthdef';
+import {nodeContext} from './context.ts';
 
 export class ScSynthDef extends LitElement {
   private _sent = false;
 
-  protected firstUpdated() {
-    queueMicrotask(() => this._sendDef());
+  constructor() {
+    super();
+    new ContextConsumer(this, {
+      context: nodeContext,
+      subscribe: true,
+      callback: (ctx) => {
+        if (ctx?.enabled && !this._sent) {
+          queueMicrotask(() => this._sendDef());
+        }
+      },
+    });
   }
 
   private _sendDef() {

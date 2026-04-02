@@ -10,6 +10,7 @@ export interface ScNode {
 
 export interface NodeContext {
   nodeId: number;
+  enabled: boolean;
   boxId(): string;
   registerElement(el: ScElement): void;
   unregisterElement(el: ScElement): void;

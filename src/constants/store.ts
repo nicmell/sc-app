@@ -34,6 +34,10 @@ export const RuntimeAction = {
   UNLOAD_PLUGIN: "unloadPlugin",
   SET_CONTROL: "setControl",
   SET_RUNNING: "setRunning",
+  NEW_GROUP: "newGroup",
+  NEW_SYNTH: "newSynth",
+  FREE_GROUP: "freeGroup",
+  FREE_SYNTH: "freeSynth",
 } as const;
 
 export const RootAction = {
