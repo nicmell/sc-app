@@ -10,7 +10,6 @@ export interface NodeRuntime {
   parentId: string;
   path: string[];
   run: number;
-  controls: Record<string, number>;
   loaded: boolean;
   nodeId: number;
 }
@@ -34,7 +33,7 @@ export interface ScSynthNode {
   runtime: NodeRuntime;
 }
 
-export type ControlRuntime = { rootId: string; parentId: string; path: string[] };
+export type ControlRuntime = { rootId: string; parentId: string; path: string[]; name: string; value: number };
 
 export type UgenRuntime = { rootId: string; parentId: string; path: string[] };
 
@@ -71,7 +70,6 @@ export interface InputRuntime {
   parentId: string;
   path: string[];
   targetId: string;
-  name: string;
 }
 
 export interface RunRuntime {

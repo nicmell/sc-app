@@ -2,6 +2,10 @@ import {html, svg, css, LitElement} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
 import {resolveInputRuntime} from './resolve.ts';
+import {runtimeApi} from '@/lib/stores/api';
+import {isNode} from '@/lib/utils/guards';
+import {oscService} from '@/lib/osc';
+import {nodeRunMessage} from '@/lib/osc/messages.ts';
 
 export class ScRun extends LitElement {
     static properties = {
@@ -18,8 +22,6 @@ export class ScRun extends LitElement {
     declare fgcolor: string;
     declare bgcolor: string;
 
-    private _node = new ContextConsumer(this, {context: nodeContext, subscribe: true});
-
     static styles = css`
         :host { display: inline-block; cursor: pointer; user-select: none; }
         button {
@@ -33,6 +35,7 @@ export class ScRun extends LitElement {
 
     constructor() {
         super();
+        new ContextConsumer(this, {context: nodeContext, subscribe: true});
         this.size = 24;
         this.src = '';
         this.bind = '';
@@ -41,20 +44,24 @@ export class ScRun extends LitElement {
     }
 
     private get _runtime() {
-        return resolveInputRuntime(this._node, this.id, 'sc-run');
+        return resolveInputRuntime(this.id, 'sc-run');
     }
 
     get run(): boolean {
         const rt = this._runtime;
         if (!rt) return true;
-        return (this._node.value?.getRunValue(rt.targetId) ?? 1) !== 0;
+        const node = runtimeApi.getById(rt.targetId);
+        return node && isNode(node) ? node.runtime.run !== 0 : true;
     }
 
     private _onClick = () => {
         const rt = this._runtime;
-        if (rt) {
-            this._node.value?.onRun(rt.targetId, this.bind, this.run ? 0 : 1);
-        }
+        if (!rt) return;
+        const node = runtimeApi.getById(rt.targetId);
+        if (!node || !isNode(node)) return;
+        const value = this.run ? 0 : 1;
+        runtimeApi.setRunning({nodeId: rt.targetId, value});
+        oscService.send(nodeRunMessage(node.runtime.nodeId, value));
     };
 
     render() {

@@ -1,6 +1,6 @@
 import type {
     ScElementNode, ScElementNodeBase, ScParentNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScUgenNode,
-    ScRunNode,
+    ScRunNode, ScControlNode,
     ScPluginNode, PluginRuntime, NodeRuntime, ControlRuntime, UgenRuntime, InputRuntime, RunRuntime, OverrideEntry, StripRuntime,
 } from "@/types/parsers";
 import {isNode, isParent, isControl, isControlOverride, isRunOverride} from "@/lib/utils/guards";
@@ -43,7 +43,7 @@ function findControlOverride(ctx: RuntimeContext, path: string[]): number | unde
     return ctx.overrides?.find(e => isControlOverride(e) && e.targetPath === target)?.value;
 }
 
-function collectControls(node: { children: ScElementNodeBase[] }): Record<string, number> {
+function collectControlParams(node: { children: ScElementNodeBase[] }): Record<string, number> {
     const controls: Record<string, number> = {};
     for (const child of node.children) {
         if (isControl(child) && child.value != null) {
@@ -82,8 +82,7 @@ function resolveControlBind(ctx: RuntimeContext): { target: ScElementNode; contr
     if (!target || !isNode(target)) {
         throw new Error(`<${n.type} bind="${n.bind}">: does not match any node in scope`);
     }
-    const controls = collectControls(target);
-    if (!(controlName in controls)) {
+    if (!isParent(target) || !target.children.some(c => isControl(c) && c.name === controlName)) {
         const targetName = 'name' in target ? target.name : target.id;
         throw new Error(`<${n.type} bind="${n.bind}">: control "${controlName}" is not declared on <${target.type} name="${targetName}">`);
     }
@@ -96,7 +95,8 @@ function parentId(ctx: RuntimeContext): string {
 
 function resolveVisualBind(ctx: RuntimeContext): InputRuntime {
     const {target, controlName} = resolveControlBind(ctx);
-    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, targetId: target.id, name: controlName};
+    const control = (target as ScParentNode).children.find(c => isControl(c) && c.name === controlName)!;
+    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, targetId: control.id};
 }
 
 // --- Handlers ---
@@ -106,18 +106,14 @@ const pluginHandler = (ctx: RuntimeContext): PluginRuntime => {
     try {
         ctx.visit(ctx.tree);
         const run = findRunOverride(ctx, ctx.path) ?? (n.run ? 1 : 0)
-        const controls = collectControls(n);
-        for (const name of Object.keys(controls)) {
-            controls[name] = findControlOverride(ctx, [...ctx.path, name]) ?? controls[name];
-        }
-        return {rootId: ctx.rootId, parentId: '', path: ctx.path, run, loaded: false, nodeId: 0, controls};
+        return {rootId: ctx.rootId, parentId: '', path: ctx.path, run, loaded: false, nodeId: 0};
     } catch (e) {
         const error = e instanceof Error ? e.message : String(e)
         Object.assign(n, {children: []});
         for (const id of ctx.nodes.keys()) {
             if (id !== n.id) ctx.nodes.delete(id);
         }
-        return {rootId: ctx.rootId, parentId: '', path: ctx.path, run: 0, loaded: false, nodeId: 0, controls: {}, error};
+        return {rootId: ctx.rootId, parentId: '', path: ctx.path, run: 0, loaded: false, nodeId: 0, error};
     }
 };
 
@@ -125,11 +121,7 @@ function nodeRuntime(ctx: RuntimeContext): NodeRuntime {
     const n = ctx.tree as StripRuntime<ScGroupNode | ScSynthNode>;
     const path = [...ctx.path, n.name];
     const run = findRunOverride(ctx, path) ?? (n.run ? 1 : 0)
-    const controls = collectControls(n);
-    for (const name of Object.keys(controls)) {
-        controls[name] = findControlOverride(ctx, [...path, name]) ?? controls[name];
-    }
-    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, run, controls, loaded: false, nodeId: 0};
+    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, run, loaded: false, nodeId: 0};
 }
 
 const groupHandler = (ctx: RuntimeContext): NodeRuntime => {
@@ -160,7 +152,7 @@ const synthDefHandler = (ctx: RuntimeContext): UgenRuntime => {
     ctx.visit(ctx.tree);
     const n = ctx.tree as StripRuntime<ScSynthDefNode>;
     ctx.synthdefs.push(n as unknown as ScSynthDefNode);
-    const params = collectControls(n);
+    const params = collectControlParams(n);
     const ugenChildren = n.children.filter((c): c is ScUgenNode => c.type === 'sc-ugen');
     if (ugenChildren.length > 0) {
         const specsMap = new Map(ugenChildren.map(c => {
@@ -187,12 +179,13 @@ const ugenHandler = (ctx: RuntimeContext): UgenRuntime => {
 };
 
 const controlHandler = (ctx: RuntimeContext): ControlRuntime => {
-    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path};
+    const n = ctx.tree as StripRuntime<ScControlNode>;
+    const value = findControlOverride(ctx, [...ctx.path, n.name]) ?? n.value ?? 0;
+    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, name: n.name, value};
 };
 
 const inputHandler = (ctx: RuntimeContext): InputRuntime => {
-    const {target, controlName} = resolveControlBind(ctx);
-    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, targetId: target.id, name: controlName};
+    return resolveVisualBind(ctx);
 };
 
 const runHandler = (ctx: RuntimeContext): RunRuntime => {

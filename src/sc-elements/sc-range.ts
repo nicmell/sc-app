@@ -1,7 +1,11 @@
 import {css, html, LitElement} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
-import {resolveInputRuntime} from './resolve.ts';
+import {resolveInputRuntime, resolveControlNodeId} from './resolve.ts';
+import {runtimeApi} from '@/lib/stores/api';
+import {isControl} from '@/lib/utils/guards';
+import {oscService} from '@/lib/osc';
+import {nodeSetMessage} from '@/lib/osc/messages.ts';
 import './internal/sc-knob.ts';
 import './internal/sc-slider.ts';
 
@@ -34,8 +38,6 @@ export class ScRange extends LitElement {
     declare fgcolor: string;
     declare bgcolor: string;
 
-    private _node = new ContextConsumer(this, {context: nodeContext, subscribe: true});
-
     static styles = css`
         :host {
             display: inline-block;
@@ -43,17 +45,19 @@ export class ScRange extends LitElement {
     `;
 
     private get _runtime() {
-        return resolveInputRuntime(this._node, this.id, 'sc-range');
+        return resolveInputRuntime(this.id, 'sc-range');
     }
 
     get value(): number {
         const rt = this._runtime;
         if (!rt) return 0;
-        return this._node.value?.getControlValue(rt.targetId, rt.name) ?? 0;
+        const control = runtimeApi.getById(rt.targetId);
+        return control && isControl(control) ? control.runtime.value : 0;
     }
 
     constructor() {
         super();
+        new ContextConsumer(this, {context: nodeContext, subscribe: true});
         this.type = 'knob';
         this.bind = '';
         this.min = 0;
@@ -71,7 +75,11 @@ export class ScRange extends LitElement {
     onChange = (value: number) => {
         const rt = this._runtime;
         if (value !== this.value && this.bind && rt) {
-            this._node.value?.onChange(rt.targetId, this.bind, value);
+            const control = runtimeApi.getById(rt.targetId);
+            if (!control || !isControl(control)) return;
+            runtimeApi.setControl({id: rt.targetId, value});
+            const nodeId = resolveControlNodeId(rt.targetId);
+            oscService.send(nodeSetMessage(nodeId, {[control.runtime.name]: value}));
         }
     };
 

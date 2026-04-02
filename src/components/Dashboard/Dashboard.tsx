@@ -8,8 +8,9 @@ import layoutStore from "@/lib/stores/layout";
 import optionsStore from "@/lib/stores/options";
 import runtimeStore from "@/lib/stores/runtime";
 import {layoutApi, pluginsApi, runtimeApi} from "@/lib/stores/api";
-import {isPlugin} from "@/lib/utils/guards";
-import {ScNode} from "@/sc-elements/internal/sc-node";
+import {isPlugin, isNode} from "@/lib/utils/guards";
+import {oscService} from "@/lib/osc";
+import {nodeRunMessage} from "@/lib/osc/messages";
 import {DashboardPanel} from "./DashboardPanel";
 import {deepEqual} from "@/lib/utils/deepEqual";
 import {randomId} from "@/lib/utils/randomId.ts";
@@ -91,9 +92,11 @@ export function Dashboard() {
         const isRunning = isLoaded ? rt.runtime.run === 1 : undefined;
 
         const handleToggleRun = isLoaded ? () => {
-            const el = document.getElementById(item.i);
-            if (el instanceof ScNode) {
-                el.onRun(item.i, '', isRunning ? 0 : 1);
+            const value = isRunning ? 0 : 1;
+            runtimeApi.setRunning({nodeId: item.i, value});
+            const node = runtimeApi.getById(item.i);
+            if (node && isNode(node)) {
+                oscService.send(nodeRunMessage(node.runtime.nodeId, value));
             }
         } : undefined;
 

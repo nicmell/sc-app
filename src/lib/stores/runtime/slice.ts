@@ -1,6 +1,6 @@
 import type {RuntimeState} from "@/types/stores";
 import type {ScElementNode} from "@/types/parsers";
-import {isParent, isNode} from "@/lib/utils/guards";
+import {isParent, isNode, isControl} from "@/lib/utils/guards";
 import {combineReducers, createSlice, type CaseReducer} from "@/lib/stores/utils";
 import {SliceName, RuntimeAction} from "@/constants/store";
 import layout from "../layout";
@@ -18,14 +18,16 @@ function syncToTree(state: RuntimeState, id: string) {
     }
 }
 
-function propagateControl(state: RuntimeState, targetId: string, name: string, value: number) {
+function propagateControl(state: RuntimeState, controlId: string, name: string, value: number) {
+    const control = state.nodes[controlId];
+    if (!control) return;
+    const ownerId = control.runtime.parentId;
     for (const [id, node] of Object.entries(state.nodes)) {
-        if (!isNode(node) || !(name in node.runtime.controls)) continue;
-        // Walk up parentId chain to check if descendant of targetId
+        if (id === controlId || !isControl(node) || node.name !== name) continue;
         let pid = node.runtime.parentId;
         while (pid) {
-            if (pid === targetId) {
-                node.runtime.controls[name] = value;
+            if (pid === ownerId) {
+                node.runtime.value = value;
                 syncToTree(state, id);
                 break;
             }
@@ -58,13 +60,13 @@ export const runtimeSlice = createSlice({
         }
       }
     },
-    [RuntimeAction.SET_CONTROL]: (state, action: { payload: { nodeId: string; name: string; value: number } }) => {
-      const {nodeId, name, value} = action.payload;
-      const node = state.nodes[nodeId];
-      if (node && isNode(node)) {
-        node.runtime.controls[name] = value;
-        syncToTree(state, nodeId);
-        propagateControl(state, nodeId, name, value);
+    [RuntimeAction.SET_CONTROL]: (state, action: { payload: { id: string; value: number } }) => {
+      const {id, value} = action.payload;
+      const node = state.nodes[id];
+      if (node && isControl(node)) {
+        node.runtime.value = value;
+        syncToTree(state, id);
+        propagateControl(state, id, node.name, value);
       }
     },
     [RuntimeAction.SET_RUNNING]: (state, action: { payload: { nodeId: string; value: number } }) => {

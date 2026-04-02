@@ -2,6 +2,8 @@ import {LitElement, html, css} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
 import {resolveInputRuntime} from './resolve.ts';
+import {runtimeApi} from '@/lib/stores/api';
+import {isControl} from '@/lib/utils/guards';
 
 export class ScIf extends LitElement {
   static properties = {
@@ -22,8 +24,6 @@ export class ScIf extends LitElement {
   declare isGreaterThan: string | null;
   declare isLesserThan: string | null;
 
-  private _node = new ContextConsumer(this, {context: nodeContext, subscribe: true});
-
   static styles = css`
     :host { display: contents; }
     :host([hidden]) { display: none; }
@@ -31,6 +31,7 @@ export class ScIf extends LitElement {
 
   constructor() {
     super();
+    new ContextConsumer(this, {context: nodeContext, subscribe: true});
     this.bind = '';
     this.isTruthy = null;
     this.isFalsy = null;
@@ -41,12 +42,13 @@ export class ScIf extends LitElement {
   }
 
   private get _runtime() {
-    return resolveInputRuntime(this._node, this.id, 'sc-if');
+    return resolveInputRuntime(this.id, 'sc-if');
   }
 
   private _test(): boolean {
     const rt = this._runtime;
-    const value = rt ? this._node.value?.getControlValue(rt.targetId, rt.name) : undefined;
+    const control = rt ? runtimeApi.getById(rt.targetId) : undefined;
+    const value = control && isControl(control) ? control.runtime.value : undefined;
     const num = typeof value === 'number' ? value : Number(value);
     if (this.isEqual !== null) return String(value) === this.isEqual;
     if (this.isNotEqual !== null) return String(value) !== this.isNotEqual;

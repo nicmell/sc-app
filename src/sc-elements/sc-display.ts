@@ -2,6 +2,8 @@ import {LitElement, html, css} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
 import {resolveInputRuntime} from './resolve.ts';
+import {runtimeApi} from '@/lib/stores/api';
+import {isControl} from '@/lib/utils/guards';
 
 function formatValue(template: string, value: unknown): string {
   if (typeof value === 'boolean') return template.replace('%b', value ? 'true' : 'false');
@@ -25,8 +27,6 @@ export class ScDisplay extends LitElement {
   declare bind: string;
   declare format: string;
 
-  private _node = new ContextConsumer(this, {context: nodeContext, subscribe: true});
-
   static styles = css`
     :host {
       display: inline;
@@ -38,17 +38,19 @@ export class ScDisplay extends LitElement {
 
   constructor() {
     super();
+    new ContextConsumer(this, {context: nodeContext, subscribe: true});
     this.bind = '';
     this.format = '';
   }
 
   private get _runtime() {
-    return resolveInputRuntime(this._node, this.id, 'sc-display');
+    return resolveInputRuntime(this.id, 'sc-display');
   }
 
   render() {
     const rt = this._runtime;
-    const value = rt ? this._node.value?.getControlValue(rt.targetId, rt.name) : undefined;
+    const control = rt ? runtimeApi.getById(rt.targetId) : undefined;
+    const value = control && isControl(control) ? control.runtime.value : undefined;
     const text = this.format ? formatValue(this.format, value) : String(value ?? '');
     return html`${text}`;
   }

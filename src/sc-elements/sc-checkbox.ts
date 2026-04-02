@@ -1,7 +1,11 @@
 import {html, css, LitElement} from 'lit';
 import {ContextConsumer} from '@lit/context';
 import {nodeContext} from './context.ts';
-import {resolveInputRuntime} from './resolve.ts';
+import {resolveInputRuntime, resolveControlNodeId} from './resolve.ts';
+import {runtimeApi} from '@/lib/stores/api';
+import {isControl} from '@/lib/utils/guards';
+import {oscService} from '@/lib/osc';
+import {nodeSetMessage} from '@/lib/osc/messages.ts';
 import './internal/sc-switch.ts';
 
 export class ScCheckbox extends LitElement {
@@ -21,24 +25,24 @@ export class ScCheckbox extends LitElement {
     declare fgcolor: string;
     declare bgcolor: string;
 
-    private _node = new ContextConsumer(this, {context: nodeContext, subscribe: true});
-
     static styles = css`
         :host { display: inline-block; }
     `;
 
     private get _runtime() {
-        return resolveInputRuntime(this._node, this.id, 'sc-checkbox');
+        return resolveInputRuntime(this.id, 'sc-checkbox');
     }
 
     get checked(): boolean {
         const rt = this._runtime;
         if (!rt) return false;
-        return (this._node.value?.getControlValue(rt.targetId, rt.name) ?? 0) !== 0;
+        const control = runtimeApi.getById(rt.targetId);
+        return control && isControl(control) ? control.runtime.value !== 0 : false;
     }
 
     constructor() {
         super();
+        new ContextConsumer(this, {context: nodeContext, subscribe: true});
         this.bind = '';
         this.width = 24;
         this.height = 24;
@@ -50,7 +54,12 @@ export class ScCheckbox extends LitElement {
     onChange = (checked: boolean) => {
         const rt = this._runtime;
         if (checked !== this.checked && this.bind && rt) {
-            this._node.value?.onChange(rt.targetId, this.bind, checked ? 1 : 0);
+            const control = runtimeApi.getById(rt.targetId);
+            if (!control || !isControl(control)) return;
+            const value = checked ? 1 : 0;
+            runtimeApi.setControl({id: rt.targetId, value});
+            const nodeId = resolveControlNodeId(rt.targetId);
+            oscService.send(nodeSetMessage(nodeId, {[control.runtime.name]: value}));
         }
     };
 
