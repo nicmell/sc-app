@@ -17,7 +17,7 @@ function formatValue(template: string, value: unknown): string {
   return String(value ?? '');
 }
 
-export class ScDisplay extends ScElement<ScDisplayNode> {
+export class ScDisplay extends ScElement<ScDisplayNode, number> {
   static properties = {
     bind: {type: String},
     format: {type: String},
@@ -35,11 +35,11 @@ export class ScDisplay extends ScElement<ScDisplayNode> {
     }
   `;
 
-  getState(state: RuntimeState): number | undefined {
+  getState(state: RuntimeState): number {
     const self = state.nodes[this.id];
-    if (!self || !isVisual(self)) return undefined;
+    if (!self || !isVisual(self)) return 0;
     const control = state.nodes[self.runtime.targetId];
-    return control && isControl(control) ? control.runtime.value : undefined;
+    return control && isControl(control) ? control.runtime.value : 0;
   }
 
   constructor() {
@@ -49,7 +49,7 @@ export class ScDisplay extends ScElement<ScDisplayNode> {
   }
 
   render() {
-    const value = this._state as number | undefined;
+    const value = this._state;
     const text = this.format ? formatValue(this.format, value) : String(value ?? '');
     return html`${text}`;
   }

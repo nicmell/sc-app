@@ -6,7 +6,7 @@ import {isInput, isControl} from '@/lib/utils/guards';
 import {ScElement} from './internal/sc-element.ts';
 import './internal/sc-switch.ts';
 
-export class ScCheckbox extends ScElement<ScCheckboxNode> {
+export class ScCheckbox extends ScElement<ScCheckboxNode, number> {
     static properties = {
         bind: {type: String},
         width: {type: Number, attribute: 'width'},
@@ -27,15 +27,15 @@ export class ScCheckbox extends ScElement<ScCheckboxNode> {
         :host { display: inline-block; }
     `;
 
-    getState(state: RuntimeState): number | undefined {
+    getState(state: RuntimeState): number {
         const self = state.nodes[this.id];
-        if (!self || !isInput(self)) return undefined;
+        if (!self || !isInput(self)) return 0;
         const control = state.nodes[self.runtime.targetId];
-        return control && isControl(control) ? control.runtime.value : undefined;
+        return control && isControl(control) ? control.runtime.value : 0;
     }
 
     get checked(): boolean {
-        return ((this._state as number) ?? 0) !== 0;
+        return this._state !== 0;
     }
 
     constructor() {

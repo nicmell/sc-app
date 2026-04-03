@@ -4,10 +4,10 @@ import type {RuntimeState} from '@/types/stores';
 import {runtimeApi} from '@/lib/stores/api';
 import {store} from '@/lib/stores/store';
 
-export abstract class ScElement<T extends ScElementNode> extends LitElement {
+export abstract class ScElement<T extends ScElementNode, S = unknown> extends LitElement {
     private _unsubscribe?: () => void;
 
-    protected abstract getState(state: RuntimeState): unknown;
+    protected abstract getState(state: RuntimeState): S;
 
     get _runtime(): T["runtime"] {
         const el = runtimeApi.getById(this.id);
@@ -17,7 +17,7 @@ export abstract class ScElement<T extends ScElementNode> extends LitElement {
         return el.runtime as T["runtime"];
     }
 
-    get _state() {
+    get _state(): S {
         const {runtime} = store.getState();
         return this.getState(runtime);
     }

@@ -12,7 +12,7 @@ export type {NodeState};
 
 const EMPTY_STATE: NodeState = {nodeId: 0, loaded: false, run: 0, controls: {}};
 
-export abstract class ScNode extends ScElement<ScGroupNode | ScSynthNode | ScPluginNode> implements IScNode {
+export abstract class ScNode extends ScElement<ScGroupNode | ScSynthNode | ScPluginNode, NodeState> implements IScNode {
     static properties = {
         name: {type: String, reflect: true},
         run: {type: Boolean, reflect: true},
@@ -45,9 +45,9 @@ export abstract class ScNode extends ScElement<ScGroupNode | ScSynthNode | ScPlu
     }
 
     protected _subscribe(): () => void {
-        let prev = (this._state as NodeState).loaded;
+        let prev = this._state.loaded;
         return store.subscribe(() => {
-            const next = (this._state as NodeState).loaded;
+            const next = this._state.loaded;
             if (next !== prev) {
                 prev = next;
                 this._provider.setValue(this._state as NodeState, true);
@@ -70,7 +70,7 @@ export abstract class ScNode extends ScElement<ScGroupNode | ScSynthNode | ScPlu
     }
 
     getControls(): Record<string, number> {
-        return {...(this._state as NodeState).controls};
+        return {...this._state.controls};
     }
 
     protected get groupId(): number {

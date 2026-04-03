@@ -7,7 +7,7 @@ import {ScElement} from './internal/sc-element.ts';
 import './internal/sc-knob.ts';
 import './internal/sc-slider.ts';
 
-export class ScRange extends ScElement<ScRangeNode> {
+export class ScRange extends ScElement<ScRangeNode, number> {
     static properties = {
         type: {type: String},
         bind: {type: String},
@@ -42,15 +42,15 @@ export class ScRange extends ScElement<ScRangeNode> {
         }
     `;
 
-    getState(state: RuntimeState): number | undefined {
+    getState(state: RuntimeState): number {
         const self = state.nodes[this.id];
-        if (!self || !isInput(self)) return undefined;
+        if (!self || !isInput(self)) return 0;
         const control = state.nodes[self.runtime.targetId];
-        return control && isControl(control) ? control.runtime.value : undefined;
+        return control && isControl(control) ? control.runtime.value : 0;
     }
 
     get value(): number {
-        return (this._state as number) ?? 0;
+        return this._state;
     }
 
     constructor() {

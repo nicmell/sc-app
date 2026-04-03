@@ -4,7 +4,7 @@ import type {RuntimeState} from '@/types/stores';
 import {isVisual, isControl} from '@/lib/utils/guards';
 import {ScElement} from './internal/sc-element.ts';
 
-export class ScIf extends ScElement<ScIfNode> {
+export class ScIf extends ScElement<ScIfNode, number> {
   static properties = {
     bind: {type: String},
     isTruthy: {type: String, attribute: 'is-truthy'},
@@ -28,11 +28,11 @@ export class ScIf extends ScElement<ScIfNode> {
     :host([hidden]) { display: none; }
   `;
 
-  getState(state: RuntimeState): number | undefined {
+  getState(state: RuntimeState): number {
     const self = state.nodes[this.id];
-    if (!self || !isVisual(self)) return undefined;
+    if (!self || !isVisual(self)) return 0;
     const control = state.nodes[self.runtime.targetId];
-    return control && isControl(control) ? control.runtime.value : undefined;
+    return control && isControl(control) ? control.runtime.value : 0;
   }
 
   constructor() {
@@ -47,7 +47,7 @@ export class ScIf extends ScElement<ScIfNode> {
   }
 
   private _test(): boolean {
-    const value = this._state as number | undefined;
+    const value = this._state;
     const num = typeof value === 'number' ? value : Number(value);
     if (this.isEqual !== null) return String(value) === this.isEqual;
     if (this.isNotEqual !== null) return String(value) !== this.isNotEqual;

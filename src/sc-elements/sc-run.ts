@@ -7,7 +7,7 @@ import {oscService} from '@/lib/osc';
 import {nodeRunMessage} from '@/lib/osc/messages.ts';
 import {ScElement} from './internal/sc-element.ts';
 
-export class ScRun extends ScElement<ScRunNode> {
+export class ScRun extends ScElement<ScRunNode, number> {
     static properties = {
         size: {type: Number},
         src: {type: String},
@@ -33,15 +33,15 @@ export class ScRun extends ScElement<ScRunNode> {
         img { display: block; pointer-events: none; }
     `;
 
-    getState(state: RuntimeState): number | undefined {
+    getState(state: RuntimeState): number {
         const self = state.nodes[this.id];
-        if (!self || !isRun(self)) return undefined;
+        if (!self || !isRun(self)) return 1;
         const node = state.nodes[self.runtime.targetId];
-        return node && isNode(node) ? node.runtime.run : undefined;
+        return node && isNode(node) ? node.runtime.run : 1;
     }
 
     get run(): boolean {
-        return ((this._state as number) ?? 1) !== 0;
+        return this._state !== 0;
     }
 
     constructor() {

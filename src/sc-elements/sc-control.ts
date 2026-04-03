@@ -7,7 +7,7 @@ import {oscService} from '@/lib/osc';
 import {nodeSetMessage} from '@/lib/osc/messages.ts';
 import {ScElement} from './internal/sc-element.ts';
 
-export class ScControl extends ScElement<ScControlNode> {
+export class ScControl extends ScElement<ScControlNode, number> {
     static properties = {
         name: {type: String, reflect: true},
         value: {type: Number},
@@ -18,14 +18,13 @@ export class ScControl extends ScElement<ScControlNode> {
     declare value: number | undefined;
     declare bind: string | undefined;
 
-    getState(state: RuntimeState): number | undefined {
+    getState(state: RuntimeState): number {
         const node = state.nodes[this.id];
-        return node && isControl(node) ? node.runtime.value : undefined;
+        return node && isControl(node) ? node.runtime.value : 0;
     }
 
     protected updated() {
-        const value = this._state as number | undefined;
-        if (value === undefined) return;
+        const value = this._state;
         const rt = this._runtime;
         const parent = runtimeApi.getById(rt.parentId);
         if (parent && isNode(parent) && parent.runtime.nodeId) {
