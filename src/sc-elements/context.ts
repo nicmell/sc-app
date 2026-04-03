@@ -1,9 +1,5 @@
 import {createContext} from '@lit/context';
 
-export interface ScNode {
-  readonly nodeId: number;
-}
-
 export interface NodeState {
     nodeId: number;
     loaded: boolean;

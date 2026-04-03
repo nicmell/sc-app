@@ -21,34 +21,19 @@ export class ScSynth extends ScNode {
         this.bind = 'default';
     }
 
-    protected _onParentEnabledChanged(enabled: boolean) {
-        if (enabled && !this._loaded) {
-            this._sendCreate();
-        } else if (!enabled && this._loaded) {
-            this._sendDestroy();
-        }
-    }
-
-    private _sendCreate() {
+    protected _sendCreate() {
         oscService.send(
             newSynthMessage(this.bind, this.nodeId, 0, 0, this.getControls()),
             nodeRunMessage(this.nodeId, this.run ? 1 : 0),
             groupTailMessage(this.groupId, -1),
         );
-        this._loaded = true;
+        super._sendCreate();
         runtimeApi.newSynth({id: this.id, nodeId: this.nodeId});
     }
 
-    private _sendDestroy() {
+    protected _sendDestroy() {
         oscService.send(freeNodeMessage(this.nodeId));
-        this._loaded = false;
+        super._sendDestroy();
         runtimeApi.freeSynth({id: this.id});
-    }
-
-    disconnectedCallback() {
-        super.disconnectedCallback();
-        if (this._loaded) {
-            this._sendDestroy();
-        }
     }
 }

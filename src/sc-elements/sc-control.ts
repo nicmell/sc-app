@@ -1,8 +1,7 @@
 import {html} from 'lit';
 import type {ScControlNode} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
-import {runtimeApi} from '@/lib/stores/api';
-import {isNode, isControl} from '@/lib/utils/guards';
+import {isControl} from '@/lib/utils/guards';
 import {oscService} from '@/lib/osc';
 import {nodeSetMessage} from '@/lib/osc/messages.ts';
 import {ScElement} from './internal/sc-element.ts';
@@ -24,11 +23,9 @@ export class ScControl extends ScElement<ScControlNode, number> {
     }
 
     protected updated() {
-        const value = this._state;
-        const rt = this._runtime;
-        const parent = runtimeApi.getById(rt.parentId);
-        if (parent && isNode(parent) && parent.runtime.nodeId) {
-            oscService.send(nodeSetMessage(parent.runtime.nodeId, {[rt.name]: value}));
+        const nodeId = this._parent?.nodeId;
+        if (nodeId) {
+            oscService.send(nodeSetMessage(nodeId, {[this._runtime.name]: this._state}));
         }
     }
 

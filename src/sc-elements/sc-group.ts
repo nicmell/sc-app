@@ -11,21 +11,13 @@ import {ScNode} from './internal/sc-node.ts';
 
 export class ScGroup extends ScNode {
 
-    protected _onParentEnabledChanged(enabled: boolean) {
-        if (enabled && !this._loaded) {
-            this._sendCreate();
-        } else if (!enabled && this._loaded) {
-            this._sendDestroy();
-        }
-    }
-
     protected _sendCreate() {
         oscService.send(
             newGroupMessage(this.nodeId),
             nodeRunMessage(this.nodeId, this.run ? 1 : 0),
             groupTailMessage(this.groupId, -1),
         );
-        this._loaded = true;
+        super._sendCreate();
         runtimeApi.newGroup({id: this.id, nodeId: this.nodeId});
     }
 
@@ -34,14 +26,7 @@ export class ScGroup extends ScNode {
             groupFreeAllMessage(this.nodeId),
             freeNodeMessage(this.nodeId),
         );
-        this._loaded = false;
+        super._sendDestroy();
         runtimeApi.freeGroup({id: this.id});
-    }
-
-    disconnectedCallback() {
-        super.disconnectedCallback();
-        if (this._loaded) {
-            this._sendDestroy();
-        }
     }
 }
