@@ -2,10 +2,10 @@ import {html} from 'lit';
 import {pluginManager} from '@/lib/plugins/PluginManager';
 import {runtimeApi} from '@/lib/stores/api';
 import {synthDefManager} from '@/lib/synthdef';
-import {isPlugin} from '@/lib/utils/guards';
+import type {ScPluginNode, PluginRuntime} from '@/types/parsers';
 import {ScGroup} from './sc-group.ts';
 
-export class ScPlugin extends ScGroup {
+export class ScPlugin extends ScGroup<ScPluginNode> {
   static properties = {
     ...ScGroup.properties,
     _error: {state: true},
@@ -29,8 +29,7 @@ export class ScPlugin extends ScGroup {
   }
 
   private get _pluginError(): string {
-    const node = runtimeApi.getById(this.id);
-    return node && isPlugin(node) ? node.runtime.error ?? '' : '';
+    return (this._state?.runtime as PluginRuntime | undefined)?.error ?? '';
   }
 
   disconnectedCallback() {
@@ -41,7 +40,7 @@ export class ScPlugin extends ScGroup {
 
   render() {
     const error = this._error || this._pluginError;
-    const loading = !this._state.loaded && !error;
+    const loading = !this._state?.runtime.loaded && !error;
     return html`
       ${error ? html`<div style="color:#e57373;font-size:0.85rem;padding:0.5rem 0">${error}</div>` : ''}
       ${loading ? html`<div style="font-size:0.85rem;padding:0.5rem 0;opacity:0.6">Loading...</div>` : ''}

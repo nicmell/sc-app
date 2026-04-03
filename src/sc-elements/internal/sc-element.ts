@@ -9,12 +9,12 @@ import {nodeContext, type NodeContext} from '../context.ts';
 export abstract class ScElement<T extends ScElementNode, S = unknown> extends LitElement {
     private _unsubscribe?: () => void;
     protected _loaded = false;
-    private _ctx: ContextConsumer<{ __context__: NodeContext }, this>;
+    private _parentCtx: ContextConsumer<{ __context__: NodeContext }, this>;
 
     protected abstract getState(state: RuntimeState): S;
 
-    get _parent(): NodeContext | undefined {
-        return this._ctx.value;
+    get _parent(): NodeContext {
+        return this._parentCtx.value;
     }
 
     get _runtime(): T["runtime"] {
@@ -52,11 +52,11 @@ export abstract class ScElement<T extends ScElementNode, S = unknown> extends Li
 
     constructor() {
         super();
-        this._ctx = new ContextConsumer(this, {
+        this._parentCtx = new ContextConsumer(this, {
             context: nodeContext,
             subscribe: true,
             callback: (ctx) => {
-                const enabled = ctx?.loaded ?? false;
+                const enabled = ctx?.runtime.loaded ?? false;
                 if (enabled && !this._loaded) {
                     this._sendCreate();
                 } else if (!enabled && this._loaded) {
