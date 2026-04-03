@@ -1,11 +1,10 @@
-import {LitElement, html, css} from 'lit';
-import {ContextConsumer} from '@lit/context';
-import {nodeContext} from './context.ts';
-import {resolveInputRuntime} from './resolve.ts';
-import {runtimeApi} from '@/lib/stores/api';
-import {isControl} from '@/lib/utils/guards';
+import {html, css} from 'lit';
+import type {ScIfNode} from '@/types/parsers';
+import type {RuntimeState} from '@/types/stores';
+import {isVisual, isControl} from '@/lib/utils/guards';
+import {ScElement} from './internal/sc-element.ts';
 
-export class ScIf extends LitElement {
+export class ScIf extends ScElement<ScIfNode> {
   static properties = {
     bind: {type: String},
     isTruthy: {type: String, attribute: 'is-truthy'},
@@ -29,9 +28,15 @@ export class ScIf extends LitElement {
     :host([hidden]) { display: none; }
   `;
 
+  getState(state: RuntimeState): number | undefined {
+    const self = state.nodes[this.id];
+    if (!self || !isVisual(self)) return undefined;
+    const control = state.nodes[self.runtime.targetId];
+    return control && isControl(control) ? control.runtime.value : undefined;
+  }
+
   constructor() {
     super();
-    new ContextConsumer(this, {context: nodeContext, subscribe: true});
     this.bind = '';
     this.isTruthy = null;
     this.isFalsy = null;
@@ -41,14 +46,8 @@ export class ScIf extends LitElement {
     this.isLesserThan = null;
   }
 
-  private get _runtime() {
-    return resolveInputRuntime(this.id, 'sc-if');
-  }
-
   private _test(): boolean {
-    const rt = this._runtime;
-    const control = rt ? runtimeApi.getById(rt.targetId) : undefined;
-    const value = control && isControl(control) ? control.runtime.value : undefined;
+    const value = this._state as number | undefined;
     const num = typeof value === 'number' ? value : Number(value);
     if (this.isEqual !== null) return String(value) === this.isEqual;
     if (this.isNotEqual !== null) return String(value) !== this.isNotEqual;

@@ -31,7 +31,7 @@ export class ScSynth extends ScNode {
 
     private _sendCreate() {
         oscService.send(
-            newSynthMessage(this.bind, this.nodeId, 0, 0, this.getParams()),
+            newSynthMessage(this.bind, this.nodeId, 0, 0, this.getControls()),
             nodeRunMessage(this.nodeId, this.run ? 1 : 0),
             groupTailMessage(this.groupId, -1),
         );

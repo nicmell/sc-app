@@ -1,13 +1,13 @@
-import {html, svg, css, LitElement} from 'lit';
-import {ContextConsumer} from '@lit/context';
-import {nodeContext} from './context.ts';
-import {resolveInputRuntime} from './resolve.ts';
+import {html, svg, css} from 'lit';
+import type {ScRunNode} from '@/types/parsers';
+import type {RuntimeState} from '@/types/stores';
 import {runtimeApi} from '@/lib/stores/api';
-import {isNode} from '@/lib/utils/guards';
+import {isRun, isNode} from '@/lib/utils/guards';
 import {oscService} from '@/lib/osc';
 import {nodeRunMessage} from '@/lib/osc/messages.ts';
+import {ScElement} from './internal/sc-element.ts';
 
-export class ScRun extends LitElement {
+export class ScRun extends ScElement<ScRunNode> {
     static properties = {
         size: {type: Number},
         src: {type: String},
@@ -33,9 +33,19 @@ export class ScRun extends LitElement {
         img { display: block; pointer-events: none; }
     `;
 
+    getState(state: RuntimeState): number | undefined {
+        const self = state.nodes[this.id];
+        if (!self || !isRun(self)) return undefined;
+        const node = state.nodes[self.runtime.targetId];
+        return node && isNode(node) ? node.runtime.run : undefined;
+    }
+
+    get run(): boolean {
+        return ((this._state as number) ?? 1) !== 0;
+    }
+
     constructor() {
         super();
-        new ContextConsumer(this, {context: nodeContext, subscribe: true});
         this.size = 24;
         this.src = '';
         this.bind = '';
@@ -43,24 +53,12 @@ export class ScRun extends LitElement {
         this.bgcolor = 'var(--color-bg-secondary, #e8e8e8)';
     }
 
-    private get _runtime() {
-        return resolveInputRuntime(this.id, 'sc-run');
-    }
-
-    get run(): boolean {
-        const rt = this._runtime;
-        if (!rt) return true;
-        const node = runtimeApi.getById(rt.targetId);
-        return node && isNode(node) ? node.runtime.run !== 0 : true;
-    }
-
     private _onClick = () => {
-        const rt = this._runtime;
-        if (!rt) return;
-        const node = runtimeApi.getById(rt.targetId);
+        const targetId = this._runtime.targetId;
+        const node = runtimeApi.getById(targetId);
         if (!node || !isNode(node)) return;
         const value = this.run ? 0 : 1;
-        runtimeApi.setRunning({nodeId: rt.targetId, value});
+        runtimeApi.setRunning({nodeId: targetId, value});
         oscService.send(nodeRunMessage(node.runtime.nodeId, value));
     };
 

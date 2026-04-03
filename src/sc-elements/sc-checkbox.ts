@@ -1,14 +1,12 @@
-import {html, css, LitElement} from 'lit';
-import {ContextConsumer} from '@lit/context';
-import {nodeContext} from './context.ts';
-import {resolveInputRuntime, resolveControlNodeId} from './resolve.ts';
+import {html, css} from 'lit';
+import type {ScCheckboxNode} from '@/types/parsers';
+import type {RuntimeState} from '@/types/stores';
 import {runtimeApi} from '@/lib/stores/api';
-import {isControl} from '@/lib/utils/guards';
-import {oscService} from '@/lib/osc';
-import {nodeSetMessage} from '@/lib/osc/messages.ts';
+import {isInput, isControl} from '@/lib/utils/guards';
+import {ScElement} from './internal/sc-element.ts';
 import './internal/sc-switch.ts';
 
-export class ScCheckbox extends LitElement {
+export class ScCheckbox extends ScElement<ScCheckboxNode> {
     static properties = {
         bind: {type: String},
         width: {type: Number, attribute: 'width'},
@@ -29,20 +27,19 @@ export class ScCheckbox extends LitElement {
         :host { display: inline-block; }
     `;
 
-    private get _runtime() {
-        return resolveInputRuntime(this.id, 'sc-checkbox');
+    getState(state: RuntimeState): number | undefined {
+        const self = state.nodes[this.id];
+        if (!self || !isInput(self)) return undefined;
+        const control = state.nodes[self.runtime.targetId];
+        return control && isControl(control) ? control.runtime.value : undefined;
     }
 
     get checked(): boolean {
-        const rt = this._runtime;
-        if (!rt) return false;
-        const control = runtimeApi.getById(rt.targetId);
-        return control && isControl(control) ? control.runtime.value !== 0 : false;
+        return ((this._state as number) ?? 0) !== 0;
     }
 
     constructor() {
         super();
-        new ContextConsumer(this, {context: nodeContext, subscribe: true});
         this.bind = '';
         this.width = 24;
         this.height = 24;
@@ -52,14 +49,8 @@ export class ScCheckbox extends LitElement {
     }
 
     onChange = (checked: boolean) => {
-        const rt = this._runtime;
-        if (checked !== this.checked && this.bind && rt) {
-            const control = runtimeApi.getById(rt.targetId);
-            if (!control || !isControl(control)) return;
-            const value = checked ? 1 : 0;
-            runtimeApi.setControl({id: rt.targetId, value});
-            const nodeId = resolveControlNodeId(rt.targetId);
-            oscService.send(nodeSetMessage(nodeId, {[control.runtime.name]: value}));
+        if (checked !== this.checked && this.bind) {
+            runtimeApi.setControl({id: this._runtime.targetId, value: checked ? 1 : 0});
         }
     };
 

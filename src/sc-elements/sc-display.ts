@@ -1,9 +1,8 @@
-import {LitElement, html, css} from 'lit';
-import {ContextConsumer} from '@lit/context';
-import {nodeContext} from './context.ts';
-import {resolveInputRuntime} from './resolve.ts';
-import {runtimeApi} from '@/lib/stores/api';
-import {isControl} from '@/lib/utils/guards';
+import {html, css} from 'lit';
+import type {ScDisplayNode} from '@/types/parsers';
+import type {RuntimeState} from '@/types/stores';
+import {isVisual, isControl} from '@/lib/utils/guards';
+import {ScElement} from './internal/sc-element.ts';
 
 function formatValue(template: string, value: unknown): string {
   if (typeof value === 'boolean') return template.replace('%b', value ? 'true' : 'false');
@@ -18,7 +17,7 @@ function formatValue(template: string, value: unknown): string {
   return String(value ?? '');
 }
 
-export class ScDisplay extends LitElement {
+export class ScDisplay extends ScElement<ScDisplayNode> {
   static properties = {
     bind: {type: String},
     format: {type: String},
@@ -36,21 +35,21 @@ export class ScDisplay extends LitElement {
     }
   `;
 
+  getState(state: RuntimeState): number | undefined {
+    const self = state.nodes[this.id];
+    if (!self || !isVisual(self)) return undefined;
+    const control = state.nodes[self.runtime.targetId];
+    return control && isControl(control) ? control.runtime.value : undefined;
+  }
+
   constructor() {
     super();
-    new ContextConsumer(this, {context: nodeContext, subscribe: true});
     this.bind = '';
     this.format = '';
   }
 
-  private get _runtime() {
-    return resolveInputRuntime(this.id, 'sc-display');
-  }
-
   render() {
-    const rt = this._runtime;
-    const control = rt ? runtimeApi.getById(rt.targetId) : undefined;
-    const value = control && isControl(control) ? control.runtime.value : undefined;
+    const value = this._state as number | undefined;
     const text = this.format ? formatValue(this.format, value) : String(value ?? '');
     return html`${text}`;
   }
