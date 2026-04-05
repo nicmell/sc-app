@@ -1,6 +1,6 @@
 import type {
     StripRuntime, ScPluginNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScUgenNode, ScControlNode,
-    ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode,
+    ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode, ScVarNode,
 } from "@/types/parsers";
 import {ELEMENTS} from "@/constants/sc-elements";
 
@@ -49,6 +49,13 @@ function extractControlProps(el: Element): HtmlProps<ScControlNode> {
     return bind ? {name, bind} : {name, value: Number(el.getAttribute('value') ?? '0')};
 }
 
+function extractVarProps(el: Element): HtmlProps<ScVarNode> {
+    return {
+        name: el.getAttribute('name') ?? '',
+        value: Number(el.getAttribute('value') ?? '0'),
+    };
+}
+
 function extractRangeProps(el: Element): HtmlProps<ScRangeNode> {
     return {bind: el.getAttribute('bind') ?? ''};
 }
@@ -86,6 +93,8 @@ export function extractProps(type: string, el: Element): Record<string, unknown>
             return {children: [], ...extractUgenProps(el)};
         case ELEMENTS.SC_CONTROL:
             return extractControlProps(el);
+        case ELEMENTS.SC_VAR:
+            return extractVarProps(el);
         case ELEMENTS.SC_RANGE:
             return extractRangeProps(el);
         case ELEMENTS.SC_CHECKBOX:

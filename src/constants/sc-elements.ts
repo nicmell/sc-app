@@ -10,4 +10,5 @@ export const ELEMENTS = {
   SC_SYNTHDEF: 'sc-synthdef',
   SC_UGEN: 'sc-ugen',
   SC_CONTROL: 'sc-control',
+  SC_VAR: 'sc-var',
 } as const;

@@ -1,7 +1,7 @@
 import {html, css} from 'lit';
 import type {ScIfNode} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
-import {isVisual, isControl} from '@/lib/utils/guards';
+import {isVisual, isControl, isVar} from '@/lib/utils/guards';
 import {ScElement} from './internal/sc-element.ts';
 
 export class ScIf extends ScElement<ScIfNode, number> {
@@ -31,8 +31,10 @@ export class ScIf extends ScElement<ScIfNode, number> {
   getState(state: RuntimeState): number {
     const self = state.nodes[this.id];
     if (!self || !isVisual(self)) return 0;
-    const control = state.nodes[self.runtime.targetId];
-    return control && isControl(control) ? control.runtime.value : 0;
+    const target = state.nodes[self.runtime.targetId];
+    if (target && isControl(target)) return target.runtime.value;
+    if (target && isVar(target)) return target.runtime.value;
+    return 0;
   }
 
   constructor() {

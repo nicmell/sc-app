@@ -2,7 +2,7 @@ import {css, html} from 'lit';
 import type {ScRangeNode} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {runtimeApi} from '@/lib/stores/api';
-import {isInput, isControl} from '@/lib/utils/guards';
+import {isInput, isControl, isVar} from '@/lib/utils/guards';
 import {ScElement} from './internal/sc-element.ts';
 import './internal/sc-knob.ts';
 import './internal/sc-slider.ts';
@@ -45,8 +45,10 @@ export class ScRange extends ScElement<ScRangeNode, number> {
     getState(state: RuntimeState): number {
         const self = state.nodes[this.id];
         if (!self || !isInput(self)) return 0;
-        const control = state.nodes[self.runtime.targetId];
-        return control && isControl(control) ? control.runtime.value : 0;
+        const target = state.nodes[self.runtime.targetId];
+        if (target && isControl(target)) return target.runtime.value;
+        if (target && isVar(target)) return target.runtime.value;
+        return 0;
     }
 
     get value(): number {
@@ -71,7 +73,13 @@ export class ScRange extends ScElement<ScRangeNode, number> {
 
     onChange = (value: number) => {
         if (value !== this.value && this.bind) {
-            runtimeApi.setControl({id: this._runtime.targetId, value});
+            const targetId = this._runtime.targetId;
+            const target = runtimeApi.getById(targetId);
+            if (target && isVar(target)) {
+                runtimeApi.setVar({id: targetId, value});
+            } else {
+                runtimeApi.setControl({id: targetId, value});
+            }
         }
     };
 

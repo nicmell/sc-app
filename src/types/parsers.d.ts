@@ -5,15 +5,6 @@ export interface UGenSpec {
   inputs: Record<string, string>;
 }
 
-export interface NodeRuntime {
-  rootId: string;
-  parentId: string;
-  path: string[];
-  run: number;
-  loaded: boolean;
-  nodeId: number;
-}
-
 export interface ScGroupNode {
   type: 'sc-group';
   id: string;
@@ -33,12 +24,51 @@ export interface ScSynthNode {
   runtime: NodeRuntime;
 }
 
-export type ControlRuntime = { rootId: string; parentId: string; path: string[]; name: string; value: number };
+export type ControlRuntime = {
+  rootId: string;
+  parentId: string;
+  path: string[];
+  name: string;
+  value: number
+};
 
-export type UgenRuntime = { rootId: string; parentId: string; path: string[] };
+export type VarRuntime = {
+  rootId: string;
+  parentId: string;
+  path: string[];
+  name: string;
+  value: number
+};
 
-export interface SynthDefRuntime extends UgenRuntime {
+export type UgenRuntime = {
+  rootId: string;
+  parentId: string;
+  path: string[]
+};
+
+export interface SynthDefRuntime {
+  rootId: string;
+  parentId: string;
+  path: string[];
+  loaded: boolean
+}
+
+export interface NodeRuntime {
+  rootId: string;
+  parentId: string;
+  path: string[];
+  run: number;
   loaded: boolean;
+  nodeId: number;
+}
+export interface PluginRuntime extends NodeRuntime {
+  rootId: string;
+  parentId: string;
+  path: string[];
+  run: number;
+  loaded: boolean;
+  error?: string;
+  nodeId: number;
 }
 
 export interface ScUgenNode {
@@ -59,6 +89,14 @@ export interface ScControlNode {
   value?: number;
   bind?: string;
   runtime: ControlRuntime;
+}
+
+export interface ScVarNode {
+  type: 'sc-var';
+  id: string;
+  name: string;
+  value?: number;
+  runtime: VarRuntime;
 }
 
 export interface ScSynthDefNode {
@@ -120,11 +158,6 @@ export interface ScIfNode {
   runtime: InputRuntime;
 }
 
-export interface PluginRuntime extends NodeRuntime {
-  loaded: boolean;
-  error?: string;
-}
-
 export interface ScPluginNode {
   type: 'sc-plugin';
   id: string;
@@ -136,7 +169,7 @@ export interface ScPluginNode {
 
 export type ScParentNode = ScPluginNode | ScGroupNode | ScSynthNode | ScUgenNode | ScIfNode | ScSynthDefNode;
 
-export type ScElementNode = ScPluginNode | ScGroupNode | ScSynthNode | ScSynthDefNode | ScUgenNode | ScControlNode | ScRangeNode | ScCheckboxNode | ScRunNode | ScDisplayNode | ScIfNode;
+export type ScElementNode = ScPluginNode | ScGroupNode | ScSynthNode | ScSynthDefNode | ScUgenNode | ScControlNode | ScVarNode | ScRangeNode | ScCheckboxNode | ScRunNode | ScDisplayNode | ScIfNode;
 
 export type NodeType = ScElementNode["type"]
 
@@ -154,11 +187,19 @@ export interface RunOverrideEntry {
   value: number
 }
 
-export type OverrideEntry = ControlOverrideEntry | RunOverrideEntry;
+export interface VarOverrideEntry {
+  type: "var";
+  rootId: string;
+  targetPath: string;
+  value: number
+}
+
+export type OverrideEntry = ControlOverrideEntry | RunOverrideEntry | VarOverrideEntry;
 
 export type PersistedOverrideEntry =
   | Omit<ControlOverrideEntry, 'rootId'>
-  | Omit<RunOverrideEntry, 'rootId'>;
+  | Omit<RunOverrideEntry, 'rootId'>
+  | Omit<VarOverrideEntry, 'rootId'>;
 
 export type StripRuntime<T> = T extends { children: ScElementNode[] }
   ? Omit<T, 'runtime' | 'children'> & { children: StripRuntime<ScElementNode>[] }

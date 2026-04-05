@@ -10,6 +10,7 @@ import {ScPlugin} from './sc-plugin.ts';
 import {ScSynthDef} from './sc-synthdef.ts';
 import {ScUgen} from './sc-ugen.ts';
 import {ScControl} from './sc-control.ts';
+import {ScVar} from './sc-var.ts';
 
 export default {
   [ELEMENTS.SC_DISPLAY]: ScDisplay,
@@ -23,4 +24,5 @@ export default {
   [ELEMENTS.SC_SYNTHDEF]: ScSynthDef,
   [ELEMENTS.SC_UGEN]: ScUgen,
   [ELEMENTS.SC_CONTROL]: ScControl,
+  [ELEMENTS.SC_VAR]: ScVar,
 };

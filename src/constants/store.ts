@@ -39,6 +39,7 @@ export const RuntimeAction = {
   FREE_GROUP: "freeGroup",
   FREE_SYNTH: "freeSynth",
   LOAD_SYNTHDEF: "loadSynthdef",
+  SET_VAR: "setVar",
 } as const;
 
 export const RootAction = {

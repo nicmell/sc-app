@@ -2,7 +2,7 @@ import {html, css} from 'lit';
 import type {ScCheckboxNode} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {runtimeApi} from '@/lib/stores/api';
-import {isInput, isControl} from '@/lib/utils/guards';
+import {isInput, isControl, isVar} from '@/lib/utils/guards';
 import {ScElement} from './internal/sc-element.ts';
 import './internal/sc-switch.ts';
 
@@ -30,8 +30,10 @@ export class ScCheckbox extends ScElement<ScCheckboxNode, number> {
     getState(state: RuntimeState): number {
         const self = state.nodes[this.id];
         if (!self || !isInput(self)) return 0;
-        const control = state.nodes[self.runtime.targetId];
-        return control && isControl(control) ? control.runtime.value : 0;
+        const target = state.nodes[self.runtime.targetId];
+        if (target && isControl(target)) return target.runtime.value;
+        if (target && isVar(target)) return target.runtime.value;
+        return 0;
     }
 
     get checked(): boolean {
@@ -50,7 +52,14 @@ export class ScCheckbox extends ScElement<ScCheckboxNode, number> {
 
     onChange = (checked: boolean) => {
         if (checked !== this.checked && this.bind) {
-            runtimeApi.setControl({id: this._runtime.targetId, value: checked ? 1 : 0});
+            const targetId = this._runtime.targetId;
+            const value = checked ? 1 : 0;
+            const target = runtimeApi.getById(targetId);
+            if (target && isVar(target)) {
+                runtimeApi.setVar({id: targetId, value});
+            } else {
+                runtimeApi.setControl({id: targetId, value});
+            }
         }
     };
 

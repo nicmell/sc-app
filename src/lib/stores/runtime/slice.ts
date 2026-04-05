@@ -1,6 +1,6 @@
 import type {RuntimeState} from "@/types/stores";
 import type {ScElementNode} from "@/types/parsers";
-import {isParent, isNode, isControl, isSynthDef} from "@/lib/utils/guards";
+import {isParent, isNode, isControl, isVar, isSynthDef} from "@/lib/utils/guards";
 import {combineReducers, createSlice, type CaseReducer} from "@/lib/stores/utils";
 import {SliceName, RuntimeAction} from "@/constants/store";
 import layout from "../layout";
@@ -107,6 +107,14 @@ export const runtimeSlice = createSlice({
         node.runtime.loaded = false;
         node.runtime.nodeId = 0;
         syncToTree(state, action.payload.id);
+      }
+    },
+    [RuntimeAction.SET_VAR]: (state, action: { payload: { id: string; value: number } }) => {
+      const {id, value} = action.payload;
+      const node = state.nodes[id];
+      if (node && isVar(node)) {
+        node.runtime.value = value;
+        syncToTree(state, id);
       }
     },
     [RuntimeAction.LOAD_SYNTHDEF]: (state, action: { payload: { id: string } }) => {

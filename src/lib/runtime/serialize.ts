@@ -1,6 +1,6 @@
 import type {ScElementNode, OverrideEntry, PersistedOverrideEntry} from "@/types/parsers";
 import type {RuntimeState, Preset, LayoutState} from "@/types/stores";
-import {isParent, isPlugin, isNode, isControl} from "@/lib/utils/guards";
+import {isParent, isPlugin, isNode, isControl, isVar} from "@/lib/utils/guards";
 
 function collectEntries(node: ScElementNode, nodes: Record<string, ScElementNode>): PersistedOverrideEntry[] {
     const entries: PersistedOverrideEntry[] = [];
@@ -17,6 +17,13 @@ function collectEntries(node: ScElementNode, nodes: Record<string, ScElementNode
                 if (isControl(controlNode) && controlNode.runtime.value !== child.value) {
                     const path = [...child.runtime.path, child.name].join('.')
                     entries.push({type: "control", targetPath: path, value: controlNode.runtime.value});
+                }
+            }
+            if (isVar(child) && child.value != null) {
+                const varNode = nodes[child.id] ?? child;
+                if (isVar(varNode) && varNode.runtime.value !== child.value) {
+                    const path = [...child.runtime.path, child.name].join('.');
+                    entries.push({type: "var", targetPath: path, value: varNode.runtime.value});
                 }
             }
         }

@@ -1,9 +1,9 @@
 import type {
     ScElementNode, ScElementNodeBase, ScParentNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScUgenNode,
-    ScRunNode, ScControlNode,
-    ScPluginNode, PluginRuntime, NodeRuntime, ControlRuntime, UgenRuntime, SynthDefRuntime, InputRuntime, RunRuntime, OverrideEntry, StripRuntime,
+    ScRunNode, ScControlNode, ScVarNode,
+    ScPluginNode, PluginRuntime, NodeRuntime, ControlRuntime, VarRuntime, UgenRuntime, SynthDefRuntime, InputRuntime, RunRuntime, OverrideEntry, StripRuntime,
 } from "@/types/parsers";
-import {isNode, isParent, isControl, isControlOverride, isRunOverride} from "@/lib/utils/guards";
+import {isNode, isParent, isControl, isVar, isControlOverride, isRunOverride, isVarOverride} from "@/lib/utils/guards";
 import {ELEMENTS} from "@/constants/sc-elements";
 import {synthDefManager} from "@/lib/synthdef";
 
@@ -41,6 +41,11 @@ function findRunOverride(ctx: RuntimeContext, path: string[]): number | undefine
 function findControlOverride(ctx: RuntimeContext, path: string[]): number | undefined {
     const target = path.join('.');
     return ctx.overrides?.find(e => isControlOverride(e) && e.targetPath === target)?.value;
+}
+
+function findVarOverride(ctx: RuntimeContext, path: string[]): number | undefined {
+    const target = path.join('.');
+    return ctx.overrides?.find(e => isVarOverride(e) && e.targetPath === target)?.value;
 }
 
 function collectControlParams(node: { children: ScElementNodeBase[] }): Record<string, number> {
@@ -82,7 +87,7 @@ function resolveControlBind(ctx: RuntimeContext): { target: ScElementNode; contr
     if (!target || !isNode(target)) {
         throw new Error(`<${n.type} bind="${n.bind}">: does not match any node in scope`);
     }
-    if (!isParent(target) || !target.children.some(c => isControl(c) && c.name === controlName)) {
+    if (!isParent(target) || !target.children.some(c => (isControl(c) || isVar(c)) && c.name === controlName)) {
         const targetName = 'name' in target ? target.name : target.id;
         throw new Error(`<${n.type} bind="${n.bind}">: control "${controlName}" is not declared on <${target.type} name="${targetName}">`);
     }
@@ -95,7 +100,7 @@ function parentId(ctx: RuntimeContext): string {
 
 function resolveVisualBind(ctx: RuntimeContext): InputRuntime {
     const {target, controlName} = resolveControlBind(ctx);
-    const control = (target as ScParentNode).children.find(c => isControl(c) && c.name === controlName)!;
+    const control = (target as ScParentNode).children.find(c => (isControl(c) || isVar(c)) && c.name === controlName)!;
     return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, targetId: control.id};
 }
 
@@ -184,6 +189,12 @@ const controlHandler = (ctx: RuntimeContext): ControlRuntime => {
     return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, name: n.name, value};
 };
 
+const varHandler = (ctx: RuntimeContext): VarRuntime => {
+    const n = ctx.tree as StripRuntime<ScVarNode>;
+    const value = findVarOverride(ctx, [...ctx.path, n.name]) ?? n.value ?? 0;
+    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, name: n.name, value};
+};
+
 const inputHandler = (ctx: RuntimeContext): InputRuntime => {
     return resolveVisualBind(ctx);
 };
@@ -217,6 +228,7 @@ export function processElement(ctx: RuntimeContext): ScElementNode {
         case ELEMENTS.SC_SYNTHDEF: runtime = synthDefHandler(ctx); break;
         case ELEMENTS.SC_UGEN: runtime = ugenHandler(ctx); break;
         case ELEMENTS.SC_CONTROL: runtime = controlHandler(ctx); break;
+        case ELEMENTS.SC_VAR: runtime = varHandler(ctx); break;
         case ELEMENTS.SC_RANGE:  runtime = inputHandler(ctx); break;
         case ELEMENTS.SC_CHECKBOX: runtime = inputHandler(ctx); break;
         case ELEMENTS.SC_RUN: runtime = runHandler(ctx); break;
