@@ -158,6 +158,22 @@ export interface ScIfNode {
   runtime: InputRuntime;
 }
 
+export interface ScOptionNode {
+  type: 'sc-option';
+  id: string;
+  value: number;
+  label: string;
+  runtime: UgenRuntime;
+}
+
+export interface ScSelectNode {
+  type: 'sc-select';
+  id: string;
+  bind: string;
+  children: ScElementNode[];
+  runtime: InputRuntime;
+}
+
 export interface ScPluginNode {
   type: 'sc-plugin';
   id: string;
@@ -167,9 +183,9 @@ export interface ScPluginNode {
   runtime: PluginRuntime;
 }
 
-export type ScParentNode = ScPluginNode | ScGroupNode | ScSynthNode | ScUgenNode | ScIfNode | ScSynthDefNode;
+export type ScParentNode = ScPluginNode | ScGroupNode | ScSynthNode | ScUgenNode | ScIfNode | ScSynthDefNode | ScSelectNode;
 
-export type ScElementNode = ScPluginNode | ScGroupNode | ScSynthNode | ScSynthDefNode | ScUgenNode | ScControlNode | ScVarNode | ScRangeNode | ScCheckboxNode | ScRunNode | ScDisplayNode | ScIfNode;
+export type ScElementNode = ScPluginNode | ScGroupNode | ScSynthNode | ScSynthDefNode | ScUgenNode | ScControlNode | ScVarNode | ScRangeNode | ScCheckboxNode | ScRunNode | ScDisplayNode | ScIfNode | ScSelectNode | ScOptionNode;
 
 export type NodeType = ScElementNode["type"]
 

@@ -11,6 +11,8 @@ import {ScSynthDef} from './sc-synthdef.ts';
 import {ScUgen} from './sc-ugen.ts';
 import {ScControl} from './sc-control.ts';
 import {ScVar} from './sc-var.ts';
+import {ScSelect} from './sc-select.ts';
+import {ScOption} from './sc-option.ts';
 
 export default {
   [ELEMENTS.SC_DISPLAY]: ScDisplay,
@@ -25,4 +27,6 @@ export default {
   [ELEMENTS.SC_UGEN]: ScUgen,
   [ELEMENTS.SC_CONTROL]: ScControl,
   [ELEMENTS.SC_VAR]: ScVar,
+  [ELEMENTS.SC_SELECT]: ScSelect,
+  [ELEMENTS.SC_OPTION]: ScOption,
 };

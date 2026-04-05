@@ -15,8 +15,8 @@ export function isGroup<T extends ScElementNodeBase>(el: T): el is Extract<T, { 
   return el.type === 'sc-group' || el.type === 'sc-plugin';
 }
 
-export function isParent<T extends ScElementNodeBase>(el: T): el is Extract<T, { type: 'sc-group' } | { type: 'sc-plugin' } | { type: 'sc-synth' } | { type: 'sc-ugen' } | { type: 'sc-if' } | { type: 'sc-synthdef' }> {
-  return el.type === 'sc-group' || el.type === 'sc-plugin' || el.type === 'sc-synth' || el.type === 'sc-ugen' || el.type === 'sc-if' || el.type === 'sc-synthdef';
+export function isParent<T extends ScElementNodeBase>(el: T): el is Extract<T, { type: 'sc-group' } | { type: 'sc-plugin' } | { type: 'sc-synth' } | { type: 'sc-ugen' } | { type: 'sc-if' } | { type: 'sc-synthdef' } | { type: 'sc-select' }> {
+  return el.type === 'sc-group' || el.type === 'sc-plugin' || el.type === 'sc-synth' || el.type === 'sc-ugen' || el.type === 'sc-if' || el.type === 'sc-synthdef' || el.type === 'sc-select';
 }
 
 export function isSynth<T extends ScElementNodeBase>(el: T): el is Extract<T, { type: 'sc-synth' }> {
@@ -31,8 +31,8 @@ export function isSynthDef<T extends ScElementNodeBase>(el: T): el is Extract<T,
   return el.type === 'sc-synthdef';
 }
 
-export function isInput<T extends ScElementNodeBase>(el: T): el is Extract<T, { type: 'sc-range' } | { type: 'sc-checkbox' }> {
-  return el.type === 'sc-range' || el.type === 'sc-checkbox';
+export function isInput<T extends ScElementNodeBase>(el: T): el is Extract<T, { type: 'sc-range' } | { type: 'sc-checkbox' } | { type: 'sc-select' }> {
+  return el.type === 'sc-range' || el.type === 'sc-checkbox' || el.type === 'sc-select';
 }
 
 export function isVisual<T extends ScElementNodeBase>(el: T): el is Extract<T, { type: 'sc-display' } | { type: 'sc-if' }> {
@@ -53,6 +53,14 @@ export function isControl<T extends ScElementNodeBase>(el: T): el is Extract<T, 
 
 export function isVar<T extends ScElementNodeBase>(el: T): el is Extract<T, { type: 'sc-var' }> {
   return el.type === 'sc-var';
+}
+
+export function isSelect<T extends ScElementNodeBase>(el: T): el is Extract<T, { type: 'sc-select' }> {
+  return el.type === 'sc-select';
+}
+
+export function isOption<T extends ScElementNodeBase>(el: T): el is Extract<T, { type: 'sc-option' }> {
+  return el.type === 'sc-option';
 }
 
 export function isControlOverride(e: OverrideEntry): e is ControlOverrideEntry {

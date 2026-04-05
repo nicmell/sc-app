@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>Select Plugin</title>
+</head>
+<body>
+<sc-synthdef name="tone">
+    <sc-control name="freq" value="440"/>
+    <sc-control name="amp" value="0.2"/>
+    <sc-ugen name="osc" type="SinOsc">
+        <sc-control name="freq" bind="freq"/>
+    </sc-ugen>
+    <sc-ugen name="vol" type="BinaryOpUGen" op="*">
+        <sc-control name="a" bind="osc"/>
+        <sc-control name="b" bind="amp"/>
+    </sc-ugen>
+    <sc-ugen name="out" type="Out">
+        <sc-control name="bus" value="0"/>
+        <sc-control name="channelsarray" bind="vol"/>
+    </sc-ugen>
+</sc-synthdef>
+<sc-synth name="s1" bind="tone">
+    <sc-control name="freq" value="440"/>
+    <sc-control name="amp" value="0.2"/>
+</sc-synth>
+<sc-group name="vars">
+    <sc-var name="mode" value="0"/>
+</sc-group>
+<div class="controls">
+    <label>
+        <span>Frequency:</span>
+        <sc-select bind="s1.freq">
+            <sc-option value="261" label="C4 (261 Hz)"/>
+            <sc-option value="330" label="E4 (330 Hz)"/>
+            <sc-option value="392" label="G4 (392 Hz)"/>
+            <sc-option value="440" label="A4 (440 Hz)"/>
+            <sc-option value="523" label="C5 (523 Hz)"/>
+        </sc-select>
+        <span><sc-display bind="s1.freq" format="%d Hz"/></span>
+    </label>
+    <label>
+        <span>Amplitude:</span>
+        <sc-range type="knob" bind="s1.amp" min="0" max="1" step="0.01" diameter="48"/>
+        <span><sc-display bind="s1.amp" format="%.2f"/></span>
+    </label>
+    <label>
+        <span>Mode (var):</span>
+        <sc-select bind="vars.mode">
+            <sc-option value="0" label="Off"/>
+            <sc-option value="1" label="On"/>
+            <sc-option value="2" label="Auto"/>
+        </sc-select>
+        <span>= <sc-display bind="vars.mode" format="%d"/></span>
+    </label>
+    <label>
+        <sc-run size="24"/>
+    </label>
+</div>
+</body>
+</html>

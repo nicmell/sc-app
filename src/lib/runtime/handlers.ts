@@ -213,6 +213,15 @@ const ifHandler = (ctx: RuntimeContext): InputRuntime => {
     return resolveVisualBind(ctx);
 };
 
+const selectHandler = (ctx: RuntimeContext): InputRuntime => {
+    ctx.visit(ctx.tree);
+    return resolveVisualBind(ctx);
+};
+
+const optionHandler = (ctx: RuntimeContext): UgenRuntime => {
+    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path};
+};
+
 // --- Dispatch ---
 
 export function processElement(ctx: RuntimeContext): ScElementNode {
@@ -234,6 +243,8 @@ export function processElement(ctx: RuntimeContext): ScElementNode {
         case ELEMENTS.SC_RUN: runtime = runHandler(ctx); break;
         case ELEMENTS.SC_DISPLAY: runtime = resolveVisualBind(ctx); break;
         case ELEMENTS.SC_IF: runtime = ifHandler(ctx); break;
+        case ELEMENTS.SC_SELECT: runtime = selectHandler(ctx); break;
+        case ELEMENTS.SC_OPTION: runtime = optionHandler(ctx); break;
         default: {
             throw new Error(`Unknown element type: ${(ctx.tree as ScElementNodeBase).type}`);
         }

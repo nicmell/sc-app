@@ -11,4 +11,6 @@ export const ELEMENTS = {
   SC_UGEN: 'sc-ugen',
   SC_CONTROL: 'sc-control',
   SC_VAR: 'sc-var',
+  SC_SELECT: 'sc-select',
+  SC_OPTION: 'sc-option',
 } as const;

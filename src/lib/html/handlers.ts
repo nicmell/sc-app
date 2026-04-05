@@ -1,6 +1,6 @@
 import type {
     StripRuntime, ScPluginNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScUgenNode, ScControlNode,
-    ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode, ScVarNode,
+    ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode, ScVarNode, ScSelectNode, ScOptionNode,
 } from "@/types/parsers";
 import {ELEMENTS} from "@/constants/sc-elements";
 
@@ -79,6 +79,17 @@ function extractIfProps(el: Element): HtmlProps<ScIfNode> {
     return {bind: el.getAttribute('bind') ?? ''};
 }
 
+function extractSelectProps(el: Element): HtmlProps<ScSelectNode> {
+    return {bind: el.getAttribute('bind') ?? ''};
+}
+
+function extractOptionProps(el: Element): HtmlProps<ScOptionNode> {
+    return {
+        value: Number(el.getAttribute('value') ?? '0'),
+        label: el.getAttribute('label') ?? '',
+    };
+}
+
 export function extractProps(type: string, el: Element): Record<string, unknown> {
     switch (type) {
         case ELEMENTS.SC_PLUGIN:
@@ -105,6 +116,10 @@ export function extractProps(type: string, el: Element): Record<string, unknown>
             return extractDisplayProps(el);
         case ELEMENTS.SC_IF:
             return {children: [], ...extractIfProps(el)};
+        case ELEMENTS.SC_SELECT:
+            return {children: [], ...extractSelectProps(el)};
+        case ELEMENTS.SC_OPTION:
+            return extractOptionProps(el);
         default:
             throw new Error(`Unknown element type: ${type}`);
     }
