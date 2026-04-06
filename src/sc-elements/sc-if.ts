@@ -81,6 +81,7 @@ export class ScIf extends ScElement<ScIfNode, number> {
     return html`<slot></slot>`;
   }
 
+  // When both is-truthy and is-falsy are set, always show the container — text content swaps based on condition
   private _shouldShow(pass: boolean, hasTruthy: boolean, hasFalsy: boolean): boolean {
     if (hasTruthy && hasFalsy) return true;
     if (hasTruthy) return pass;

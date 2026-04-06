@@ -51,8 +51,8 @@ export class ScCheckbox extends ScElement<ScCheckboxNode, number> {
     }
 
     onChange = (checked: boolean) => {
-        if (checked !== this.checked && this.bind) {
-            const targetId = this._runtime.targetId;
+        const targetId = this._runtime?.targetId;
+        if (checked !== this.checked && this.bind && targetId) {
             const value = checked ? 1 : 0;
             const target = runtimeApi.getById(targetId);
             if (target && isVar(target)) {

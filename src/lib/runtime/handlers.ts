@@ -147,6 +147,9 @@ function collectUgenInputs(node: { children: ScElementNodeBase[] }): Record<stri
     const inputs: Record<string, string> = {};
     for (const child of node.children) {
         if (isControl(child)) {
+            if (!child.bind && child.value == null) {
+                throw new Error(`<sc-control name="${child.name}">: requires either a bind or value attribute`);
+            }
             inputs[child.name] = child.bind ?? String(child.value);
         }
     }

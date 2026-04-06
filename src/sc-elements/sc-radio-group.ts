@@ -47,8 +47,8 @@ export class ScRadioGroup extends ScElement<ScRadioGroupNode, number> {
     }
 
     private _onSelect(value: number) {
-        if (value !== this._state && this.bind) {
-            const targetId = this._runtime.targetId;
+        const targetId = this._runtime?.targetId;
+        if (value !== this._state && this.bind && targetId) {
             const target = runtimeApi.getById(targetId);
             if (target && isVar(target)) {
                 runtimeApi.setVar({id: targetId, value});

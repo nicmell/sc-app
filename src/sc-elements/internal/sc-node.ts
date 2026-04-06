@@ -42,8 +42,8 @@ export abstract class ScNode<T extends ScNodeElement = ScNodeElement> extends Sc
     getControls(): Record<string, number> {
         return Object.fromEntries(
             (this._state?.children ?? [])
-                .filter((c) => isControl(c) && c.value)
-                .map((c: any) => [c.name, c.runtime.value])
+                .filter((c): c is import('@/types/parsers').ScControlNode => isControl(c) && c.value != null)
+                .map(c => [c.name, c.runtime.value])
         );
     }
 

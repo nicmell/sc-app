@@ -72,8 +72,8 @@ export class ScRange extends ScElement<ScRangeNode, number> {
     }
 
     onChange = (value: number) => {
-        if (value !== this.value && this.bind) {
-            const targetId = this._runtime.targetId;
+        const targetId = this._runtime?.targetId;
+        if (value !== this.value && this.bind && targetId) {
             const target = runtimeApi.getById(targetId);
             if (target && isVar(target)) {
                 runtimeApi.setVar({id: targetId, value});

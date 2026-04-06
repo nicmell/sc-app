@@ -80,7 +80,7 @@ Six top-level slices in `src/lib/stores/`:
 | `scsynth` | Connection state, server status (no options — moved to `options` slice) |
 | `layout` | Dashboard grid items (BoxItem[]) |
 | `plugins` | Installed plugin registry (PluginInfo[]) |
-| `runtime` | Plugin element trees, flat nodes map, persisted overrides. Control values stored directly on `NodeRuntime.controls`. Synthdef bytes stored separately in `synthDefManager` |
+| `runtime` | Plugin element trees, flat nodes map, persisted overrides. Control values stored on individual `ScControlNode.runtime.value`. Synthdef bytes stored separately in `synthDefManager` |
 
 Each slice has: `slice.ts` (reducer + actions), `selectors.ts`, `index.ts` (barrel).
 
@@ -97,7 +97,7 @@ Plugin HTML is processed in two phases: HTML parsing (`src/lib/html/`) builds a 
 | Type | Key Fields | Runtime Type | Description |
 |------|-----------|-------------|-------------|
 | `ScPluginNode` | title, run, children | `PluginRuntime` (extends NodeRuntime + loaded/error) | Plugin root container |
-| `ScGroupNode` | name, run, children | `NodeRuntime` {rootId, run, controls} | Group container |
+| `ScGroupNode` | name, run, children | `NodeRuntime` {rootId, run, loaded, nodeId} | Group container |
 | `ScSynthNode` | name, bind, run, children | `NodeRuntime` | Synth instance; `bind` references an `sc-synthdef` by name |
 | `ScSynthDefNode` | name, children | `UgenRuntime` {rootId} | SynthDef template; children are `ScControlNode[]` + `ScUgenNode[]` |
 | `ScUgenNode` | name, ugen, rate, op?, children | `UgenRuntime` | UGen node; children are `ScControlNode[]` for inputs |
@@ -125,13 +125,13 @@ All parent types (`ScParentNode`): plugin, group, synth, synthdef, ugen, sc-if. 
 
 - `processElement(ctx: RuntimeContext)` — idempotent dispatcher (early return if node already in `ctx.nodes`)
 - Per-type handlers compute runtime objects:
-  - **Plugin/group/synth**: call `visit()` to process children, then `collectControls()` reads `sc-control` children to build `NodeRuntime.controls`, applying overrides from persisted `OverrideEntry` values
+  - **Plugin/group/synth**: call `visit()` to process children. Each `sc-control` child stores its value in `ControlRuntime.value`, with overrides applied from persisted `OverrideEntry` values
   - **SynthDef**: calls `visit()`, collects params from sc-control children, collects ugen specs from sc-ugen children (each ugen's inputs built from its own sc-control children), compiles via `synthDefManager`
   - **UGen**: calls `visit()` to process sc-control children, validates bind references against sibling ugens and parent synthdef params
   - **sc-control**: returns `UgenRuntime` (dummy, no processing needed)
   - **Input/run/display/if**: resolve bind paths via `resolveControlBind`/`resolve`
 - `resolve(ctx, path)` — on-demand sibling processing with idempotency. Searches cumulative scope, processes unprocessed nodes via `processElement`, walks populated children for deeper segments
-- `collectControls(node)` — filters children for `sc-control` type, returns `Record<string, number>`
+- `collectControlParams(node)` — filters children for `sc-control` type, returns `Record<string, number>` (used for synthdef compilation)
 - `findOverride(ctx, type, name)` — matches persisted overrides by `targetNode === ctx.path`
 - **Validation**: bind paths, synthdef references, ugen input references all validated during processing
 
@@ -386,7 +386,7 @@ export function Foo({variant = "a", size = "md", className, ...rest}: FooProps) 
 - Never mutate store directly — always dispatch actions via API layer
 - Selectors are memoized (`createSelector`) — use them for derived state
 - Runtime-only fields (`loaded`, `error`) are stripped during persistence via `partialize` in persist config
-- Control values live on `NodeRuntime.controls` (no separate entries map). Overrides persisted as `OverrideEntry[]` per layout box
+- Control values live on individual `ScControlNode.runtime.value` entries. Overrides persisted as `OverrideEntry[]` per layout box
 - Element trees live on `ScPluginNode.children` in the runtime slice
 
 ## Key Constants

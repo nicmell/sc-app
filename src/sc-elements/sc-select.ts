@@ -41,8 +41,8 @@ export class ScSelect extends ScElement<ScSelectNode, number> {
 
     private _onChange = (e: Event) => {
         const value = Number((e.target as HTMLSelectElement).value);
-        if (value !== this._state && this.bind) {
-            const targetId = this._runtime.targetId;
+        const targetId = this._runtime?.targetId;
+        if (value !== this._state && this.bind && targetId) {
             const target = runtimeApi.getById(targetId);
             if (target && isVar(target)) {
                 runtimeApi.setVar({id: targetId, value});

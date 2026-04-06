@@ -62,13 +62,7 @@ export interface NodeRuntime {
   nodeId: number;
 }
 export interface PluginRuntime extends NodeRuntime {
-  rootId: string;
-  parentId: string;
-  path: string[];
-  run: number;
-  loaded: boolean;
   error?: string;
-  nodeId: number;
 }
 
 export interface ScUgenNode {
