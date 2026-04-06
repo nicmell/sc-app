@@ -29,6 +29,9 @@ cargo run --manifest-path src-tauri/Cargo.toml -- remove <name>
 
 # Generate example plugin zips
 bash scripts/package_examples.sh tmp
+
+# Regenerate UGen registry from Overtone metadata
+node scripts/generate_ugen_db.mjs
 ```
 
 ## Architecture
@@ -150,10 +153,31 @@ Located in `src/lib/ugen/`. Full SuperCollider UGen graph builder and SCgf binar
 - `synthdef.ts` — `SynthDef` class, collects UGens/constants, validates graph, encodes to binary
 - `define.ts` — `defineUGen()` / `defineMultiOutUGen()` factories with multi-channel expansion
 - `registry.ts` — Runtime lookup table for UGen class specs
-- `ugens.ts` — Registers oscillators, noise, filters, envelopes, I/O, analysis
+- `ugen-db.ts` — **Auto-generated** registry of 364 built-in SuperCollider UGens (from Overtone metadata)
+- `ugens.ts` — Programmatic JS API exports (`SinOsc.ar()`, etc.) for a subset of UGens
 - `operators.ts` — Binary ops (`+`, `*`, etc.) and unary ops (`neg`, `abs`, etc.)
 - `control.ts` — `control(name, default)` for named synth parameters
 - `encode.ts` — `ByteWriter` for SCgf v2 binary format (big-endian)
+
+### UGen Registry Generation
+
+The UGen registry (`src/lib/ugen/ugen-db.ts`) is auto-generated from the [Overtone](https://github.com/overtone/overtone) project's UGen metadata — the most complete structured database of SuperCollider UGen specs available.
+
+**To refresh the registry** (e.g., when Overtone adds new UGens):
+
+```bash
+node scripts/generate_ugen_db.mjs
+```
+
+The script:
+1. Downloads `.clj` metadata files from `overtone/overtone` on GitHub (cached in `scripts/tmp/overtone-ugens/`)
+2. Parses Clojure/EDN format: extracts name, args (ordered, with defaults), rates, numOutputs
+3. Resolves `:extends` inheritance (many UGens inherit args from a base, e.g., `AllpassC` extends `CombN`)
+4. Excludes `mul`/`add` params (client-side sugar, not SCgf wire inputs)
+5. Renames args to camelCase and applies convention mappings (`signals` → `channelsArray`)
+6. Writes `src/lib/ugen/ugen-db.ts` with `registerUGen()` calls
+
+**Do not edit `ugen-db.ts` manually** — regenerate it with the script instead.
 
 ## Web Components (`src/sc-elements/`)
 
