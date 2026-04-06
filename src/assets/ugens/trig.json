@@ -1,0 +1,668 @@
+[
+  {
+    "name": "Clip",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "lo",
+        0
+      ],
+      [
+        "hi",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "Fold",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "lo",
+        0
+      ],
+      [
+        "hi",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "Gate",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "trig",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "InRange",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "lo",
+        0
+      ],
+      [
+        "hi",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "InRect",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "x",
+        0
+      ],
+      [
+        "y",
+        0
+      ],
+      [
+        "left",
+        null
+      ],
+      [
+        "top",
+        null
+      ],
+      [
+        "right",
+        null
+      ],
+      [
+        "bottom",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "LastValue",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "diff",
+        0.01
+      ]
+    ]
+  },
+  {
+    "name": "Latch",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "trig",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "LeastChange",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "a",
+        0
+      ],
+      [
+        "b",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "MostChange",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "a",
+        0
+      ],
+      [
+        "b",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "Peak",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "trig",
+        0
+      ],
+      [
+        "reset",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "PeakFollower",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "decay",
+        0.999
+      ]
+    ]
+  },
+  {
+    "name": "Phasor",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "trig",
+        0
+      ],
+      [
+        "rate",
+        1
+      ],
+      [
+        "start",
+        0
+      ],
+      [
+        "end",
+        1
+      ],
+      [
+        "resetPos",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "Pitch",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "initFreq",
+        440
+      ],
+      [
+        "minFreq",
+        60
+      ],
+      [
+        "maxFreq",
+        4000
+      ],
+      [
+        "execFreq",
+        100
+      ],
+      [
+        "maxBinsPerOctave",
+        16
+      ],
+      [
+        "median",
+        1
+      ],
+      [
+        "ampThreshold",
+        0.01
+      ],
+      [
+        "peakThreshold",
+        0.5
+      ],
+      [
+        "downSample",
+        1
+      ],
+      [
+        "clar",
+        0
+      ]
+    ],
+    "numOutputs": 2
+  },
+  {
+    "name": "PulseCount",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "trig",
+        0
+      ],
+      [
+        "reset",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "PulseDivider",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "trig",
+        0
+      ],
+      [
+        "div",
+        2
+      ],
+      [
+        "startVal",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "RunningMax",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "trig",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "RunningMin",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "trig",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "Schmidt",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "lo",
+        0
+      ],
+      [
+        "hi",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "SendReply",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "trig",
+        0
+      ],
+      [
+        "cmdName",
+        null
+      ],
+      [
+        "values",
+        0
+      ],
+      [
+        "replyId",
+        -1
+      ]
+    ],
+    "numOutputs": 0
+  },
+  {
+    "name": "SendTrig",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "id",
+        0
+      ],
+      [
+        "value",
+        0
+      ]
+    ],
+    "numOutputs": 0
+  },
+  {
+    "name": "SetResetFF",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "trig",
+        0
+      ],
+      [
+        "reset",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "Stepper",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "trig",
+        0
+      ],
+      [
+        "reset",
+        0
+      ],
+      [
+        "min",
+        0
+      ],
+      [
+        "max",
+        7
+      ],
+      [
+        "step",
+        1
+      ],
+      [
+        "resetval",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "Sweep",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "trig",
+        0
+      ],
+      [
+        "rate",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "TDelay",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "trig",
+        0
+      ],
+      [
+        "dur",
+        0.1
+      ]
+    ]
+  },
+  {
+    "name": "Timer",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "trig",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "ToggleFF",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "trig",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "Trapezoid",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "a",
+        0.2
+      ],
+      [
+        "b",
+        0.4
+      ],
+      [
+        "c",
+        0.6
+      ],
+      [
+        "d",
+        0.8
+      ]
+    ]
+  },
+  {
+    "name": "Trig",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "trig",
+        0
+      ],
+      [
+        "dur",
+        0.1
+      ]
+    ]
+  },
+  {
+    "name": "Trig1",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "trig",
+        0
+      ],
+      [
+        "dur",
+        0.1
+      ]
+    ]
+  },
+  {
+    "name": "TWindex",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "trig",
+        null
+      ],
+      [
+        "channelsArray",
+        null
+      ],
+      [
+        "normalize",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "Wrap",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "lo",
+        0
+      ],
+      [
+        "hi",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "ZeroCrossing",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ]
+    ]
+  }
+]

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Generates src/lib/ugen/ugen-db.ts from Overtone's UGen metadata.
+// Generates src/assets/ugens/*.json from Overtone's UGen metadata.
 // Source: https://github.com/overtone/overtone/tree/master/src/overtone/sc/machinery/ugen/metadata
 //
 // Usage: node scripts/generate_ugen_db.mjs
@@ -11,7 +11,7 @@ import { fileURLToPath } from 'url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CACHE_DIR = join(ROOT, 'scripts', 'tmp', 'overtone-ugens');
-const OUTPUT = join(ROOT, 'src', 'lib', 'ugen', 'ugen-db.ts');
+const OUTPUT_DIR = join(ROOT, 'src', 'assets', 'ugens');
 
 const BASE_URL = 'https://raw.githubusercontent.com/overtone/overtone/master/src/overtone/sc/machinery/ugen/metadata';
 
@@ -22,9 +22,8 @@ const FILES = [
   'machine_listening', 'misc', 'noise', 'osc', 'pan', 'random', 'trig',
 ];
 
-// UGens handled specially by the compiler or client-only
+// Client-only UGens (not sent to the server as UGen nodes)
 const SKIP = new Set([
-  'BinaryOpUGen', 'UnaryOpUGen', 'MulAdd',
   'Oscy', 'OscN',
   'Control', 'AudioControl', 'TrigControl', 'LagControl',
 ]);
@@ -118,7 +117,7 @@ function parseUGen(block) {
         const argName = argBlock.match(/:name\s+"([^"]+)"/);
         if (!argName) continue;
         const n = argName[1];
-        if (n === 'mul' || n === 'add') continue;
+        if ((n === 'mul' || n === 'add') && name !== 'MulAdd') continue;
         const defMatch = argBlock.match(/:default\s+([-\d.eE]+)/);
         const def = defMatch ? parseFloat(defMatch[1]) : undefined;
         args.push({ name: toCamelCase(n), default: def });
@@ -146,6 +145,7 @@ async function main() {
   const downloaded = await downloadFiles();
   console.log(`Downloaded ${downloaded.length} files`);
 
+  // Parse all raw UGens, tracking their source file
   const rawUgens = new Map();
   for (const { file, path } of downloaded) {
     const content = readFileSync(path, 'utf-8');
@@ -170,52 +170,43 @@ async function main() {
         if (!u.numOutputs) numOutputs = parent.numOutputs;
       }
     }
-    return { name, args: args || [], rates, numOutputs };
+    return { name, args: args || [], rates, numOutputs, source: u.source };
   }
 
-  const resolved = [];
+  // Resolve all and group by source file
+  const byFile = new Map();
+  let total = 0;
   for (const name of rawUgens.keys()) {
     const u = resolve(name);
-    if (u) {
-      if (ZERO_OUT.has(u.name)) u.numOutputs = 0;
-      for (const a of u.args) {
-        if (ARG_RENAMES[a.name]) a.name = ARG_RENAMES[a.name];
-      }
-      resolved.push(u);
+    if (!u) continue;
+    if (ZERO_OUT.has(u.name)) u.numOutputs = 0;
+    for (const a of u.args) {
+      if (ARG_RENAMES[a.name]) a.name = ARG_RENAMES[a.name];
     }
+    const file = u.source;
+    if (!byFile.has(file)) byFile.set(file, []);
+    byFile.get(file).push({
+      name: u.name,
+      rates: u.rates.filter(r => r === 'ar' || r === 'kr' || r === 'ir'),
+      defaults: u.args.map(a => [a.name, a.default ?? null]),
+      ...(u.numOutputs !== 1 ? { numOutputs: u.numOutputs } : {}),
+    });
+    total++;
   }
 
-  resolved.sort((a, b) => a.name.localeCompare(b.name));
-  console.log(`Resolved ${resolved.length} UGens`);
-
-  const rateMap = { ar: 'Rate.Audio', kr: 'Rate.Control', ir: 'Rate.Scalar' };
-  let ts = `// Auto-generated from Overtone UGen metadata
-// https://github.com/overtone/overtone/tree/master/src/overtone/sc/machinery/ugen/metadata
-// Do not edit manually. Regenerate with: node scripts/generate_ugen_db.mjs
-
-import {Rate} from './ugen';
-import {registerUGen} from './registry';
-
-`;
-
-  for (const u of resolved) {
-    const rates = u.rates.filter(r => rateMap[r]).map(r => rateMap[r]).join(', ');
-    const defaults = u.args.map(a => {
-      const def = a.default !== undefined ? String(a.default) : 'undefined';
-      return `['${a.name}', ${def}]`;
-    }).join(', ');
-    const numOut = u.numOutputs !== 1 ? `, numOutputs: ${u.numOutputs}` : '';
-    ts += `registerUGen({name: '${u.name}', rates: [${rates}], defaults: [${defaults}]${numOut}});\n`;
+  // Write JSON files
+  mkdirSync(OUTPUT_DIR, { recursive: true });
+  const jsonFiles = [];
+  for (const [file, ugens] of byFile) {
+    ugens.sort((a, b) => a.name.localeCompare(b.name));
+    const outPath = join(OUTPUT_DIR, `${file}.json`);
+    writeFileSync(outPath, JSON.stringify(ugens, null, 2) + '\n');
+    jsonFiles.push(file);
+    console.log(`  ${file}.json: ${ugens.length} UGens`);
   }
 
-  // Operator UGens (special-cased in the compiler, not from Overtone)
-  ts += `\n// Operator UGens (special-cased in the compiler, not from Overtone)\n`;
-  ts += `registerUGen({name: 'BinaryOpUGen', rates: [Rate.Audio, Rate.Control, Rate.Scalar], defaults: [['a', undefined], ['b', undefined]]});\n`;
-  ts += `registerUGen({name: 'UnaryOpUGen', rates: [Rate.Audio, Rate.Control, Rate.Scalar], defaults: [['a', undefined]]});\n`;
-  ts += `registerUGen({name: 'MulAdd', rates: [Rate.Audio, Rate.Control, Rate.Scalar], defaults: [['in', undefined], ['mul', 1], ['add', 0]]});\n`;
-
-  writeFileSync(OUTPUT, ts);
-  console.log(`Written ${resolved.length + 3} entries to src/lib/ugen/ugen-db.ts`);
+  jsonFiles.sort();
+  console.log(`\nWritten ${total} UGens across ${jsonFiles.length} files to src/assets/ugens/`);
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

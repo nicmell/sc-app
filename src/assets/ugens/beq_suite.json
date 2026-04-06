@@ -1,0 +1,174 @@
+[
+  {
+    "name": "BAllPass",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "freq",
+        1200
+      ],
+      [
+        "rq",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "BBandPass",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "freq",
+        1200
+      ],
+      [
+        "bw",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "BBandStop",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "freq",
+        1200
+      ],
+      [
+        "bw",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "BHiPass",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "freq",
+        1200
+      ],
+      [
+        "rq",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "BHiShelf",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "freq",
+        1200
+      ],
+      [
+        "rs",
+        1
+      ],
+      [
+        "db",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "BLowPass",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "freq",
+        1200
+      ],
+      [
+        "rq",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "BLowShelf",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "freq",
+        1200
+      ],
+      [
+        "rs",
+        1
+      ],
+      [
+        "db",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "BPeakEQ",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "freq",
+        1200
+      ],
+      [
+        "rq",
+        1
+      ],
+      [
+        "db",
+        0
+      ]
+    ]
+  }
+]

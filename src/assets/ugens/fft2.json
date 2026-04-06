@@ -1,0 +1,233 @@
+[
+  {
+    "name": "Convolution",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "kernel",
+        null
+      ],
+      [
+        "framesize",
+        512
+      ]
+    ]
+  },
+  {
+    "name": "Convolution2",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "kernel",
+        null
+      ],
+      [
+        "trigger",
+        null
+      ],
+      [
+        "framesize",
+        512
+      ]
+    ]
+  },
+  {
+    "name": "Convolution2L",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "kernel",
+        null
+      ],
+      [
+        "trigger",
+        null
+      ],
+      [
+        "framesize",
+        512
+      ],
+      [
+        "crossfade",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "Convolution3",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "kernel",
+        null
+      ],
+      [
+        "trigger",
+        0
+      ],
+      [
+        "framesize",
+        512
+      ]
+    ]
+  },
+  {
+    "name": "PV_ConformalMap",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ],
+      [
+        "areal",
+        0
+      ],
+      [
+        "aimag",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "PV_HainsworthFoote",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ],
+      [
+        "proph",
+        0
+      ],
+      [
+        "propf",
+        0
+      ],
+      [
+        "threshold",
+        1
+      ],
+      [
+        "waitTime",
+        0.04
+      ]
+    ]
+  },
+  {
+    "name": "PV_JensenAndersen",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ],
+      [
+        "propsc",
+        0.25
+      ],
+      [
+        "prophfe",
+        0.25
+      ],
+      [
+        "prophfc",
+        0.25
+      ],
+      [
+        "propsf",
+        0.25
+      ],
+      [
+        "threshold",
+        1
+      ],
+      [
+        "waitTime",
+        0.04
+      ]
+    ]
+  },
+  {
+    "name": "RunningSum",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "numsamp",
+        40
+      ]
+    ]
+  },
+  {
+    "name": "StereoConvolution2L",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "kernelL",
+        null
+      ],
+      [
+        "kernelR",
+        null
+      ],
+      [
+        "trigger",
+        null
+      ],
+      [
+        "framesize",
+        512
+      ],
+      [
+        "crossfade",
+        1
+      ]
+    ],
+    "numOutputs": 2
+  }
+]

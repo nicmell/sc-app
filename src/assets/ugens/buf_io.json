@@ -1,0 +1,290 @@
+[
+  {
+    "name": "BufRd",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "numChannels",
+        1
+      ],
+      [
+        "bufnum",
+        0
+      ],
+      [
+        "phase",
+        0
+      ],
+      [
+        "loop",
+        1
+      ],
+      [
+        "interpolation",
+        2
+      ]
+    ]
+  },
+  {
+    "name": "BufWr",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "inputArray",
+        null
+      ],
+      [
+        "bufnum",
+        0
+      ],
+      [
+        "phase",
+        0
+      ],
+      [
+        "loop",
+        1
+      ]
+    ],
+    "numOutputs": 0
+  },
+  {
+    "name": "ClearBuf",
+    "rates": [
+      "ir"
+    ],
+    "defaults": [
+      [
+        "buf",
+        null
+      ]
+    ],
+    "numOutputs": 0
+  },
+  {
+    "name": "LocalBuf",
+    "rates": [
+      "ir"
+    ],
+    "defaults": [
+      [
+        "numChannels",
+        1
+      ],
+      [
+        "numFrames",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "MaxLocalBufs",
+    "rates": [
+      "ir"
+    ],
+    "defaults": [
+      [
+        "numLocalBufs",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "PlayBuf",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "numChannels",
+        null
+      ],
+      [
+        "bufnum",
+        0
+      ],
+      [
+        "rate",
+        1
+      ],
+      [
+        "trigger",
+        1
+      ],
+      [
+        "startPos",
+        0
+      ],
+      [
+        "loop",
+        0
+      ],
+      [
+        "action",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "RecordBuf",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "inputArray",
+        null
+      ],
+      [
+        "bufnum",
+        0
+      ],
+      [
+        "offset",
+        0
+      ],
+      [
+        "recLevel",
+        1
+      ],
+      [
+        "preLevel",
+        0
+      ],
+      [
+        "run",
+        1
+      ],
+      [
+        "loop",
+        1
+      ],
+      [
+        "trigger",
+        1
+      ],
+      [
+        "action",
+        0
+      ]
+    ],
+    "numOutputs": 0
+  },
+  {
+    "name": "ScopeOut",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "inputArray",
+        null
+      ],
+      [
+        "bufnum",
+        0
+      ]
+    ],
+    "numOutputs": 0
+  },
+  {
+    "name": "ScopeOut2",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "inputArray",
+        null
+      ],
+      [
+        "scopeNum",
+        0
+      ],
+      [
+        "maxFrames",
+        4096
+      ],
+      [
+        "scopeFrames",
+        4096
+      ]
+    ],
+    "numOutputs": 0
+  },
+  {
+    "name": "SetBuf",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buf",
+        null
+      ],
+      [
+        "values",
+        null
+      ],
+      [
+        "offset",
+        0
+      ]
+    ],
+    "numOutputs": 0
+  },
+  {
+    "name": "TGrains",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "numChannels",
+        2
+      ],
+      [
+        "trigger",
+        0
+      ],
+      [
+        "bufnum",
+        0
+      ],
+      [
+        "rate",
+        1
+      ],
+      [
+        "centerPos",
+        0
+      ],
+      [
+        "dur",
+        0.1
+      ],
+      [
+        "pan",
+        0
+      ],
+      [
+        "amp",
+        0.1
+      ],
+      [
+        "interp",
+        4
+      ]
+    ]
+  }
+]

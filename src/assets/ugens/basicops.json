@@ -1,0 +1,56 @@
+[
+  {
+    "name": "BinaryOpUGen",
+    "rates": [
+      "ir",
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "a",
+        null
+      ],
+      [
+        "b",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "MulAdd",
+    "rates": [
+      "ir",
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "mul",
+        null
+      ],
+      [
+        "add",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "UnaryOpUGen",
+    "rates": [
+      "ir",
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "a",
+        null
+      ]
+    ]
+  }
+]

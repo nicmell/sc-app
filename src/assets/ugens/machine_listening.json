@@ -1,0 +1,196 @@
+[
+  {
+    "name": "BeatTrack",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "chain",
+        null
+      ],
+      [
+        "lock",
+        0
+      ]
+    ],
+    "numOutputs": 4
+  },
+  {
+    "name": "BeatTrack2",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "busindex",
+        null
+      ],
+      [
+        "numfeatures",
+        null
+      ],
+      [
+        "windowsize",
+        2
+      ],
+      [
+        "phaseaccuracy",
+        0.02
+      ],
+      [
+        "lock",
+        0
+      ],
+      [
+        "weightingscheme",
+        -2.1
+      ]
+    ],
+    "numOutputs": 6
+  },
+  {
+    "name": "KeyTrack",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "chain",
+        null
+      ],
+      [
+        "keydecay",
+        2
+      ],
+      [
+        "chromaleak",
+        0.5
+      ]
+    ]
+  },
+  {
+    "name": "Loudness",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "chain",
+        null
+      ],
+      [
+        "smask",
+        0.25
+      ],
+      [
+        "tmask",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "MFCC",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "chain",
+        null
+      ],
+      [
+        "numcoeff",
+        13
+      ]
+    ]
+  },
+  {
+    "name": "Onsets",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "chain",
+        null
+      ],
+      [
+        "threshold",
+        0.5
+      ],
+      [
+        "odftype",
+        3
+      ],
+      [
+        "relaxtime",
+        1
+      ],
+      [
+        "floor",
+        0.1
+      ],
+      [
+        "mingap",
+        10
+      ],
+      [
+        "medianspan",
+        11
+      ],
+      [
+        "whtype",
+        1
+      ],
+      [
+        "rawodf",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "SpecCentroid",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "chain",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "SpecFlatness",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "chain",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "SpecPcile",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "chain",
+        null
+      ],
+      [
+        "fraction",
+        0.5
+      ],
+      [
+        "interpolate",
+        0
+      ]
+    ]
+  }
+]

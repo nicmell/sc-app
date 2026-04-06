@@ -1,0 +1,461 @@
+[
+  {
+    "name": "Ball",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "g",
+        1
+      ],
+      [
+        "damp",
+        0
+      ],
+      [
+        "friction",
+        0.01
+      ]
+    ]
+  },
+  {
+    "name": "FreeVerb",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "mix",
+        0.33
+      ],
+      [
+        "room",
+        0.5
+      ],
+      [
+        "damp",
+        0.5
+      ]
+    ]
+  },
+  {
+    "name": "FreeVerb2",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "in2",
+        null
+      ],
+      [
+        "mix",
+        0.33
+      ],
+      [
+        "room",
+        0.5
+      ],
+      [
+        "damp",
+        0.5
+      ]
+    ],
+    "numOutputs": 2
+  },
+  {
+    "name": "FreqShift",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "freq",
+        0
+      ],
+      [
+        "phase",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "Gendy1",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "ampdist",
+        1
+      ],
+      [
+        "durdist",
+        1
+      ],
+      [
+        "adparam",
+        1
+      ],
+      [
+        "ddparam",
+        1
+      ],
+      [
+        "minfreq",
+        440
+      ],
+      [
+        "maxfreq",
+        660
+      ],
+      [
+        "ampscale",
+        0.5
+      ],
+      [
+        "durscale",
+        0.5
+      ],
+      [
+        "initCps",
+        12
+      ],
+      [
+        "knum",
+        12
+      ]
+    ]
+  },
+  {
+    "name": "Gendy2",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "ampdist",
+        1
+      ],
+      [
+        "durdist",
+        1
+      ],
+      [
+        "adparam",
+        1
+      ],
+      [
+        "ddparam",
+        1
+      ],
+      [
+        "minfreq",
+        440
+      ],
+      [
+        "maxfreq",
+        660
+      ],
+      [
+        "ampscale",
+        0.5
+      ],
+      [
+        "durscale",
+        0.5
+      ],
+      [
+        "initCps",
+        12
+      ],
+      [
+        "knum",
+        12
+      ],
+      [
+        "a",
+        1.17
+      ],
+      [
+        "c",
+        0.31
+      ]
+    ]
+  },
+  {
+    "name": "Gendy3",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "ampdist",
+        1
+      ],
+      [
+        "durdist",
+        1
+      ],
+      [
+        "adparam",
+        1
+      ],
+      [
+        "ddparam",
+        1
+      ],
+      [
+        "freq",
+        440
+      ],
+      [
+        "ampscale",
+        0.5
+      ],
+      [
+        "durscale",
+        0.5
+      ],
+      [
+        "initCps",
+        12
+      ],
+      [
+        "knum",
+        12
+      ]
+    ]
+  },
+  {
+    "name": "GVerb",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "roomsize",
+        10
+      ],
+      [
+        "revtime",
+        3
+      ],
+      [
+        "damping",
+        0.5
+      ],
+      [
+        "inputbw",
+        0.5
+      ],
+      [
+        "spread",
+        15
+      ],
+      [
+        "drylevel",
+        1
+      ],
+      [
+        "earlyreflevel",
+        0.7
+      ],
+      [
+        "taillevel",
+        0.5
+      ],
+      [
+        "maxroomsize",
+        300
+      ]
+    ],
+    "numOutputs": 2
+  },
+  {
+    "name": "Hilbert",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ]
+    ],
+    "numOutputs": 2
+  },
+  {
+    "name": "MoogFF",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "freq",
+        100
+      ],
+      [
+        "gain",
+        2
+      ],
+      [
+        "reset",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "PartConv",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "fftsize",
+        null
+      ],
+      [
+        "irbufnum",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "PitchShift",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "windowSize",
+        0.2
+      ],
+      [
+        "pitchRatio",
+        1
+      ],
+      [
+        "pitchDispersion",
+        0
+      ],
+      [
+        "timeDispersion",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "Pluck",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "trig",
+        1
+      ],
+      [
+        "maxdelaytime",
+        0.2
+      ],
+      [
+        "delaytime",
+        0.2
+      ],
+      [
+        "decaytime",
+        1
+      ],
+      [
+        "coef",
+        0.5
+      ]
+    ]
+  },
+  {
+    "name": "Spring",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "spring",
+        0
+      ],
+      [
+        "damp",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "TBall",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "g",
+        10
+      ],
+      [
+        "damp",
+        0
+      ],
+      [
+        "friction",
+        0.01
+      ]
+    ]
+  }
+]

@@ -1,0 +1,231 @@
+[
+  {
+    "name": "BrownNoise",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": []
+  },
+  {
+    "name": "ClipNoise",
+    "rates": [
+      "ar"
+    ],
+    "defaults": []
+  },
+  {
+    "name": "Crackle",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "chaosParam",
+        1.5
+      ]
+    ]
+  },
+  {
+    "name": "Dust",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "density",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "Dust2",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "density",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "GrayNoise",
+    "rates": [
+      "ar"
+    ],
+    "defaults": []
+  },
+  {
+    "name": "Hasher",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "LFClipNoise",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "freq",
+        500
+      ]
+    ]
+  },
+  {
+    "name": "LFDClipNoise",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "freq",
+        500
+      ]
+    ]
+  },
+  {
+    "name": "LFDNoise0",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "freq",
+        500
+      ]
+    ]
+  },
+  {
+    "name": "LFDNoise1",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "freq",
+        500
+      ]
+    ]
+  },
+  {
+    "name": "LFDNoise3",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "freq",
+        500
+      ]
+    ]
+  },
+  {
+    "name": "LFNoise0",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "freq",
+        500
+      ]
+    ]
+  },
+  {
+    "name": "LFNoise1",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "freq",
+        500
+      ]
+    ]
+  },
+  {
+    "name": "LFNoise2",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "freq",
+        500
+      ]
+    ]
+  },
+  {
+    "name": "Logistic",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "chaosParam",
+        3
+      ],
+      [
+        "freq",
+        1000
+      ],
+      [
+        "init",
+        0.5
+      ]
+    ]
+  },
+  {
+    "name": "MantissaMask",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "bits",
+        3
+      ]
+    ]
+  },
+  {
+    "name": "PinkNoise",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": []
+  },
+  {
+    "name": "WhiteNoise",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": []
+  }
+]

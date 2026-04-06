@@ -1,0 +1,211 @@
+[
+  {
+    "name": "BufChannels",
+    "rates": [
+      "kr",
+      "ir"
+    ],
+    "defaults": [
+      [
+        "buf",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "BufDur",
+    "rates": [
+      "kr",
+      "ir"
+    ],
+    "defaults": [
+      [
+        "buf",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "BufFrames",
+    "rates": [
+      "kr",
+      "ir"
+    ],
+    "defaults": [
+      [
+        "buf",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "BufRateScale",
+    "rates": [
+      "kr",
+      "ir"
+    ],
+    "defaults": [
+      [
+        "buf",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "BufSampleRate",
+    "rates": [
+      "kr",
+      "ir"
+    ],
+    "defaults": [
+      [
+        "buf",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "BufSamples",
+    "rates": [
+      "kr",
+      "ir"
+    ],
+    "defaults": [
+      [
+        "buf",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "CheckBadValues",
+    "rates": [
+      "kr",
+      "ir"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "id",
+        0
+      ],
+      [
+        "post",
+        2
+      ]
+    ]
+  },
+  {
+    "name": "ControlDur",
+    "rates": [
+      "ir"
+    ],
+    "defaults": []
+  },
+  {
+    "name": "ControlRate",
+    "rates": [
+      "ir"
+    ],
+    "defaults": []
+  },
+  {
+    "name": "NumAudioBuses",
+    "rates": [
+      "ir"
+    ],
+    "defaults": []
+  },
+  {
+    "name": "NumBuffers",
+    "rates": [
+      "ir"
+    ],
+    "defaults": []
+  },
+  {
+    "name": "NumControlBuses",
+    "rates": [
+      "ir"
+    ],
+    "defaults": []
+  },
+  {
+    "name": "NumInputBuses",
+    "rates": [
+      "ir"
+    ],
+    "defaults": []
+  },
+  {
+    "name": "NumOutputBuses",
+    "rates": [
+      "ir"
+    ],
+    "defaults": []
+  },
+  {
+    "name": "NumRunningSynths",
+    "rates": [
+      "ir",
+      "kr"
+    ],
+    "defaults": []
+  },
+  {
+    "name": "Poll",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "trig",
+        0
+      ],
+      [
+        "in",
+        0
+      ],
+      [
+        "label",
+        null
+      ],
+      [
+        "trigId",
+        -1
+      ]
+    ]
+  },
+  {
+    "name": "RadiansPerSample",
+    "rates": [
+      "ir"
+    ],
+    "defaults": []
+  },
+  {
+    "name": "SampleDur",
+    "rates": [
+      "ir"
+    ],
+    "defaults": []
+  },
+  {
+    "name": "SampleRate",
+    "rates": [
+      "ir"
+    ],
+    "defaults": []
+  },
+  {
+    "name": "SubsampleOffset",
+    "rates": [
+      "ir"
+    ],
+    "defaults": []
+  }
+]

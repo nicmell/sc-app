@@ -1,0 +1,99 @@
+[
+  {
+    "name": "Amplitude",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "attackTime",
+        0.01
+      ],
+      [
+        "releaseTime",
+        0.01
+      ]
+    ]
+  },
+  {
+    "name": "Compander",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "control",
+        0
+      ],
+      [
+        "thresh",
+        0.5
+      ],
+      [
+        "slopeBelow",
+        1
+      ],
+      [
+        "slopeAbove",
+        1
+      ],
+      [
+        "clampTime",
+        0.01
+      ],
+      [
+        "relaxTime",
+        0.1
+      ]
+    ]
+  },
+  {
+    "name": "Limiter",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "level",
+        1
+      ],
+      [
+        "dur",
+        0.01
+      ]
+    ]
+  },
+  {
+    "name": "Normalizer",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "level",
+        1
+      ],
+      [
+        "dur",
+        0.01
+      ]
+    ]
+  }
+]

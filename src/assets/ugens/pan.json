@@ -1,0 +1,305 @@
+[
+  {
+    "name": "Balance2",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "left",
+        null
+      ],
+      [
+        "right",
+        null
+      ],
+      [
+        "pos",
+        0
+      ],
+      [
+        "level",
+        1
+      ]
+    ],
+    "numOutputs": 2
+  },
+  {
+    "name": "BiPanB2",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "inA",
+        null
+      ],
+      [
+        "inB",
+        null
+      ],
+      [
+        "azimuth",
+        null
+      ],
+      [
+        "gain",
+        1
+      ]
+    ],
+    "numOutputs": 3
+  },
+  {
+    "name": "DecodeB2",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "numChannels",
+        null
+      ],
+      [
+        "w",
+        null
+      ],
+      [
+        "x",
+        null
+      ],
+      [
+        "y",
+        null
+      ],
+      [
+        "orientation",
+        0.5
+      ]
+    ]
+  },
+  {
+    "name": "LinPan2",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "pos",
+        0
+      ],
+      [
+        "level",
+        1
+      ]
+    ],
+    "numOutputs": 2
+  },
+  {
+    "name": "LinXFade2",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "inA",
+        null
+      ],
+      [
+        "inB",
+        null
+      ],
+      [
+        "pan",
+        0
+      ],
+      [
+        "level",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "Pan2",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "pos",
+        0
+      ],
+      [
+        "level",
+        1
+      ]
+    ],
+    "numOutputs": 2
+  },
+  {
+    "name": "Pan4",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "xpos",
+        0
+      ],
+      [
+        "ypos",
+        0
+      ],
+      [
+        "level",
+        1
+      ]
+    ],
+    "numOutputs": 4
+  },
+  {
+    "name": "PanAz",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "numChannels",
+        null
+      ],
+      [
+        "in",
+        null
+      ],
+      [
+        "pos",
+        0
+      ],
+      [
+        "level",
+        1
+      ],
+      [
+        "width",
+        2
+      ],
+      [
+        "orientation",
+        0.5
+      ]
+    ]
+  },
+  {
+    "name": "PanB",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "azimuth",
+        0
+      ],
+      [
+        "elevation",
+        0
+      ],
+      [
+        "gain",
+        1
+      ]
+    ],
+    "numOutputs": 4
+  },
+  {
+    "name": "PanB2",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "azimuth",
+        0
+      ],
+      [
+        "gain",
+        1
+      ]
+    ],
+    "numOutputs": 3
+  },
+  {
+    "name": "Rotate2",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "x",
+        null
+      ],
+      [
+        "y",
+        null
+      ],
+      [
+        "pos",
+        0
+      ]
+    ],
+    "numOutputs": 2
+  },
+  {
+    "name": "XFade2",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "inA",
+        null
+      ],
+      [
+        "inB",
+        null
+      ],
+      [
+        "pan",
+        0
+      ],
+      [
+        "level",
+        1
+      ]
+    ]
+  }
+]

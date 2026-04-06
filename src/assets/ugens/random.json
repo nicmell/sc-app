@@ -1,0 +1,202 @@
+[
+  {
+    "name": "CoinGate",
+    "rates": [
+      "kr",
+      "ir"
+    ],
+    "defaults": [
+      [
+        "prob",
+        null
+      ],
+      [
+        "trig",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "ExpRand",
+    "rates": [
+      "ir"
+    ],
+    "defaults": [
+      [
+        "lo",
+        0.01
+      ],
+      [
+        "hi",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "IRand",
+    "rates": [
+      "ir"
+    ],
+    "defaults": [
+      [
+        "lo",
+        0
+      ],
+      [
+        "hi",
+        127
+      ]
+    ]
+  },
+  {
+    "name": "LinRand",
+    "rates": [
+      "ir"
+    ],
+    "defaults": [
+      [
+        "lo",
+        0
+      ],
+      [
+        "hi",
+        1
+      ],
+      [
+        "minmax",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "NRand",
+    "rates": [
+      "ir"
+    ],
+    "defaults": [
+      [
+        "lo",
+        0
+      ],
+      [
+        "hi",
+        1
+      ],
+      [
+        "n",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "Rand",
+    "rates": [
+      "ir"
+    ],
+    "defaults": [
+      [
+        "lo",
+        0
+      ],
+      [
+        "hi",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "RandID",
+    "rates": [
+      "ir",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "seed",
+        0
+      ]
+    ],
+    "numOutputs": 0
+  },
+  {
+    "name": "RandSeed",
+    "rates": [
+      "ir",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "trig",
+        0
+      ],
+      [
+        "seed",
+        56789
+      ]
+    ],
+    "numOutputs": 0
+  },
+  {
+    "name": "TExpRand",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "lo",
+        0.01
+      ],
+      [
+        "hi",
+        1
+      ],
+      [
+        "trig",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "TIRand",
+    "rates": [
+      "kr",
+      "ar"
+    ],
+    "defaults": [
+      [
+        "lo",
+        0
+      ],
+      [
+        "hi",
+        127
+      ],
+      [
+        "trig",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "TRand",
+    "rates": [
+      "kr",
+      "ar"
+    ],
+    "defaults": [
+      [
+        "lo",
+        0
+      ],
+      [
+        "hi",
+        1
+      ],
+      [
+        "trig",
+        0
+      ]
+    ]
+  }
+]

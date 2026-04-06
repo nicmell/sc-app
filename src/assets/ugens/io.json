@@ -1,0 +1,270 @@
+[
+  {
+    "name": "DiskIn",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "numChannels",
+        null
+      ],
+      [
+        "bufnum",
+        null
+      ],
+      [
+        "loop",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "DiskOut",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "bufnum",
+        null
+      ],
+      [
+        "channelsArray",
+        null
+      ]
+    ],
+    "numOutputs": 0
+  },
+  {
+    "name": "In",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "bus",
+        0
+      ],
+      [
+        "numChannels",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "InFeedback",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "bus",
+        0
+      ],
+      [
+        "numChannels",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "InTrig",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "bus",
+        0
+      ],
+      [
+        "numChannels",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "LagIn",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "bus",
+        0
+      ],
+      [
+        "numChannels",
+        1
+      ],
+      [
+        "lag",
+        0.1
+      ]
+    ]
+  },
+  {
+    "name": "LocalIn",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "numChannels",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "LocalOut",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "channelsArray",
+        null
+      ]
+    ],
+    "numOutputs": 0
+  },
+  {
+    "name": "OffsetOut",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "bus",
+        null
+      ],
+      [
+        "channelsArray",
+        null
+      ]
+    ],
+    "numOutputs": 0
+  },
+  {
+    "name": "Out",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "bus",
+        null
+      ],
+      [
+        "channelsArray",
+        null
+      ]
+    ],
+    "numOutputs": 0
+  },
+  {
+    "name": "ReplaceOut",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "bus",
+        null
+      ],
+      [
+        "channelsArray",
+        null
+      ]
+    ],
+    "numOutputs": 0
+  },
+  {
+    "name": "SharedIn",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "bus",
+        0
+      ],
+      [
+        "numChannels",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "SharedOut",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "bus",
+        null
+      ],
+      [
+        "channelsArray",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "VDiskIn",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "numChannels",
+        null
+      ],
+      [
+        "bufnum",
+        null
+      ],
+      [
+        "rate",
+        1
+      ],
+      [
+        "loop",
+        0
+      ],
+      [
+        "sendID",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "XOut",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "bus",
+        null
+      ],
+      [
+        "xfade",
+        null
+      ],
+      [
+        "channelsArray",
+        null
+      ]
+    ],
+    "numOutputs": 0
+  }
+]

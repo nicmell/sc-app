@@ -1,0 +1,131 @@
+[
+  {
+    "name": "Blip",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "freq",
+        440
+      ],
+      [
+        "numharm",
+        200
+      ]
+    ]
+  },
+  {
+    "name": "FSinOsc",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "freq",
+        440
+      ],
+      [
+        "iphase",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "Klang",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "specs",
+        null
+      ],
+      [
+        "freqscale",
+        1
+      ],
+      [
+        "freqoffset",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "Klank",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "specs",
+        null
+      ],
+      [
+        "input",
+        null
+      ],
+      [
+        "freqscale",
+        1
+      ],
+      [
+        "freqoffset",
+        0
+      ],
+      [
+        "decayscale",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "PSinGrain",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "freq",
+        440
+      ],
+      [
+        "dur",
+        0.2
+      ],
+      [
+        "amp",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "Pulse",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "freq",
+        440
+      ],
+      [
+        "width",
+        0.5
+      ]
+    ]
+  },
+  {
+    "name": "Saw",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "freq",
+        440
+      ]
+    ]
+  }
+]

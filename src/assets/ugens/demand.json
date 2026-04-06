@@ -1,0 +1,426 @@
+[
+  {
+    "name": "Dbrown",
+    "rates": [],
+    "defaults": [
+      [
+        "length",
+        null
+      ],
+      [
+        "lo",
+        0
+      ],
+      [
+        "hi",
+        1
+      ],
+      [
+        "step",
+        0.01
+      ]
+    ]
+  },
+  {
+    "name": "Dbufrd",
+    "rates": [],
+    "defaults": [
+      [
+        "bufnum",
+        0
+      ],
+      [
+        "phase",
+        0
+      ],
+      [
+        "loop",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "Dbufwr",
+    "rates": [],
+    "defaults": [
+      [
+        "bufnum",
+        0
+      ],
+      [
+        "phase",
+        0
+      ],
+      [
+        "input",
+        0
+      ],
+      [
+        "loop",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "Demand",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "trig",
+        null
+      ],
+      [
+        "reset",
+        0
+      ],
+      [
+        "demandUgens",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "DemandEnvGen",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "level",
+        null
+      ],
+      [
+        "dur",
+        null
+      ],
+      [
+        "shape",
+        1
+      ],
+      [
+        "curve",
+        0
+      ],
+      [
+        "gate",
+        1
+      ],
+      [
+        "reset",
+        1
+      ],
+      [
+        "levelScale",
+        1
+      ],
+      [
+        "levelBias",
+        0
+      ],
+      [
+        "timeScale",
+        1
+      ],
+      [
+        "action",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "Dgeom",
+    "rates": [],
+    "defaults": [
+      [
+        "length",
+        null
+      ],
+      [
+        "start",
+        1
+      ],
+      [
+        "grow",
+        2
+      ]
+    ]
+  },
+  {
+    "name": "Dibrown",
+    "rates": [],
+    "defaults": [
+      [
+        "length",
+        null
+      ],
+      [
+        "lo",
+        0
+      ],
+      [
+        "hi",
+        1
+      ],
+      [
+        "step",
+        0.01
+      ]
+    ]
+  },
+  {
+    "name": "Diwhite",
+    "rates": [],
+    "defaults": [
+      [
+        "length",
+        null
+      ],
+      [
+        "lo",
+        0
+      ],
+      [
+        "hi",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "Donce",
+    "rates": [],
+    "defaults": [
+      [
+        "in",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "Dpoll",
+    "rates": [],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "trigId",
+        -1
+      ],
+      [
+        "label",
+        null
+      ],
+      [
+        "run",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "Drand",
+    "rates": [],
+    "defaults": [
+      [
+        "list",
+        null
+      ],
+      [
+        "numRepeats",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "Dseq",
+    "rates": [],
+    "defaults": [
+      [
+        "list",
+        null
+      ],
+      [
+        "numRepeats",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "Dser",
+    "rates": [],
+    "defaults": [
+      [
+        "list",
+        null
+      ],
+      [
+        "count",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "Dseries",
+    "rates": [],
+    "defaults": [
+      [
+        "length",
+        null
+      ],
+      [
+        "start",
+        1
+      ],
+      [
+        "step",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "Dshuf",
+    "rates": [],
+    "defaults": [
+      [
+        "list",
+        null
+      ],
+      [
+        "numRepeats",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "Dstutter",
+    "rates": [],
+    "defaults": [
+      [
+        "numRepeats",
+        null
+      ],
+      [
+        "in",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "Dswitch",
+    "rates": [],
+    "defaults": [
+      [
+        "list",
+        null
+      ],
+      [
+        "index",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "Dswitch1",
+    "rates": [],
+    "defaults": [
+      [
+        "list",
+        null
+      ],
+      [
+        "index",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "Duty",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "dur",
+        1
+      ],
+      [
+        "reset",
+        0
+      ],
+      [
+        "action",
+        0
+      ],
+      [
+        "level",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "Dwhite",
+    "rates": [],
+    "defaults": [
+      [
+        "length",
+        null
+      ],
+      [
+        "lo",
+        0
+      ],
+      [
+        "hi",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "Dxrand",
+    "rates": [],
+    "defaults": [
+      [
+        "list",
+        null
+      ],
+      [
+        "numRepeats",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "TDuty",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "dur",
+        1
+      ],
+      [
+        "reset",
+        0
+      ],
+      [
+        "action",
+        0
+      ],
+      [
+        "level",
+        1
+      ],
+      [
+        "gapFirst",
+        0
+      ]
+    ]
+  }
+]

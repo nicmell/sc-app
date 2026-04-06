@@ -1,0 +1,490 @@
+[
+  {
+    "name": "AllpassC",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "maxDelayTime",
+        0.2
+      ],
+      [
+        "delayTime",
+        0.2
+      ],
+      [
+        "decayTime",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "AllpassL",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "maxDelayTime",
+        0.2
+      ],
+      [
+        "delayTime",
+        0.2
+      ],
+      [
+        "decayTime",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "AllpassN",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "maxDelayTime",
+        0.2
+      ],
+      [
+        "delayTime",
+        0.2
+      ],
+      [
+        "decayTime",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "BufAllpassC",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "buf",
+        0
+      ],
+      [
+        "in",
+        0
+      ],
+      [
+        "delayTime",
+        0.2
+      ],
+      [
+        "decayTime",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "BufAllpassL",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "buf",
+        0
+      ],
+      [
+        "in",
+        0
+      ],
+      [
+        "delayTime",
+        0.2
+      ],
+      [
+        "decayTime",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "BufAllpassN",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "buf",
+        0
+      ],
+      [
+        "in",
+        0
+      ],
+      [
+        "delayTime",
+        0.2
+      ],
+      [
+        "decayTime",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "BufCombC",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "buf",
+        0
+      ],
+      [
+        "in",
+        0
+      ],
+      [
+        "delayTime",
+        0.2
+      ],
+      [
+        "decayTime",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "BufCombL",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "buf",
+        0
+      ],
+      [
+        "in",
+        0
+      ],
+      [
+        "delayTime",
+        0.2
+      ],
+      [
+        "decayTime",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "BufCombN",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "buf",
+        0
+      ],
+      [
+        "in",
+        0
+      ],
+      [
+        "delayTime",
+        0.2
+      ],
+      [
+        "decayTime",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "BufDelayC",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buf",
+        0
+      ],
+      [
+        "in",
+        0
+      ],
+      [
+        "delayTime",
+        0.2
+      ]
+    ]
+  },
+  {
+    "name": "BufDelayL",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buf",
+        0
+      ],
+      [
+        "in",
+        0
+      ],
+      [
+        "delayTime",
+        0.2
+      ]
+    ]
+  },
+  {
+    "name": "BufDelayN",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buf",
+        0
+      ],
+      [
+        "in",
+        0
+      ],
+      [
+        "delayTime",
+        0.2
+      ]
+    ]
+  },
+  {
+    "name": "CombC",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "maxDelayTime",
+        0.2
+      ],
+      [
+        "delayTime",
+        0.2
+      ],
+      [
+        "decayTime",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "CombL",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "maxDelayTime",
+        0.2
+      ],
+      [
+        "delayTime",
+        0.2
+      ],
+      [
+        "decayTime",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "CombN",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "maxDelayTime",
+        0.2
+      ],
+      [
+        "delayTime",
+        0.2
+      ],
+      [
+        "decayTime",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "Delay1",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "Delay2",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "DelayC",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "maxDelayTime",
+        0.2
+      ],
+      [
+        "delayTime",
+        0.2
+      ]
+    ]
+  },
+  {
+    "name": "DelayL",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "maxDelayTime",
+        0.2
+      ],
+      [
+        "delayTime",
+        0.2
+      ]
+    ]
+  },
+  {
+    "name": "DelayN",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "maxDelayTime",
+        0.2
+      ],
+      [
+        "delayTime",
+        0.2
+      ]
+    ]
+  },
+  {
+    "name": "DelTapRd",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        0
+      ],
+      [
+        "phase",
+        0
+      ],
+      [
+        "delay",
+        0
+      ],
+      [
+        "interp",
+        1
+      ]
+    ]
+  },
+  {
+    "name": "DelTapWr",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        0
+      ],
+      [
+        "in",
+        0
+      ]
+    ]
+  }
+]

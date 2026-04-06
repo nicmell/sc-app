@@ -1,0 +1,481 @@
+[
+  {
+    "name": "COsc",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "bufnum",
+        null
+      ],
+      [
+        "freq",
+        440
+      ],
+      [
+        "beats",
+        0.5
+      ]
+    ]
+  },
+  {
+    "name": "DegreeToKey",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "bufnum",
+        null
+      ],
+      [
+        "in",
+        0
+      ],
+      [
+        "octave",
+        12
+      ]
+    ]
+  },
+  {
+    "name": "DetectIndex",
+    "rates": [
+      "kr",
+      "ir"
+    ],
+    "defaults": [
+      [
+        "bufnum",
+        null
+      ],
+      [
+        "in",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "Formant",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "fundfreq",
+        440
+      ],
+      [
+        "formfreq",
+        1760
+      ],
+      [
+        "bwfreq",
+        880
+      ]
+    ]
+  },
+  {
+    "name": "Impulse",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "freq",
+        440
+      ],
+      [
+        "phase",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "Index",
+    "rates": [
+      "kr",
+      "ir"
+    ],
+    "defaults": [
+      [
+        "bufnum",
+        null
+      ],
+      [
+        "in",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "IndexInBetween",
+    "rates": [
+      "kr",
+      "ir"
+    ],
+    "defaults": [
+      [
+        "bufnum",
+        null
+      ],
+      [
+        "in",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "LFCub",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "freq",
+        440
+      ],
+      [
+        "iphase",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "LFGauss",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "duration",
+        1
+      ],
+      [
+        "width",
+        0.1
+      ],
+      [
+        "iphase",
+        0
+      ],
+      [
+        "loop",
+        1
+      ],
+      [
+        "action",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "LFPar",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "freq",
+        440
+      ],
+      [
+        "iphase",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "LFPulse",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "freq",
+        440
+      ],
+      [
+        "iphase",
+        0
+      ],
+      [
+        "width",
+        0.5
+      ]
+    ]
+  },
+  {
+    "name": "LFSaw",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "freq",
+        440
+      ],
+      [
+        "iphase",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "LFTri",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "freq",
+        440
+      ],
+      [
+        "iphase",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "Osc",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ],
+      [
+        "freq",
+        440
+      ],
+      [
+        "phase",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "Select",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "which",
+        null
+      ],
+      [
+        "channelsArray",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "Shaper",
+    "rates": [
+      "kr",
+      "ir"
+    ],
+    "defaults": [
+      [
+        "bufnum",
+        null
+      ],
+      [
+        "in",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "SinOsc",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "freq",
+        440
+      ],
+      [
+        "phase",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "SinOscFB",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "freq",
+        440
+      ],
+      [
+        "feedback",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "SyncSaw",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "syncFreq",
+        440
+      ],
+      [
+        "sawFreq",
+        440
+      ]
+    ]
+  },
+  {
+    "name": "VarSaw",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "freq",
+        440
+      ],
+      [
+        "iphase",
+        0
+      ],
+      [
+        "width",
+        0.5
+      ]
+    ]
+  },
+  {
+    "name": "Vibrato",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "freq",
+        440
+      ],
+      [
+        "rate",
+        6
+      ],
+      [
+        "depth",
+        0.02
+      ],
+      [
+        "delay",
+        0
+      ],
+      [
+        "onset",
+        0
+      ],
+      [
+        "rateVariation",
+        0.04
+      ],
+      [
+        "depthVariation",
+        0.1
+      ],
+      [
+        "iphase",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "VOsc",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "bufpos",
+        null
+      ],
+      [
+        "freq",
+        440
+      ],
+      [
+        "phase",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "VOsc3",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "bufpos",
+        null
+      ],
+      [
+        "freq1",
+        110
+      ],
+      [
+        "freq2",
+        220
+      ],
+      [
+        "freq3",
+        440
+      ]
+    ]
+  },
+  {
+    "name": "WrapIndex",
+    "rates": [
+      "kr",
+      "ir"
+    ],
+    "defaults": [
+      [
+        "bufnum",
+        null
+      ],
+      [
+        "in",
+        0
+      ]
+    ]
+  }
+]

@@ -1,0 +1,607 @@
+[
+  {
+    "name": "FFT",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ],
+      [
+        "in",
+        0
+      ],
+      [
+        "hop",
+        0.5
+      ],
+      [
+        "wintype",
+        0
+      ],
+      [
+        "active",
+        1
+      ],
+      [
+        "winsize",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "FFTTrigger",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ],
+      [
+        "hop",
+        0.5
+      ],
+      [
+        "polar",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "IFFT",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "chain",
+        null
+      ],
+      [
+        "wintype",
+        0
+      ],
+      [
+        "winsize",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "PV_Add",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "bufferA",
+        null
+      ],
+      [
+        "bufferB",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "PV_BinScramble",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ],
+      [
+        "wipe",
+        0
+      ],
+      [
+        "width",
+        0.2
+      ],
+      [
+        "trig",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "PV_BinShift",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ],
+      [
+        "stretch",
+        1
+      ],
+      [
+        "shift",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "PV_BinWipe",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "bufferA",
+        null
+      ],
+      [
+        "bufferB",
+        null
+      ],
+      [
+        "wipe",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "PV_BrickWall",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ],
+      [
+        "wipe",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "PV_Conj",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "PV_Copy",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "bufferA",
+        null
+      ],
+      [
+        "bufferB",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "PV_CopyPhase",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "bufferA",
+        null
+      ],
+      [
+        "bufferB",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "PV_Diffuser",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ],
+      [
+        "trig",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "PV_Div",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "bufferA",
+        null
+      ],
+      [
+        "bufferB",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "PV_LocalMax",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ],
+      [
+        "threshold",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "PV_MagAbove",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ],
+      [
+        "threshold",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "PV_MagBelow",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ],
+      [
+        "threshold",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "PV_MagClip",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ],
+      [
+        "threshold",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "PV_MagDiv",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "bufferA",
+        null
+      ],
+      [
+        "bufferB",
+        null
+      ],
+      [
+        "zeroed",
+        0.0001
+      ]
+    ]
+  },
+  {
+    "name": "PV_MagFreeze",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ],
+      [
+        "freeze",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "PV_MagMul",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "bufferA",
+        null
+      ],
+      [
+        "bufferB",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "PV_MagNoise",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "PV_MagShift",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ],
+      [
+        "stretch",
+        1
+      ],
+      [
+        "shift",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "PV_MagSmear",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ],
+      [
+        "bins",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "PV_MagSquared",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "PV_Max",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "bufferA",
+        null
+      ],
+      [
+        "bufferB",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "PV_Min",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "bufferA",
+        null
+      ],
+      [
+        "bufferB",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "PV_Mul",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "bufferA",
+        null
+      ],
+      [
+        "bufferB",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "PV_PhaseShift",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ],
+      [
+        "shift",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "PV_PhaseShift270",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "PV_PhaseShift90",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "PV_RandComb",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ],
+      [
+        "wipe",
+        0
+      ],
+      [
+        "trig",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "PV_RandWipe",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "bufferA",
+        null
+      ],
+      [
+        "bufferB",
+        null
+      ],
+      [
+        "wipe",
+        0
+      ],
+      [
+        "trig",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "PV_RectComb",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ],
+      [
+        "numTeeth",
+        0
+      ],
+      [
+        "phase",
+        0
+      ],
+      [
+        "width",
+        0.5
+      ]
+    ]
+  },
+  {
+    "name": "PV_RectComb2",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "bufferA",
+        null
+      ],
+      [
+        "bufferB",
+        null
+      ],
+      [
+        "numTeeth",
+        0
+      ],
+      [
+        "phase",
+        0
+      ],
+      [
+        "width",
+        0.5
+      ]
+    ]
+  }
+]

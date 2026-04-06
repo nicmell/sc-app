@@ -1,0 +1,178 @@
+[
+  {
+    "name": "Done",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "src",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "EnvGen",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "envelope",
+        null
+      ],
+      [
+        "gate",
+        1
+      ],
+      [
+        "levelScale",
+        1
+      ],
+      [
+        "levelBias",
+        0
+      ],
+      [
+        "timeScale",
+        1
+      ],
+      [
+        "action",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "Free",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "trig",
+        null
+      ],
+      [
+        "id",
+        null
+      ]
+    ],
+    "numOutputs": 0
+  },
+  {
+    "name": "FreeSelf",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ]
+    ],
+    "numOutputs": 0
+  },
+  {
+    "name": "FreeSelfWhenDone",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "src",
+        null
+      ]
+    ],
+    "numOutputs": 0
+  },
+  {
+    "name": "IEnvGen",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "ienvelope",
+        null
+      ],
+      [
+        "index",
+        null
+      ]
+    ]
+  },
+  {
+    "name": "Linen",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "gate",
+        1
+      ],
+      [
+        "attackTime",
+        0.01
+      ],
+      [
+        "susLevel",
+        1
+      ],
+      [
+        "releaseTime",
+        1
+      ],
+      [
+        "action",
+        0
+      ]
+    ]
+  },
+  {
+    "name": "Pause",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "gate",
+        null
+      ],
+      [
+        "id",
+        null
+      ]
+    ],
+    "numOutputs": 0
+  },
+  {
+    "name": "PauseSelf",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ]
+    ],
+    "numOutputs": 0
+  },
+  {
+    "name": "PauseSelfWhenDone",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "src",
+        null
+      ]
+    ],
+    "numOutputs": 0
+  }
+]

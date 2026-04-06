@@ -175,9 +175,11 @@ The script:
 3. Resolves `:extends` inheritance (many UGens inherit args from a base, e.g., `AllpassC` extends `CombN`)
 4. Excludes `mul`/`add` params (client-side sugar, not SCgf wire inputs)
 5. Renames args to camelCase and applies convention mappings (`signals` → `channelsArray`)
-6. Writes `src/lib/ugen/ugen-db.ts` with `registerUGen()` calls
+6. Writes JSON files to `src/assets/ugens/` (one per Overtone category: osc, filter, delay, etc.)
 
-**Do not edit `ugen-db.ts` manually** — regenerate it with the script instead.
+At runtime, `src/lib/ugen/ugen-db.ts` imports all JSON files and registers UGens via `registerUGen()`.
+
+**Do not edit the JSON files manually** — regenerate them with the script instead.
 
 ## Web Components (`src/sc-elements/`)
 
