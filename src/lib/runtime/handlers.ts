@@ -3,7 +3,7 @@ import type {
     ScRunItem, ScControlItem, ScVarItem,
     ScPluginItem, PluginRuntime, NodeRuntime, ControlRuntime, VarRuntime, UgenRuntime, SynthDefRuntime, InputRuntime, RunRuntime, OverrideEntry, StripRuntime,
 } from "@/types/parsers";
-import {isNode, isParent, isControl, isVar, isControlOverride, isRunOverride, isVarOverride} from "@/lib/utils/guards";
+import {isNode, isParent, isControl, isState, isControlOverride, isRunOverride, isVarOverride} from "@/lib/utils/guards";
 import {ELEMENTS} from "@/constants/sc-elements";
 import {synthDefManager} from "@/lib/synthdef";
 
@@ -87,7 +87,7 @@ function resolveControlBind(ctx: RuntimeContext): { target: ScElementItem; contr
     if (!target || !isNode(target)) {
         throw new Error(`<${n.type} bind="${n.bind}">: does not match any node in scope`);
     }
-    if (!isParent(target) || !target.children.some(c => (isControl(c) || isVar(c)) && c.name === controlName)) {
+    if (!isParent(target) || !target.children.some(c => isState(c) && c.name === controlName)) {
         const targetName = 'name' in target ? target.name : target.id;
         throw new Error(`<${n.type} bind="${n.bind}">: control "${controlName}" is not declared on <${target.type} name="${targetName}">`);
     }
@@ -100,7 +100,7 @@ function parentId(ctx: RuntimeContext): string {
 
 function resolveVisualBind(ctx: RuntimeContext): InputRuntime {
     const {target, controlName} = resolveControlBind(ctx);
-    const control = (target as ScParentItem).children.find(c => (isControl(c) || isVar(c)) && c.name === controlName)!;
+    const control = (target as ScParentItem).children.find(c => isState(c) && c.name === controlName)!;
     return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, targetId: control.id};
 }
 

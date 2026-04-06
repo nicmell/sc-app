@@ -1,11 +1,10 @@
 import {html, svg, css} from 'lit';
 import type {ScRadioGroupItem, ScRadioItem} from '@/types/parsers';
-import type {RuntimeState} from '@/types/stores';
 import {runtimeApi} from '@/lib/stores/api';
-import {isRadioGroup, isRadio, isControl, isVar} from '@/lib/utils/guards';
-import {ScElement} from './internal/sc-element.ts';
+import {isRadio} from '@/lib/utils/guards';
+import {ScInput} from './internal/sc-input.ts';
 
-export class ScRadioGroup extends ScElement<ScRadioGroupItem, number> {
+export class ScRadioGroup extends ScInput<ScRadioGroupItem> {
     static properties = {
         bind: {type: String},
         orientation: {type: String, reflect: true},
@@ -21,15 +20,6 @@ export class ScRadioGroup extends ScElement<ScRadioGroupItem, number> {
         .radio-item svg, .radio-item img { display: block; pointer-events: none; }
         .radio-label { font-family: system-ui, sans-serif; font-size: 13px; }
     `;
-
-    getState(state: RuntimeState): number {
-        const self = state.nodes[this.id];
-        if (!self || !isRadioGroup(self)) return 0;
-        const target = state.nodes[self.runtime.targetId];
-        if (target && isControl(target)) return target.runtime.value;
-        if (target && isVar(target)) return target.runtime.value;
-        return 0;
-    }
 
     private get _radios(): ScRadioItem[] {
         try {
@@ -47,14 +37,8 @@ export class ScRadioGroup extends ScElement<ScRadioGroupItem, number> {
     }
 
     private _onSelect(value: number) {
-        const targetId = this._runtime?.targetId;
-        if (value !== this._state && this.bind && targetId) {
-            const target = runtimeApi.getById(targetId);
-            if (target && isVar(target)) {
-                runtimeApi.setVar({id: targetId, value});
-            } else {
-                runtimeApi.setControl({id: targetId, value});
-            }
+        if (value !== this._state && this.bind) {
+            this._dispatchChange(value);
         }
     }
 

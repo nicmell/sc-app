@@ -1,10 +1,8 @@
 import {html, css} from 'lit';
 import type {ScIfItem} from '@/types/parsers';
-import type {RuntimeState} from '@/types/stores';
-import {isVisual, isControl, isVar} from '@/lib/utils/guards';
-import {ScElement} from './internal/sc-element.ts';
+import {ScInput} from './internal/sc-input.ts';
 
-export class ScIf extends ScElement<ScIfItem, number> {
+export class ScIf extends ScInput<ScIfItem> {
   static properties = {
     bind: {type: String},
     isTruthy: {type: String, attribute: 'is-truthy'},
@@ -27,15 +25,6 @@ export class ScIf extends ScElement<ScIfItem, number> {
     :host { display: contents; }
     :host([hidden]) { display: none; }
   `;
-
-  getState(state: RuntimeState): number {
-    const self = state.nodes[this.id];
-    if (!self || !isVisual(self)) return 0;
-    const target = state.nodes[self.runtime.targetId];
-    if (target && isControl(target)) return target.runtime.value;
-    if (target && isVar(target)) return target.runtime.value;
-    return 0;
-  }
 
   constructor() {
     super();

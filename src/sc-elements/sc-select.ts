@@ -1,11 +1,10 @@
 import {html, css} from 'lit';
 import type {ScSelectItem, ScOptionItem} from '@/types/parsers';
-import type {RuntimeState} from '@/types/stores';
 import {runtimeApi} from '@/lib/stores/api';
-import {isSelect, isControl, isVar, isOption} from '@/lib/utils/guards';
-import {ScElement} from './internal/sc-element.ts';
+import {isOption} from '@/lib/utils/guards';
+import {ScInput} from './internal/sc-input.ts';
 
-export class ScSelect extends ScElement<ScSelectItem, number> {
+export class ScSelect extends ScInput<ScSelectItem> {
     static properties = {
         bind: {type: String},
     };
@@ -15,15 +14,6 @@ export class ScSelect extends ScElement<ScSelectItem, number> {
     static styles = css`
         :host { display: inline-block; }
     `;
-
-    getState(state: RuntimeState): number {
-        const self = state.nodes[this.id];
-        if (!self || !isSelect(self)) return 0;
-        const target = state.nodes[self.runtime.targetId];
-        if (target && isControl(target)) return target.runtime.value;
-        if (target && isVar(target)) return target.runtime.value;
-        return 0;
-    }
 
     private get _options(): ScOptionItem[] {
         try {
@@ -41,14 +31,8 @@ export class ScSelect extends ScElement<ScSelectItem, number> {
 
     private _onChange = (e: Event) => {
         const value = Number((e.target as HTMLSelectElement).value);
-        const targetId = this._runtime?.targetId;
-        if (value !== this._state && this.bind && targetId) {
-            const target = runtimeApi.getById(targetId);
-            if (target && isVar(target)) {
-                runtimeApi.setVar({id: targetId, value});
-            } else {
-                runtimeApi.setControl({id: targetId, value});
-            }
+        if (value !== this._state && this.bind) {
+            this._dispatchChange(value);
         }
     };
 

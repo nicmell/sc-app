@@ -1,28 +1,22 @@
-import {html} from 'lit';
-import type {ScControlItem} from '@/types/parsers';
-import type {RuntimeState} from '@/types/stores';
+import type {ScControlItem, ScElementItemBase} from '@/types/parsers';
 import {isControl, isNode} from '@/lib/utils/guards';
 import {runtimeApi} from '@/lib/stores/api';
 import {oscService} from '@/lib/osc';
 import {nodeSetMessage} from '@/lib/osc/messages.ts';
-import {ScElement} from './internal/sc-element.ts';
+import {ScState} from './internal/sc-state.ts';
 
-export class ScControl extends ScElement<ScControlItem, number> {
+export class ScControl extends ScState<ScControlItem> {
     static properties = {
-        name: {type: String, reflect: true},
-        value: {type: Number},
+        ...ScState.properties,
         bind: {type: String},
     };
 
-    declare name: string;
-    declare value: number | undefined;
     declare bind: string | undefined;
 
     private _prev = 0;
 
-    getState(state: RuntimeState): number {
-        const node = state.nodes[this.id];
-        return node && isControl(node) ? node.runtime.value : 0;
+    protected _match(node: ScElementItemBase): node is ScControlItem {
+        return isControl(node);
     }
 
     connectedCallback() {
@@ -39,9 +33,5 @@ export class ScControl extends ScElement<ScControlItem, number> {
                 oscService.send(nodeSetMessage(parent.runtime.nodeId, {[this._runtime.name]: value}));
             }
         }
-    }
-
-    render() {
-        return html``;
     }
 }

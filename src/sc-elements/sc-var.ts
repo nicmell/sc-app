@@ -1,24 +1,9 @@
-import {html} from 'lit';
-import type {ScVarItem} from '@/types/parsers';
-import type {RuntimeState} from '@/types/stores';
+import type {ScVarItem, ScElementItemBase} from '@/types/parsers';
 import {isVar} from '@/lib/utils/guards';
-import {ScElement} from './internal/sc-element.ts';
+import {ScState} from './internal/sc-state.ts';
 
-export class ScVar extends ScElement<ScVarItem, number> {
-    static properties = {
-        name: {type: String, reflect: true},
-        value: {type: Number},
-    };
-
-    declare name: string;
-    declare value: number | undefined;
-
-    getState(state: RuntimeState): number {
-        const node = state.nodes[this.id];
-        return node && isVar(node) ? node.runtime.value : 0;
-    }
-
-    render() {
-        return html``;
+export class ScVar extends ScState<ScVarItem> {
+    protected _match(node: ScElementItemBase): node is ScVarItem {
+        return isVar(node);
     }
 }

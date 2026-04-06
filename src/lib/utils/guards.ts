@@ -55,6 +55,10 @@ export function isVar<T extends ScElementItemBase>(el: T): el is Extract<T, { ty
   return el.type === 'sc-var';
 }
 
+export function isState<T extends ScElementItemBase>(el: T): el is Extract<T, { type: 'sc-control' } | { type: 'sc-var' }> {
+  return el.type === 'sc-control' || el.type === 'sc-var';
+}
+
 export function isSelect<T extends ScElementItemBase>(el: T): el is Extract<T, { type: 'sc-select' }> {
   return el.type === 'sc-select';
 }

@@ -1,8 +1,6 @@
 import {html, css} from 'lit';
 import type {ScDisplayItem} from '@/types/parsers';
-import type {RuntimeState} from '@/types/stores';
-import {isVisual, isControl, isVar} from '@/lib/utils/guards';
-import {ScElement} from './internal/sc-element.ts';
+import {ScInput} from './internal/sc-input.ts';
 
 function formatValue(template: string, value: unknown): string {
   if (typeof value === 'boolean') return template.replace('%b', value ? 'true' : 'false');
@@ -17,7 +15,7 @@ function formatValue(template: string, value: unknown): string {
   return String(value ?? '');
 }
 
-export class ScDisplay extends ScElement<ScDisplayItem, number> {
+export class ScDisplay extends ScInput<ScDisplayItem> {
   static properties = {
     bind: {type: String},
     format: {type: String},
@@ -34,15 +32,6 @@ export class ScDisplay extends ScElement<ScDisplayItem, number> {
       color: var(--color-text, #e0e0e0);
     }
   `;
-
-  getState(state: RuntimeState): number {
-    const self = state.nodes[this.id];
-    if (!self || !isVisual(self)) return 0;
-    const target = state.nodes[self.runtime.targetId];
-    if (target && isControl(target)) return target.runtime.value;
-    if (target && isVar(target)) return target.runtime.value;
-    return 0;
-  }
 
   constructor() {
     super();

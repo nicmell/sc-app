@@ -1,12 +1,9 @@
 import {html, css} from 'lit';
 import type {ScCheckboxItem} from '@/types/parsers';
-import type {RuntimeState} from '@/types/stores';
-import {runtimeApi} from '@/lib/stores/api';
-import {isInput, isControl, isVar} from '@/lib/utils/guards';
-import {ScElement} from './internal/sc-element.ts';
+import {ScInput} from './internal/sc-input.ts';
 import './internal/sc-switch.ts';
 
-export class ScCheckbox extends ScElement<ScCheckboxItem, number> {
+export class ScCheckbox extends ScInput<ScCheckboxItem> {
     static properties = {
         bind: {type: String},
         width: {type: Number, attribute: 'width'},
@@ -27,15 +24,6 @@ export class ScCheckbox extends ScElement<ScCheckboxItem, number> {
         :host { display: inline-block; }
     `;
 
-    getState(state: RuntimeState): number {
-        const self = state.nodes[this.id];
-        if (!self || !isInput(self)) return 0;
-        const target = state.nodes[self.runtime.targetId];
-        if (target && isControl(target)) return target.runtime.value;
-        if (target && isVar(target)) return target.runtime.value;
-        return 0;
-    }
-
     get checked(): boolean {
         return this._state !== 0;
     }
@@ -51,15 +39,8 @@ export class ScCheckbox extends ScElement<ScCheckboxItem, number> {
     }
 
     onChange = (checked: boolean) => {
-        const targetId = this._runtime?.targetId;
-        if (checked !== this.checked && this.bind && targetId) {
-            const value = checked ? 1 : 0;
-            const target = runtimeApi.getById(targetId);
-            if (target && isVar(target)) {
-                runtimeApi.setVar({id: targetId, value});
-            } else {
-                runtimeApi.setControl({id: targetId, value});
-            }
+        if (checked !== this.checked && this.bind) {
+            this._dispatchChange(checked ? 1 : 0);
         }
     };
 
