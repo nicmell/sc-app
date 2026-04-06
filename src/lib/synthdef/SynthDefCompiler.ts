@@ -3,7 +3,7 @@ import {synthDef} from "@/lib/ugen/synthdef";
 import {control} from "@/lib/ugen/control";
 import {ugenRegistry, type UGenRegistryEntry} from "@/lib/ugen/registry";
 import {binOp, unaryOp, binaryOps, unaryOps} from "@/lib/ugen/operators";
-import "@/lib/ugen/ugens"; // side-effect: populates registry
+import "@/lib/ugen/ugen-db"; // side-effect: populates registry
 import type {UGenSpec} from "@/types/parsers";
 
 // ---------------------------------------------------------------------------
