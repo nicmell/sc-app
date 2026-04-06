@@ -18,10 +18,18 @@
         "hi",
         1
       ]
-    ]
+    ],
+    "summary": "Clip a signal outside given thresholds.",
+    "doc": "Clip a signal outside given thresholds. This differs from the ugen clip2 in that it allows one to set both low and high thresholds.",
+    "argDocs": {
+      "in": "The signal to be clipped",
+      "lo": "Low threshold of clipping. Must be less then hi",
+      "hi": "High threshold of clipping. Must be greater then lo"
+    }
   },
   {
     "name": "Fold",
+    "extends": "InRange",
     "rates": [
       "ar",
       "kr"
@@ -39,10 +47,18 @@
         "hi",
         1
       ]
-    ]
+    ],
+    "summary": "Fold a signal outside given thresholds.",
+    "doc": "Folds input wave to within the lo and hi thresholds. This differs from the ugen fold2 in that it allows one to set both low and high thresholds.",
+    "argDocs": {
+      "in": "input signal",
+      "lo": "low threshold",
+      "hi": "high threshold"
+    }
   },
   {
     "name": "Gate",
+    "extends": "Latch",
     "rates": [
       "ar",
       "kr"
@@ -56,7 +72,13 @@
         "trig",
         0
       ]
-    ]
+    ],
+    "summary": "Gate or hold",
+    "doc": "Lets signal flow when trig is positive, otherwise holds last input value",
+    "argDocs": {
+      "in": "Input signal.",
+      "trig": "Trigger. Trigger can be any signal. A trigger happens when the signal changes from non-positive to positive."
+    }
   },
   {
     "name": "InRange",
@@ -77,7 +99,14 @@
         "hi",
         1
       ]
-    ]
+    ],
+    "summary": "Tests if a signal is within a given range",
+    "doc": "If in is >= lo and <= hi output 1.0, otherwise output 0.0. Output is initially zero.",
+    "argDocs": {
+      "in": "input signal",
+      "lo": "low threshold",
+      "hi": "high threshold"
+    }
   },
   {
     "name": "InRect",
@@ -110,7 +139,13 @@
         "bottom",
         null
       ]
-    ]
+    ],
+    "summary": "Test if a point is within a given rectangle.",
+    "doc": "Outputs one if the 2d coordinate of x,y input values falls inside a rectangle, else zero",
+    "argDocs": {
+      "x": "X component signal",
+      "y": "Y component signal"
+    }
   },
   {
     "name": "LastValue",
@@ -127,7 +162,13 @@
         "diff",
         0.01
       ]
-    ]
+    ],
+    "summary": "Output the last value before the input changed",
+    "doc": "Output the last value before the input changed by a threshold of diff",
+    "argDocs": {
+      "in": "input signal",
+      "diff": "difference threshold"
+    }
   },
   {
     "name": "Latch",
@@ -144,10 +185,17 @@
         "trig",
         0
       ]
-    ]
+    ],
+    "summary": "Sample and hold",
+    "doc": "Holds input signal value when triggered.",
+    "argDocs": {
+      "in": "Input signal.",
+      "trig": "Trigger. Trigger can be any signal. A trigger happens when the signal changes from non-positive to positive."
+    }
   },
   {
     "name": "LeastChange",
+    "extends": "MostChange",
     "rates": [
       "ar",
       "kr"
@@ -161,7 +209,13 @@
         "b",
         0
       ]
-    ]
+    ],
+    "summary": "Output least changed",
+    "doc": "output whichever signal changed the least",
+    "argDocs": {
+      "a": "first input",
+      "b": "second input"
+    }
   },
   {
     "name": "MostChange",
@@ -178,10 +232,17 @@
         "b",
         0
       ]
-    ]
+    ],
+    "summary": "Output most changed",
+    "doc": "output whichever signal changed the most",
+    "argDocs": {
+      "a": "first input",
+      "b": "second input"
+    }
   },
   {
     "name": "Peak",
+    "extends": "PulseCount",
     "rates": [
       "ar",
       "kr"
@@ -195,7 +256,13 @@
         "reset",
         0
       ]
-    ]
+    ],
+    "summary": "Track peak signal amplitude",
+    "doc": "Outputs the peak amplitude of the signal so far, a trigger resets to current value",
+    "argDocs": {
+      "trig": "Trigger. Trigger can be any signal. A trigger happens when the signal changes from non-positive to positive.",
+      "reset": "Resets the counter to zero when triggered."
+    }
   },
   {
     "name": "PeakFollower",
@@ -212,7 +279,13 @@
         "decay",
         0.999
       ]
-    ]
+    ],
+    "summary": "Track peak signal amplitude",
+    "doc": "Outputs the peak signal amplitude, falling with decay over time until reaching signal level",
+    "argDocs": {
+      "in": "input signal.",
+      "decay": "decay factor."
+    }
   },
   {
     "name": "Phasor",
@@ -241,7 +314,16 @@
         "resetPos",
         0
       ]
-    ]
+    ],
+    "summary": "Resettable linear ramp between two levels",
+    "doc": "Phasor is a linear ramp between start and end values. When its trigger input crosses from non-positive to positive, Phasor's output will jump to its reset position. Upon reaching the end of its ramp Phasor will wrap back to its start. N.B. Since end is defined as the wrap point, its value is never actually output.",
+    "argDocs": {
+      "trig": "When triggered, reset value to reset-pos (default: 0, phasor outputs start initially)",
+      "rate": "The amount of change per sample i.e at a rate of 1 the value of each sample will be 1 greater than the preceding sample",
+      "start": "Starting point of the ramp",
+      "end": "End point of the ramp",
+      "resetPos": "The value to jump to upon receiving a trigger"
+    }
   },
   {
     "name": "Pitch",
@@ -294,7 +376,22 @@
         0
       ]
     ],
-    "numOutputs": 2
+    "numOutputs": 2,
+    "summary": "Autocorrelation pitch follower",
+    "doc": "This is a better pitch follower than zero-crossing, but more costly of CPU. For most purposes the default settings can be used and only in needs to be supplied. Pitch returns two values (via an Array of OutputProxys, a freq which is the pitch estimate and has-freq, which tells whether a pitch was found. Some vowels are still problematic, for instance a wide open mouth sound somewhere between a low pitched short 'a' sound as in 'sat', and long 'i' sound as in 'fire', contains enough overtone energy to confuse the algorithm. None of these settings are time variable.",
+    "argDocs": {
+      "in": "Input signal",
+      "initFreq": "Value of output pitch until first pitch detected.",
+      "minFreq": "Minimum frequency of execution.",
+      "maxFreq": "Maximum frequency of execution.",
+      "execFreq": "The target rate to periodically execute in cps. Clipped between min-freq and max-freq.",
+      "maxBinsPerOctave": "Number of lags for course search. A larger value will cause the coarse search to take longer, a smaller value will cause the subsequent fine search to take longer.",
+      "median": "Median filter value of length median on the output estimation. Helps eliminate outliers and jitter. Value of 1 means no filter.",
+      "ampThreshold": "Minum peak to peak amplitude of input signal before pitch estimation is performed.",
+      "peakThreshold": "Finds the next peak that is above peak-threshold times the amplitude of the peak at lag zero. A value of 0.5 does a pretty good job of eliminating overtones.",
+      "downSample": "Down sample the input signal by an integer factor. Helps reduce CPU overthead. Also reduces pitch resolution.",
+      "clar": "Clarity measurement (purity of the pitched signal) if greater than 0."
+    }
   },
   {
     "name": "PulseCount",
@@ -311,7 +408,13 @@
         "reset",
         0
       ]
-    ]
+    ],
+    "summary": "Pulse counter",
+    "doc": "Each input trigger increments a counter value that is output.",
+    "argDocs": {
+      "trig": "Trigger. Trigger can be any signal. A trigger happens when the signal changes from non-positive to positive.",
+      "reset": "Resets the counter to zero when triggered."
+    }
   },
   {
     "name": "PulseDivider",
@@ -332,10 +435,18 @@
         "startVal",
         0
       ]
-    ]
+    ],
+    "summary": "Pulse divider",
+    "doc": "Outputs a trigger every div input triggers",
+    "argDocs": {
+      "trig": "Trigger. Trigger can be any signal. A trigger happens when the signal changes from non-positive to positive.",
+      "div": "Number of pulses to divide by.",
+      "startVal": "Starting value for the trigger count. This lets you start somewhere in the middle of a count, or if startCount is negative it adds that many counts to the first time the output is triggers."
+    }
   },
   {
     "name": "RunningMax",
+    "extends": "Latch",
     "rates": [
       "ar",
       "kr"
@@ -349,10 +460,17 @@
         "trig",
         0
       ]
-    ]
+    ],
+    "summary": "Track maximum level",
+    "doc": "Outputs the maximum value received at the input. When triggered, the maximum output value is reset to the current value.",
+    "argDocs": {
+      "in": "Input signal.",
+      "trig": "Trigger. Trigger can be any signal. A trigger happens when the signal changes from non-positive to positive."
+    }
   },
   {
     "name": "RunningMin",
+    "extends": "Latch",
     "rates": [
       "ar",
       "kr"
@@ -366,10 +484,17 @@
         "trig",
         0
       ]
-    ]
+    ],
+    "summary": "Track minimum level",
+    "doc": "Outputs the minimum value received at the input. When triggered, the minimum output value is reset to the current value.",
+    "argDocs": {
+      "in": "Input signal.",
+      "trig": "Trigger. Trigger can be any signal. A trigger happens when the signal changes from non-positive to positive."
+    }
   },
   {
     "name": "Schmidt",
+    "extends": "InRange",
     "rates": [
       "ar",
       "kr"
@@ -387,7 +512,14 @@
         "hi",
         1
       ]
-    ]
+    ],
+    "summary": "Schmidt trigger",
+    "doc": "Outout one when signal greater than high, and zero when lower than low.",
+    "argDocs": {
+      "in": "input signal",
+      "lo": "low threshold",
+      "hi": "high threshold"
+    }
   },
   {
     "name": "SendReply",
@@ -413,7 +545,15 @@
         -1
       ]
     ],
-    "numOutputs": 0
+    "numOutputs": 0,
+    "summary": "Send information via OSC to Overtone",
+    "doc": "Send an array of values from the server via an message. The OSC message is formed with cmd-name as the path, followed by two compulsary args: node-id (the id of the node that sent the message) and reply-id (the value specified in the params). These args are then followed by the list of values specified in the params. For example, if the ugen is used as follows: (send-reply tr \\\"/foobar\\\" [1 2 3] 42) When the trig tr triggers, Overtone will receive an event that looks like the following (where 32 represents the node-id of the synth that sent the message): {:path \\\"/foobar\\",
+    "argDocs": {
+      "trig": "Input trigger signal",
+      "cmdName": "A string or symbol, as a message name.",
+      "values": "Array of ugens, or valid ugen inputs",
+      "replyId": "Integer id (similar to that used by send-trig)"
+    }
   },
   {
     "name": "SendTrig",
@@ -435,10 +575,18 @@
         0
       ]
     ],
-    "numOutputs": 0
+    "numOutputs": 0,
+    "summary": "Send a /tr OSC message to Overtone",
+    "doc": "On receiving a trigger sends a :trigger event with id and value. This command is the mechanism that synths can use to trigger events in clients. The trigger message sent back to the client is this: int - node ID int - trigger ID float - trigger value This is then presented as an event on the event-stream which is a map containing the key :path with the string \\\"/tr\\\" and the key :args containing a sequence of the values in the above order. i.e. {:path /tr, :args (34 3 123.0)} See on-trigger, on-latest-trigger and on-sync-trigger for registering handlers for trigger events.",
+    "argDocs": {
+      "in": "input trigger signal",
+      "id": "an integer that will be passed with the trigger message. This is useful if you have more than one send-trig in a synth design. Consider using trig-id to genearate a unique id.",
+      "value": "A ugen or float that will be polled at the time of trigger, and its value passed with the trigger message"
+    }
   },
   {
     "name": "SetResetFF",
+    "extends": "PulseCount",
     "rates": [
       "ar",
       "kr"
@@ -452,7 +600,13 @@
         "reset",
         0
       ]
-    ]
+    ],
+    "summary": "Set-reset flip flop",
+    "doc": "When a trigger is received the output is set to 1.0 Subsequent triggers have no effect When a trigger is received in the reset input, the output is set back to 0.0 One use of this is to have some precipitating event cause something to happen until you reset it.",
+    "argDocs": {
+      "trig": "Trigger. Trigger can be any signal. A trigger happens when the signal changes from non-positive to positive.",
+      "reset": "Resets the counter to zero when triggered."
+    }
   },
   {
     "name": "Stepper",
@@ -485,7 +639,17 @@
         "resetval",
         1
       ]
-    ]
+    ],
+    "summary": "Pulse counter",
+    "doc": "Triggers increment a counter which is output as a signal. The counter loops around from max to min by step increments",
+    "argDocs": {
+      "trig": "Trigger. Trigger can be any signal. A trigger happens when the signal changes from non-positive to positive.",
+      "reset": "Resets the counter to resetval when triggered.",
+      "min": "minimum value of the counter.",
+      "max": "maximum value of the counter.",
+      "step": "step value each trigger. May be negative.",
+      "resetval": "value to which the counter is reset when it receives a reset trigger."
+    }
   },
   {
     "name": "Sweep",
@@ -502,7 +666,13 @@
         "rate",
         1
       ]
-    ]
+    ],
+    "summary": "Triggered linear ramp",
+    "doc": "outputs a linear increasing signal by rate/second when trig input crosses from non-positive to positive",
+    "argDocs": {
+      "trig": "trigger input",
+      "rate": "rate in seconds"
+    }
   },
   {
     "name": "TDelay",
@@ -519,7 +689,13 @@
         "dur",
         0.1
       ]
-    ]
+    ],
+    "summary": "Trigger delay",
+    "doc": "Delays an input trigger by dur, ignoring other triggers in the meantime",
+    "argDocs": {
+      "trig": "input trigger signal.",
+      "dur": "delay time in seconds."
+    }
   },
   {
     "name": "Timer",
@@ -532,7 +708,12 @@
         "trig",
         0
       ]
-    ]
+    ],
+    "summary": "Trigger timer",
+    "doc": "Outputs time since last trigger",
+    "argDocs": {
+      "trig": "trigger input"
+    }
   },
   {
     "name": "ToggleFF",
@@ -545,7 +726,12 @@
         "trig",
         0
       ]
-    ]
+    ],
+    "summary": "Toggle flip flop",
+    "doc": "Flip-flops between zero and one each trigger",
+    "argDocs": {
+      "trig": "trigger input"
+    }
   },
   {
     "name": "Trapezoid",
@@ -578,6 +764,7 @@
   },
   {
     "name": "Trig",
+    "extends": "Trig1",
     "rates": [
       "ar",
       "kr"
@@ -591,7 +778,13 @@
         "dur",
         0.1
       ]
-    ]
+    ],
+    "summary": "Timed trigger",
+    "doc": "When a nonpositive to positive transition occurs at the input, Trig outputs the level of the triggering input for the specified duration, otherwise it outputs zero.",
+    "argDocs": {
+      "trig": "trigger. Trigger can be any signal. A trigger happens when the signal changes from non-positive to positive.",
+      "dur": "duration of the trigger output in seconds."
+    }
   },
   {
     "name": "Trig1",
@@ -608,7 +801,13 @@
         "dur",
         0.1
       ]
-    ]
+    ],
+    "summary": "Timed trigger",
+    "doc": "Outputs one for dur seconds whenever the input goes from negative to positive, otherwise outputs 0.",
+    "argDocs": {
+      "trig": "trigger. Trigger can be any signal. A trigger happens when the signal changes from non-positive to positive.",
+      "dur": "duration of the trigger output in seconds."
+    }
   },
   {
     "name": "TWindex",
@@ -629,10 +828,18 @@
         "normalize",
         0
       ]
-    ]
+    ],
+    "summary": "Triggered window",
+    "doc": "When triggered, returns a random index value based on array as a list of probabilities. By default the list of probabilities should sum to 1.0, when the normalize flag is set to 1, the values get normalized by the ugen (less efficient).",
+    "argDocs": {
+      "trig": "Trigger - can be any signal. A trigger happens when the signal changes from non-positive to positive.",
+      "channelsArray": "list of probabilities",
+      "normalize": "normalise flag - 0 off, 1 on"
+    }
   },
   {
     "name": "Wrap",
+    "extends": "InRange",
     "rates": [
       "ar",
       "kr"
@@ -650,7 +857,14 @@
         "hi",
         1
       ]
-    ]
+    ],
+    "summary": "Wrap a signal outside given thresholds.",
+    "doc": "Wraps input wave to the low and high thresholds. This differs from the ugen wrap2 in that it allows one to set both low and high thresholds.",
+    "argDocs": {
+      "in": "input signal",
+      "lo": "low threshold",
+      "hi": "high threshold"
+    }
   },
   {
     "name": "ZeroCrossing",
@@ -663,6 +877,11 @@
         "in",
         0
       ]
-    ]
+    ],
+    "summary": "Zero crossing frequency follower",
+    "doc": "Outputs a frequency based upon the distance between interceptions of the X axis. The X intercepts are determined via linear interpolation so this gives better than just integer wavelength resolution. This is a very crude pitch follower, but can be useful in some situations.",
+    "argDocs": {
+      "in": "input signal"
+    }
   }
 ]

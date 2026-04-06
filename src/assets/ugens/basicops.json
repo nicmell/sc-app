@@ -15,7 +15,12 @@
         "b",
         null
       ]
-    ]
+    ],
+    "doc": "Multi-function binary ugen representing many operations (e.g. +, *, <, min, max, etc...)",
+    "argDocs": {
+      "a": "First input",
+      "b": "Second input"
+    }
   },
   {
     "name": "MulAdd",
@@ -37,7 +42,13 @@
         "add",
         null
       ]
-    ]
+    ],
+    "doc": "Multiply the input source by mul then add the add value. Equivalent to, but more efficient than, (+ add (* mul in))",
+    "argDocs": {
+      "in": "Input to modify",
+      "mul": "Multiplier Value",
+      "add": "Addition Value"
+    }
   },
   {
     "name": "UnaryOpUGen",
@@ -51,6 +62,10 @@
         "a",
         null
       ]
-    ]
+    ],
+    "doc": "Multi-function unary ugen representing many operations (e.g. neg, abs, floor, sqrt, midicps, etc...)",
+    "argDocs": {
+      "a": "input"
+    }
   }
 ]

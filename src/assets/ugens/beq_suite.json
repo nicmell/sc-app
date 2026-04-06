@@ -17,7 +17,13 @@
         "rq",
         1
       ]
-    ]
+    ],
+    "doc": "All pass filter based on the Second Order Section (SOS) biquad UGen",
+    "argDocs": {
+      "in": "input signal to be processed.",
+      "freq": "center frequency.",
+      "rq": "the reciprocal of Q. bandwidth / cutoffFreq."
+    }
   },
   {
     "name": "BBandPass",
@@ -37,7 +43,13 @@
         "bw",
         1
       ]
-    ]
+    ],
+    "doc": "Band pass filter based on the Second Order Section (SOS) biquad UGen",
+    "argDocs": {
+      "in": "input signal to be processed",
+      "freq": "center frequency",
+      "bw": "the bandwidth in octaves between -3 dB frequencies"
+    }
   },
   {
     "name": "BBandStop",
@@ -57,7 +69,13 @@
         "bw",
         1
       ]
-    ]
+    ],
+    "doc": "Band reject filter based on the Second Order Section (SOS) biquad UGen",
+    "argDocs": {
+      "in": "input signal to be processed",
+      "freq": "center frequency",
+      "bw": "the bandwidth in octaves between -3 dB frequencies"
+    }
   },
   {
     "name": "BHiPass",
@@ -77,7 +95,13 @@
         "rq",
         1
       ]
-    ]
+    ],
+    "doc": "12db/oct rolloff - 2nd order resonant Hi Pass Filter based on the Second Order Section (SOS) biquad UGen.",
+    "argDocs": {
+      "in": "input signal to be processed",
+      "freq": "cutoff frequency",
+      "rq": "the reciprocal of Q. bandwidth / cutoffFreq"
+    }
   },
   {
     "name": "BHiShelf",
@@ -101,7 +125,14 @@
         "db",
         0
       ]
-    ]
+    ],
+    "doc": "Hi shelfbased on the Second Order Section (SOS) biquad UGen",
+    "argDocs": {
+      "in": "input signal to be processed",
+      "freq": "center frequency",
+      "rs": "the reciprocal of S. Shell boost/cut slope. When S = 1, the shelf slope is as steep as it can be and remain monotonically increasing or decreasing gain with frequency. The shelf slope, in dB/octave, remains proportional to S for all other values for a fixed freq/SampleRate.ir and db.",
+      "db": "gain. boost/cut the center frequency in dBs"
+    }
   },
   {
     "name": "BLowPass",
@@ -121,7 +152,13 @@
         "rq",
         1
       ]
-    ]
+    ],
+    "doc": "12db/oct rolloff - 2nd order resonant Low Pass Filter based on the Second Order Section (SOS) biquad UGen",
+    "argDocs": {
+      "in": "input signal to be processed",
+      "freq": "cutoff frequency",
+      "rq": "the reciprocal of Q. bandwidth / cutoffFreq"
+    }
   },
   {
     "name": "BLowShelf",
@@ -145,7 +182,14 @@
         "db",
         0
       ]
-    ]
+    ],
+    "doc": "Low shelf based on the Second Order Section (SOS) biquad UGen",
+    "argDocs": {
+      "in": "input signal to be processed",
+      "freq": "center frequency",
+      "rs": "the reciprocal of S. Shell boost/cut slope. When S = 1, the shelf slope is as steep as it can be and remain monotonically increasing or decreasing gain with frequency. The shelf slope, in dB/octave, remains proportional to S for all other values for a fixed freq/SampleRate.ir and db.",
+      "db": "gain. boost/cut the center frequency in dBs"
+    }
   },
   {
     "name": "BPeakEQ",
@@ -169,6 +213,13 @@
         "db",
         0
       ]
-    ]
+    ],
+    "doc": "Parametric equalizer based on the Second Order Section (SOS) biquad UGen",
+    "argDocs": {
+      "in": "input signal to be processed",
+      "freq": "center frequency",
+      "rq": "the reciprocal of Q. bandwidth / cutoffFreq",
+      "db": "boost/cut the center frequency (in dBs)"
+    }
   }
 ]

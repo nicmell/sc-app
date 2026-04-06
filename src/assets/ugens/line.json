@@ -9,7 +9,11 @@
         "in",
         0
       ]
-    ]
+    ],
+    "doc": "audio rate to control rate converter via linear interpolation",
+    "argDocs": {
+      "in": "input signal"
+    }
   },
   {
     "name": "AmpComp",
@@ -31,10 +35,18 @@
         "exp",
         0.3333
       ]
-    ]
+    ],
+    "summary": "Basic psychoacoustic amplitude compensation.\" , :rates #{:ir :ar :kr} :check (when-ar (first-input-ar \"freq must be audio rate\")) :doc \"amplitude compensation: because higher frequencies are normally perceived as louder. Note that for frequencies very much smaller than root the amplitudes can become very high. In this case limit the freqor use amp-comp-a Implements the (optimized) formula: compensationFactor = (root / freq) ** exp",
+    "doc": "amplitude compensation: because higher frequencies are normally perceived as louder. Note that for frequencies very much smaller than root the amplitudes can become very high. In this case limit the freqor use amp-comp-a Implements the (optimized) formula: compensationFactor = (root / freq) ** exp",
+    "argDocs": {
+      "freq": "Input frequency value. For freq == root, the output is 1.0.",
+      "root": "Root freq relative to which the curve is calculated (usually lowest freq)",
+      "exp": "Exponent: how steep the curve decreases for increasing freq"
+    }
   },
   {
     "name": "AmpCompA",
+    "extends": "AmpComp",
     "rates": [
       "ir",
       "ar",
@@ -57,7 +69,15 @@
         "rootAmp",
         1
       ]
-    ]
+    ],
+    "summary": "Basic psychoacoustic amplitude compensation (ANSI A-weighting curve).",
+    "doc": "Higher frequencies are normally perceived as louder, which amp-comp-a compensates. Following the measurings by Fletcher and Munson, the ANSI standard describes a function for loudness vs. frequency. Note that this curve is only valid for standardized amplitude. 1 For a simpler but more flexible curve, see amp-comp",
+    "argDocs": {
+      "freq": "Input frequency value. For freq == root, the output is root-amp",
+      "root": "Root freq relative to which the curve is calculated (usually lowest freq)",
+      "minAmp": "Amplitude at the minimum point of the curve (around 2512 Hz)",
+      "rootAmp": "Amplitude at the root frequency."
+    }
   },
   {
     "name": "DC",
@@ -70,7 +90,11 @@
         "in",
         null
       ]
-    ]
+    ],
+    "doc": "outputs the initial value you give it.",
+    "argDocs": {
+      "in": "constant value to output, cannot be modulated, set at initialisation time"
+    }
   },
   {
     "name": "K2A",
@@ -82,7 +106,11 @@
         "in",
         0
       ]
-    ]
+    ],
+    "doc": "control rate to audio rate converter via linear interpolation.",
+    "argDocs": {
+      "in": "input signal"
+    }
   },
   {
     "name": "Line",
@@ -107,7 +135,15 @@
         "action",
         0
       ]
-    ]
+    ],
+    "summary": "Line generator.",
+    "doc": "Generates a line from the start value to the end value.",
+    "argDocs": {
+      "start": "Starting value",
+      "end": "Ending value",
+      "dur": "Duration in seconds",
+      "action": "A done action to be evaluated when the line is completed. Default: NO-ACTION"
+    }
   },
   {
     "name": "LinExp",
@@ -136,7 +172,16 @@
         "dsthi",
         2
       ]
-    ]
+    ],
+    "summary": "Map a linear range to an exponential range",
+    "doc": "Convert from a linear range to an exponential range. The dstlo and dsthi arguments must be nonzero and have the same sign.",
+    "argDocs": {
+      "in": "Input to convert",
+      "srclo": "Lower limit of input range",
+      "srchi": "Upper limit of input range",
+      "dstlo": "Lower limit of output range",
+      "dsthi": "Upper limit of output range"
+    }
   },
   {
     "name": "Silent",
@@ -148,7 +193,11 @@
         "numChannels",
         1
       ]
-    ]
+    ],
+    "doc": "Continuously outputs 0",
+    "argDocs": {
+      "numChannels": "Number of channels of silence."
+    }
   },
   {
     "name": "T2A",
@@ -164,10 +213,16 @@
         "offset",
         0
       ]
-    ]
+    ],
+    "doc": "control rate trigger to audio rate trigger converter (maximally one per control period).",
+    "argDocs": {
+      "in": "input signal",
+      "offset": "sample offset within control period"
+    }
   },
   {
     "name": "T2K",
+    "extends": "A2K",
     "rates": [
       "kr"
     ],
@@ -176,7 +231,11 @@
         "in",
         0
       ]
-    ]
+    ],
+    "doc": "audio rate trigger to control rate trigger converter. Uses the maxiumum trigger in the input during each control period.",
+    "argDocs": {
+      "in": "input signal"
+    }
   },
   {
     "name": "XLine",
@@ -201,6 +260,14 @@
         "action",
         0
       ]
-    ]
+    ],
+    "summary": "Exponential line generator.",
+    "doc": "Generates an exponential curve from the start value to the end value. Both the start and end values must be non-zero and have the same sign.",
+    "argDocs": {
+      "start": "Starting value",
+      "end": "Ending value",
+      "dur": "Duration in seconds",
+      "action": "A done action to be evaluated when the line is completed. Default: NO-ACTION"
+    }
   }
 ]

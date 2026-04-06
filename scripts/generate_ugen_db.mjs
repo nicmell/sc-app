@@ -83,13 +83,27 @@ function parseBlocks(content) {
   return blocks;
 }
 
+function extractString(block, key) {
+  const re = new RegExp(`:${key}\\s+"((?:[^"\\\\]|\\\\.)*)"`);
+  const m = block.match(re);
+  return m ? m[1].replace(/\\n/g, '\n').trim() : undefined;
+}
+
+function extractMultilineString(block, key) {
+  const re = new RegExp(`:${key}\\s+"([\\s\\S]*?)"\\s*(?:[}:]|$)`);
+  const m = block.match(re);
+  if (!m) return undefined;
+  return m[1].replace(/\s+/g, ' ').trim() || undefined;
+}
+
 function parseUGen(block) {
   const nameMatch = block.match(/^\{:name\s+"([^"]+)"/);
   if (!nameMatch) return null;
   const name = nameMatch[1];
   const extendsMatch = block.match(/:extends\s+"([^"]+)"/);
-  const extendsName = extendsMatch ? extendsMatch[1] : null;
+  const extendsName = extendsMatch ? extendsMatch[1] : undefined;
 
+  // Extract args
   const args = [];
   const argsIdx = block.indexOf(':args');
   if (argsIdx !== -1) {
@@ -120,22 +134,55 @@ function parseUGen(block) {
         if ((n === 'mul' || n === 'add') && name !== 'MulAdd') continue;
         const defMatch = argBlock.match(/:default\s+([-\d.eE]+)/);
         const def = defMatch ? parseFloat(defMatch[1]) : undefined;
-        args.push({ name: toCamelCase(n), default: def });
+        const doc = extractMultilineString(argBlock, 'doc');
+        const arg = { name: toCamelCase(n), default: def ?? null };
+        if (doc) arg.doc = doc;
+        args.push(arg);
       }
     }
   }
 
-  let rates = null;
+  // Extract rates
+  let rates = undefined;
   const ratesMatch = block.match(/:rates\s+#\{([^}]+)\}/);
   if (ratesMatch) {
-    rates = ratesMatch[1].match(/:(\w+)/g)?.map(r => r.slice(1)) || null;
+    rates = ratesMatch[1].match(/:(\w+)/g)?.map(r => r.slice(1)) || undefined;
   }
 
-  let numOutputs = null;
+  // Extract metadata fields
+  let numOutputs = undefined;
   const numOutsMatch = block.match(/:num-outs\s+(\d+)/);
   if (numOutsMatch) numOutputs = parseInt(numOutsMatch[1]);
 
-  return { name, args: args.length > 0 ? args : null, rates, numOutputs, extendsName };
+  // Extract UGen-level metadata from outside the :args block
+  let blockWithoutArgs = block;
+  if (argsIdx !== -1) {
+    let bracketStart = block.indexOf('[', argsIdx);
+    if (bracketStart !== -1) {
+      let depth = 0, j = bracketStart;
+      while (j < block.length) {
+        if (block[j] === '[') depth++;
+        else if (block[j] === ']') { depth--; if (depth === 0) break; }
+        j++;
+      }
+      blockWithoutArgs = block.slice(0, argsIdx) + block.slice(j + 1);
+    }
+  }
+
+  const summary = extractMultilineString(blockWithoutArgs, 'summary');
+  const doc = extractMultilineString(blockWithoutArgs, 'doc');
+  const signalRange = extractString(blockWithoutArgs, 'signal-range');
+
+  const result = { name };
+  if (extendsName) result.extends = extendsName;
+  if (args.length > 0) result.args = args;
+  if (rates) result.rates = rates;
+  if (numOutputs != null) result.numOutputs = numOutputs;
+  if (summary) result.summary = summary;
+  if (doc) result.doc = doc;
+  if (signalRange) result.signalRange = signalRange;
+
+  return result;
 }
 
 // ── Resolve inheritance & generate ────────────────────────────────────────
@@ -161,16 +208,17 @@ async function main() {
     if (!u) return null;
     let args = u.args;
     let rates = u.rates || ['ar', 'kr'];
-    let numOutputs = u.numOutputs || 1;
-    if (u.extendsName) {
-      const parent = resolve(u.extendsName);
+    let numOutputs = u.numOutputs;
+    if (u.extends) {
+      const parent = resolve(u.extends);
       if (parent) {
         if (!args) args = parent.args;
         if (!u.rates) rates = parent.rates;
-        if (!u.numOutputs) numOutputs = parent.numOutputs;
+        if (numOutputs == null) numOutputs = parent.numOutputs;
       }
     }
-    return { name, args: args || [], rates, numOutputs, source: u.source };
+    if (numOutputs == null) numOutputs = 1;
+    return { ...u, args: args || [], rates, numOutputs, source: u.source };
   }
 
   // Resolve all and group by source file
@@ -185,28 +233,34 @@ async function main() {
     }
     const file = u.source;
     if (!byFile.has(file)) byFile.set(file, []);
-    byFile.get(file).push({
-      name: u.name,
-      rates: u.rates.filter(r => r === 'ar' || r === 'kr' || r === 'ir'),
-      defaults: u.args.map(a => [a.name, a.default ?? null]),
-      ...(u.numOutputs !== 1 ? { numOutputs: u.numOutputs } : {}),
-    });
+
+    // Build output entry preserving all metadata
+    const entry = { name: u.name };
+    if (u.extends) entry.extends = u.extends;
+    entry.rates = u.rates.filter(r => r === 'ar' || r === 'kr' || r === 'ir');
+    entry.defaults = u.args.map(a => [a.name, a.default ?? null]);
+    if (u.numOutputs !== 1) entry.numOutputs = u.numOutputs;
+    if (u.summary) entry.summary = u.summary;
+    if (u.doc) entry.doc = u.doc;
+    if (u.signalRange) entry.signalRange = u.signalRange;
+    if (u.args.some(a => a.doc)) {
+      entry.argDocs = Object.fromEntries(u.args.filter(a => a.doc).map(a => [a.name, a.doc]));
+    }
+
+    byFile.get(file).push(entry);
     total++;
   }
 
   // Write JSON files
   mkdirSync(OUTPUT_DIR, { recursive: true });
-  const jsonFiles = [];
   for (const [file, ugens] of byFile) {
     ugens.sort((a, b) => a.name.localeCompare(b.name));
     const outPath = join(OUTPUT_DIR, `${file}.json`);
     writeFileSync(outPath, JSON.stringify(ugens, null, 2) + '\n');
-    jsonFiles.push(file);
     console.log(`  ${file}.json: ${ugens.length} UGens`);
   }
 
-  jsonFiles.sort();
-  console.log(`\nWritten ${total} UGens across ${jsonFiles.length} files to src/assets/ugens/`);
+  console.log(`\nWritten ${total} UGens across ${byFile.size} files to src/assets/ugens/`);
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

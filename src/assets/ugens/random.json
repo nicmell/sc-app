@@ -14,7 +14,12 @@
         "trig",
         null
       ]
-    ]
+    ],
+    "doc": "When it receives a trigger, it tosses a coin, and either passes the trigger or doesn't.",
+    "argDocs": {
+      "prob": "Value between 0 and 1 determines probability of either possibilities",
+      "trig": "Trigger signal"
+    }
   },
   {
     "name": "ExpRand",
@@ -30,7 +35,12 @@
         "hi",
         1
       ]
-    ]
+    ],
+    "doc": "Generates a single random float value in an exponential distributions from lo to hi.",
+    "argDocs": {
+      "lo": "Minimum value of generated float",
+      "hi": "Maximum value of generated float"
+    }
   },
   {
     "name": "IRand",
@@ -46,7 +56,12 @@
         "hi",
         127
       ]
-    ]
+    ],
+    "doc": "Generates a single random integer value in uniform distribution from lo to hi",
+    "argDocs": {
+      "lo": "Minimum value of generated integer",
+      "hi": "Maximum value of generated integer"
+    }
   },
   {
     "name": "LinRand",
@@ -66,7 +81,13 @@
         "minmax",
         0
       ]
-    ]
+    ],
+    "doc": "Generates a single random float value in linear distribution from lo to hi, skewed towards lo if minmax < 0, otherwise skewed towards hi.",
+    "argDocs": {
+      "lo": "Minimum value of generated float",
+      "hi": "Maximum value of generated float",
+      "minmax": "Skew direction (towards lo if negative otherwise hi)"
+    }
   },
   {
     "name": "NRand",
@@ -86,7 +107,13 @@
         "n",
         0
       ]
-    ]
+    ],
+    "doc": "Generates a single random float value in a sum of n uniform distributions from lo to hi. n = 1 : uniform distribution - same as Rand n = 2 : triangular distribution n = 3 : smooth hump As n increases, distribution converges towards gaussian",
+    "argDocs": {
+      "lo": "Minimum value of generated float",
+      "hi": "Maximum value of generated float",
+      "n": "Distribution choice"
+    }
   },
   {
     "name": "Rand",
@@ -116,7 +143,11 @@
         0
       ]
     ],
-    "numOutputs": 0
+    "numOutputs": 0,
+    "doc": "Choose which random number generator to use for this synth. All synths that use the same generator reproduce the same sequence of numbers when the same seed is set again.",
+    "argDocs": {
+      "seed": "Seed id"
+    }
   },
   {
     "name": "RandSeed",
@@ -134,7 +165,12 @@
         56789
       ]
     ],
-    "numOutputs": 0
+    "numOutputs": 0,
+    "doc": "When the trigger signal changes from nonpositive to positive, the synth's random generator seed is reset to the given value. All synths that use the same random number generator reproduce the same sequence of numbers again.",
+    "argDocs": {
+      "trig": "Trigger signal",
+      "seed": "Seed value"
+    }
   },
   {
     "name": "TExpRand",
@@ -155,7 +191,13 @@
         "trig",
         0
       ]
-    ]
+    ],
+    "doc": "Generates a random float value in exponential distribution from lo to hi each time the trig signal changes from nonpositive to positive values lo and hi must both have the same sign and be non-zero.",
+    "argDocs": {
+      "lo": "Minimum value of generated float",
+      "hi": "Maximum value of generated float",
+      "trig": "Trigger signal"
+    }
   },
   {
     "name": "TIRand",
@@ -176,7 +218,13 @@
         "trig",
         0
       ]
-    ]
+    ],
+    "doc": "Generates a random integer value in uniform distribution from lo to hi each time the trig signal changes from nonpositive to positive values",
+    "argDocs": {
+      "lo": "Minimum value of generated integer",
+      "hi": "Maximum value of generated integer",
+      "trig": "Trigger signal"
+    }
   },
   {
     "name": "TRand",
@@ -197,6 +245,12 @@
         "trig",
         0
       ]
-    ]
+    ],
+    "doc": "Generates a random float value in uniform distribution from lo to hi each time the trig signal changes from nonpositive to positive values",
+    "argDocs": {
+      "lo": "Minimum value of generated float",
+      "hi": "Maximum value of generated float",
+      "trig": "Trigger signal"
+    }
   }
 ]
