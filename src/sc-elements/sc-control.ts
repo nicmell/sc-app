@@ -13,25 +13,23 @@ export class ScControl extends ScState<ScControlItem> {
 
     declare bind: string | undefined;
 
-    private _prev = 0;
+    private _prev: number | undefined;
 
     protected _match(node: ScElementItemBase): node is ScControlItem {
         return isControl(node);
     }
 
-    connectedCallback() {
-        this._prev = this._state;
-        super.connectedCallback();
-    }
-
     protected updated() {
         const value = this._state;
-        if (value !== this._prev) {
+        if (this._prev === undefined) {
             this._prev = value;
-            const parent = runtimeApi.getById(this._runtime.parentId);
-            if (parent && isNode(parent) && parent.runtime.nodeId) {
-                oscService.send(nodeSetMessage(parent.runtime.nodeId, {[this._runtime.name]: value}));
-            }
+            return;
+        }
+        if (value === this._prev) return;
+        this._prev = value;
+        const parent = runtimeApi.getById(this._runtime.parentId);
+        if (parent && isNode(parent) && parent.runtime.nodeId) {
+            oscService.send(nodeSetMessage(parent.runtime.nodeId, {[this._runtime.name]: value}));
         }
     }
 }
