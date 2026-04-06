@@ -369,3 +369,8 @@ registerUGen({name: 'XFade2', rates: [Rate.Audio, Rate.Control], defaults: [['in
 registerUGen({name: 'XLine', rates: [Rate.Audio, Rate.Control], defaults: [['start', 1], ['end', 2], ['dur', 1], ['action', 0]]});
 registerUGen({name: 'XOut', rates: [Rate.Audio, Rate.Control], defaults: [['bus', undefined], ['xfade', undefined], ['channelsArray', undefined]], numOutputs: 0});
 registerUGen({name: 'ZeroCrossing', rates: [Rate.Audio, Rate.Control], defaults: [['in', 0]]});
+
+// Operator UGens (special-cased in the compiler, not from Overtone)
+registerUGen({name: 'BinaryOpUGen', rates: [Rate.Audio, Rate.Control, Rate.Scalar], defaults: [['a', undefined], ['b', undefined]]});
+registerUGen({name: 'UnaryOpUGen', rates: [Rate.Audio, Rate.Control, Rate.Scalar], defaults: [['a', undefined]]});
+registerUGen({name: 'MulAdd', rates: [Rate.Audio, Rate.Control, Rate.Scalar], defaults: [['in', undefined], ['mul', 1], ['add', 0]]});

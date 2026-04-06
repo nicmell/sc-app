@@ -1,5 +1,4 @@
-import { UGen, type UGenInput, Rate, inputRate, maxRate } from './ugen';
-import { registerUGen } from './registry';
+import { UGen, type UGenInput, inputRate, maxRate } from './ugen';
 
 // ---------------------------------------------------------------------------
 // Binary operator table (specialIndex values for BinaryOpUGen)
@@ -228,27 +227,3 @@ export function mulAdd(
   return new UGen('MulAdd', rate, [input, mul, add], 1);
 }
 
-// ---------------------------------------------------------------------------
-// Registry entries for operator UGens
-// ---------------------------------------------------------------------------
-
-registerUGen({
-  name: 'BinaryOpUGen',
-  rates: [Rate.Audio, Rate.Control, Rate.Scalar],
-  defaults: [['a', undefined], ['b', undefined]],
-  numOutputs: 1,
-});
-
-registerUGen({
-  name: 'UnaryOpUGen',
-  rates: [Rate.Audio, Rate.Control, Rate.Scalar],
-  defaults: [['a', undefined]],
-  numOutputs: 1,
-});
-
-registerUGen({
-  name: 'MulAdd',
-  rates: [Rate.Audio, Rate.Control, Rate.Scalar],
-  defaults: [['in', undefined], ['mul', 1], ['add', 0]],
-  numOutputs: 1,
-});

@@ -2,7 +2,7 @@ import {UGen, type UGenInput, Rate} from "@/lib/ugen/ugen";
 import {synthDef} from "@/lib/ugen/synthdef";
 import {control} from "@/lib/ugen/control";
 import {ugenRegistry, type UGenRegistryEntry} from "@/lib/ugen/registry";
-import {binOp, unaryOp, binaryOps, unaryOps} from "@/lib/ugen/operators";
+import {binaryOps, unaryOps} from "@/lib/ugen/operators";
 import "@/lib/ugen/ugen-db"; // side-effect: populates registry
 import type {UGenSpec} from "@/types/parsers";
 
@@ -48,6 +48,11 @@ function topoSort(specs: Map<string, UGenSpec>): UGenSpec[] {
   return sorted;
 }
 
+const OP_TABLES: Record<string, Record<string, number>> = {
+  BinaryOpUGen: binaryOps,
+  UnaryOpUGen: unaryOps,
+};
+
 // ---------------------------------------------------------------------------
 // UGen graph builder — resolves specs into a UGen graph inside synthDef()
 // ---------------------------------------------------------------------------
@@ -67,34 +72,25 @@ class UGenGraphBuilder {
       const entry = ugenRegistry.lookup(spec.type);
       if (!entry) throw new Error(`Unknown UGen type: "${spec.type}"`);
       const rate = parseRate(spec.rate);
-
-      switch (spec.type) {
-        case 'BinaryOpUGen': this.buildBinaryOp(spec, rate); break;
-        case 'UnaryOpUGen':  this.buildUnaryOp(spec, rate); break;
-        default:             this.buildStandardUGen(spec, entry, rate);
-      }
+      this.buildUGen(spec, entry, rate);
     }
   }
 
-  private buildBinaryOp(spec: UGenSpec, rate: Rate): void {
-    const op = this.requireInput(spec, 'op');
-    if (!(op in binaryOps)) throw new Error(`Unknown binary operator: "${op}"`);
-    const a = this.resolveInput(spec.inputs['a']);
-    const b = this.resolveInput(spec.inputs['b']);
-    this.storeOpResult(spec.name, binOp(op, a, b), rate);
-  }
-
-  private buildUnaryOp(spec: UGenSpec, rate: Rate): void {
-    const op = this.requireInput(spec, 'op');
-    if (!(op in unaryOps)) throw new Error(`Unknown unary operator: "${op}"`);
-    const a = this.resolveInput(spec.inputs['a']);
-    this.storeOpResult(spec.name, unaryOp(op, a), rate);
-  }
-
-  private buildStandardUGen(spec: UGenSpec, entry: UGenRegistryEntry, rate: Rate): void {
+  private buildUGen(spec: UGenSpec, entry: UGenRegistryEntry, rate: Rate): void {
     const inputs = this.resolveStandardInputs(spec, entry.defaults);
     const numOutputs = entry.numOutputs ?? 1;
-    this.ugenMap.set(spec.name, new UGen(spec.type, rate, inputs, numOutputs));
+    const specialIndex = this.resolveSpecialIndex(spec);
+    this.ugenMap.set(spec.name, new UGen(spec.type, rate, inputs, numOutputs, specialIndex));
+  }
+
+  private resolveSpecialIndex(spec: UGenSpec): number {
+    const opTable = OP_TABLES[spec.type];
+    if (!opTable) return 0;
+    const op = spec.inputs['op'];
+    if (!op) throw new Error(`${spec.type} "${spec.name}" requires an "op" attribute`);
+    const idx = opTable[op];
+    if (idx === undefined) throw new Error(`${spec.type} "${spec.name}": unknown operator "${op}"`);
+    return idx;
   }
 
   private resolveStandardInputs(
@@ -125,15 +121,10 @@ class UGenGraphBuilder {
   private findMatchingInput(inputs: Record<string, string>, paramName: string): string | undefined {
     const lower = paramName.toLowerCase();
     for (const [key, value] of Object.entries(inputs)) {
+      if (key === 'op') continue; // op is handled via specialIndex, not as an input
       if (key.toLowerCase() === lower) return value;
     }
     return undefined;
-  }
-
-  private requireInput(spec: UGenSpec, key: string): string {
-    const value = spec.inputs[key];
-    if (!value) throw new Error(`${spec.type} "${spec.name}" requires an "${key}" attribute`);
-    return value;
   }
 
   private resolveInput(value: string): UGenInput {
@@ -154,16 +145,6 @@ class UGenGraphBuilder {
     if (ctrl) return ctrl;
 
     throw new Error(`Cannot resolve input "${value}" — not a number, UGen id, or param name`);
-  }
-
-  private storeOpResult(name: string, result: UGenInput, rate: Rate): void {
-    if (typeof result === 'number') {
-      this.ugenMap.set(name, new UGen('DC', rate, [result], 1));
-    } else if (result instanceof UGen) {
-      this.ugenMap.set(name, result);
-    } else {
-      this.ugenMap.set(name, result.source);
-    }
   }
 }
 

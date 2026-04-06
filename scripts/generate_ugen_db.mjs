@@ -208,8 +208,14 @@ import {registerUGen} from './registry';
     ts += `registerUGen({name: '${u.name}', rates: [${rates}], defaults: [${defaults}]${numOut}});\n`;
   }
 
+  // Operator UGens (special-cased in the compiler, not from Overtone)
+  ts += `\n// Operator UGens (special-cased in the compiler, not from Overtone)\n`;
+  ts += `registerUGen({name: 'BinaryOpUGen', rates: [Rate.Audio, Rate.Control, Rate.Scalar], defaults: [['a', undefined], ['b', undefined]]});\n`;
+  ts += `registerUGen({name: 'UnaryOpUGen', rates: [Rate.Audio, Rate.Control, Rate.Scalar], defaults: [['a', undefined]]});\n`;
+  ts += `registerUGen({name: 'MulAdd', rates: [Rate.Audio, Rate.Control, Rate.Scalar], defaults: [['in', undefined], ['mul', 1], ['add', 0]]});\n`;
+
   writeFileSync(OUTPUT, ts);
-  console.log(`Written ${resolved.length} entries to src/lib/ugen/ugen-db.ts`);
+  console.log(`Written ${resolved.length + 3} entries to src/lib/ugen/ugen-db.ts`);
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

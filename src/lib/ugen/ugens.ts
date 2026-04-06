@@ -1,6 +1,5 @@
 import { UGen, UGenOutput, type UGenInput, Rate } from './ugen';
 import { defineUGen, defineMultiOutUGen } from './define';
-import { registerUGen } from './registry';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Oscillators
@@ -236,37 +235,6 @@ export const LocalIn = inFactory('LocalIn', [Rate.Audio, Rate.Control]);
 
 // LocalOut — like Out but for local buses
 export const LocalOut = outFactory('LocalOut');
-
-// ── Manual registry entries for I/O UGens (not created via defineUGen) ──
-
-registerUGen({
-  name: 'Out', rates: [Rate.Audio, Rate.Control],
-  defaults: [['bus', 0], ['channelsArray', undefined]], numOutputs: 0,
-});
-registerUGen({
-  name: 'ReplaceOut', rates: [Rate.Audio, Rate.Control],
-  defaults: [['bus', 0], ['channelsArray', undefined]], numOutputs: 0,
-});
-registerUGen({
-  name: 'OffsetOut', rates: [Rate.Audio, Rate.Control],
-  defaults: [['bus', 0], ['channelsArray', undefined]], numOutputs: 0,
-});
-registerUGen({
-  name: 'In', rates: [Rate.Audio, Rate.Control],
-  defaults: [['bus', undefined]], numOutputs: 1,
-});
-registerUGen({
-  name: 'InFeedback', rates: [Rate.Audio],
-  defaults: [['bus', undefined]], numOutputs: 1,
-});
-registerUGen({
-  name: 'LocalIn', rates: [Rate.Audio, Rate.Control],
-  defaults: [['bus', undefined]], numOutputs: 1,
-});
-registerUGen({
-  name: 'LocalOut', rates: [Rate.Audio, Rate.Control],
-  defaults: [['bus', 0], ['channelsArray', undefined]], numOutputs: 0,
-});
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Panning (multi-output)
