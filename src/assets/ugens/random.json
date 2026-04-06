@@ -1,256 +1,44 @@
-[
-  {
-    "name": "CoinGate",
-    "rates": [
-      "kr",
-      "ir"
-    ],
-    "defaults": [
-      [
-        "prob",
-        null
-      ],
-      [
-        "trig",
-        null
-      ]
-    ],
-    "doc": "When it receives a trigger, it tosses a coin, and either passes the trigger or doesn't.",
-    "argDocs": {
-      "prob": "Value between 0 and 1 determines probability of either possibilities",
-      "trig": "Trigger signal"
+[{
+    "name": "CoinGate", "rates": ["kr", "ir"], "defaults": [["prob", null],  ["trig", null]], "doc": "When it receives a trigger, it tosses a coin, and either passes the trigger or doesn't.", "argDocs": {
+      "prob": "Value between 0 and 1 determines probability of either possibilities", "trig": "Trigger signal"
     }
-  },
-  {
-    "name": "ExpRand",
-    "rates": [
-      "ir"
-    ],
-    "defaults": [
-      [
-        "lo",
-        0.01
-      ],
-      [
-        "hi",
-        1
-      ]
-    ],
-    "doc": "Generates a single random float value in an exponential distributions from lo to hi.",
-    "argDocs": {
-      "lo": "Minimum value of generated float",
-      "hi": "Maximum value of generated float"
+  },  {
+    "name": "ExpRand", "rates": ["ir"], "defaults": [["lo", 0.01],  ["hi", 1]], "doc": "Generates a single random float value in an exponential distributions from lo to hi.", "argDocs": {
+      "lo": "Minimum value of generated float", "hi": "Maximum value of generated float"
     }
-  },
-  {
-    "name": "IRand",
-    "rates": [
-      "ir"
-    ],
-    "defaults": [
-      [
-        "lo",
-        0
-      ],
-      [
-        "hi",
-        127
-      ]
-    ],
-    "doc": "Generates a single random integer value in uniform distribution from lo to hi",
-    "argDocs": {
-      "lo": "Minimum value of generated integer",
-      "hi": "Maximum value of generated integer"
+  },  {
+    "name": "IRand", "rates": ["ir"], "defaults": [["lo", 0],  ["hi", 127]], "doc": "Generates a single random integer value in uniform distribution from lo to hi", "argDocs": {
+      "lo": "Minimum value of generated integer", "hi": "Maximum value of generated integer"
     }
-  },
-  {
-    "name": "LinRand",
-    "rates": [
-      "ir"
-    ],
-    "defaults": [
-      [
-        "lo",
-        0
-      ],
-      [
-        "hi",
-        1
-      ],
-      [
-        "minmax",
-        0
-      ]
-    ],
-    "doc": "Generates a single random float value in linear distribution from lo to hi, skewed towards lo if minmax < 0, otherwise skewed towards hi.",
-    "argDocs": {
-      "lo": "Minimum value of generated float",
-      "hi": "Maximum value of generated float",
-      "minmax": "Skew direction (towards lo if negative otherwise hi)"
+  },  {
+    "name": "LinRand", "rates": ["ir"], "defaults": [["lo", 0],  ["hi", 1],  ["minmax", 0]], "doc": "Generates a single random float value in linear distribution from lo to hi, skewed towards lo if minmax < 0, otherwise skewed towards hi.", "argDocs": {
+      "lo": "Minimum value of generated float", "hi": "Maximum value of generated float", "minmax": "Skew direction (towards lo if negative otherwise hi)"
     }
-  },
-  {
-    "name": "NRand",
-    "rates": [
-      "ir"
-    ],
-    "defaults": [
-      [
-        "lo",
-        0
-      ],
-      [
-        "hi",
-        1
-      ],
-      [
-        "n",
-        0
-      ]
-    ],
-    "doc": "Generates a single random float value in a sum of n uniform distributions from lo to hi. n = 1 : uniform distribution - same as Rand n = 2 : triangular distribution n = 3 : smooth hump As n increases, distribution converges towards gaussian",
-    "argDocs": {
-      "lo": "Minimum value of generated float",
-      "hi": "Maximum value of generated float",
-      "n": "Distribution choice"
+  },  {
+    "name": "NRand", "rates": ["ir"], "defaults": [["lo", 0],  ["hi", 1],  ["n", 0]], "doc": "Generates a single random float value in a sum of n uniform distributions from lo to hi. n = 1 : uniform distribution - same as Rand n = 2 : triangular distribution n = 3 : smooth hump As n increases, distribution converges towards gaussian", "argDocs": {
+      "lo": "Minimum value of generated float", "hi": "Maximum value of generated float", "n": "Distribution choice"
     }
-  },
-  {
-    "name": "Rand",
-    "rates": [
-      "ir"
-    ],
-    "defaults": [
-      [
-        "lo",
-        0
-      ],
-      [
-        "hi",
-        1
-      ]
-    ]
-  },
-  {
-    "name": "RandID",
-    "rates": [
-      "ir",
-      "kr"
-    ],
-    "defaults": [
-      [
-        "seed",
-        0
-      ]
-    ],
-    "numOutputs": 0,
-    "doc": "Choose which random number generator to use for this synth. All synths that use the same generator reproduce the same sequence of numbers when the same seed is set again.",
-    "argDocs": {
+  },  {
+    "name": "Rand", "rates": ["ir"], "defaults": [["lo", 0],  ["hi", 1]]
+  },  {
+    "name": "RandID", "rates": ["ir", "kr"], "defaults": [["seed", 0]], "numOutputs": 0, "doc": "Choose which random number generator to use for this synth. All synths that use the same generator reproduce the same sequence of numbers when the same seed is set again.", "argDocs": {
       "seed": "Seed id"
     }
-  },
-  {
-    "name": "RandSeed",
-    "rates": [
-      "ir",
-      "kr"
-    ],
-    "defaults": [
-      [
-        "trig",
-        0
-      ],
-      [
-        "seed",
-        56789
-      ]
-    ],
-    "numOutputs": 0,
-    "doc": "When the trigger signal changes from nonpositive to positive, the synth's random generator seed is reset to the given value. All synths that use the same random number generator reproduce the same sequence of numbers again.",
-    "argDocs": {
-      "trig": "Trigger signal",
-      "seed": "Seed value"
+  },  {
+    "name": "RandSeed", "rates": ["ir", "kr"], "defaults": [["trig", 0],  ["seed", 56789]], "numOutputs": 0, "doc": "When the trigger signal changes from nonpositive to positive, the synth's random generator seed is reset to the given value. All synths that use the same random number generator reproduce the same sequence of numbers again.", "argDocs": {
+      "trig": "Trigger signal", "seed": "Seed value"
     }
-  },
-  {
-    "name": "TExpRand",
-    "rates": [
-      "ar",
-      "kr"
-    ],
-    "defaults": [
-      [
-        "lo",
-        0.01
-      ],
-      [
-        "hi",
-        1
-      ],
-      [
-        "trig",
-        0
-      ]
-    ],
-    "doc": "Generates a random float value in exponential distribution from lo to hi each time the trig signal changes from nonpositive to positive values lo and hi must both have the same sign and be non-zero.",
-    "argDocs": {
-      "lo": "Minimum value of generated float",
-      "hi": "Maximum value of generated float",
-      "trig": "Trigger signal"
+  },  {
+    "name": "TExpRand", "rates": ["ar", "kr"], "defaults": [["lo", 0.01],  ["hi", 1],  ["trig", 0]], "doc": "Generates a random float value in exponential distribution from lo to hi each time the trig signal changes from nonpositive to positive values lo and hi must both have the same sign and be non-zero.", "argDocs": {
+      "lo": "Minimum value of generated float", "hi": "Maximum value of generated float", "trig": "Trigger signal"
     }
-  },
-  {
-    "name": "TIRand",
-    "rates": [
-      "kr",
-      "ar"
-    ],
-    "defaults": [
-      [
-        "lo",
-        0
-      ],
-      [
-        "hi",
-        127
-      ],
-      [
-        "trig",
-        0
-      ]
-    ],
-    "doc": "Generates a random integer value in uniform distribution from lo to hi each time the trig signal changes from nonpositive to positive values",
-    "argDocs": {
-      "lo": "Minimum value of generated integer",
-      "hi": "Maximum value of generated integer",
-      "trig": "Trigger signal"
+  },  {
+    "name": "TIRand", "rates": ["kr", "ar"], "defaults": [["lo", 0],  ["hi", 127],  ["trig", 0]], "doc": "Generates a random integer value in uniform distribution from lo to hi each time the trig signal changes from nonpositive to positive values", "argDocs": {
+      "lo": "Minimum value of generated integer", "hi": "Maximum value of generated integer", "trig": "Trigger signal"
     }
-  },
-  {
-    "name": "TRand",
-    "rates": [
-      "kr",
-      "ar"
-    ],
-    "defaults": [
-      [
-        "lo",
-        0
-      ],
-      [
-        "hi",
-        1
-      ],
-      [
-        "trig",
-        0
-      ]
-    ],
-    "doc": "Generates a random float value in uniform distribution from lo to hi each time the trig signal changes from nonpositive to positive values",
-    "argDocs": {
-      "lo": "Minimum value of generated float",
-      "hi": "Maximum value of generated float",
-      "trig": "Trigger signal"
+  },  {
+    "name": "TRand", "rates": ["kr", "ar"], "defaults": [["lo", 0],  ["hi", 1],  ["trig", 0]], "doc": "Generates a random float value in uniform distribution from lo to hi each time the trig signal changes from nonpositive to positive values", "argDocs": {
+      "lo": "Minimum value of generated float", "hi": "Maximum value of generated float", "trig": "Trigger signal"
     }
   }
 ]

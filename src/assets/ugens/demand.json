@@ -1,537 +1,85 @@
-[
-  {
-    "name": "Dbrown",
-    "rates": [],
-    "defaults": [
-      [
-        "length",
-        null
-      ],
-      [
-        "lo",
-        0
-      ],
-      [
-        "hi",
-        1
-      ],
-      [
-        "step",
-        0.01
-      ]
-    ],
-    "doc": "This ugen has been internalised for scserver compatibility. Please use the dbrown cgen instead.",
-    "argDocs": {
+[{
+    "name": "Dbrown", "rates": [], "defaults": [["length", null],  ["lo", 0],  ["hi", 1],  ["step", 0.01]], "doc": "This ugen has been internalised for scserver compatibility. Please use the dbrown cgen instead.", "argDocs": {
       "length": "Default: positive infinity"
     }
-  },
-  {
-    "name": "Dbufrd",
-    "rates": [],
-    "defaults": [
-      [
-        "bufnum",
-        0
-      ],
-      [
-        "phase",
-        0
-      ],
-      [
-        "loop",
-        1
-      ]
-    ],
-    "doc": "Read values from a buffer on demand, using phase (index) value that is also pulled on demand. All inputs can be either demand ugen or any other ugen.",
-    "argDocs": {
-      "bufnum": "buffer number to read from",
-      "phase": "index into the buffer",
-      "loop": "when phase exceeds number of frames in buffer, loops when set to 1"
+  },  {
+    "name": "Dbufrd", "rates": [], "defaults": [["bufnum", 0],  ["phase", 0],  ["loop", 1]], "doc": "Read values from a buffer on demand, using phase (index) value that is also pulled on demand. All inputs can be either demand ugen or any other ugen.", "argDocs": {
+      "bufnum": "buffer number to read from", "phase": "index into the buffer", "loop": "when phase exceeds number of frames in buffer, loops when set to 1"
     }
-  },
-  {
-    "name": "Dbufwr",
-    "rates": [],
-    "defaults": [
-      [
-        "bufnum",
-        0
-      ],
-      [
-        "phase",
-        0
-      ],
-      [
-        "input",
-        0
-      ],
-      [
-        "loop",
-        1
-      ]
-    ],
-    "doc": "This ugen has been internalised for scserver compatibility. Please use the dbufwr cgen instead."
-  },
-  {
-    "name": "Demand",
-    "rates": [
-      "ar",
-      "kr"
-    ],
-    "defaults": [
-      [
-        "trig",
-        null
-      ],
-      [
-        "reset",
-        0
-      ],
-      [
-        "demandUgens",
-        null
-      ]
-    ],
-    "doc": "On every trigger it demands the next value from each of the demand ugens passed as args. Used to pull values from the other demand rate ugens. By design, a reset trigger only resets the demand ugens; it does not reset the value at Demand's output. Demand continues to hold its value until the next value is demanded, at which point its output value will be the first expected item in the list.",
-    "argDocs": {
-      "trig": "Can be any signal. A trigger happens when the signal changes from non-positive to positive.",
-      "reset": "Resets the list of ugens when triggered.",
-      "demandUgens": "list of demand rate ugens"
+  },  {
+    "name": "Dbufwr", "rates": [], "defaults": [["bufnum", 0],  ["phase", 0],  ["input", 0],  ["loop", 1]], "doc": "This ugen has been internalised for scserver compatibility. Please use the dbufwr cgen instead."
+  },  {
+    "name": "Demand", "rates": ["ar", "kr"], "defaults": [["trig", null],  ["reset", 0],  ["demandUgens", null]], "doc": "On every trigger it demands the next value from each of the demand ugens passed as args. Used to pull values from the other demand rate ugens. By design, a reset trigger only resets the demand ugens; it does not reset the value at Demand's output. Demand continues to hold its value until the next value is demanded, at which point its output value will be the first expected item in the list.", "argDocs": {
+      "trig": "Can be any signal. A trigger happens when the signal changes from non-positive to positive.", "reset": "Resets the list of ugens when triggered.", "demandUgens": "list of demand rate ugens"
     }
-  },
-  {
-    "name": "DemandEnvGen",
-    "rates": [
-      "ar",
-      "kr"
-    ],
-    "defaults": [
-      [
-        "level",
-        null
-      ],
-      [
-        "dur",
-        null
-      ],
-      [
-        "shape",
-        1
-      ],
-      [
-        "curve",
-        0
-      ],
-      [
-        "gate",
-        1
-      ],
-      [
-        "reset",
-        1
-      ],
-      [
-        "levelScale",
-        1
-      ],
-      [
-        "levelBias",
-        0
-      ],
-      [
-        "timeScale",
-        1
-      ],
-      [
-        "action",
-        0
-      ]
-    ],
-    "doc": "Plays back break point envelope contours (levels, times, shapes) given by demand ugens. The next values are called when the next node is reached.",
-    "argDocs": {
-      "level": "demand ugen (or other ugen) returning level values",
-      "dur": "demand ugen (or other ugen) returning time values",
-      "shape": "demand ugen (or other ugen) returning shape number - the number given is the shape number",
-      "curve": "demand ugen (or other ugen) returning curve values - if shape is 5, this is the curve factor. The possible values are: 0 - flat segments, 1 - linear segments, the default, 2 - natural exponential growth and decay. In this case, the levels must all be nonzero and the have the same sign, 3 - sinusoidal S shaped segments, 4 - sinusoidal segments shaped like the sides of a Welch window, a Float - a curvature value for all segments, an Array of Floats - curvature values for each segments.",
-      "gate": "control rate gate if gate is x >= 1, the ugen runs, if gate is 0 > x > 1, the ugen is released at the next level (doneAction), if gate is x <= 0, the ugen is sampled end held",
-      "reset": "if reset crosses from nonpositive to positive, the ugen is reset at the next level. If it is > 1, it is reset immediately.",
-      "levelScale": "demand ugen returning level scaling values",
-      "levelBias": "demand ugen returning level offset values",
-      "timeScale": "demand ugen returning time scaling values",
-      "action": "Default: NO-ACTION"
+  },  {
+    "name": "DemandEnvGen", "rates": ["ar", "kr"], "defaults": [["level", null],  ["dur", null],  ["shape", 1],  ["curve", 0],  ["gate", 1],  ["reset", 1],  ["levelScale", 1],  ["levelBias", 0],  ["timeScale", 1],  ["action", 0]], "doc": "Plays back break point envelope contours (levels, times, shapes) given by demand ugens. The next values are called when the next node is reached.", "argDocs": {
+      "level": "demand ugen (or other ugen) returning level values", "dur": "demand ugen (or other ugen) returning time values", "shape": "demand ugen (or other ugen) returning shape number - the number given is the shape number", "curve": "demand ugen (or other ugen) returning curve values - if shape is 5, this is the curve factor. The possible values are: 0 - flat segments, 1 - linear segments, the default, 2 - natural exponential growth and decay. In this case, the levels must all be nonzero and the have the same sign, 3 - sinusoidal S shaped segments, 4 - sinusoidal segments shaped like the sides of a Welch window, a Float - a curvature value for all segments, an Array of Floats - curvature values for each segments.", "gate": "control rate gate if gate is x >= 1, the ugen runs, if gate is 0 > x > 1, the ugen is released at the next level (doneAction), if gate is x <= 0, the ugen is sampled end held", "reset": "if reset crosses from nonpositive to positive, the ugen is reset at the next level. If it is > 1, it is reset immediately.", "levelScale": "demand ugen returning level scaling values", "levelBias": "demand ugen returning level offset values", "timeScale": "demand ugen returning time scaling values", "action": "Default: NO-ACTION"
     }
-  },
-  {
-    "name": "Dgeom",
-    "rates": [],
-    "defaults": [
-      [
-        "length",
-        null
-      ],
-      [
-        "start",
-        1
-      ],
-      [
-        "grow",
-        2
-      ]
-    ],
-    "doc": "This ugen has been internalised for scserver compatibility. Please use the dgeom cgen instead.",
-    "argDocs": {
+  },  {
+    "name": "Dgeom", "rates": [], "defaults": [["length", null],  ["start", 1],  ["grow", 2]], "doc": "This ugen has been internalised for scserver compatibility. Please use the dgeom cgen instead.", "argDocs": {
       "length": "Default: positive infinity"
     }
-  },
-  {
-    "name": "Dibrown",
-    "extends": "Dbrown",
-    "rates": [],
-    "defaults": [
-      [
-        "length",
-        null
-      ],
-      [
-        "lo",
-        0
-      ],
-      [
-        "hi",
-        1
-      ],
-      [
-        "step",
-        0.01
-      ]
-    ],
-    "doc": "This ugen has been internalised for scserver compatibility. Please use the dibrown cgen instead.",
-    "argDocs": {
+  },  {
+    "name": "Dibrown", "extends": "Dbrown", "rates": [], "defaults": [["length", null],  ["lo", 0],  ["hi", 1],  ["step", 0.01]], "doc": "This ugen has been internalised for scserver compatibility. Please use the dibrown cgen instead.", "argDocs": {
       "length": "Default: positive infinity"
     }
-  },
-  {
-    "name": "Diwhite",
-    "extends": "Dwhite",
-    "rates": [],
-    "defaults": [
-      [
-        "length",
-        null
-      ],
-      [
-        "lo",
-        0
-      ],
-      [
-        "hi",
-        1
-      ]
-    ],
-    "doc": "This ugen has been internalised for scserver compatibility. Please use the diwhite cgen instead.",
-    "argDocs": {
+  },  {
+    "name": "Diwhite", "extends": "Dwhite", "rates": [], "defaults": [["length", null],  ["lo", 0],  ["hi", 1]], "doc": "This ugen has been internalised for scserver compatibility. Please use the diwhite cgen instead.", "argDocs": {
       "length": "Default: positive infinity"
     }
-  },
-  {
-    "name": "Donce",
-    "rates": [],
-    "defaults": [
-      [
-        "in",
-        null
-      ]
-    ]
-  },
-  {
-    "name": "Dpoll",
-    "rates": [],
-    "defaults": [
-      [
-        "in",
-        null
-      ],
-      [
-        "trigId",
-        -1
-      ],
-      [
-        "label",
-        null
-      ],
-      [
-        "run",
-        1
-      ]
-    ],
-    "doc": "Print the value of an input demand ugen. The print-out is in the form: label: value block offset: offset. WARNING: Printing values from the Server is intensive for the CPU. Poll should be used for debugging purposes.",
-    "argDocs": {
-      "in": "demand ugen to poll values from",
-      "trigId": "if greater than 0, a '/tr' message is sent back to the client (similar to send-trig)",
-      "label": "a label string",
-      "run": "activation switch 0 or 1 (can be a demand ugen)"
+  },  {
+    "name": "Donce", "rates": [], "defaults": [["in", null]]
+  },  {
+    "name": "Dpoll", "rates": [], "defaults": [["in", null],  ["trigId", -1],  ["label", null],  ["run", 1]], "doc": "Print the value of an input demand ugen. The print-out is in the form: label: value block offset: offset. WARNING: Printing values from the Server is intensive for the CPU. Poll should be used for debugging purposes.", "argDocs": {
+      "in": "demand ugen to poll values from", "trigId": "if greater than 0, a '/tr' message is sent back to the client (similar to send-trig)", "label": "a label string", "run": "activation switch 0 or 1 (can be a demand ugen)"
     }
-  },
-  {
-    "name": "Drand",
-    "extends": "Dseq",
-    "rates": [],
-    "defaults": [
-      [
-        "list",
-        null
-      ],
-      [
-        "numRepeats",
-        1
-      ]
-    ],
-    "doc": "Demand rate random sequence generator. Generate a random ordering of an input sequence.",
-    "argDocs": {
-      "list": "array of values or other ugens",
-      "numRepeats": "number of repeats"
+  },  {
+    "name": "Drand", "extends": "Dseq", "rates": [], "defaults": [["list", null],  ["numRepeats", 1]], "doc": "Demand rate random sequence generator. Generate a random ordering of an input sequence.", "argDocs": {
+      "list": "array of values or other ugens", "numRepeats": "number of repeats"
     }
-  },
-  {
-    "name": "Dseq",
-    "rates": [],
-    "defaults": [
-      [
-        "list",
-        null
-      ],
-      [
-        "numRepeats",
-        1
-      ]
-    ],
-    "doc": "Demand rate sequence generator. Outputs a sequence of values, possibly repeating multiple times. Use INF as a repeat val to create an endless loop.",
-    "argDocs": {
-      "list": "array of values or other ugens",
-      "numRepeats": "number of repeats"
+  },  {
+    "name": "Dseq", "rates": [], "defaults": [["list", null],  ["numRepeats", 1]], "doc": "Demand rate sequence generator. Outputs a sequence of values, possibly repeating multiple times. Use INF as a repeat val to create an endless loop.", "argDocs": {
+      "list": "array of values or other ugens", "numRepeats": "number of repeats"
     }
-  },
-  {
-    "name": "Dser",
-    "rates": [],
-    "defaults": [
-      [
-        "list",
-        null
-      ],
-      [
-        "count",
-        1
-      ]
-    ],
-    "doc": "Demand rate sequence generator. Generates a sequence of values like dseq, except outputs only count total values, rather than repeating.",
-    "argDocs": {
-      "list": "array of values or other ugens",
-      "count": "number of values to return"
+  },  {
+    "name": "Dser", "rates": [], "defaults": [["list", null],  ["count", 1]], "doc": "Demand rate sequence generator. Generates a sequence of values like dseq, except outputs only count total values, rather than repeating.", "argDocs": {
+      "list": "array of values or other ugens", "count": "number of values to return"
     }
-  },
-  {
-    "name": "Dseries",
-    "rates": [],
-    "defaults": [
-      [
-        "length",
-        null
-      ],
-      [
-        "start",
-        1
-      ],
-      [
-        "step",
-        1
-      ]
-    ],
-    "doc": "This ugen has been internalised for scserver compatibility. Please use the dseries cgen instead.",
-    "argDocs": {
+  },  {
+    "name": "Dseries", "rates": [], "defaults": [["length", null],  ["start", 1],  ["step", 1]], "doc": "This ugen has been internalised for scserver compatibility. Please use the dseries cgen instead.", "argDocs": {
       "length": "Default: positive infinity."
     }
-  },
-  {
-    "name": "Dshuf",
-    "extends": "Dseq",
-    "rates": [],
-    "defaults": [
-      [
-        "list",
-        null
-      ],
-      [
-        "numRepeats",
-        1
-      ]
-    ],
-    "doc": "Demand rate random sequence generator. Shuffle a sequence once and then output it one or more times.",
-    "argDocs": {
-      "list": "array of values or other ugens",
-      "numRepeats": "number of repeats"
+  },  {
+    "name": "Dshuf", "extends": "Dseq", "rates": [], "defaults": [["list", null],  ["numRepeats", 1]], "doc": "Demand rate random sequence generator. Shuffle a sequence once and then output it one or more times.", "argDocs": {
+      "list": "array of values or other ugens", "numRepeats": "number of repeats"
     }
-  },
-  {
-    "name": "Dstutter",
-    "rates": [],
-    "defaults": [
-      [
-        "numRepeats",
-        null
-      ],
-      [
-        "in",
-        null
-      ]
-    ],
-    "doc": "Replicates input values n times on demand. Both inputs can be demand rate ugens.",
-    "argDocs": {
-      "numRepeats": "number of repeats (can be a demand ugen)",
-      "in": "input ugen"
+  },  {
+    "name": "Dstutter", "rates": [], "defaults": [["numRepeats", null],  ["in", null]], "doc": "Replicates input values n times on demand. Both inputs can be demand rate ugens.", "argDocs": {
+      "numRepeats": "number of repeats (can be a demand ugen)", "in": "input ugen"
     }
-  },
-  {
-    "name": "Dswitch",
-    "extends": "Dswitch1",
-    "rates": [],
-    "defaults": [
-      [
-        "list",
-        null
-      ],
-      [
-        "index",
-        null
-      ]
-    ],
-    "doc": "A demand rate switch. In difference to Dswitch1, Dswitch embeds all items of an input demand ugen first before looking up the next index.",
-    "argDocs": {
-      "list": "array of values or other ugens",
-      "index": "which of the inputs to return"
+  },  {
+    "name": "Dswitch", "extends": "Dswitch1", "rates": [], "defaults": [["list", null],  ["index", null]], "doc": "A demand rate switch. In difference to Dswitch1, Dswitch embeds all items of an input demand ugen first before looking up the next index.", "argDocs": {
+      "list": "array of values or other ugens", "index": "which of the inputs to return"
     }
-  },
-  {
-    "name": "Dswitch1",
-    "rates": [],
-    "defaults": [
-      [
-        "list",
-        null
-      ],
-      [
-        "index",
-        null
-      ]
-    ],
-    "doc": "A demand rate switch that can be used to select one of multiple demand rate inputs.",
-    "argDocs": {
-      "list": "array of values or other ugens",
-      "index": "which of the inputs to return"
+  },  {
+    "name": "Dswitch1", "rates": [], "defaults": [["list", null],  ["index", null]], "doc": "A demand rate switch that can be used to select one of multiple demand rate inputs.", "argDocs": {
+      "list": "array of values or other ugens", "index": "which of the inputs to return"
     }
-  },
-  {
-    "name": "Duty",
-    "rates": [
-      "ar",
-      "kr"
-    ],
-    "defaults": [
-      [
-        "dur",
-        1
-      ],
-      [
-        "reset",
-        0
-      ],
-      [
-        "action",
-        0
-      ],
-      [
-        "level",
-        1
-      ]
-    ],
-    "doc": "This ugen has been internalised for scserver compatibility. Please use the duty cgen instead.",
-    "argDocs": {
+  },  {
+    "name": "Duty", "rates": ["ar", "kr"], "defaults": [["dur", 1],  ["reset", 0],  ["action", 0],  ["level", 1]], "doc": "This ugen has been internalised for scserver compatibility. Please use the duty cgen instead.", "argDocs": {
       "action": "Default: NO-ACTION"
     }
-  },
-  {
-    "name": "Dwhite",
-    "rates": [],
-    "defaults": [
-      [
-        "length",
-        null
-      ],
-      [
-        "lo",
-        0
-      ],
-      [
-        "hi",
-        1
-      ]
-    ],
-    "doc": "This ugen has been internalised for scserver compatibility. Please use the dwhite cgen instead.",
-    "argDocs": {
+  },  {
+    "name": "Dwhite", "rates": [], "defaults": [["length", null],  ["lo", 0],  ["hi", 1]], "doc": "This ugen has been internalised for scserver compatibility. Please use the dwhite cgen instead.", "argDocs": {
       "length": "Default: positive infinity"
     }
-  },
-  {
-    "name": "Dxrand",
-    "extends": "Dseq",
-    "rates": [],
-    "defaults": [
-      [
-        "list",
-        null
-      ],
-      [
-        "numRepeats",
-        1
-      ]
-    ],
-    "doc": "Demand rate random sequence generator. Generate a random ordering of the given sequence without repeating any element until all elements have been returned.",
-    "argDocs": {
-      "list": "array of values or other ugens",
-      "numRepeats": "number of repeats"
+  },  {
+    "name": "Dxrand", "extends": "Dseq", "rates": [], "defaults": [["list", null],  ["numRepeats", 1]], "doc": "Demand rate random sequence generator. Generate a random ordering of the given sequence without repeating any element until all elements have been returned.", "argDocs": {
+      "list": "array of values or other ugens", "numRepeats": "number of repeats"
     }
-  },
-  {
-    "name": "TDuty",
-    "extends": "Duty",
-    "rates": [
-      "ar",
-      "kr"
-    ],
-    "defaults": [
-      [
-        "dur",
-        1
-      ],
-      [
-        "reset",
-        0
-      ],
-      [
-        "action",
-        0
-      ],
-      [
-        "level",
-        1
-      ],
-      [
-        "gapFirst",
-        0
-      ]
-    ],
-    "doc": "This ugen has been internalised for scserver compatibility. Please use the tduty cgen instead.",
-    "argDocs": {
+  },  {
+    "name": "TDuty", "extends": "Duty", "rates": ["ar", "kr"], "defaults": [["dur", 1],  ["reset", 0],  ["action", 0],  ["level", 1],  ["gapFirst", 0]], "doc": "This ugen has been internalised for scserver compatibility. Please use the tduty cgen instead.", "argDocs": {
       "action": "Default: NO-ACTION"
     }
   }

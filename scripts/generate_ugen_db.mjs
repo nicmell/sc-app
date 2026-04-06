@@ -185,6 +185,15 @@ function parseUGen(block) {
   return result;
 }
 
+// ── JSON serialization (compact arrays) ───────────────────────────────────
+
+function compactJson(data) {
+  return JSON.stringify(data, null, 2)
+    .replace(/\[\n\s+/g, '[')
+    .replace(/\n\s+\]/g, ']')
+    .replace(/,\n\s+(?![{\[])/g, ', ');
+}
+
 // ── Resolve inheritance & generate ────────────────────────────────────────
 
 async function main() {
@@ -256,7 +265,7 @@ async function main() {
   for (const [file, ugens] of byFile) {
     ugens.sort((a, b) => a.name.localeCompare(b.name));
     const outPath = join(OUTPUT_DIR, `${file}.json`);
-    writeFileSync(outPath, JSON.stringify(ugens, null, 2) + '\n');
+    writeFileSync(outPath, compactJson(ugens) + '\n');
     console.log(`  ${file}.json: ${ugens.length} UGens`);
   }
 
