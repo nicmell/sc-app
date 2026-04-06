@@ -218,11 +218,6 @@ export type StripRuntime<T> = T extends { children: ScElementItem[] }
 
 export type ScElementItemBase = StripRuntime<ScElementItem> & { _element?: Element };
 
-export interface ProcessHtmlResult {
-  tree: ScElementItem[];
-  nodes: Map<string, ScElementItem>;
-}
-
 // ── Overrides ─────────────────────────────────────────────────────────────
 
 export interface ControlOverrideEntry {
