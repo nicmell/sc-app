@@ -175,9 +175,11 @@ const ugenHandler = (ctx: RuntimeContext): UgenRuntime => {
     const n = ctx.tree as StripRuntime<ScUgenNode>;
     for (const child of n.children) {
         if (!isControl(child) || !child.bind) continue;
-        const refId = child.bind.split(':')[0];
-        if (!resolve(ctx, [refId])) {
-            throw new Error(`<sc-ugen name="${n.name}">: input "${child.name}" references unknown "${refId}"`);
+        for (const ref of child.bind.split(',').map(s => s.trim())) {
+            const refId = ref.split(':')[0];
+            if (!resolve(ctx, [refId])) {
+                throw new Error(`<sc-ugen name="${n.name}">: input "${child.name}" references unknown "${refId}"`);
+            }
         }
     }
     return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path};
