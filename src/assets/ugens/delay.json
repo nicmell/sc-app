@@ -1,90 +1,645 @@
-[{
-    "name": "AllpassC", "extends": "CombN", "rates": ["ar", "kr"], "defaults": [["in", 0],  ["maxDelayTime", 0.2],  ["delayTime", 0.2],  ["decayTime", 1]], "doc": "all pass delay line, cubic interpolation", "argDocs": {
-      "in": "the input signal", "maxDelayTime": "the maximum delay time in seconds. Used to initialize the delay buffer size", "delayTime": "delay time in seconds", "decayTime": "time for the echoes to decay by 60 decibels. If this time is negative then the feedback coefficient will be negative, thus emphasizing only odd harmonics at an octave lower."
+[
+  {
+    "name": "AllpassC",
+    "extends": "CombN",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "maxDelayTime",
+        0.2
+      ],
+      [
+        "delayTime",
+        0.2
+      ],
+      [
+        "decayTime",
+        1
+      ]
+    ],
+    "doc": "all pass delay line, cubic interpolation",
+    "argDocs": {
+      "in": "the input signal",
+      "maxDelayTime": "the maximum delay time in seconds. Used to initialize the delay buffer size",
+      "delayTime": "delay time in seconds",
+      "decayTime": "time for the echoes to decay by 60 decibels. If this time is negative then the feedback coefficient will be negative, thus emphasizing only odd harmonics at an octave lower."
     }
-  },  {
-    "name": "AllpassL", "extends": "CombN", "rates": ["ar", "kr"], "defaults": [["in", 0],  ["maxDelayTime", 0.2],  ["delayTime", 0.2],  ["decayTime", 1]], "doc": "all pass delay line, linear interpolation", "argDocs": {
-      "in": "the input signal", "maxDelayTime": "the maximum delay time in seconds. Used to initialize the delay buffer size", "delayTime": "delay time in seconds", "decayTime": "time for the echoes to decay by 60 decibels. If this time is negative then the feedback coefficient will be negative, thus emphasizing only odd harmonics at an octave lower."
+  },
+  {
+    "name": "AllpassL",
+    "extends": "CombN",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "maxDelayTime",
+        0.2
+      ],
+      [
+        "delayTime",
+        0.2
+      ],
+      [
+        "decayTime",
+        1
+      ]
+    ],
+    "doc": "all pass delay line, linear interpolation",
+    "argDocs": {
+      "in": "the input signal",
+      "maxDelayTime": "the maximum delay time in seconds. Used to initialize the delay buffer size",
+      "delayTime": "delay time in seconds",
+      "decayTime": "time for the echoes to decay by 60 decibels. If this time is negative then the feedback coefficient will be negative, thus emphasizing only odd harmonics at an octave lower."
     }
-  },  {
-    "name": "AllpassN", "extends": "CombN", "rates": ["ar", "kr"], "defaults": [["in", 0],  ["maxDelayTime", 0.2],  ["delayTime", 0.2],  ["decayTime", 1]], "doc": "all pass delay line, no interpolation. See also AllpassC which uses cubic interpolation, and AllpassL which uses linear interpolation. Cubic interpolation is more computationally expensive than linear, but more accurate.", "argDocs": {
-      "in": "the input signal", "maxDelayTime": "the maximum delay time in seconds. Used to initialize the delay buffer size", "delayTime": "delay time in seconds", "decayTime": "time for the echoes to decay by 60 decibels. If this time is negative then the feedback coefficient will be negative, thus emphasizing only odd harmonics at an octave lower."
+  },
+  {
+    "name": "AllpassN",
+    "extends": "CombN",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "maxDelayTime",
+        0.2
+      ],
+      [
+        "delayTime",
+        0.2
+      ],
+      [
+        "decayTime",
+        1
+      ]
+    ],
+    "doc": "all pass delay line, no interpolation. See also AllpassC which uses cubic interpolation, and AllpassL which uses linear interpolation. Cubic interpolation is more computationally expensive than linear, but more accurate.",
+    "argDocs": {
+      "in": "the input signal",
+      "maxDelayTime": "the maximum delay time in seconds. Used to initialize the delay buffer size",
+      "delayTime": "delay time in seconds",
+      "decayTime": "time for the echoes to decay by 60 decibels. If this time is negative then the feedback coefficient will be negative, thus emphasizing only odd harmonics at an octave lower."
     }
-  },  {
-    "name": "BufAllpassC", "extends": "BufCombN", "rates": ["ar"], "defaults": [["buf", 0],  ["in", 0],  ["delayTime", 0.2],  ["decayTime", 1]], "doc": "buffer based all pass delay line with cubic interpolation", "argDocs": {
-      "buf": "buffer number", "in": "the input signal", "delayTime": "delay time in seconds", "decayTime": "time for the echoes to decay by 60 decibels. If this time is negative then the feedback coefficient will be negative, thus emphasizing only odd harmonics at an octave lower."
+  },
+  {
+    "name": "BufAllpassC",
+    "extends": "BufCombN",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "buf",
+        0
+      ],
+      [
+        "in",
+        0
+      ],
+      [
+        "delayTime",
+        0.2
+      ],
+      [
+        "decayTime",
+        1
+      ]
+    ],
+    "doc": "buffer based all pass delay line with cubic interpolation",
+    "argDocs": {
+      "buf": "buffer number",
+      "in": "the input signal",
+      "delayTime": "delay time in seconds",
+      "decayTime": "time for the echoes to decay by 60 decibels. If this time is negative then the feedback coefficient will be negative, thus emphasizing only odd harmonics at an octave lower."
     }
-  },  {
-    "name": "BufAllpassL", "extends": "BufCombN", "rates": ["ar"], "defaults": [["buf", 0],  ["in", 0],  ["delayTime", 0.2],  ["decayTime", 1]], "doc": "buffer based all pass delay line with linear interpolation", "argDocs": {
-      "buf": "buffer number", "in": "the input signal", "delayTime": "delay time in seconds", "decayTime": "time for the echoes to decay by 60 decibels. If this time is negative then the feedback coefficient will be negative, thus emphasizing only odd harmonics at an octave lower."
+  },
+  {
+    "name": "BufAllpassL",
+    "extends": "BufCombN",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "buf",
+        0
+      ],
+      [
+        "in",
+        0
+      ],
+      [
+        "delayTime",
+        0.2
+      ],
+      [
+        "decayTime",
+        1
+      ]
+    ],
+    "doc": "buffer based all pass delay line with linear interpolation",
+    "argDocs": {
+      "buf": "buffer number",
+      "in": "the input signal",
+      "delayTime": "delay time in seconds",
+      "decayTime": "time for the echoes to decay by 60 decibels. If this time is negative then the feedback coefficient will be negative, thus emphasizing only odd harmonics at an octave lower."
     }
-  },  {
-    "name": "BufAllpassN", "extends": "BufCombN", "rates": ["ar"], "defaults": [["buf", 0],  ["in", 0],  ["delayTime", 0.2],  ["decayTime", 1]], "doc": "buffer based all pass delay line with no interpolation. See also BufAllpassC which uses cubic interpolation, and BufAllpassL which uses linear interpolation. Cubic interpolation is more computationally expensive than linear, but more accurate.", "argDocs": {
-      "buf": "buffer number", "in": "the input signal", "delayTime": "delay time in seconds", "decayTime": "time for the echoes to decay by 60 decibels. If this time is negative then the feedback coefficient will be negative, thus emphasizing only odd harmonics at an octave lower."
+  },
+  {
+    "name": "BufAllpassN",
+    "extends": "BufCombN",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "buf",
+        0
+      ],
+      [
+        "in",
+        0
+      ],
+      [
+        "delayTime",
+        0.2
+      ],
+      [
+        "decayTime",
+        1
+      ]
+    ],
+    "doc": "buffer based all pass delay line with no interpolation. See also BufAllpassC which uses cubic interpolation, and BufAllpassL which uses linear interpolation. Cubic interpolation is more computationally expensive than linear, but more accurate.",
+    "argDocs": {
+      "buf": "buffer number",
+      "in": "the input signal",
+      "delayTime": "delay time in seconds",
+      "decayTime": "time for the echoes to decay by 60 decibels. If this time is negative then the feedback coefficient will be negative, thus emphasizing only odd harmonics at an octave lower."
     }
-  },  {
-    "name": "BufCombC", "extends": "BufCombN", "rates": ["ar"], "defaults": [["buf", 0],  ["in", 0],  ["delayTime", 0.2],  ["decayTime", 1]], "doc": "buffer based comb delay line with cubic interpolation", "argDocs": {
-      "buf": "buffer number", "in": "the input signal", "delayTime": "delay time in seconds", "decayTime": "time for the echoes to decay by 60 decibels. If this time is negative then the feedback coefficient will be negative, thus emphasizing only odd harmonics at an octave lower."
+  },
+  {
+    "name": "BufCombC",
+    "extends": "BufCombN",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "buf",
+        0
+      ],
+      [
+        "in",
+        0
+      ],
+      [
+        "delayTime",
+        0.2
+      ],
+      [
+        "decayTime",
+        1
+      ]
+    ],
+    "doc": "buffer based comb delay line with cubic interpolation",
+    "argDocs": {
+      "buf": "buffer number",
+      "in": "the input signal",
+      "delayTime": "delay time in seconds",
+      "decayTime": "time for the echoes to decay by 60 decibels. If this time is negative then the feedback coefficient will be negative, thus emphasizing only odd harmonics at an octave lower."
     }
-  },  {
-    "name": "BufCombL", "extends": "BufCombN", "rates": ["ar"], "defaults": [["buf", 0],  ["in", 0],  ["delayTime", 0.2],  ["decayTime", 1]], "doc": "buffer based comb delay line with linear interpolation", "argDocs": {
-      "buf": "buffer number", "in": "the input signal", "delayTime": "delay time in seconds", "decayTime": "time for the echoes to decay by 60 decibels. If this time is negative then the feedback coefficient will be negative, thus emphasizing only odd harmonics at an octave lower."
+  },
+  {
+    "name": "BufCombL",
+    "extends": "BufCombN",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "buf",
+        0
+      ],
+      [
+        "in",
+        0
+      ],
+      [
+        "delayTime",
+        0.2
+      ],
+      [
+        "decayTime",
+        1
+      ]
+    ],
+    "doc": "buffer based comb delay line with linear interpolation",
+    "argDocs": {
+      "buf": "buffer number",
+      "in": "the input signal",
+      "delayTime": "delay time in seconds",
+      "decayTime": "time for the echoes to decay by 60 decibels. If this time is negative then the feedback coefficient will be negative, thus emphasizing only odd harmonics at an octave lower."
     }
-  },  {
-    "name": "BufCombN", "rates": ["ar"], "defaults": [["buf", 0],  ["in", 0],  ["delayTime", 0.2],  ["decayTime", 1]], "doc": "buffer based comb delay line with no interpolation. See also [BufCombL] which uses linear interpolation, and BufCombC which uses cubic interpolation. Cubic interpolation is more computationally expensive than linear, but more accurate.", "argDocs": {
-      "buf": "buffer number", "in": "the input signal", "delayTime": "delay time in seconds", "decayTime": "time for the echoes to decay by 60 decibels. If this time is negative then the feedback coefficient will be negative, thus emphasizing only odd harmonics at an octave lower."
+  },
+  {
+    "name": "BufCombN",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "buf",
+        0
+      ],
+      [
+        "in",
+        0
+      ],
+      [
+        "delayTime",
+        0.2
+      ],
+      [
+        "decayTime",
+        1
+      ]
+    ],
+    "doc": "buffer based comb delay line with no interpolation. See also [BufCombL] which uses linear interpolation, and BufCombC which uses cubic interpolation. Cubic interpolation is more computationally expensive than linear, but more accurate.",
+    "argDocs": {
+      "buf": "buffer number",
+      "in": "the input signal",
+      "delayTime": "delay time in seconds",
+      "decayTime": "time for the echoes to decay by 60 decibels. If this time is negative then the feedback coefficient will be negative, thus emphasizing only odd harmonics at an octave lower."
     }
-  },  {
-    "name": "BufDelayC", "extends": "BufDelayN", "rates": ["ar", "kr"], "defaults": [["buf", 0],  ["in", 0],  ["delayTime", 0.2]], "doc": "buffer based simple delay line with cubic interpolation", "argDocs": {
-      "buf": "buffer number", "in": "the input signal", "delayTime": "delay time in seconds"
+  },
+  {
+    "name": "BufDelayC",
+    "extends": "BufDelayN",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buf",
+        0
+      ],
+      [
+        "in",
+        0
+      ],
+      [
+        "delayTime",
+        0.2
+      ]
+    ],
+    "doc": "buffer based simple delay line with cubic interpolation",
+    "argDocs": {
+      "buf": "buffer number",
+      "in": "the input signal",
+      "delayTime": "delay time in seconds"
     }
-  },  {
-    "name": "BufDelayL", "extends": "BufDelayN", "rates": ["ar", "kr"], "defaults": [["buf", 0],  ["in", 0],  ["delayTime", 0.2]], "doc": "buffer based simple delay line with linear interpolation", "argDocs": {
-      "buf": "buffer number", "in": "the input signal", "delayTime": "delay time in seconds"
+  },
+  {
+    "name": "BufDelayL",
+    "extends": "BufDelayN",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buf",
+        0
+      ],
+      [
+        "in",
+        0
+      ],
+      [
+        "delayTime",
+        0.2
+      ]
+    ],
+    "doc": "buffer based simple delay line with linear interpolation",
+    "argDocs": {
+      "buf": "buffer number",
+      "in": "the input signal",
+      "delayTime": "delay time in seconds"
     }
-  },  {
-    "name": "BufDelayN", "rates": ["ar", "kr"], "defaults": [["buf", 0],  ["in", 0],  ["delayTime", 0.2]], "doc": "buffer based simple delay line with no interpolation. See also BufDelayL which uses linear interpolation, and BufDelayC which uses cubic interpolation. Cubic interpolation is more computationally expensive than linear, but more accurate.", "argDocs": {
-      "buf": "buffer number", "in": "the input signal", "delayTime": "delay time in seconds"
+  },
+  {
+    "name": "BufDelayN",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buf",
+        0
+      ],
+      [
+        "in",
+        0
+      ],
+      [
+        "delayTime",
+        0.2
+      ]
+    ],
+    "doc": "buffer based simple delay line with no interpolation. See also BufDelayL which uses linear interpolation, and BufDelayC which uses cubic interpolation. Cubic interpolation is more computationally expensive than linear, but more accurate.",
+    "argDocs": {
+      "buf": "buffer number",
+      "in": "the input signal",
+      "delayTime": "delay time in seconds"
     }
-  },  {
-    "name": "CombC", "extends": "CombN", "rates": ["ar", "kr"], "defaults": [["in", 0],  ["maxDelayTime", 0.2],  ["delayTime", 0.2],  ["decayTime", 1]], "doc": "comb delay line, cubic interpolation", "argDocs": {
-      "in": "the input signal", "maxDelayTime": "the maximum delay time in seconds. Used to initialize the delay buffer size", "delayTime": "delay time in seconds", "decayTime": "time for the echoes to decay by 60 decibels. If this time is negative then the feedback coefficient will be negative, thus emphasizing only odd harmonics at an octave lower."
+  },
+  {
+    "name": "CombC",
+    "extends": "CombN",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "maxDelayTime",
+        0.2
+      ],
+      [
+        "delayTime",
+        0.2
+      ],
+      [
+        "decayTime",
+        1
+      ]
+    ],
+    "doc": "comb delay line, cubic interpolation",
+    "argDocs": {
+      "in": "the input signal",
+      "maxDelayTime": "the maximum delay time in seconds. Used to initialize the delay buffer size",
+      "delayTime": "delay time in seconds",
+      "decayTime": "time for the echoes to decay by 60 decibels. If this time is negative then the feedback coefficient will be negative, thus emphasizing only odd harmonics at an octave lower."
     }
-  },  {
-    "name": "CombL", "extends": "CombN", "rates": ["ar", "kr"], "defaults": [["in", 0],  ["maxDelayTime", 0.2],  ["delayTime", 0.2],  ["decayTime", 1]], "doc": "comb delay line, linear interpolation", "argDocs": {
-      "in": "the input signal", "maxDelayTime": "the maximum delay time in seconds. Used to initialize the delay buffer size", "delayTime": "delay time in seconds", "decayTime": "time for the echoes to decay by 60 decibels. If this time is negative then the feedback coefficient will be negative, thus emphasizing only odd harmonics at an octave lower."
+  },
+  {
+    "name": "CombL",
+    "extends": "CombN",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "maxDelayTime",
+        0.2
+      ],
+      [
+        "delayTime",
+        0.2
+      ],
+      [
+        "decayTime",
+        1
+      ]
+    ],
+    "doc": "comb delay line, linear interpolation",
+    "argDocs": {
+      "in": "the input signal",
+      "maxDelayTime": "the maximum delay time in seconds. Used to initialize the delay buffer size",
+      "delayTime": "delay time in seconds",
+      "decayTime": "time for the echoes to decay by 60 decibels. If this time is negative then the feedback coefficient will be negative, thus emphasizing only odd harmonics at an octave lower."
     }
-  },  {
-    "name": "CombN", "rates": ["ar", "kr"], "defaults": [["in", 0],  ["maxDelayTime", 0.2],  ["delayTime", 0.2],  ["decayTime", 1]], "doc": "comb delay line, no interpolation. See also CombL which uses linear interpolation, and CombC which uses cubic interpolation. Cubic interpolation is more computationally expensive than linear, but more accurate.", "argDocs": {
-      "in": "the input signal", "maxDelayTime": "the maximum delay time in seconds. Used to initialize the delay buffer size", "delayTime": "delay time in seconds", "decayTime": "time for the echoes to decay by 60 decibels. If this time is negative then the feedback coefficient will be negative, thus emphasizing only odd harmonics at an octave lower."
+  },
+  {
+    "name": "CombN",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "maxDelayTime",
+        0.2
+      ],
+      [
+        "delayTime",
+        0.2
+      ],
+      [
+        "decayTime",
+        1
+      ]
+    ],
+    "doc": "comb delay line, no interpolation. See also CombL which uses linear interpolation, and CombC which uses cubic interpolation. Cubic interpolation is more computationally expensive than linear, but more accurate.",
+    "argDocs": {
+      "in": "the input signal",
+      "maxDelayTime": "the maximum delay time in seconds. Used to initialize the delay buffer size",
+      "delayTime": "delay time in seconds",
+      "decayTime": "time for the echoes to decay by 60 decibels. If this time is negative then the feedback coefficient will be negative, thus emphasizing only odd harmonics at an octave lower."
     }
-  },  {
-    "name": "Delay1", "rates": ["ar", "kr"], "defaults": [["in", 0]], "doc": "delay input signal by one frame of samples. Note: for audio-rate signals the delay is 1 audio frame, and for control-rate signals the delay is 1 control period.", "argDocs": {
+  },
+  {
+    "name": "Delay1",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ]
+    ],
+    "doc": "delay input signal by one frame of samples. Note: for audio-rate signals the delay is 1 audio frame, and for control-rate signals the delay is 1 control period.",
+    "argDocs": {
       "in": "input to be delayed."
     }
-  },  {
-    "name": "Delay2", "extends": "Delay1", "rates": ["ar", "kr"], "defaults": [["in", 0]], "doc": "delay input signal by two frames of samples", "argDocs": {
+  },
+  {
+    "name": "Delay2",
+    "extends": "Delay1",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ]
+    ],
+    "doc": "delay input signal by two frames of samples",
+    "argDocs": {
       "in": "input to be delayed."
     }
-  },  {
-    "name": "DelayC", "extends": "DelayN", "rates": ["ar", "kr"], "defaults": [["in", 0],  ["maxDelayTime", 0.2],  ["delayTime", 0.2]], "doc": "simple delay line, cubic interpolation.", "argDocs": {
-      "in": "the input signal", "maxDelayTime": "the maximum delay time in seconds. Used to initialize the delay buffer size", "delayTime": "delay time in seconds"
+  },
+  {
+    "name": "DelayC",
+    "extends": "DelayN",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "maxDelayTime",
+        0.2
+      ],
+      [
+        "delayTime",
+        0.2
+      ]
+    ],
+    "doc": "simple delay line, cubic interpolation.",
+    "argDocs": {
+      "in": "the input signal",
+      "maxDelayTime": "the maximum delay time in seconds. Used to initialize the delay buffer size",
+      "delayTime": "delay time in seconds"
     }
-  },  {
-    "name": "DelayL", "extends": "DelayN", "rates": ["ar", "kr"], "defaults": [["in", 0],  ["maxDelayTime", 0.2],  ["delayTime", 0.2]], "doc": "simple delay line, linear interpolation.", "argDocs": {
-      "in": "the input signal", "maxDelayTime": "the maximum delay time in seconds. Used to initialize the delay buffer size", "delayTime": "delay time in seconds"
+  },
+  {
+    "name": "DelayL",
+    "extends": "DelayN",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "maxDelayTime",
+        0.2
+      ],
+      [
+        "delayTime",
+        0.2
+      ]
+    ],
+    "doc": "simple delay line, linear interpolation.",
+    "argDocs": {
+      "in": "the input signal",
+      "maxDelayTime": "the maximum delay time in seconds. Used to initialize the delay buffer size",
+      "delayTime": "delay time in seconds"
     }
-  },  {
-    "name": "DelayN", "rates": ["ar", "kr"], "defaults": [["in", 0],  ["maxDelayTime", 0.2],  ["delayTime", 0.2]], "doc": "simple delay line, no interpolation. See also DelayL which uses linear interpolation, and DelayC which uses cubic interpolation. Cubic interpolation is more computationally expensive than linear, but more accurate.", "argDocs": {
-      "in": "the input signal", "maxDelayTime": "the maximum delay time in seconds. Used to initialize the delay buffer size", "delayTime": "delay time in seconds"
+  },
+  {
+    "name": "DelayN",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        0
+      ],
+      [
+        "maxDelayTime",
+        0.2
+      ],
+      [
+        "delayTime",
+        0.2
+      ]
+    ],
+    "doc": "simple delay line, no interpolation. See also DelayL which uses linear interpolation, and DelayC which uses cubic interpolation. Cubic interpolation is more computationally expensive than linear, but more accurate.",
+    "argDocs": {
+      "in": "the input signal",
+      "maxDelayTime": "the maximum delay time in seconds. Used to initialize the delay buffer size",
+      "delayTime": "delay time in seconds"
     }
-  },  {
-    "name": "DelTapRd", "rates": ["ar", "kr"], "defaults": [["buffer", 0],  ["phase", 0],  ["delay", 0],  ["interp", 1]], "doc": "Tap a delay line from a del-tap-wr UGen", "argDocs": {
-      "buffer": "buffer where del-tap-wr has written signal. Max delay time is based on buffer size.", "phase": "the current phase of the del-tap-wr UGen. This is the output of DelTapWr.", "delay": "A delay time in seconds.", "interp": "the kind of interpolation to be used. 1 is none, 2 is linear, 4 is cubic."
+  },
+  {
+    "name": "DelTapRd",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        0
+      ],
+      [
+        "phase",
+        0
+      ],
+      [
+        "delay",
+        0
+      ],
+      [
+        "interp",
+        1
+      ]
+    ],
+    "doc": "Tap a delay line from a del-tap-wr UGen",
+    "argDocs": {
+      "buffer": "buffer where del-tap-wr has written signal. Max delay time is based on buffer size.",
+      "phase": "the current phase of the del-tap-wr UGen. This is the output of DelTapWr.",
+      "delay": "A delay time in seconds.",
+      "interp": "the kind of interpolation to be used. 1 is none, 2 is linear, 4 is cubic."
     }
-  },  {
-    "name": "DelTapWr", "rates": ["ar", "kr"], "defaults": [["buffer", 0],  ["in", 0]], "doc": "Tap a delay line from a del-tap-wr UGen", "argDocs": {
-      "buffer": "the buffer to write signal into. Max delay time is based on buffer size.", "in": "the signal to write to the buffer."
+  },
+  {
+    "name": "DelTapWr",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        0
+      ],
+      [
+        "in",
+        0
+      ]
+    ],
+    "doc": "Tap a delay line from a del-tap-wr UGen",
+    "argDocs": {
+      "buffer": "the buffer to write signal into. Max delay time is based on buffer size.",
+      "in": "the signal to write to the buffer."
     }
   }
 ]

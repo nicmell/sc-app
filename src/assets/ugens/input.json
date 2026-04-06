@@ -1,18 +1,121 @@
-[{
-    "name": "KeyState", "rates": ["kr"], "defaults": [["keycode", 0],  ["minval", 0],  ["maxval", 1],  ["lag", 0.2]], "doc": "Toggles between two values when a key on the keyboard is up or down. Note that this ugen does not prevent normal typing.", "argDocs": {
-      "keycode": "The keycode value of the key to check.", "minval": "The value to output when the key is not pressed.", "maxval": "The value to output when the key is pressed.", "lag": "lag factor"
+[
+  {
+    "name": "KeyState",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "keycode",
+        0
+      ],
+      [
+        "minval",
+        0
+      ],
+      [
+        "maxval",
+        1
+      ],
+      [
+        "lag",
+        0.2
+      ]
+    ],
+    "doc": "Toggles between two values when a key on the keyboard is up or down. Note that this ugen does not prevent normal typing.",
+    "argDocs": {
+      "keycode": "The keycode value of the key to check.",
+      "minval": "The value to output when the key is not pressed.",
+      "maxval": "The value to output when the key is pressed.",
+      "lag": "lag factor"
     }
-  },  {
-    "name": "MouseButton", "rates": ["kr"], "defaults": [["up", 0],  ["down", 1],  ["lag", 0.2]], "doc": "toggles between two values when the left mouse button is up or down", "argDocs": {
-      "up": "value when the key is not pressed", "down": "value when the key is pressed", "lag": "lag factor"
+  },
+  {
+    "name": "MouseButton",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "up",
+        0
+      ],
+      [
+        "down",
+        1
+      ],
+      [
+        "lag",
+        0.2
+      ]
+    ],
+    "doc": "toggles between two values when the left mouse button is up or down",
+    "argDocs": {
+      "up": "value when the key is not pressed",
+      "down": "value when the key is pressed",
+      "lag": "lag factor"
     }
-  },  {
-    "name": "MouseX", "rates": ["kr"], "defaults": [["min", 0],  ["max", 1],  ["warp", 0],  ["lag", 0.2]], "doc": "maps the current mouse X coordinate to a value between min and max", "argDocs": {
-      "min": "minimum value (when mouse is at the left of the screen)", "max": "maximum value (when mouse is at the right of the screen)", "warp": "mapping curve - either LINEAR or EXPONENTIAL (LIN and EXP abbreviations are allowed). Default is LINEAR.", "lag": "lag factor to dezipper cursor movement."
+  },
+  {
+    "name": "MouseX",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "min",
+        0
+      ],
+      [
+        "max",
+        1
+      ],
+      [
+        "warp",
+        0
+      ],
+      [
+        "lag",
+        0.2
+      ]
+    ],
+    "doc": "maps the current mouse X coordinate to a value between min and max",
+    "argDocs": {
+      "min": "minimum value (when mouse is at the left of the screen)",
+      "max": "maximum value (when mouse is at the right of the screen)",
+      "warp": "mapping curve - either LINEAR or EXPONENTIAL (LIN and EXP abbreviations are allowed). Default is LINEAR.",
+      "lag": "lag factor to dezipper cursor movement."
     }
-  },  {
-    "name": "MouseY", "rates": ["kr"], "defaults": [["min", 0],  ["max", 1],  ["warp", 0],  ["lag", 0.2]], "doc": "maps the current mouse Y coordinate to a value between min and max", "argDocs": {
-      "min": "minimum value (when mouse is at the top of the screen)", "max": "maximum value (when mouse is at the bottom of the screen)", "warp": "mapping curve - either LINEAR or EXPONENTIAL (LIN and EXP abbreviations are allowed). Default is LINEAR", "lag": "lag factor to smooth out cursor movement."
+  },
+  {
+    "name": "MouseY",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "min",
+        0
+      ],
+      [
+        "max",
+        1
+      ],
+      [
+        "warp",
+        0
+      ],
+      [
+        "lag",
+        0.2
+      ]
+    ],
+    "doc": "maps the current mouse Y coordinate to a value between min and max",
+    "argDocs": {
+      "min": "minimum value (when mouse is at the top of the screen)",
+      "max": "maximum value (when mouse is at the bottom of the screen)",
+      "warp": "mapping curve - either LINEAR or EXPONENTIAL (LIN and EXP abbreviations are allowed). Default is LINEAR",
+      "lag": "lag factor to smooth out cursor movement."
     }
   }
 ]
