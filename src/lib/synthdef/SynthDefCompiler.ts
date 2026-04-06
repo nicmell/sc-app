@@ -1,9 +1,8 @@
 import {UGen, type UGenInput, Rate} from "@/lib/ugen/ugen";
 import {synthDef} from "@/lib/ugen/synthdef";
 import {control} from "@/lib/ugen/control";
-import {ugenRegistry, type UGenRegistryEntry} from "@/lib/ugen/registry";
+import {lookupUGen, type UGenSpec as UGenRegistrySpec} from "@/lib/ugen/registry";
 import {binaryOps, unaryOps} from "@/lib/ugen/operators";
-import "@/lib/ugen/ugen-db"; // side-effect: populates registry
 import type {UGenSpec} from "@/types/parsers";
 
 // ---------------------------------------------------------------------------
@@ -69,14 +68,14 @@ class UGenGraphBuilder {
 
   build(specs: Map<string, UGenSpec>): void {
     for (const spec of topoSort(specs)) {
-      const entry = ugenRegistry.lookup(spec.type);
+      const entry = lookupUGen(spec.type);
       if (!entry) throw new Error(`Unknown UGen type: "${spec.type}"`);
       const rate = parseRate(spec.rate);
       this.buildUGen(spec, entry, rate);
     }
   }
 
-  private buildUGen(spec: UGenSpec, entry: UGenRegistryEntry, rate: Rate): void {
+  private buildUGen(spec: UGenSpec, entry: UGenRegistrySpec, rate: Rate): void {
     const inputs = this.resolveStandardInputs(spec, entry.defaults);
     const numOutputs = entry.numOutputs ?? 1;
     const specialIndex = this.resolveSpecialIndex(spec);

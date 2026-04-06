@@ -1,19 +1,7 @@
-import { UGen, UGenOutput, type UGenInput, type Rate, Rate as R } from './ugen';
+import {UGen, UGenOutput, type UGenInput, type Rate, Rate as R} from './ugen';
+import type {UGenSpec} from './registry';
 
-// ---------------------------------------------------------------------------
-// UGen spec & definition types
-// ---------------------------------------------------------------------------
-
-export interface UGenSpec {
-  /** SuperCollider UGen class name (e.g. "SinOsc"). */
-  name: string;
-  /** Supported calculation rates. */
-  rates: Rate[];
-  /** Parameter names and defaults. `undefined` = required. */
-  defaults: [name: string, defaultValue: number | undefined][];
-  /** Number of output channels (default 1). */
-  numOutputs?: number;
-}
+export type {UGenSpec};
 
 type UGenFactory = (...args: (UGenInput | UGenInput[])[]) => UGen | UGen[];
 type MultiOutFactory = (...args: UGenInput[]) => UGenOutput[];
@@ -30,10 +18,6 @@ export interface MultiOutUGenDef {
   ir: MultiOutFactory;
 }
 
-// ---------------------------------------------------------------------------
-// Multi-channel expansion
-// ---------------------------------------------------------------------------
-
 function expand(
   inputs: (UGenInput | UGenInput[])[],
   factory: (args: UGenInput[]) => UGen,
@@ -46,18 +30,10 @@ function expand(
     }
   }
   if (maxLen === 0) return factory(inputs as UGenInput[]);
-  return Array.from({ length: maxLen }, (_, i) =>
-    factory(
-      inputs.map((inp) =>
-        Array.isArray(inp) ? inp[i % inp.length] : inp,
-      ),
-    ),
+  return Array.from({length: maxLen}, (_, i) =>
+    factory(inputs.map(inp => Array.isArray(inp) ? inp[i % inp.length] : inp)),
   );
 }
-
-// ---------------------------------------------------------------------------
-// Default-fill helper
-// ---------------------------------------------------------------------------
 
 function fillDefaults(
   args: (UGenInput | UGenInput[])[],
@@ -66,17 +42,11 @@ function fillDefaults(
   const result = [...args];
   for (let i = args.length; i < defaults.length; i++) {
     const [paramName, def] = defaults[i];
-    if (def === undefined) {
-      throw new Error(`Missing required argument: ${paramName}`);
-    }
+    if (def === undefined) throw new Error(`Missing required argument: ${paramName}`);
     result.push(def);
   }
   return result;
 }
-
-// ---------------------------------------------------------------------------
-// Factory: single-output UGen
-// ---------------------------------------------------------------------------
 
 function makeMethod(spec: UGenSpec, rate: Rate): UGenFactory {
   return (...args) => {
@@ -88,9 +58,7 @@ function makeMethod(spec: UGenSpec, rate: Rate): UGenFactory {
 }
 
 function unsupported(name: string, method: string): () => never {
-  return () => {
-    throw new Error(`${name} does not support ${method}()`);
-  };
+  return () => { throw new Error(`${name} does not support ${method}()`); };
 }
 
 export function defineUGen(spec: UGenSpec): UGenDef {
@@ -101,23 +69,19 @@ export function defineUGen(spec: UGenSpec): UGenDef {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Factory: multi-output UGen
-// ---------------------------------------------------------------------------
+export function defineMultiOutUGen(spec: UGenSpec): MultiOutUGenDef {
+  return {
+    ar: spec.rates.includes(R.Audio) ? makeMultiOutMethod(spec, R.Audio) : unsupported(spec.name, 'ar') as never,
+    kr: spec.rates.includes(R.Control) ? makeMultiOutMethod(spec, R.Control) : unsupported(spec.name, 'kr') as never,
+    ir: spec.rates.includes(R.Scalar) ? makeMultiOutMethod(spec, R.Scalar) : unsupported(spec.name, 'ir') as never,
+  };
+}
 
 function makeMultiOutMethod(spec: UGenSpec, rate: Rate): MultiOutFactory {
   const numOut = spec.numOutputs ?? 2;
   return (...args: UGenInput[]) => {
     const filled = fillDefaults(args, spec.defaults) as UGenInput[];
     const ugen = new UGen(spec.name, rate, filled, numOut);
-    return Array.from({ length: numOut }, (_, i) => ugen.output(i));
-  };
-}
-
-export function defineMultiOutUGen(spec: UGenSpec): MultiOutUGenDef {
-  return {
-    ar: spec.rates.includes(R.Audio) ? makeMultiOutMethod(spec, R.Audio) : unsupported(spec.name, 'ar') as never,
-    kr: spec.rates.includes(R.Control) ? makeMultiOutMethod(spec, R.Control) : unsupported(spec.name, 'kr') as never,
-    ir: spec.rates.includes(R.Scalar) ? makeMultiOutMethod(spec, R.Scalar) : unsupported(spec.name, 'ir') as never,
+    return Array.from({length: numOut}, (_, i) => ugen.output(i));
   };
 }
