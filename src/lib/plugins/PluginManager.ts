@@ -27,35 +27,26 @@ export class PluginManager {
         pluginsApi.removePlugin(plugin.id);
     }
 
-    async fetchPluginHtml(boxId: string): Promise<string> {
+    async loadPlugin(boxId: string, rootElement: Element): Promise<Map<string, ScElementItem>> {
         const box = layoutApi.getById(boxId);
-        if (!box?.plugin) {
-            throw new Error(`No plugin assigned for ${boxId}`);
-        }
+        if (!box?.plugin) throw new Error(`No plugin assigned for ${boxId}`);
         const plugin = pluginsApi.getById(box.plugin);
-        if (!plugin) {
-            throw new Error(`Plugin ${box.plugin} not found`);
-        }
+        if (!plugin) throw new Error(`Plugin ${box.plugin} not found`);
 
         const resp = await get(`${PLUGINS_URL}/${plugin.id}/${plugin.entry}`);
         const text = await resp.text();
         const doc = new DOMParser().parseFromString(text, "text/xml");
-        const error = doc.querySelector("parsererror");
-        if (error) {
-            throw new Error(error.textContent ?? "Invalid XHTML");
-        }
 
-        return doc.documentElement.innerHTML;
-    }
+        rootElement.innerHTML = doc.documentElement.innerHTML;
 
-    processPlugin(boxId: string, rootElement: Element): void {
         const synthdefs: ScSynthDefItem[] = [];
         const nodes = new Map<string, ScElementItem>();
         const overrides = runtimeApi.overrides.filter(e => e.rootId === boxId);
 
         const tree = hydrate({id: boxId, type: ELEMENTS.SC_PLUGIN}, rootElement);
         processHtml({rootId: boxId, tree, scope: [tree], synthdefs, nodes, overrides, path: []});
-        runtimeApi.loadPlugin({id: boxId, nodes});
+
+        return nodes;
     }
 }
 

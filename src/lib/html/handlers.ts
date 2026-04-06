@@ -7,8 +7,10 @@ import {ELEMENTS} from "@/constants/sc-elements";
 export type HtmlProps<T> = Omit<StripRuntime<T>, 'id' | 'type' | 'children'>;
 
 function extractPluginProps(el: Element): Omit<HtmlProps<ScPluginItem>, 'name'> {
+    const parseError = el.querySelector('parsererror');
     return {
         title: el.querySelector('title')?.textContent ?? '',
+        error: parseError ? parseError.textContent ?? 'Invalid XHTML' : undefined,
         run: el.getAttribute('run') !== 'false',
     };
 }

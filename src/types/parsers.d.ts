@@ -9,10 +9,6 @@ export interface NodeRuntime {
   nodeId: number;
 }
 
-export interface PluginRuntime extends NodeRuntime {
-  error?: string;
-}
-
 export type ControlRuntime = {
   rootId: string;
   parentId: string;
@@ -69,9 +65,10 @@ export interface ScPluginItem {
   type: 'sc-plugin';
   id: string;
   title?: string;
+  error?: string;
   run: boolean;
   children: ScElementItem[];
-  runtime: PluginRuntime;
+  runtime: NodeRuntime;
 }
 
 export interface ScGroupItem {

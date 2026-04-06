@@ -2,7 +2,7 @@ import {html} from 'lit';
 import {pluginManager} from '@/lib/plugins/PluginManager';
 import {runtimeApi} from '@/lib/stores/api';
 import {synthDefManager} from '@/lib/synthdef';
-import type {ScPluginItem, PluginRuntime} from '@/types/parsers';
+import type {ScPluginItem} from '@/types/parsers';
 import {ScGroup} from './sc-group.ts';
 
 export class ScPlugin extends ScGroup<ScPluginItem> {
@@ -20,16 +20,12 @@ export class ScPlugin extends ScGroup<ScPluginItem> {
 
   protected async firstUpdated() {
     try {
-      this.innerHTML = await pluginManager.fetchPluginHtml(this.id);
-      pluginManager.processPlugin(this.id, this);
+      const nodes = await pluginManager.loadPlugin(this.id, this);
+      runtimeApi.loadPlugin({id: this.id, nodes});
       this._sendCreate();
     } catch (e) {
       this._error = e instanceof Error ? e.message : String(e);
     }
-  }
-
-  private get _pluginError(): string {
-    return (this._state?.runtime as PluginRuntime | undefined)?.error ?? '';
   }
 
   disconnectedCallback() {
@@ -39,7 +35,7 @@ export class ScPlugin extends ScGroup<ScPluginItem> {
   }
 
   render() {
-    const error = this._error || this._pluginError;
+    const error = this._error || this._state?.error || '';
     const loading = !this._state?.runtime.loaded && !error;
     return html`
       ${error ? html`<div style="color:#e57373;font-size:0.85rem;padding:0.5rem 0">${error}</div>` : ''}

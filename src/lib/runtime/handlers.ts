@@ -1,7 +1,7 @@
 import type {
     ScElementItem, ScElementItemBase, ScParentItem, ScGroupItem, ScSynthItem, ScSynthDefItem, ScUgenItem,
     ScRunItem, ScControlItem, ScVarItem,
-    ScPluginItem, PluginRuntime, NodeRuntime, ControlRuntime, VarRuntime, UgenRuntime, SynthDefRuntime, InputRuntime, RunRuntime, OverrideEntry, StripRuntime,
+    ScPluginItem, NodeRuntime, ControlRuntime, VarRuntime, UgenRuntime, SynthDefRuntime, InputRuntime, RunRuntime, OverrideEntry, StripRuntime,
 } from "@/types/parsers";
 import {isNode, isParent, isControl, isState, isControlOverride, isRunOverride, isVarOverride} from "@/lib/utils/guards";
 import {ELEMENTS} from "@/constants/sc-elements";
@@ -106,19 +106,19 @@ function resolveVisualBind(ctx: RuntimeContext): InputRuntime {
 
 // --- Handlers ---
 
-const pluginHandler = (ctx: RuntimeContext): PluginRuntime => {
+const pluginHandler = (ctx: RuntimeContext): NodeRuntime => {
     const n = ctx.tree as StripRuntime<ScPluginItem>;
     try {
+        if (n.error) throw new Error(n.error);
         ctx.visit(ctx.tree);
         const run = findRunOverride(ctx, ctx.path) ?? (n.run ? 1 : 0)
         return {rootId: ctx.rootId, parentId: '', path: ctx.path, run, loaded: false, nodeId: 0};
     } catch (e) {
-        const error = e instanceof Error ? e.message : String(e)
         Object.assign(n, {children: []});
         for (const id of ctx.nodes.keys()) {
             if (id !== n.id) ctx.nodes.delete(id);
         }
-        return {rootId: ctx.rootId, parentId: '', path: ctx.path, run: 0, loaded: false, nodeId: 0, error};
+        throw e;
     }
 };
 
