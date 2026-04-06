@@ -13,6 +13,8 @@ import {ScControl} from './sc-control.ts';
 import {ScVar} from './sc-var.ts';
 import {ScSelect} from './sc-select.ts';
 import {ScOption} from './sc-option.ts';
+import {ScRadioGroup} from './sc-radio-group.ts';
+import {ScRadio} from './sc-radio.ts';
 
 export default {
   [ELEMENTS.SC_DISPLAY]: ScDisplay,
@@ -29,4 +31,6 @@ export default {
   [ELEMENTS.SC_VAR]: ScVar,
   [ELEMENTS.SC_SELECT]: ScSelect,
   [ELEMENTS.SC_OPTION]: ScOption,
+  [ELEMENTS.SC_RADIO_GROUP]: ScRadioGroup,
+  [ELEMENTS.SC_RADIO]: ScRadio,
 };

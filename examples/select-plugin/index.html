@@ -53,6 +53,24 @@
         <span>= <sc-display bind="vars.mode" format="%d"/></span>
     </label>
     <label>
+        <span>Frequency (radio):</span>
+        <sc-radio-group bind="s1.freq">
+            <sc-radio value="261" label="C4"/>
+            <sc-radio value="330" label="E4"/>
+            <sc-radio value="392" label="G4"/>
+            <sc-radio value="440" label="A4"/>
+            <sc-radio value="523" label="C5"/>
+        </sc-radio-group>
+    </label>
+    <label>
+        <span>Mode (radio):</span>
+        <sc-radio-group bind="vars.mode">
+            <sc-radio value="0" label="Off"/>
+            <sc-radio value="1" label="On"/>
+            <sc-radio value="2" label="Auto"/>
+        </sc-radio-group>
+    </label>
+    <label>
         <sc-run size="24"/>
     </label>
 </div>

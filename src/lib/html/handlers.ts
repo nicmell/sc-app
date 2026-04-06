@@ -1,6 +1,6 @@
 import type {
     StripRuntime, ScPluginNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScUgenNode, ScControlNode,
-    ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode, ScVarNode, ScSelectNode, ScOptionNode,
+    ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode, ScVarNode, ScSelectNode, ScOptionNode, ScRadioGroupNode, ScRadioNode,
 } from "@/types/parsers";
 import {ELEMENTS} from "@/constants/sc-elements";
 
@@ -90,6 +90,25 @@ function extractOptionProps(el: Element): HtmlProps<ScOptionNode> {
     };
 }
 
+function extractRadioGroupProps(el: Element): HtmlProps<ScRadioGroupNode> {
+    return {
+        bind: el.getAttribute('bind') ?? '',
+        orientation: (el.getAttribute('orientation') ?? 'horizontal') as 'horizontal' | 'vertical',
+    };
+}
+
+function extractRadioProps(el: Element): HtmlProps<ScRadioNode> {
+    return {
+        value: Number(el.getAttribute('value') ?? '0'),
+        label: el.getAttribute('label') ?? '',
+        width: Number(el.getAttribute('width') ?? '24'),
+        height: Number(el.getAttribute('height') ?? '24'),
+        src: el.getAttribute('src') ?? '',
+        fgcolor: el.getAttribute('fgcolor') ?? '',
+        bgcolor: el.getAttribute('bgcolor') ?? '',
+    };
+}
+
 export function extractProps(type: string, el: Element): Record<string, unknown> {
     switch (type) {
         case ELEMENTS.SC_PLUGIN:
@@ -120,6 +139,10 @@ export function extractProps(type: string, el: Element): Record<string, unknown>
             return {children: [], ...extractSelectProps(el)};
         case ELEMENTS.SC_OPTION:
             return extractOptionProps(el);
+        case ELEMENTS.SC_RADIO_GROUP:
+            return {children: [], ...extractRadioGroupProps(el)};
+        case ELEMENTS.SC_RADIO:
+            return extractRadioProps(el);
         default:
             throw new Error(`Unknown element type: ${type}`);
     }

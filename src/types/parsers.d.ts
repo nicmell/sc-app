@@ -174,6 +174,28 @@ export interface ScSelectNode {
   runtime: InputRuntime;
 }
 
+export interface ScRadioNode {
+  type: 'sc-radio';
+  id: string;
+  value: number;
+  label: string;
+  width: number;
+  height: number;
+  src: string;
+  fgcolor: string;
+  bgcolor: string;
+  runtime: UgenRuntime;
+}
+
+export interface ScRadioGroupNode {
+  type: 'sc-radio-group';
+  id: string;
+  bind: string;
+  orientation: 'horizontal' | 'vertical';
+  children: ScElementNode[];
+  runtime: InputRuntime;
+}
+
 export interface ScPluginNode {
   type: 'sc-plugin';
   id: string;
@@ -183,9 +205,9 @@ export interface ScPluginNode {
   runtime: PluginRuntime;
 }
 
-export type ScParentNode = ScPluginNode | ScGroupNode | ScSynthNode | ScUgenNode | ScIfNode | ScSynthDefNode | ScSelectNode;
+export type ScParentNode = ScPluginNode | ScGroupNode | ScSynthNode | ScUgenNode | ScIfNode | ScSynthDefNode | ScSelectNode | ScRadioGroupNode;
 
-export type ScElementNode = ScPluginNode | ScGroupNode | ScSynthNode | ScSynthDefNode | ScUgenNode | ScControlNode | ScVarNode | ScRangeNode | ScCheckboxNode | ScRunNode | ScDisplayNode | ScIfNode | ScSelectNode | ScOptionNode;
+export type ScElementNode = ScPluginNode | ScGroupNode | ScSynthNode | ScSynthDefNode | ScUgenNode | ScControlNode | ScVarNode | ScRangeNode | ScCheckboxNode | ScRunNode | ScDisplayNode | ScIfNode | ScSelectNode | ScOptionNode | ScRadioGroupNode | ScRadioNode;
 
 export type NodeType = ScElementNode["type"]
 

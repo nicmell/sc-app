@@ -44,6 +44,8 @@
   <xs:element name="sc-ugen" type="scUGenType"/>
   <xs:element name="sc-run" type="scRunType"/>
   <xs:element name="sc-control" type="scControlType"/>
+  <xs:element name="sc-radio-group" type="scRadioGroupType"/>
+  <xs:element name="sc-radio" type="scRadioType"/>
   <xs:element name="sc-var" type="scVarType"/>
   <xs:element name="sc-select" type="scSelectType"/>
   <xs:element name="sc-option" type="scOptionType"/>
@@ -77,6 +79,7 @@
       <xs:element ref="sc-checkbox"/>
       <xs:element ref="sc-run"/>
       <xs:element ref="sc-select"/>
+      <xs:element ref="sc-radio-group"/>
     </xs:choice>
   </xs:group>
 
@@ -229,6 +232,28 @@
       <xs:element ref="sc-option"/>
     </xs:choice>
     <xs:attribute name="bind" type="xs:string"/>
+    <xs:attributeGroup ref="commonAttrs"/>
+  </xs:complexType>
+
+  <!-- sc-radio (a radio option inside sc-radio-group) -->
+  <xs:complexType name="scRadioType">
+    <xs:attribute name="value" type="xs:decimal" use="required"/>
+    <xs:attribute name="label" type="xs:string" use="required"/>
+    <xs:attribute name="width" type="xs:decimal"/>
+    <xs:attribute name="height" type="xs:decimal"/>
+    <xs:attribute name="src" type="xs:string"/>
+    <xs:attribute name="fgcolor" type="xs:string"/>
+    <xs:attribute name="bgcolor" type="xs:string"/>
+    <xs:attributeGroup ref="commonAttrs"/>
+  </xs:complexType>
+
+  <!-- sc-radio-group (radio input group bound to a control or var) -->
+  <xs:complexType name="scRadioGroupType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element ref="sc-radio"/>
+    </xs:choice>
+    <xs:attribute name="bind" type="xs:string"/>
+    <xs:attribute name="orientation" type="xs:string"/>
     <xs:attributeGroup ref="commonAttrs"/>
   </xs:complexType>
 
