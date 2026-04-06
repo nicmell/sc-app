@@ -1,5 +1,5 @@
 import {css, html} from 'lit';
-import type {ScRangeNode} from '@/types/parsers';
+import type {ScRangeItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {runtimeApi} from '@/lib/stores/api';
 import {isInput, isControl, isVar} from '@/lib/utils/guards';
@@ -7,7 +7,7 @@ import {ScElement} from './internal/sc-element.ts';
 import './internal/sc-knob.ts';
 import './internal/sc-slider.ts';
 
-export class ScRange extends ScElement<ScRangeNode, number> {
+export class ScRange extends ScElement<ScRangeItem, number> {
     static properties = {
         type: {type: String},
         bind: {type: String},

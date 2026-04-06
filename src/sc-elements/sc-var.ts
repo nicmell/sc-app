@@ -1,10 +1,10 @@
 import {html} from 'lit';
-import type {ScVarNode} from '@/types/parsers';
+import type {ScVarItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {isVar} from '@/lib/utils/guards';
 import {ScElement} from './internal/sc-element.ts';
 
-export class ScVar extends ScElement<ScVarNode, number> {
+export class ScVar extends ScElement<ScVarItem, number> {
     static properties = {
         name: {type: String, reflect: true},
         value: {type: Number},

@@ -1,6 +1,6 @@
 import {createContext} from '@lit/context';
-import type {ScGroupNode, ScSynthNode, ScPluginNode} from '@/types/parsers';
+import type {ScNodeItem} from '@/types/parsers';
 
-export type NodeContext = ScGroupNode | ScSynthNode | ScPluginNode | undefined;
+export type NodeContext = ScNodeItem | undefined;
 
 export const nodeContext = createContext<NodeContext>('node');

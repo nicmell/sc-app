@@ -1,5 +1,5 @@
 import {html} from 'lit';
-import type {ScControlNode} from '@/types/parsers';
+import type {ScControlItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {isControl, isNode} from '@/lib/utils/guards';
 import {runtimeApi} from '@/lib/stores/api';
@@ -7,7 +7,7 @@ import {oscService} from '@/lib/osc';
 import {nodeSetMessage} from '@/lib/osc/messages.ts';
 import {ScElement} from './internal/sc-element.ts';
 
-export class ScControl extends ScElement<ScControlNode, number> {
+export class ScControl extends ScElement<ScControlItem, number> {
     static properties = {
         name: {type: String, reflect: true},
         value: {type: Number},

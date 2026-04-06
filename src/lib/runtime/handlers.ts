@@ -1,7 +1,7 @@
 import type {
-    ScElementNode, ScElementNodeBase, ScParentNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScUgenNode,
-    ScRunNode, ScControlNode, ScVarNode,
-    ScPluginNode, PluginRuntime, NodeRuntime, ControlRuntime, VarRuntime, UgenRuntime, SynthDefRuntime, InputRuntime, RunRuntime, OverrideEntry, StripRuntime,
+    ScElementItem, ScElementItemBase, ScParentItem, ScGroupItem, ScSynthItem, ScSynthDefItem, ScUgenItem,
+    ScRunItem, ScControlItem, ScVarItem,
+    ScPluginItem, PluginRuntime, NodeRuntime, ControlRuntime, VarRuntime, UgenRuntime, SynthDefRuntime, InputRuntime, RunRuntime, OverrideEntry, StripRuntime,
 } from "@/types/parsers";
 import {isNode, isParent, isControl, isVar, isControlOverride, isRunOverride, isVarOverride} from "@/lib/utils/guards";
 import {ELEMENTS} from "@/constants/sc-elements";
@@ -9,19 +9,19 @@ import {synthDefManager} from "@/lib/synthdef";
 
 export interface RuntimeContext {
     rootId: string;
-    tree: ScElementNodeBase;
-    nodes: Map<string, ScElementNode>;
-    synthdefs: ScSynthDefNode[];
-    scope: ScElementNodeBase[];
-    visit: (node: ScElementNodeBase) => ScElementNode;
-    parentNode?: ScParentNode;
+    tree: ScElementItemBase;
+    nodes: Map<string, ScElementItem>;
+    synthdefs: ScSynthDefItem[];
+    scope: ScElementItemBase[];
+    visit: (node: ScElementItemBase) => ScElementItem;
+    parentNode?: ScParentItem;
     overrides?: OverrideEntry[];
     path: string[];
 }
 
 // --- Helpers ---
 
-export function checkDuplicateNames(scope: ScElementNodeBase[]): void {
+export function checkDuplicateNames(scope: ScElementItemBase[]): void {
     const seen = new Set<string>();
     for (const el of scope) {
         if ('name' in el && el.name) {
@@ -48,7 +48,7 @@ function findVarOverride(ctx: RuntimeContext, path: string[]): number | undefine
     return ctx.overrides?.find(e => isVarOverride(e) && e.targetPath === target)?.value;
 }
 
-function collectControlParams(node: { children: ScElementNodeBase[] }): Record<string, number> {
+function collectControlParams(node: { children: ScElementItemBase[] }): Record<string, number> {
     const controls: Record<string, number> = {};
     for (const child of node.children) {
         if (isControl(child) && child.value != null) {
@@ -58,7 +58,7 @@ function collectControlParams(node: { children: ScElementNodeBase[] }): Record<s
     return controls;
 }
 
-function resolve(ctx: RuntimeContext, path: string[]): ScElementNode | undefined {
+function resolve(ctx: RuntimeContext, path: string[]): ScElementItem | undefined {
     const [name, ...rest] = path;
     const idx = ctx.scope.findIndex(s => 'name' in s && s.name === name);
     if (idx < 0) return undefined;
@@ -69,7 +69,7 @@ function resolve(ctx: RuntimeContext, path: string[]): ScElementNode | undefined
     return walkPath(target, rest);
 }
 
-function walkPath(node: ScElementNode, path: string[]): ScElementNode | undefined {
+function walkPath(node: ScElementItem, path: string[]): ScElementItem | undefined {
     if (path.length === 0) return node
     if (isParent(node)) {
         const [name, ...rest] = path;
@@ -79,7 +79,7 @@ function walkPath(node: ScElementNode, path: string[]): ScElementNode | undefine
     return undefined
 }
 
-function resolveControlBind(ctx: RuntimeContext): { target: ScElementNode; controlName: string } {
+function resolveControlBind(ctx: RuntimeContext): { target: ScElementItem; controlName: string } {
     const n = ctx.tree as { bind: string; type: string };
     const segments = n.bind.split('.');
     const controlName = segments.pop()!;
@@ -100,14 +100,14 @@ function parentId(ctx: RuntimeContext): string {
 
 function resolveVisualBind(ctx: RuntimeContext): InputRuntime {
     const {target, controlName} = resolveControlBind(ctx);
-    const control = (target as ScParentNode).children.find(c => (isControl(c) || isVar(c)) && c.name === controlName)!;
+    const control = (target as ScParentItem).children.find(c => (isControl(c) || isVar(c)) && c.name === controlName)!;
     return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, targetId: control.id};
 }
 
 // --- Handlers ---
 
 const pluginHandler = (ctx: RuntimeContext): PluginRuntime => {
-    const n = ctx.tree as StripRuntime<ScPluginNode>;
+    const n = ctx.tree as StripRuntime<ScPluginItem>;
     try {
         ctx.visit(ctx.tree);
         const run = findRunOverride(ctx, ctx.path) ?? (n.run ? 1 : 0)
@@ -123,7 +123,7 @@ const pluginHandler = (ctx: RuntimeContext): PluginRuntime => {
 };
 
 function nodeRuntime(ctx: RuntimeContext): NodeRuntime {
-    const n = ctx.tree as StripRuntime<ScGroupNode | ScSynthNode>;
+    const n = ctx.tree as StripRuntime<ScGroupItem | ScSynthItem>;
     const path = [...ctx.path, n.name];
     const run = findRunOverride(ctx, path) ?? (n.run ? 1 : 0)
     return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, run, loaded: false, nodeId: 0};
@@ -135,7 +135,7 @@ const groupHandler = (ctx: RuntimeContext): NodeRuntime => {
 };
 
 const synthHandler = (ctx: RuntimeContext): NodeRuntime => {
-    const n = ctx.tree as StripRuntime<ScSynthNode>;
+    const n = ctx.tree as StripRuntime<ScSynthItem>;
     if (n.bind && !resolve(ctx, [n.bind])) {
         throw new Error(`<sc-synth bind="${n.bind}">: does not match any <sc-synthdef>`);
     }
@@ -143,7 +143,7 @@ const synthHandler = (ctx: RuntimeContext): NodeRuntime => {
     return nodeRuntime(ctx);
 };
 
-function collectUgenInputs(node: { children: ScElementNodeBase[] }): Record<string, string> {
+function collectUgenInputs(node: { children: ScElementItemBase[] }): Record<string, string> {
     const inputs: Record<string, string> = {};
     for (const child of node.children) {
         if (isControl(child)) {
@@ -158,10 +158,10 @@ function collectUgenInputs(node: { children: ScElementNodeBase[] }): Record<stri
 
 const synthDefHandler = (ctx: RuntimeContext): SynthDefRuntime => {
     ctx.visit(ctx.tree);
-    const n = ctx.tree as StripRuntime<ScSynthDefNode>;
-    ctx.synthdefs.push(n as unknown as ScSynthDefNode);
+    const n = ctx.tree as StripRuntime<ScSynthDefItem>;
+    ctx.synthdefs.push(n as unknown as ScSynthDefItem);
     const params = collectControlParams(n);
-    const ugenChildren = n.children.filter((c): c is ScUgenNode => c.type === 'sc-ugen');
+    const ugenChildren = n.children.filter((c): c is ScUgenItem => c.type === 'sc-ugen');
     if (ugenChildren.length > 0) {
         const specsMap = new Map(ugenChildren.map(c => {
             const inputs = collectUgenInputs(c);
@@ -175,7 +175,7 @@ const synthDefHandler = (ctx: RuntimeContext): SynthDefRuntime => {
 
 const ugenHandler = (ctx: RuntimeContext): UgenRuntime => {
     ctx.visit(ctx.tree);
-    const n = ctx.tree as StripRuntime<ScUgenNode>;
+    const n = ctx.tree as StripRuntime<ScUgenItem>;
     for (const child of n.children) {
         if (!isControl(child) || !child.bind) continue;
         for (const ref of child.bind.split(',').map(s => s.trim())) {
@@ -189,13 +189,13 @@ const ugenHandler = (ctx: RuntimeContext): UgenRuntime => {
 };
 
 const controlHandler = (ctx: RuntimeContext): ControlRuntime => {
-    const n = ctx.tree as StripRuntime<ScControlNode>;
+    const n = ctx.tree as StripRuntime<ScControlItem>;
     const value = findControlOverride(ctx, [...ctx.path, n.name]) ?? n.value ?? 0;
     return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, name: n.name, value};
 };
 
 const varHandler = (ctx: RuntimeContext): VarRuntime => {
-    const n = ctx.tree as StripRuntime<ScVarNode>;
+    const n = ctx.tree as StripRuntime<ScVarItem>;
     const value = findVarOverride(ctx, [...ctx.path, n.name]) ?? n.value ?? 0;
     return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, name: n.name, value};
 };
@@ -205,7 +205,7 @@ const inputHandler = (ctx: RuntimeContext): InputRuntime => {
 };
 
 const runHandler = (ctx: RuntimeContext): RunRuntime => {
-    const n = ctx.tree as StripRuntime<ScRunNode>;
+    const n = ctx.tree as StripRuntime<ScRunItem>;
     const target = n.bind ? resolve(ctx, n.bind.split('.')) : ctx.parentNode;
     if (n.bind && (!target || !isNode(target))) {
         throw new Error(`<sc-run>: bind "${n.bind}" does not match any node in scope`);
@@ -238,7 +238,7 @@ const radioHandler = (ctx: RuntimeContext): UgenRuntime => {
 
 // --- Dispatch ---
 
-export function processElement(ctx: RuntimeContext): ScElementNode {
+export function processElement(ctx: RuntimeContext): ScElementItem {
     const existing = ctx.nodes.get(ctx.tree.id);
     if (existing) {
         return existing
@@ -262,11 +262,11 @@ export function processElement(ctx: RuntimeContext): ScElementNode {
         case ELEMENTS.SC_RADIO_GROUP: runtime = radioGroupHandler(ctx); break;
         case ELEMENTS.SC_RADIO: runtime = radioHandler(ctx); break;
         default: {
-            throw new Error(`Unknown element type: ${(ctx.tree as ScElementNodeBase).type}`);
+            throw new Error(`Unknown element type: ${(ctx.tree as ScElementItemBase).type}`);
         }
     }
     Object.assign(ctx.tree, {runtime});
-    const node = ctx.tree as unknown as ScElementNode;
+    const node = ctx.tree as unknown as ScElementItem;
     ctx.nodes.set(node.id, node);
     if (ctx.parentNode) {
         ctx.parentNode.children.push(node);

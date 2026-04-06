@@ -1,9 +1,9 @@
 import {html} from 'lit';
-import type {ScOptionNode} from '@/types/parsers';
+import type {ScOptionItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {ScElement} from './internal/sc-element.ts';
 
-export class ScOption extends ScElement<ScOptionNode, undefined> {
+export class ScOption extends ScElement<ScOptionItem, undefined> {
     static properties = {
         value: {type: Number},
         label: {type: String},

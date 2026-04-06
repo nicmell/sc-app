@@ -1,11 +1,11 @@
 import {html, svg, css} from 'lit';
-import type {ScRadioGroupNode, ScRadioNode} from '@/types/parsers';
+import type {ScRadioGroupItem, ScRadioItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {runtimeApi} from '@/lib/stores/api';
 import {isRadioGroup, isRadio, isControl, isVar} from '@/lib/utils/guards';
 import {ScElement} from './internal/sc-element.ts';
 
-export class ScRadioGroup extends ScElement<ScRadioGroupNode, number> {
+export class ScRadioGroup extends ScElement<ScRadioGroupItem, number> {
     static properties = {
         bind: {type: String},
         orientation: {type: String, reflect: true},
@@ -31,10 +31,10 @@ export class ScRadioGroup extends ScElement<ScRadioGroupNode, number> {
         return 0;
     }
 
-    private get _radios(): ScRadioNode[] {
+    private get _radios(): ScRadioItem[] {
         try {
-            const node = runtimeApi.getById(this.id) as ScRadioGroupNode | undefined;
-            return (node?.children ?? []).filter((c): c is ScRadioNode => isRadio(c));
+            const node = runtimeApi.getById(this.id) as ScRadioGroupItem | undefined;
+            return (node?.children ?? []).filter((c): c is ScRadioItem => isRadio(c));
         } catch {
             return [];
         }
@@ -58,7 +58,7 @@ export class ScRadioGroup extends ScElement<ScRadioGroupNode, number> {
         }
     }
 
-    private _renderRadio(r: ScRadioNode, selected: boolean) {
+    private _renderRadio(r: ScRadioItem, selected: boolean) {
         const w = r.width;
         const h = r.height;
         const fg = r.fgcolor || 'var(--color-primary, #0a6dc4)';

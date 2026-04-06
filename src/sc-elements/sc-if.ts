@@ -1,10 +1,10 @@
 import {html, css} from 'lit';
-import type {ScIfNode} from '@/types/parsers';
+import type {ScIfItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {isVisual, isControl, isVar} from '@/lib/utils/guards';
 import {ScElement} from './internal/sc-element.ts';
 
-export class ScIf extends ScElement<ScIfNode, number> {
+export class ScIf extends ScElement<ScIfItem, number> {
   static properties = {
     bind: {type: String},
     isTruthy: {type: String, attribute: 'is-truthy'},

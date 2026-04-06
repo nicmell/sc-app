@@ -2,10 +2,10 @@ import {html} from 'lit';
 import {pluginManager} from '@/lib/plugins/PluginManager';
 import {runtimeApi} from '@/lib/stores/api';
 import {synthDefManager} from '@/lib/synthdef';
-import type {ScPluginNode, PluginRuntime} from '@/types/parsers';
+import type {ScPluginItem, PluginRuntime} from '@/types/parsers';
 import {ScGroup} from './sc-group.ts';
 
-export class ScPlugin extends ScGroup<ScPluginNode> {
+export class ScPlugin extends ScGroup<ScPluginItem> {
   static properties = {
     ...ScGroup.properties,
     _error: {state: true},

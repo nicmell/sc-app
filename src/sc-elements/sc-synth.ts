@@ -6,10 +6,10 @@ import {
     groupTailMessage,
     nodeRunMessage
 } from '@/lib/osc/messages.ts';
-import type {ScSynthNode} from '@/types/parsers';
+import type {ScSynthItem} from '@/types/parsers';
 import {ScNode} from './internal/sc-node.ts';
 
-export class ScSynth extends ScNode<ScSynthNode> {
+export class ScSynth extends ScNode<ScSynthItem> {
     static properties = {
         ...ScNode.properties,
         bind: {type: String},

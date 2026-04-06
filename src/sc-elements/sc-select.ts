@@ -1,11 +1,11 @@
 import {html, css} from 'lit';
-import type {ScSelectNode, ScOptionNode} from '@/types/parsers';
+import type {ScSelectItem, ScOptionItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {runtimeApi} from '@/lib/stores/api';
 import {isSelect, isControl, isVar, isOption} from '@/lib/utils/guards';
 import {ScElement} from './internal/sc-element.ts';
 
-export class ScSelect extends ScElement<ScSelectNode, number> {
+export class ScSelect extends ScElement<ScSelectItem, number> {
     static properties = {
         bind: {type: String},
     };
@@ -25,10 +25,10 @@ export class ScSelect extends ScElement<ScSelectNode, number> {
         return 0;
     }
 
-    private get _options(): ScOptionNode[] {
+    private get _options(): ScOptionItem[] {
         try {
-            const node = runtimeApi.getById(this.id) as ScSelectNode | undefined;
-            return (node?.children ?? []).filter((c): c is ScOptionNode => isOption(c));
+            const node = runtimeApi.getById(this.id) as ScSelectItem | undefined;
+            return (node?.children ?? []).filter((c): c is ScOptionItem => isOption(c));
         } catch {
             return [];
         }

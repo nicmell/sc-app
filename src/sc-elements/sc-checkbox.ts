@@ -1,12 +1,12 @@
 import {html, css} from 'lit';
-import type {ScCheckboxNode} from '@/types/parsers';
+import type {ScCheckboxItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {runtimeApi} from '@/lib/stores/api';
 import {isInput, isControl, isVar} from '@/lib/utils/guards';
 import {ScElement} from './internal/sc-element.ts';
 import './internal/sc-switch.ts';
 
-export class ScCheckbox extends ScElement<ScCheckboxNode, number> {
+export class ScCheckbox extends ScElement<ScCheckboxItem, number> {
     static properties = {
         bind: {type: String},
         width: {type: Number, attribute: 'width'},

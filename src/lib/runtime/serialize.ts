@@ -1,8 +1,8 @@
-import type {ScElementNode, OverrideEntry, PersistedOverrideEntry} from "@/types/parsers";
+import type {ScElementItem, OverrideEntry, PersistedOverrideEntry} from "@/types/parsers";
 import type {RuntimeState, Preset, LayoutState} from "@/types/stores";
 import {isParent, isPlugin, isNode, isControl, isVar} from "@/lib/utils/guards";
 
-function collectEntries(node: ScElementNode, nodes: Record<string, ScElementNode>): PersistedOverrideEntry[] {
+function collectEntries(node: ScElementItem, nodes: Record<string, ScElementItem>): PersistedOverrideEntry[] {
     const entries: PersistedOverrideEntry[] = [];
     const n = nodes[node.id] ?? node;
     if (isNode(n)) {

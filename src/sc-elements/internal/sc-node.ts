@@ -2,14 +2,12 @@ import {html} from 'lit';
 import {ContextProvider} from '@lit/context';
 import {oscService} from '@/lib/osc';
 import {isControl, isNode} from '@/lib/utils/guards';
-import type {ScGroupNode, ScSynthNode, ScPluginNode} from '@/types/parsers';
+import type {ScNodeItem, ScControlItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {nodeContext, type NodeContext} from '../context.ts';
 import {ScElement} from './sc-element.ts';
 
-type ScNodeElement = ScGroupNode | ScSynthNode | ScPluginNode;
-
-export abstract class ScNode<T extends ScNodeElement = ScNodeElement> extends ScElement<T, T | undefined> {
+export abstract class ScNode<T extends ScNodeItem = ScNodeItem> extends ScElement<T, T | undefined> {
     static properties = {
         name: {type: String, reflect: true},
         run: {type: Boolean, reflect: true},
@@ -42,7 +40,7 @@ export abstract class ScNode<T extends ScNodeElement = ScNodeElement> extends Sc
     getControls(): Record<string, number> {
         return Object.fromEntries(
             (this._state?.children ?? [])
-                .filter((c): c is import('@/types/parsers').ScControlNode => isControl(c) && c.value != null)
+                .filter((c): c is ScControlItem => isControl(c) && c.value != null)
                 .map(c => [c.name, c.runtime.value])
         );
     }

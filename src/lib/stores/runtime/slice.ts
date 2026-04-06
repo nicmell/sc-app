@@ -1,5 +1,5 @@
 import type {RuntimeState} from "@/types/stores";
-import type {ScElementNode} from "@/types/parsers";
+import type {ScElementItem} from "@/types/parsers";
 import {isParent, isNode, isControl, isVar, isSynthDef} from "@/lib/utils/guards";
 import {combineReducers, createSlice, type CaseReducer} from "@/lib/stores/utils";
 import {SliceName, RuntimeAction} from "@/constants/store";
@@ -48,7 +48,7 @@ export const runtimeSlice = createSlice({
   name: SliceName.RUNTIME,
   initialState,
   reducers: {
-    [RuntimeAction.LOAD_PLUGIN]: (state, action: { payload: { id: string; nodes: Map<string, ScElementNode> } }) => {
+    [RuntimeAction.LOAD_PLUGIN]: (state, action: { payload: { id: string; nodes: Map<string, ScElementItem> } }) => {
       for (const [id, node] of action.payload.nodes) {
         state.nodes[id] = node;
       }

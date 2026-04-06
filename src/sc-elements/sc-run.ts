@@ -1,5 +1,5 @@
 import {html, svg, css} from 'lit';
-import type {ScRunNode} from '@/types/parsers';
+import type {ScRunItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {runtimeApi} from '@/lib/stores/api';
 import {isRun, isNode} from '@/lib/utils/guards';
@@ -7,7 +7,7 @@ import {oscService} from '@/lib/osc';
 import {nodeRunMessage} from '@/lib/osc/messages.ts';
 import {ScElement} from './internal/sc-element.ts';
 
-export class ScRun extends ScElement<ScRunNode, number> {
+export class ScRun extends ScElement<ScRunItem, number> {
     static properties = {
         size: {type: Number},
         src: {type: String},

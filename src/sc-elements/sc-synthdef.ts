@@ -1,5 +1,5 @@
 import {html} from 'lit';
-import type {ScSynthDefNode} from '@/types/parsers';
+import type {ScSynthDefItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {isSynthDef} from '@/lib/utils/guards';
 import {defRecvMessage} from '@/lib/osc/messages.ts';
@@ -8,7 +8,7 @@ import {synthDefManager} from '@/lib/synthdef';
 import {runtimeApi} from '@/lib/stores/api';
 import {ScElement} from './internal/sc-element.ts';
 
-export class ScSynthDef extends ScElement<ScSynthDefNode, boolean> {
+export class ScSynthDef extends ScElement<ScSynthDefItem, boolean> {
 
   getState(state: RuntimeState): boolean {
     const self = state.nodes[this.id];

@@ -7,10 +7,10 @@ import {
     freeNodeMessage,
     nodeRunMessage
 } from '@/lib/osc/messages.ts';
-import type {ScGroupNode, ScPluginNode} from '@/types/parsers';
+import type {ScGroupItem, ScPluginItem} from '@/types/parsers';
 import {ScNode} from './internal/sc-node.ts';
 
-export class ScGroup<T extends ScGroupNode | ScPluginNode = ScGroupNode> extends ScNode<T> {
+export class ScGroup<T extends ScGroupItem | ScPluginItem = ScGroupItem> extends ScNode<T> {
 
     protected _sendCreate() {
         oscService.send(

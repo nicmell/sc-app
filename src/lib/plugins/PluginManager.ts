@@ -1,5 +1,5 @@
 import type {PluginInfo} from "@/types/stores";
-import type {ScElementNode, ScSynthDefNode} from "@/types/parsers";
+import type {ScElementItem, ScSynthDefItem} from "@/types/parsers";
 import {ELEMENTS} from "@/constants/sc-elements";
 import {layoutApi, pluginsApi, runtimeApi} from "@/lib/stores/api";
 import {get, post, del} from "@/lib/http";
@@ -49,8 +49,8 @@ export class PluginManager {
     }
 
     processPlugin(boxId: string, rootElement: Element): void {
-        const synthdefs: ScSynthDefNode[] = [];
-        const nodes = new Map<string, ScElementNode>();
+        const synthdefs: ScSynthDefItem[] = [];
+        const nodes = new Map<string, ScElementItem>();
         const overrides = runtimeApi.overrides.filter(e => e.rootId === boxId);
 
         const tree = hydrate({id: boxId, type: ELEMENTS.SC_PLUGIN}, rootElement);

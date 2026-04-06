@@ -1,26 +1,26 @@
 import type {
-    StripRuntime, ScPluginNode, ScGroupNode, ScSynthNode, ScSynthDefNode, ScUgenNode, ScControlNode,
-    ScRangeNode, ScCheckboxNode, ScRunNode, ScDisplayNode, ScIfNode, ScVarNode, ScSelectNode, ScOptionNode, ScRadioGroupNode, ScRadioNode,
+    StripRuntime, ScPluginItem, ScGroupItem, ScSynthItem, ScSynthDefItem, ScUgenItem, ScControlItem,
+    ScRangeItem, ScCheckboxItem, ScRunItem, ScDisplayItem, ScIfItem, ScVarItem, ScSelectItem, ScOptionItem, ScRadioGroupItem, ScRadioItem,
 } from "@/types/parsers";
 import {ELEMENTS} from "@/constants/sc-elements";
 
 export type HtmlProps<T> = Omit<StripRuntime<T>, 'id' | 'type' | 'children'>;
 
-function extractPluginProps(el: Element): Omit<HtmlProps<ScPluginNode>, 'name'> {
+function extractPluginProps(el: Element): Omit<HtmlProps<ScPluginItem>, 'name'> {
     return {
         title: el.querySelector('title')?.textContent ?? '',
         run: el.getAttribute('run') !== 'false',
     };
 }
 
-function extractGroupProps(el: Element): HtmlProps<ScGroupNode> {
+function extractGroupProps(el: Element): HtmlProps<ScGroupItem> {
     return {
         name: el.getAttribute('name') ?? '',
         run: el.getAttribute('run') !== 'false',
     };
 }
 
-function extractSynthProps(el: Element): HtmlProps<ScSynthNode> {
+function extractSynthProps(el: Element): HtmlProps<ScSynthItem> {
     return {
         name: el.getAttribute('name') ?? '',
         bind: el.getAttribute('bind') ?? '',
@@ -28,13 +28,13 @@ function extractSynthProps(el: Element): HtmlProps<ScSynthNode> {
     };
 }
 
-function extractSynthDefProps(el: Element): HtmlProps<ScSynthDefNode> {
+function extractSynthDefProps(el: Element): HtmlProps<ScSynthDefItem> {
     return {
         name: el.getAttribute('name') ?? '',
     };
 }
 
-function extractUgenProps(el: Element): HtmlProps<ScUgenNode> {
+function extractUgenProps(el: Element): HtmlProps<ScUgenItem> {
     return {
         name: el.getAttribute('name') ?? '',
         ugen: el.getAttribute('type') ?? '',
@@ -43,61 +43,61 @@ function extractUgenProps(el: Element): HtmlProps<ScUgenNode> {
     };
 }
 
-function extractControlProps(el: Element): HtmlProps<ScControlNode> {
+function extractControlProps(el: Element): HtmlProps<ScControlItem> {
     const name = el.getAttribute('name') ?? '';
     const bind = el.getAttribute('bind');
     return bind ? {name, bind} : {name, value: Number(el.getAttribute('value') ?? '0')};
 }
 
-function extractVarProps(el: Element): HtmlProps<ScVarNode> {
+function extractVarProps(el: Element): HtmlProps<ScVarItem> {
     return {
         name: el.getAttribute('name') ?? '',
         value: Number(el.getAttribute('value') ?? '0'),
     };
 }
 
-function extractRangeProps(el: Element): HtmlProps<ScRangeNode> {
+function extractRangeProps(el: Element): HtmlProps<ScRangeItem> {
     return {bind: el.getAttribute('bind') ?? ''};
 }
 
-function extractCheckboxProps(el: Element): HtmlProps<ScCheckboxNode> {
+function extractCheckboxProps(el: Element): HtmlProps<ScCheckboxItem> {
     return {bind: el.getAttribute('bind') ?? ''};
 }
 
-function extractRunProps(el: Element): HtmlProps<ScRunNode> {
+function extractRunProps(el: Element): HtmlProps<ScRunItem> {
     return {bind: el.getAttribute('bind') ?? ''};
 }
 
-function extractDisplayProps(el: Element): HtmlProps<ScDisplayNode> {
+function extractDisplayProps(el: Element): HtmlProps<ScDisplayItem> {
     return {
         bind: el.getAttribute('bind') ?? '',
         format: el.getAttribute('format') ?? '',
     };
 }
 
-function extractIfProps(el: Element): HtmlProps<ScIfNode> {
+function extractIfProps(el: Element): HtmlProps<ScIfItem> {
     return {bind: el.getAttribute('bind') ?? ''};
 }
 
-function extractSelectProps(el: Element): HtmlProps<ScSelectNode> {
+function extractSelectProps(el: Element): HtmlProps<ScSelectItem> {
     return {bind: el.getAttribute('bind') ?? ''};
 }
 
-function extractOptionProps(el: Element): HtmlProps<ScOptionNode> {
+function extractOptionProps(el: Element): HtmlProps<ScOptionItem> {
     return {
         value: Number(el.getAttribute('value') ?? '0'),
         label: el.getAttribute('label') ?? '',
     };
 }
 
-function extractRadioGroupProps(el: Element): HtmlProps<ScRadioGroupNode> {
+function extractRadioGroupProps(el: Element): HtmlProps<ScRadioGroupItem> {
     return {
         bind: el.getAttribute('bind') ?? '',
         orientation: (el.getAttribute('orientation') ?? 'horizontal') as 'horizontal' | 'vertical',
     };
 }
 
-function extractRadioProps(el: Element): HtmlProps<ScRadioNode> {
+function extractRadioProps(el: Element): HtmlProps<ScRadioItem> {
     return {
         value: Number(el.getAttribute('value') ?? '0'),
         label: el.getAttribute('label') ?? '',

@@ -1,5 +1,5 @@
 import {html, css} from 'lit';
-import type {ScDisplayNode} from '@/types/parsers';
+import type {ScDisplayItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {isVisual, isControl, isVar} from '@/lib/utils/guards';
 import {ScElement} from './internal/sc-element.ts';
@@ -17,7 +17,7 @@ function formatValue(template: string, value: unknown): string {
   return String(value ?? '');
 }
 
-export class ScDisplay extends ScElement<ScDisplayNode, number> {
+export class ScDisplay extends ScElement<ScDisplayItem, number> {
   static properties = {
     bind: {type: String},
     format: {type: String},

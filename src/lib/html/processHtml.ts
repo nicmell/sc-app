@@ -1,5 +1,5 @@
 import {randomId} from "@/lib/utils/randomId";
-import type {ScElementNode, ScElementNodeBase, NodeType, ScParentNode} from "@/types/parsers";
+import type {ScElementItem, ScElementItemBase, NodeType, ScParentItem} from "@/types/parsers";
 import {isNodeType} from "@/lib/utils/guards";
 import {extractProps} from "./handlers";
 import {type RuntimeContext, processElement, checkDuplicateNames} from "@/lib/runtime/handlers";
@@ -19,19 +19,19 @@ function* walkDom(el: Element): Generator<Element> {
     }
 }
 
-export function hydrate(node: { id: string, type: string, [key: string]: unknown }, element: Element): ScElementNodeBase {
+export function hydrate(node: { id: string, type: string, [key: string]: unknown }, element: Element): ScElementItemBase {
     element.setAttribute('id', node.id);
     const props = extractProps(node.type, element);
-    return Object.assign(node, props, {_element: element}) as ScElementNodeBase;
+    return Object.assign(node, props, {_element: element}) as ScElementItemBase;
 }
 
 export type HtmlRuntimeContext = Omit<RuntimeContext, 'visit'>
 
-export function processHtml(args: HtmlRuntimeContext): ScElementNode {
+export function processHtml(args: HtmlRuntimeContext): ScElementItem {
     return processElement({
         ...args,
-        visit(node: ScElementNodeBase): ScElementNode {
-            const parent = node as ScParentNode;
+        visit(node: ScElementItemBase): ScElementItem {
+            const parent = node as ScParentItem;
             const elements = Array.from(walkDom(node._element!));
 
             const path = 'name' in node && node.name ? [...args.path, node.name] : args.path;

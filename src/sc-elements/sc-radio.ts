@@ -1,9 +1,9 @@
 import {html} from 'lit';
-import type {ScRadioNode} from '@/types/parsers';
+import type {ScRadioItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {ScElement} from './internal/sc-element.ts';
 
-export class ScRadio extends ScElement<ScRadioNode, undefined> {
+export class ScRadio extends ScElement<ScRadioItem, undefined> {
     static properties = {
         value: {type: Number},
         label: {type: String},
