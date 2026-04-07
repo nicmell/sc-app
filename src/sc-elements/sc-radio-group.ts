@@ -42,20 +42,12 @@ export class ScRadioGroup extends ScInput<ScRadioGroupItem> {
         }
     };
 
-    private _updateContext() {
-        this._provider.setValue({
-            value: this._state,
-            select: this._select,
-        }, true);
-    }
-
     protected _onStateChange(prev: number, next: number) {
         super._onStateChange(prev, next);
-        this._updateContext();
+        this._provider.setValue({value: next, select: this._select}, true);
     }
 
     render() {
-        this._updateContext();
         return html`<slot></slot>`;
     }
 }
