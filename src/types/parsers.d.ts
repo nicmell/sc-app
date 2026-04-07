@@ -18,6 +18,7 @@ export type ControlRuntime = {
   name: string;
   value: number;
   targetId?: string;
+  expression?: import('@/lib/utils/expression').Expr;
 };
 
 export type VarRuntime = {
@@ -28,6 +29,7 @@ export type VarRuntime = {
   name: string;
   value: number;
   targetId?: string;
+  expression?: import('@/lib/utils/expression').Expr;
 };
 
 export type UgenRuntime = {

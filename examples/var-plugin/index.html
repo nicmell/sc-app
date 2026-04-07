@@ -8,6 +8,8 @@
     <sc-var name="knobValue" value="0.5"/>
     <sc-var name="sliderValue" value="0"/>
     <sc-var name="mirror" bind="vars.knobValue"/>
+    <sc-var name="doubled" bind="vars.knobValue * 2"/>
+    <sc-var name="offset" bind="(vars.sliderValue + 1) * 50"/>
 </sc-group>
 <div class="controls">
     <label>
@@ -19,7 +21,13 @@
         <span>Slider: <sc-display bind="vars.sliderValue" format="%.2f"/></span>
     </label>
     <label>
-        <span>Mirror (bound to knobValue): <sc-display bind="vars.mirror" format="%.2f"/></span>
+        <span>Mirror: <sc-display bind="vars.mirror" format="%.2f"/></span>
+    </label>
+    <label>
+        <span>Doubled: <sc-display bind="vars.doubled" format="%.2f"/></span>
+    </label>
+    <label>
+        <span>Offset: <sc-display bind="vars.offset" format="%.1f"/></span>
     </label>
 </div>
 </body>

@@ -6,6 +6,7 @@ import type {
 import {isNode, isParent, isControl, isState, isControlOverride, isRunOverride, isVarOverride} from "@/lib/utils/guards";
 import {ELEMENTS} from "@/constants/sc-elements";
 import {synthDefManager} from "@/lib/synthdef";
+import {parseBind} from "@/lib/utils/expression";
 
 export interface RuntimeContext {
     rootId: string;
@@ -99,11 +100,19 @@ function parentId(ctx: RuntimeContext): string {
     return ctx.parentNode?.id ?? '';
 }
 
-function resolveStateBind(ctx: RuntimeContext): string {
+function resolveStateBind(ctx: RuntimeContext): { targetId: string; expression?: import('@/lib/utils/expression').Expr } {
+    const n = ctx.tree as { bind: string; type: string };
+    const parsed = parseBind(n.bind);
+
+    // Temporarily swap bind to the extracted path for resolveControlBind
+    const origBind = n.bind;
+    n.bind = parsed.path;
     const {target, controlName} = resolveControlBind(ctx);
+    n.bind = origBind;
+
     const targetState = (target as ScParentItem).children.find(c => isState(c) && c.name === controlName)!;
     checkCircularBind(ctx, targetState.id);
-    return targetState.id;
+    return {targetId: targetState.id, expression: parsed.expression};
 }
 
 function checkCircularBind(ctx: RuntimeContext, targetId: string): void {
@@ -214,8 +223,8 @@ const controlHandler = (ctx: RuntimeContext): ControlRuntime => {
     const n = ctx.tree as StripRuntime<ScControlItem>;
     const enabled = ctx.parentNode != null && isNode(ctx.parentNode);
     if (enabled && n.bind) {
-        const targetId = resolveStateBind(ctx);
-        return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled, name: n.name, value: 0, targetId};
+        const {targetId, expression} = resolveStateBind(ctx);
+        return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled, name: n.name, value: 0, targetId, expression};
     }
     const value = findControlOverride(ctx, [...ctx.path, n.name]) ?? n.value ?? 0;
     return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled, name: n.name, value};
@@ -224,8 +233,8 @@ const controlHandler = (ctx: RuntimeContext): ControlRuntime => {
 const varHandler = (ctx: RuntimeContext): VarRuntime => {
     const n = ctx.tree as StripRuntime<ScVarItem>;
     if (n.bind) {
-        const targetId = resolveStateBind(ctx);
-        return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled: true, name: n.name, value: 0, targetId};
+        const {targetId, expression} = resolveStateBind(ctx);
+        return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled: true, name: n.name, value: 0, targetId, expression};
     }
     const value = findVarOverride(ctx, [...ctx.path, n.name]) ?? n.value ?? 0;
     return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled: true, name: n.name, value};
