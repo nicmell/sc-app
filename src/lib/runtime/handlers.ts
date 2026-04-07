@@ -1,7 +1,7 @@
 import type {
     ScElementItem, ScElementItemBase, ScParentItem, ScGroupItem, ScSynthItem, ScSynthDefItem, ScUgenItem,
     ScRunItem, ScControlItem, ScVarItem,
-    ScPluginItem, NodeRuntime, ControlRuntime, VarRuntime, UgenRuntime, SynthDefRuntime, InputRuntime, RunRuntime, OverrideEntry, StripRuntime,
+    ScPluginItem, Expr, NodeRuntime, ControlRuntime, VarRuntime, UgenRuntime, SynthDefRuntime, InputRuntime, RunRuntime, OverrideEntry, StripRuntime,
 } from "@/types/parsers";
 import {isNode, isParent, isControl, isState, isControlOverride, isRunOverride, isVarOverride} from "@/lib/utils/guards";
 import {ELEMENTS} from "@/constants/sc-elements";
@@ -98,7 +98,7 @@ function parentId(ctx: RuntimeContext): string {
     return ctx.parentNode?.id ?? '';
 }
 
-function resolveStateBind(ctx: RuntimeContext): { targets: Record<string, string>; expression?: import('@/lib/utils/expression').Expr } {
+function resolveStateBind(ctx: RuntimeContext): { targets: Record<string, string>; expression?: Expr } {
     const n = ctx.tree as { bind: string; type: string };
     const parsed = parseBind(n.bind);
     const origBind = n.bind;

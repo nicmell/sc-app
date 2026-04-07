@@ -2,11 +2,7 @@
 // Supports: +, -, *, /, unary -, parentheses, numbers, and variable references.
 // Variables are dot-separated paths (e.g., "vars.freq") extracted during parsing.
 
-export type Expr =
-    | { type: 'number'; value: number }
-    | { type: 'var'; name: string }
-    | { type: 'unary'; op: '-'; expr: Expr }
-    | { type: 'binary'; op: '+' | '-' | '*' | '/'; left: Expr; right: Expr };
+import type {Expr} from '@/types/parsers';
 
 export interface ParsedBind {
     paths: string[];

@@ -1,65 +1,49 @@
+export type Expr =
+    | { type: 'number'; value: number }
+    | { type: 'var'; name: string }
+    | { type: 'unary'; op: '-'; expr: Expr }
+    | { type: 'binary'; op: '+' | '-' | '*' | '/'; left: Expr; right: Expr };
+
 // ── Runtime types ─────────────────────────────────────────────────────────
 
-export interface NodeRuntime {
+export interface BaseRuntime {
   rootId: string;
   parentId: string;
   path: string[];
   enabled: boolean;
+}
+
+export interface NodeRuntime extends BaseRuntime {
   run: number;
   loaded: boolean;
   nodeId: number;
 }
 
-export type ControlRuntime = {
-  rootId: string;
-  parentId: string;
-  path: string[];
-  enabled: boolean;
+export interface ControlRuntime extends BaseRuntime {
   name: string;
   value: number;
   targets?: Record<string, string>;
-  expression?: import('@/lib/utils/expression').Expr;
-};
+  expression?: Expr;
+}
 
-export type VarRuntime = {
-  rootId: string;
-  parentId: string;
-  path: string[];
-  enabled: boolean;
+export interface VarRuntime extends BaseRuntime {
   name: string;
   value: number;
   targets?: Record<string, string>;
-  expression?: import('@/lib/utils/expression').Expr;
-};
+  expression?: Expr;
+}
 
-export type UgenRuntime = {
-  rootId: string;
-  parentId: string;
-  path: string[];
-  enabled: boolean;
-};
+export interface UgenRuntime extends BaseRuntime {}
 
-export interface SynthDefRuntime {
-  rootId: string;
-  parentId: string;
-  path: string[];
-  enabled: boolean;
+export interface SynthDefRuntime extends BaseRuntime {
   loaded: boolean;
 }
 
-export interface InputRuntime {
-  rootId: string;
-  parentId: string;
-  path: string[];
-  enabled: boolean;
+export interface InputRuntime extends BaseRuntime {
   targetId: string;
 }
 
-export interface RunRuntime {
-  rootId: string;
-  parentId: string;
-  path: string[];
-  enabled: boolean;
+export interface RunRuntime extends BaseRuntime {
   targetId: string;
 }
 
