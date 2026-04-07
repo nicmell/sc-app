@@ -64,9 +64,7 @@ function resolve(ctx: RuntimeContext, path: string[]): ScElementItem | undefined
     const idx = ctx.scope.findIndex(s => 'name' in s && s.name === name);
     if (idx < 0) return undefined;
 
-    const scopeId = ctx.scope[idx].id;
-    const target = ctx.nodes.get(scopeId)
-        ?? (ctx.parentNode && scopeId === ctx.parentNode.id ? ctx.parentNode as unknown as ScElementItem : processElement({...ctx, tree: ctx.scope[idx]}));
+    const target = ctx.nodes.get(ctx.scope[idx].id) ?? processElement({...ctx, tree: ctx.scope[idx]});
 
     return walkPath(target, rest);
 }
@@ -288,6 +286,12 @@ export function processElement(ctx: RuntimeContext): ScElementItem {
     if (existing) {
         return existing
     }
+    // Pre-register to prevent re-entrant processing (ancestor resolve during visit)
+    const node = ctx.tree as unknown as ScElementItem;
+    ctx.nodes.set(node.id, node);
+    if (ctx.parentNode) {
+        ctx.parentNode.children.push(node);
+    }
     let runtime: unknown;
     switch (ctx.tree.type) {
         case ELEMENTS.SC_PLUGIN: runtime = pluginHandler(ctx); break;
@@ -311,10 +315,5 @@ export function processElement(ctx: RuntimeContext): ScElementItem {
         }
     }
     Object.assign(ctx.tree, {runtime});
-    const node = ctx.tree as unknown as ScElementItem;
-    ctx.nodes.set(node.id, node);
-    if (ctx.parentNode) {
-        ctx.parentNode.children.push(node);
-    }
     return node;
 }
