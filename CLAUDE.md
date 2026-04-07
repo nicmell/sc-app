@@ -39,13 +39,13 @@ node scripts/generate_ugen_db.mjs
 ### Frontend (`src/`)
 
 - **React** for layout, panels, settings UI (`src/components/`)
-- **Lit web components** (`src/sc-elements/`) for plugin content (sc-synth, sc-group, sc-range, sc-checkbox, sc-run, sc-display, sc-if, sc-synthdef)
+- **Lit web components** (`src/sc-elements/`) for plugin content — all extend `ScElement<T, S>` base class
 - **Zustand** store with Redux-style slices + Immer (`src/lib/stores/`)
 - **OSC communication** via `osc-js` + custom Tauri UDP plugin (`src/lib/osc/`)
 - **HTML parser** (`src/lib/html/`) — walks plugin HTML, builds typed element tree with two-phase hydration
-- **Runtime processor** (`src/lib/runtime/`) — creates runtime entries (controls, run states) from element tree
+- **Runtime processor** (`src/lib/runtime/`) — creates runtime entries from element tree
 - **SynthDef manager** (`src/lib/synthdef/`) — SynthDef compilation, byte storage, and lookup (singleton `synthDefManager`)
-- **Parser utilities** (`src/lib/utils/`) — guards, element tree traversal, props extraction
+- **Parser utilities** (`src/lib/utils/`) — guards, expression parser
 - **UGen system** (`src/lib/ugen/`) — SuperCollider UGen graph builder, binary SCgf encoder, operator support
 
 ### Backend (`src-tauri/src/`)
@@ -80,41 +80,61 @@ Six top-level slices in `src/lib/stores/`:
 | `scsynth` | Connection state, server status (no options — moved to `options` slice) |
 | `layout` | Dashboard grid items (BoxItem[]) |
 | `plugins` | Installed plugin registry (PluginInfo[]) |
-| `runtime` | Plugin element trees, flat nodes map, persisted overrides. Control values stored on individual `ScControlNode.runtime.value`. Synthdef bytes stored separately in `synthDefManager` |
+| `runtime` | Plugin element trees, flat nodes map, persisted overrides. Control values stored on individual `ScControlItem.runtime.value`. Synthdef bytes stored separately in `synthDefManager` |
+
+### Runtime Actions
+
+| Action | Payload | Description |
+|--------|---------|-------------|
+| `LOAD_PLUGIN` | `{id, nodes}` | Populate nodes map for a plugin |
+| `UNLOAD_PLUGIN` | `id` | Remove all nodes for a plugin |
+| `SET_CONTROL` | `{id, value}` | Update control value, propagate to descendants |
+| `SET_VAR` | `{id, value}` | Update var value |
+| `SET_RUNNING` | `{nodeId, value}` | Update node run state |
+| `NEW_GROUP` | `{id, nodeId}` | Mark group as loaded with OSC nodeId |
+| `NEW_SYNTH` | `{id, nodeId}` | Mark synth as loaded with OSC nodeId |
+| `FREE_GROUP` | `{id}` | Mark group as unloaded |
+| `FREE_SYNTH` | `{id}` | Mark synth as unloaded |
+| `LOAD_SYNTHDEF` | `{id}` | Mark synthdef as loaded |
 
 Each slice has: `slice.ts` (reducer + actions), `selectors.ts`, `index.ts` (barrel).
 
 API layer (`src/lib/stores/api.ts`) wraps each slice for ergonomic dispatch: `layoutApi.setLayout(...)`, `scsynthApi.isConnected`, etc.
 
-Persisted to `config.json` via Zustand persist middleware with custom `tauriStorage` adapter. The `partialize` function serializes state as `ConfigFile` with `activePreset: Preset`. The preset contains layout items with per-box `OverrideEntry[]` arrays (only non-default control/run values). Runtime-only fields (`loaded`, `error`) are stripped.
+Persisted to `config.json` via Zustand persist middleware with custom `tauriStorage` adapter. The `partialize` function serializes state as `ConfigFile` with `activePreset: Preset`. The preset contains layout items with per-box `OverrideEntry[]` arrays (only non-default control/run/var values). Runtime-only fields (`loaded`, `error`) are stripped.
 
 ## Element Tree & Runtime System
 
 Plugin HTML is processed in two phases: HTML parsing (`src/lib/html/`) builds a typed element tree, then runtime processing (`src/lib/runtime/`) creates runtime entries and mutates nodes with runtime references. Shared utilities live in `src/lib/utils/`.
 
-### Node Types (`types/parsers.d.ts`)
+### Item Types (`types/parsers.d.ts`)
 
 | Type | Key Fields | Runtime Type | Description |
 |------|-----------|-------------|-------------|
-| `ScPluginNode` | title, run, children | `PluginRuntime` (extends NodeRuntime + loaded/error) | Plugin root container |
-| `ScGroupNode` | name, run, children | `NodeRuntime` {rootId, run, loaded, nodeId} | Group container |
-| `ScSynthNode` | name, bind, run, children | `NodeRuntime` | Synth instance; `bind` references an `sc-synthdef` by name |
-| `ScSynthDefNode` | name, children | `UgenRuntime` {rootId} | SynthDef template; children are `ScControlNode[]` + `ScUgenNode[]` |
-| `ScUgenNode` | name, ugen, rate, op?, children | `UgenRuntime` | UGen node; children are `ScControlNode[]` for inputs |
-| `ScControlNode` | name, value, bind? | `UgenRuntime` | Control parameter declaration. `value` for constants, `bind` for references |
-| `ScRangeNode` | bind | `InputRuntime` {rootId, targetNode, name} | Slider/knob bound to a synth control |
-| `ScCheckboxNode` | bind | `InputRuntime` | Toggle bound to a synth control |
-| `ScRunNode` | bind | `InputRuntime` | Play/pause control |
-| `ScDisplayNode` | bind, format | `InputRuntime` | Read-only value display |
-| `ScIfNode` | bind, children | `InputRuntime` | Conditional rendering container |
+| `ScPluginItem` | title, error?, run, children | `NodeRuntime` | Plugin root container |
+| `ScGroupItem` | name, run, children | `NodeRuntime` {rootId, parentId, path, enabled, run, loaded, nodeId} | Group container |
+| `ScSynthItem` | name, bind, run, children | `NodeRuntime` | Synth instance; `bind` references an `sc-synthdef` by name |
+| `ScSynthDefItem` | name, children | `SynthDefRuntime` {rootId, parentId, path, enabled, loaded} | SynthDef template |
+| `ScUgenItem` | name, ugen, rate, op?, children | `UgenRuntime` {rootId, parentId, path, enabled} | UGen node (always `enabled: false`) |
+| `ScControlItem` | name, value?, bind? | `ControlRuntime` {rootId, parentId, path, enabled, name, value, targets?, expression?} | Control parameter. `enabled: true` when parent is a node; `false` inside synthdefs/ugens |
+| `ScVarItem` | name, value?, bind? | `VarRuntime` {same as ControlRuntime} | State variable (no OSC, always `enabled: true`) |
+| `ScRangeItem` | bind | `InputRuntime` {rootId, parentId, path, enabled, targetId} | Slider/knob bound to a control or var |
+| `ScCheckboxItem` | bind | `InputRuntime` | Toggle bound to a control or var |
+| `ScSelectItem` | bind, children | `InputRuntime` | Dropdown selector with sc-option children |
+| `ScOptionItem` | value, label | `UgenRuntime` | Declarative option entry (always `enabled: false`) |
+| `ScRadioGroupItem` | bind, orientation, children | `InputRuntime` | Radio button group with sc-radio children |
+| `ScRadioItem` | value, label, width, height, src, fgcolor, bgcolor | `UgenRuntime` | Declarative radio entry (always `enabled: false`) |
+| `ScRunItem` | bind | `RunRuntime` {rootId, parentId, path, enabled, targetId} | Play/pause control |
+| `ScDisplayItem` | bind, format | `InputRuntime` | Read-only value display |
+| `ScIfItem` | bind, children | `InputRuntime` | Conditional rendering container |
 
-All parent types (`ScParentNode`): plugin, group, synth, synthdef, ugen, sc-if. Controls are declared via `<sc-control>` children — not as HTML attributes (except for synthdef `name` and ugen `name`/`type`/`rate`/`op`).
+Union types: `ScNodeItem` (group/synth/plugin), `ScParentItem` (all with children), `ScElementItem` (all items).
 
-`StripRuntime<T>` removes `runtime` (and recursively from `children`) to produce `ScElementNodeBase` — the base type used during HTML parsing before runtime is assigned.
+`StripRuntime<T>` removes `runtime` (and recursively from `children`) to produce `ScElementItemBase` — the base type used during HTML parsing before runtime is assigned.
 
 ### HTML Parser (`src/lib/html/processHtml.ts`)
 
-- `processHtml(args: HtmlRuntimeContext)` → `ScElementNode`
+- `processHtml(args: HtmlRuntimeContext)` → `ScElementItem`
 - `hydrate(node, element)` — assigns ID, extracts props, stores `_element` reference on the node
 - `walkDom` yields SC elements from the DOM (recurses through non-SC elements like divs)
 - `visit(node)` — closure that walks the node's DOM children, hydrates them into a scope, checks for duplicate names, and recursively calls `processHtml` for each child
@@ -128,40 +148,38 @@ All parent types (`ScParentNode`): plugin, group, synth, synthdef, ugen, sc-if. 
   - **Plugin/group/synth**: call `visit()` to process children. Each `sc-control` child stores its value in `ControlRuntime.value`, with overrides applied from persisted `OverrideEntry` values
   - **SynthDef**: calls `visit()`, collects params from sc-control children, collects ugen specs from sc-ugen children (each ugen's inputs built from its own sc-control children), compiles via `synthDefManager`
   - **UGen**: calls `visit()` to process sc-control children, validates bind references against sibling ugens and parent synthdef params
-  - **sc-control**: returns `UgenRuntime` (dummy, no processing needed)
-  - **Input/run/display/if**: resolve bind paths via `resolveControlBind`/`resolve`
+  - **sc-control**: returns `ControlRuntime` with `enabled: true` when parent is a node (synth/group/plugin), `false` inside synthdefs/ugens. If `bind` is present, resolves via `resolveStateBind` with expression parsing and circular reference detection
+  - **sc-var**: same as sc-control but always `enabled: true`
+  - **Input/run/display/if/select/radio-group**: resolve bind paths via `resolveControlBind`/`resolveVisualBind`
 - `resolve(ctx, path)` — on-demand sibling processing with idempotency. Searches cumulative scope, processes unprocessed nodes via `processElement`, walks populated children for deeper segments
 - `collectControlParams(node)` — filters children for `sc-control` type, returns `Record<string, number>` (used for synthdef compilation)
-- `findOverride(ctx, type, name)` — matches persisted overrides by `targetNode === ctx.path`
-- **Validation**: bind paths, synthdef references, ugen input references all validated during processing
+- `resolveStateBind(ctx)` — parses bind expression, resolves variable paths to target IDs, checks for circular references
+- **Validation**: bind paths, synthdef references, ugen input references, circular binds all validated during processing
 
 ### Utilities (`src/lib/utils/`)
 
-- **`guards.ts`** — Type guards (`isParent`, `isNode`, `isControl`, `isPlugin`, etc.) over `<T extends ScElementNodeBase>` with `Extract<T, ...>` return types
-- **`elementTree.ts`** — `findElementById` and `findElementByPath` for tree traversal
+- **`guards.ts`** — Type guards (`isParent`, `isNode`, `isControl`, `isVar`, `isState`, `isInput`, `isVisual`, `isSelect`, `isRadio`, etc.) over `<T extends ScElementItemBase>` with `Extract<T, ...>` return types
+- **`expression.ts`** — Arithmetic expression parser and evaluator for bind expressions. Supports `+`, `-`, `*`, `/`, unary `-`, parentheses, multiple variable references
 
 ### SynthDef Manager (`src/lib/synthdef/`)
 
-- **`SynthDefCompiler.ts`** — `compileSynthDef(name, params, specs)` — topologically sorts UGen specs, builds graph via `UGenGraphBuilder`, returns SCgf binary bytes as `number[]`
+- **`SynthDefCompiler.ts`** — `compileSynthDef(name, params, specs)` — topologically sorts UGen specs, builds graph via `UGenGraphBuilder`, returns SCgf binary bytes as `number[]`. Resolves `op` attribute to `specialIndex` for BinaryOpUGen/UnaryOpUGen
 - **`SynthDefManager.ts`** — Singleton `synthDefManager` storing compiled bytes keyed by node ID. Methods: `compile(boxId, nodeId, name, controls, specs)`, `get(nodeId)`, `clearBox(boxId)`. Bytes are not persisted to `config.json`
 
 ## UGen System
 
-Located in `src/lib/ugen/`. Full SuperCollider UGen graph builder and SCgf binary encoder.
+Located in `src/lib/ugen/`. Full SuperCollider UGen graph builder and SCgf binary encoder. See `src/lib/ugen/README.md` for the programmatic JS API documentation.
 
 - `ugen.ts` — `UGen` class, `Rate` enum (Scalar/Control/Audio), context stack for graph building
-- `synthdef.ts` — `SynthDef` class, collects UGens/constants, validates graph, encodes to binary
+- `synthdef.ts` — `SynthDef` class, collects UGens/constants, validates graph, encodes to binary (includes `ByteWriter`)
 - `define.ts` — `defineUGen()` / `defineMultiOutUGen()` factories with multi-channel expansion
-- `registry.ts` — Runtime lookup table for UGen class specs
-- `ugen-db.ts` — **Auto-generated** registry of 364 built-in SuperCollider UGens (from Overtone metadata)
-- `ugens.ts` — Programmatic JS API exports (`SinOsc.ar()`, etc.) for a subset of UGens
-- `operators.ts` — Binary ops (`+`, `*`, etc.) and unary ops (`neg`, `abs`, etc.)
+- `registry.ts` — UGen spec registry. Imports JSON metadata from `src/assets/ugens/` and registers 367 UGens on module load
+- `operators.ts` — Binary ops (`+`, `*`, etc.) and unary ops (`neg`, `abs`, etc.) with constant folding
 - `control.ts` — `control(name, default)` for named synth parameters
-- `encode.ts` — `ByteWriter` for SCgf v2 binary format (big-endian)
 
 ### UGen Registry Generation
 
-The UGen registry (`src/lib/ugen/ugen-db.ts`) is auto-generated from the [Overtone](https://github.com/overtone/overtone) project's UGen metadata — the most complete structured database of SuperCollider UGen specs available.
+The UGen registry JSON files in `src/assets/ugens/` are auto-generated from the [Overtone](https://github.com/overtone/overtone) project's UGen metadata — the most complete structured database of SuperCollider UGen specs available.
 
 **To refresh the registry** (e.g., when Overtone adds new UGens):
 
@@ -177,7 +195,7 @@ The script:
 5. Renames args to camelCase and applies convention mappings (`signals` → `channelsArray`)
 6. Writes JSON files to `src/assets/ugens/` (one per Overtone category: osc, filter, delay, etc.)
 
-At runtime, `src/lib/ugen/ugen-db.ts` imports all JSON files and registers UGens via `registerUGen()`.
+At runtime, `src/lib/ugen/registry.ts` imports all JSON files and registers UGens via `registerUGen()`.
 
 **Do not edit the JSON files manually** — regenerate them with the script instead.
 
@@ -185,30 +203,83 @@ At runtime, `src/lib/ugen/ugen-db.ts` imports all JSON files and registers UGens
 
 Lit-based custom elements for plugin authoring. All registered in `index.ts`.
 
+### Component Hierarchy
+
+```
+ScElement<T, S>          Base class: store subscription, _state, _runtime, _onStateChange, _sendCreate/_sendDestroy
+├── ScNode<T>            Nodes (group/synth/plugin): context provider, getControls, groupId
+│   ├── ScGroup          Sends /g_new, /g_freeAll, /n_free
+│   │   └── ScPlugin     Plugin root: loads HTML, processes tree
+│   └── ScSynth          Sends /s_new, /n_free
+├── ScInput<T>           Inputs bound to controls/vars: shared getState + _dispatchChange
+│   ├── ScRange          Knob or slider (renders sc-knob/sc-slider)
+│   ├── ScCheckbox       Toggle switch (renders sc-switch)
+│   ├── ScSelect         Custom combobox dropdown (provides SelectContext)
+│   ├── ScRadioGroup     Radio button group (provides RadioGroupContext)
+│   ├── ScDisplay        Read-only formatted value display
+│   └── ScIf             Conditional rendering
+├── ScState<T>           State elements: name/value props, _match guard
+│   ├── ScControl        Synth control: sends /n_set on value change via _onStateChange
+│   └── ScVar            State variable: no OSC
+├── ScSynthDef           SynthDef: sends /d_recv when parent loaded
+├── ScRun                Play/pause: sends /n_run
+├── ScOption             Declarative select option (consumes SelectContext)
+├── ScRadio              Declarative radio button (consumes RadioGroupContext)
+└── ScUgen               Declarative UGen node (no shadow DOM)
+```
+
+### Element Table
+
 | Element | Key Properties | Behavior |
 |---------|---------------|----------|
-| `sc-plugin` | — | Plugin root. Loads HTML, parses tree, updates layout |
-| `sc-group` | name | Group container. Sends `/g_new` on create, `/g_freeAll` + `/n_free` on disconnect |
-| `sc-synth` | name, bind | Synth instance. Sends `/s_new` on create, `/n_free` on disconnect |
-| `sc-synthdef` | name | SynthDef template. Compiles and sends `/d_recv` |
-| `sc-control` | name, value, bind | **No web component.** Declares a control parameter (value-based or bind-based). Parsed only |
-| `sc-range` | bind, type (knob/slider), min, max, step | Slider or knob. Renders `sc-knob` or `sc-slider` internally |
-| `sc-checkbox` | bind | Toggle switch. Renders `sc-switch` internally |
-| `sc-run` | bind, run, size, src | Play/pause button. SVG icon or sprite sheet |
+| `sc-plugin` | — | Plugin root. Loads HTML, parses tree, creates group on server |
+| `sc-group` | name | Group container. Sends `/g_new` on parent enabled, `/g_freeAll` + `/n_free` on destroy |
+| `sc-synth` | name, bind | Synth instance. Sends `/s_new` on parent enabled, `/n_free` on destroy |
+| `sc-synthdef` | name | SynthDef template. Compiles and sends `/d_recv` when parent loaded |
+| `sc-control` | name, value, bind | Control parameter. Sends `/n_set` on value change when `enabled` and parent has nodeId |
+| `sc-var` | name, value, bind | State variable. No OSC. Supports bind expressions |
+| `sc-range` | bind, type (knob/slider), min, max, step, diameter, width, height, src, sprites, fgcolor, bgcolor | Slider or knob. Dispatches `setControl`/`setVar` |
+| `sc-checkbox` | bind, width, height, src, fgcolor, bgcolor | Toggle switch. Dispatches `setControl`/`setVar` |
+| `sc-select` | bind | Custom combobox dropdown. Provides `SelectContext` to sc-option children |
+| `sc-option` | value, label | Declarative option. Renders itself as a clickable item inside sc-select dropdown |
+| `sc-radio-group` | bind, orientation | Radio button group. Provides `RadioGroupContext` to sc-radio children |
+| `sc-radio` | value, label, width, height, src, fgcolor, bgcolor | Declarative radio. Renders SVG circle or sprite sheet indicator |
+| `sc-run` | bind, size, src, fgcolor, bgcolor | Play/pause button. Sends `/n_run` directly |
 | `sc-display` | bind, format | Read-only value display. Printf-style format (`%d`, `%.2f`, `%b`, `%s`) |
 | `sc-if` | bind, is-truthy/is-falsy/is-equal/etc. | Conditional rendering |
 
 Internal components in `sc-elements/internal/`:
-- `sc-node.ts` — Abstract base for sc-synth/sc-group. Manages nodeId, provides `NodeContext` (via Lit context)
+- `sc-element.ts` — Abstract base for all sc-elements. Store subscription, `_state`, `_runtime`, `_onStateChange(prev, next)`, `_sendCreate`/`_sendDestroy`, parent context consumer
+- `sc-node.ts` — Abstract base for nodes. Context provider, `getControls()`, `groupId`
+- `sc-input.ts` — Abstract base for inputs. Shared `getState` (resolves target value), `_dispatchChange`, `resolveStateValue`
+- `sc-state.ts` — Abstract base for state elements. `name`/`value` props, `_match` guard
 - `sc-knob.ts`, `sc-slider.ts`, `sc-switch.ts` — Low-level UI controls
 
 ### Bind Model
 
 All element-to-data references use `bind`:
 - **sc-synth** `bind="synthdefName"` — references an `<sc-synthdef>` by name
-- **sc-range/sc-checkbox** `bind="synthName.controlName"` — dot-path to a synth control
-- **sc-display/sc-if** `bind="synthName.controlName"` — read-only dot-path reference
+- **sc-range/sc-checkbox/sc-select/sc-radio-group** `bind="nodeName.controlName"` — dot-path to a control or var
+- **sc-display/sc-if** `bind="nodeName.controlName"` — read-only dot-path reference
 - **sc-run** `bind="synthOrGroupName"` — references a synth or group (empty = parent context)
+- **sc-control/sc-var** `bind="nodeName.controlName"` — mirrors another control/var's value (with optional arithmetic expression)
+
+### Bind Expressions
+
+Controls and vars support arithmetic expressions in `bind` strings:
+
+```html
+<sc-var name="doubled" bind="vars.freq * 2"/>
+<sc-var name="offset" bind="vars.freq + 100"/>
+<sc-var name="scaled" bind="(vars.amp - 0.5) * 2"/>
+<sc-var name="sum" bind="vars.x + vars.y"/>
+<sc-control name="freq" bind="master.freq * 0.5"/>
+```
+
+- Supported operators: `+`, `-`, `*`, `/`, unary `-`, parentheses
+- Multiple variable references allowed: `bind="vars.x + vars.y * 2"`
+- Expressions are parsed at plugin load time into an AST, evaluated reactively when source values change
+- Circular references are detected and throw at parse time
 
 ### Bind Resolution & Scoping
 
@@ -231,55 +302,8 @@ This means nodes can see:
 1. Takes a dot-separated path split into segments (e.g., `["outer", "inner", "deep"]`)
 2. Searches `ctx.scope` (cumulative) for the first segment by `name`
 3. If found, ensures the target is processed (on-demand via `processElement` with idempotency)
-4. For remaining segments, recurses with `scope: [...target.children, ...ctx.scope]`
-5. Returns the final resolved `ScElementNode`
-
-#### Resolution Examples
-
-**Simple bind** — `<sc-range bind="synth.freq"/>`:
-- Split: segments = `["synth"]`, controlName = `"freq"`
-- `resolve(ctx, ["synth"])` finds "synth" in cumulative scope
-- Validates "freq" exists in synth's controls
-
-**Nested path** — `<sc-range bind="outer.inner.deep.freq"/>`:
-- `resolve` finds "outer" → processes it (and subtree) → recurses into outer.children
-- Finds "inner" → recurses into inner.children → finds "deep"
-- Validates "freq" on deep synth
-
-**Cross-level synthdef** — synthdef at root, synth nested in groups:
-```xml
-<sc-synthdef name="tone" .../>
-<sc-group name="outer">
-  <sc-synth name="s1" bind="tone"/>
-</sc-group>
-```
-Synth's cumulative scope: `[s1, ...outer_scope, synthdef(tone), ...root_scope]`. `resolve(ctx, ["tone"])` finds the synthdef via ancestor visibility.
-
-**Shadowing** — inner names shadow outer:
-```xml
-<sc-synthdef name="tone" .../>
-<sc-group name="a">
-  <sc-synthdef name="tone" .../>  <!-- shadows root-level "tone" -->
-  <sc-synth bind="tone"/>         <!-- resolves to inner "tone" -->
-</sc-group>
-```
-`findIndex` returns the first (innermost) match.
-
-**Cross-group isolation** — siblings can't see into each other:
-```xml
-<sc-group name="a"><sc-synth name="s1"/></sc-group>
-<sc-group name="b"><sc-range bind="s1.freq"/></sc-group>  <!-- ERROR: s1 not visible -->
-```
-"s1" is only in group "a"'s children, not in the root scope. Use `bind="a.s1.freq"` for the full path.
-
-**sc-if transparency** — nameless parents don't create scope boundaries:
-```xml
-<sc-synth name="osc" .../>
-<sc-if bind="osc.gate">
-  <sc-display bind="osc.gate"/>  <!-- finds "osc" via cumulative scope -->
-</sc-if>
-```
-sc-if's children scope: `[display, checkbox, ...parent_scope_with_osc]`.
+4. For remaining segments, walks populated children for deeper segments
+5. Returns the final resolved `ScElementItem`
 
 #### On-Demand Processing
 
@@ -299,21 +323,21 @@ sc-if's children scope: `[display, checkbox, ...parent_scope_with_osc]`.
 4. Assets — format detection must match declared type
 
 **Frontend loading** (`src/lib/plugins/PluginManager.ts`):
-- Fetches via `app://plugins/{id}/{entry}` URI scheme
-- Parses XHTML via DOMParser
-- Phase 1: `processHtml()` builds element tree with ID hydration from saved state
-- Phase 2: `processRuntime()` creates runtime entries, resolves bindings, compiles synthdefs
-- Sanitizes with DOMPurify (forbids script/iframe/object/embed/form)
-- Caches as TrustedHTML, renders inside shadow DOM
+- `loadPlugin(boxId, rootElement)` — single async method: fetches HTML, parses XML, sets innerHTML, hydrates, processes runtime, returns nodes map
+- Plugin element dispatches `runtimeApi.loadPlugin()` and `_sendCreate()`
 
 **Plugin HTML elements** (validated by XSD):
 - `<sc-control name="..." value="..."/>` — declares a control parameter (on synth/group/plugin/synthdef)
-- `<sc-control name="..." bind="..."/>` — declares a ugen input bound to another ugen or synthdef param
+- `<sc-control name="..." bind="..."/>` — declares a bound control (mirrors another control/var, optionally with arithmetic)
+- `<sc-var name="..." value="..."/>` — declares a state variable
+- `<sc-var name="..." bind="..."/>` — declares a bound variable (mirrors another, optionally with arithmetic)
 - `<sc-synthdef name="...">` with `<sc-control>` + `<sc-ugen>` children — defines a synth graph
 - `<sc-ugen name="..." type="..." rate="..." op="...">` with `<sc-control>` children — a UGen node
 - `<sc-synth name="..." bind="synthdefName">` with `<sc-control>` children — synth instance
 - `<sc-group name="...">` — groups synths/controls
 - `<sc-range>`, `<sc-checkbox>`, `<sc-run>`, `<sc-display>`, `<sc-if>` — UI controls
+- `<sc-select bind="...">` with `<sc-option>` children — dropdown selector
+- `<sc-radio-group bind="..." orientation="...">` with `<sc-radio>` children — radio buttons
 
 ## OSC Communication (`src/lib/osc/`)
 
@@ -333,6 +357,9 @@ sc-if's children scope: `[display, checkbox, ...parent_scope_with_osc]`.
 | `forward-ref-plugin` | Controls appear before the synth they reference — tests on-demand resolve |
 | `nested-groups-plugin` | Multi-segment resolve paths through nested groups |
 | `conditional-plugin` | sc-if with controls binding to siblings — tests sc-if scope transparency |
+| `var-plugin` | sc-var elements with bind expressions (mirror, doubled, sum, product) |
+| `select-plugin` | sc-select/sc-option dropdowns and sc-radio-group/sc-radio buttons |
+| `waveform-plugin` | Select UGen switching between SinOsc/Saw/Pulse via sc-select |
 | `bad-bindings` | Intentional binding errors (typos, missing synths) for testing validation |
 | `bad-asset-type` | Invalid asset format for testing validation |
 | `bad-asset-mismatch` | Declared vs actual asset type mismatch |
@@ -346,7 +373,6 @@ sc-if's children scope: `[display, checkbox, ...parent_scope_with_osc]`.
 
 - Absolute via `@/` alias (maps to `src/`). Prefer absolute for cross-directory imports.
 - Relative only for same-directory or parent within the same component folder.
-- Barrel exports via `index.ts`.
 
 ### React Components
 
@@ -386,8 +412,8 @@ export function Foo({variant = "a", size = "md", className, ...rest}: FooProps) 
 - Never mutate store directly — always dispatch actions via API layer
 - Selectors are memoized (`createSelector`) — use them for derived state
 - Runtime-only fields (`loaded`, `error`) are stripped during persistence via `partialize` in persist config
-- Control values live on individual `ScControlNode.runtime.value` entries. Overrides persisted as `OverrideEntry[]` per layout box
-- Element trees live on `ScPluginNode.children` in the runtime slice
+- Control values live on individual `ScControlItem.runtime.value` entries. Overrides persisted as `OverrideEntry[]` per layout box
+- Element trees live on `ScPluginItem.children` in the runtime slice
 
 ## Key Constants
 
