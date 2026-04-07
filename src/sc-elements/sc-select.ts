@@ -83,7 +83,7 @@ export class ScSelect extends ScInput<ScSelectItem> {
         this._open = false;
         this._provider = new ContextProvider(this, {
             context: selectContext,
-            initialValue: {value: 0, select: () => {}},
+            initialValue: {value: 0, select: this._select},
         });
     }
 

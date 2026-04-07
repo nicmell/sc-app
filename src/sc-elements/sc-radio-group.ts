@@ -32,7 +32,7 @@ export class ScRadioGroup extends ScInput<ScRadioGroupItem> {
         this.orientation = 'horizontal';
         this._provider = new ContextProvider(this, {
             context: radioGroupContext,
-            initialValue: {value: 0, select: () => {}},
+            initialValue: {value: 0, select: this._select},
         });
     }
 
