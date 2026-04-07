@@ -24,8 +24,7 @@ export abstract class ScState<T extends ScElementItem> extends ScElement<T, numb
     getState(state: RuntimeState): number {
         const node = state.nodes[this.id];
         if (!node || !this._match(node)) return 0;
-        const rt = node.runtime as { value: number; targetId?: string };
-        return rt.targetId ? resolveStateValue(state, rt.targetId) : rt.value;
+        return resolveStateValue(state, this.id);
     }
 
     render() {

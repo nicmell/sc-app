@@ -1,15 +1,15 @@
 // Minimal arithmetic expression parser and evaluator.
-// Supports: +, -, *, /, unary -, parentheses, numbers, and a single variable reference.
-// The variable is a dot-separated path (e.g., "vars.freq") that gets extracted during parsing.
+// Supports: +, -, *, /, unary -, parentheses, numbers, and variable references.
+// Variables are dot-separated paths (e.g., "vars.freq") extracted during parsing.
 
 export type Expr =
     | { type: 'number'; value: number }
-    | { type: 'var' }
+    | { type: 'var'; name: string }
     | { type: 'unary'; op: '-'; expr: Expr }
     | { type: 'binary'; op: '+' | '-' | '*' | '/'; left: Expr; right: Expr };
 
 export interface ParsedBind {
-    path: string;
+    paths: string[];
     expression?: Expr;
 }
 
@@ -18,11 +18,11 @@ export function parseBind(input: string): ParsedBind {
 
     // Fast path: plain variable reference (no expression)
     if (/^[a-zA-Z_][\w]*(?:\.[a-zA-Z_][\w]*)*$/.test(trimmed)) {
-        return {path: trimmed};
+        return {paths: [trimmed]};
     }
 
     let pos = 0;
-    let varPath: string | undefined;
+    const varPaths = new Set<string>();
 
     function peek(): string { return trimmed[pos] ?? ''; }
     function advance(): string { return trimmed[pos++]; }
@@ -79,12 +79,9 @@ export function parseBind(input: string): ParsedBind {
         if (c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c === '_') {
             const start = pos;
             while (pos < trimmed.length && /[\w.]/.test(trimmed[pos])) pos++;
-            const path = trimmed.slice(start, pos);
-            if (varPath && varPath !== path) {
-                throw new Error(`Bind expression must reference a single variable, found "${varPath}" and "${path}" in: "${input}"`);
-            }
-            varPath = path;
-            return {type: 'var'};
+            const name = trimmed.slice(start, pos);
+            varPaths.add(name);
+            return {type: 'var', name};
         }
 
         throw new Error(`Unexpected character '${c}' in bind expression: "${input}"`);
@@ -95,21 +92,21 @@ export function parseBind(input: string): ParsedBind {
     if (pos < trimmed.length) {
         throw new Error(`Unexpected character '${peek()}' at position ${pos} in bind expression: "${input}"`);
     }
-    if (!varPath) {
-        throw new Error(`Bind expression must reference a variable: "${input}"`);
+    if (varPaths.size === 0) {
+        throw new Error(`Bind expression must reference at least one variable: "${input}"`);
     }
 
-    return {path: varPath, expression: expr};
+    return {paths: [...varPaths], expression: expr};
 }
 
-export function evalExpr(expr: Expr, value: number): number {
+export function evalExpr(expr: Expr, values: Record<string, number>): number {
     switch (expr.type) {
         case 'number': return expr.value;
-        case 'var': return value;
-        case 'unary': return -evalExpr(expr.expr, value);
+        case 'var': return values[expr.name] ?? 0;
+        case 'unary': return -evalExpr(expr.expr, values);
         case 'binary': {
-            const l = evalExpr(expr.left, value);
-            const r = evalExpr(expr.right, value);
+            const l = evalExpr(expr.left, values);
+            const r = evalExpr(expr.right, values);
             switch (expr.op) {
                 case '+': return l + r;
                 case '-': return l - r;

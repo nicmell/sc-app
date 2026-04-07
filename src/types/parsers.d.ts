@@ -17,7 +17,7 @@ export type ControlRuntime = {
   enabled: boolean;
   name: string;
   value: number;
-  targetId?: string;
+  targets?: Record<string, string>;
   expression?: import('@/lib/utils/expression').Expr;
 };
 
@@ -28,7 +28,7 @@ export type VarRuntime = {
   enabled: boolean;
   name: string;
   value: number;
-  targetId?: string;
+  targets?: Record<string, string>;
   expression?: import('@/lib/utils/expression').Expr;
 };
 

@@ -100,32 +100,37 @@ function parentId(ctx: RuntimeContext): string {
     return ctx.parentNode?.id ?? '';
 }
 
-function resolveStateBind(ctx: RuntimeContext): { targetId: string; expression?: import('@/lib/utils/expression').Expr } {
+function resolveStateBind(ctx: RuntimeContext): { targets: Record<string, string>; expression?: import('@/lib/utils/expression').Expr } {
     const n = ctx.tree as { bind: string; type: string };
     const parsed = parseBind(n.bind);
-
-    // Temporarily swap bind to the extracted path for resolveControlBind
     const origBind = n.bind;
-    n.bind = parsed.path;
-    const {target, controlName} = resolveControlBind(ctx);
-    n.bind = origBind;
+    const targets: Record<string, string> = {};
 
-    const targetState = (target as ScParentItem).children.find(c => isState(c) && c.name === controlName)!;
-    checkCircularBind(ctx, targetState.id);
-    return {targetId: targetState.id, expression: parsed.expression};
+    for (const path of parsed.paths) {
+        n.bind = path;
+        const {target, controlName} = resolveControlBind(ctx);
+        const targetState = (target as ScParentItem).children.find(c => isState(c) && c.name === controlName)!;
+        checkCircularBind(ctx, targetState.id);
+        targets[path] = targetState.id;
+    }
+
+    n.bind = origBind;
+    return {targets, expression: parsed.expression};
 }
 
 function checkCircularBind(ctx: RuntimeContext, targetId: string): void {
     const visited = new Set<string>([ctx.tree.id]);
-    let current = targetId;
-    while (current) {
+    const queue = [targetId];
+    while (queue.length > 0) {
+        const current = queue.pop()!;
         if (visited.has(current)) {
             throw new Error(`<${ctx.tree.type} name="${(ctx.tree as { name?: string }).name}">: circular bind reference detected`);
         }
         visited.add(current);
         const node = ctx.nodes.get(current);
-        if (!node || !isState(node)) break;
-        current = (node.runtime as { targetId?: string }).targetId ?? '';
+        if (!node || !isState(node)) continue;
+        const targets = (node.runtime as { targets?: Record<string, string> }).targets;
+        if (targets) queue.push(...Object.values(targets));
     }
 }
 
@@ -223,8 +228,8 @@ const controlHandler = (ctx: RuntimeContext): ControlRuntime => {
     const n = ctx.tree as StripRuntime<ScControlItem>;
     const enabled = ctx.parentNode != null && isNode(ctx.parentNode);
     if (enabled && n.bind) {
-        const {targetId, expression} = resolveStateBind(ctx);
-        return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled, name: n.name, value: 0, targetId, expression};
+        const {targets, expression} = resolveStateBind(ctx);
+        return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled, name: n.name, value: 0, targets, expression};
     }
     const value = findControlOverride(ctx, [...ctx.path, n.name]) ?? n.value ?? 0;
     return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled, name: n.name, value};
@@ -233,8 +238,8 @@ const controlHandler = (ctx: RuntimeContext): ControlRuntime => {
 const varHandler = (ctx: RuntimeContext): VarRuntime => {
     const n = ctx.tree as StripRuntime<ScVarItem>;
     if (n.bind) {
-        const {targetId, expression} = resolveStateBind(ctx);
-        return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled: true, name: n.name, value: 0, targetId, expression};
+        const {targets, expression} = resolveStateBind(ctx);
+        return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled: true, name: n.name, value: 0, targets, expression};
     }
     const value = findVarOverride(ctx, [...ctx.path, n.name]) ?? n.value ?? 0;
     return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled: true, name: n.name, value};
