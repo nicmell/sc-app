@@ -7,6 +7,7 @@
 <sc-group name="vars">
     <sc-var name="knobValue" value="0.5"/>
     <sc-var name="sliderValue" value="0"/>
+    <sc-var name="mirror" bind="vars.knobValue"/>
 </sc-group>
 <div class="controls">
     <label>
@@ -16,6 +17,9 @@
     <label>
         <sc-range type="slider" bind="vars.sliderValue" min="-1" max="1" step="0.01" width="120" height="16"/>
         <span>Slider: <sc-display bind="vars.sliderValue" format="%.2f"/></span>
+    </label>
+    <label>
+        <span>Mirror (bound to knobValue): <sc-display bind="vars.mirror" format="%.2f"/></span>
     </label>
 </div>
 </body>

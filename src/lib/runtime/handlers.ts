@@ -63,8 +63,9 @@ function resolve(ctx: RuntimeContext, path: string[]): ScElementItem | undefined
     const idx = ctx.scope.findIndex(s => 'name' in s && s.name === name);
     if (idx < 0) return undefined;
 
-    // Same-level resolve: sibling shares the same parent path
-    const target = ctx.nodes.get(ctx.scope[idx].id) ?? processElement({...ctx, tree: ctx.scope[idx]});
+    const scopeId = ctx.scope[idx].id;
+    const target = ctx.nodes.get(scopeId)
+        ?? (ctx.parentNode && scopeId === ctx.parentNode.id ? ctx.parentNode as unknown as ScElementItem : processElement({...ctx, tree: ctx.scope[idx]}));
 
     return walkPath(target, rest);
 }
@@ -96,6 +97,27 @@ function resolveControlBind(ctx: RuntimeContext): { target: ScElementItem; contr
 
 function parentId(ctx: RuntimeContext): string {
     return ctx.parentNode?.id ?? '';
+}
+
+function resolveStateBind(ctx: RuntimeContext): string {
+    const {target, controlName} = resolveControlBind(ctx);
+    const targetState = (target as ScParentItem).children.find(c => isState(c) && c.name === controlName)!;
+    checkCircularBind(ctx, targetState.id);
+    return targetState.id;
+}
+
+function checkCircularBind(ctx: RuntimeContext, targetId: string): void {
+    const visited = new Set<string>([ctx.tree.id]);
+    let current = targetId;
+    while (current) {
+        if (visited.has(current)) {
+            throw new Error(`<${ctx.tree.type} name="${(ctx.tree as { name?: string }).name}">: circular bind reference detected`);
+        }
+        visited.add(current);
+        const node = ctx.nodes.get(current);
+        if (!node || !isState(node)) break;
+        current = (node.runtime as { targetId?: string }).targetId ?? '';
+    }
 }
 
 function resolveVisualBind(ctx: RuntimeContext): InputRuntime {
@@ -191,12 +213,20 @@ const ugenHandler = (ctx: RuntimeContext): UgenRuntime => {
 const controlHandler = (ctx: RuntimeContext): ControlRuntime => {
     const n = ctx.tree as StripRuntime<ScControlItem>;
     const enabled = ctx.parentNode != null && isNode(ctx.parentNode);
+    if (enabled && n.bind) {
+        const targetId = resolveStateBind(ctx);
+        return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled, name: n.name, value: 0, targetId};
+    }
     const value = findControlOverride(ctx, [...ctx.path, n.name]) ?? n.value ?? 0;
     return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled, name: n.name, value};
 };
 
 const varHandler = (ctx: RuntimeContext): VarRuntime => {
     const n = ctx.tree as StripRuntime<ScVarItem>;
+    if (n.bind) {
+        const targetId = resolveStateBind(ctx);
+        return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled: true, name: n.name, value: 0, targetId};
+    }
     const value = findVarOverride(ctx, [...ctx.path, n.name]) ?? n.value ?? 0;
     return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled: true, name: n.name, value};
 };

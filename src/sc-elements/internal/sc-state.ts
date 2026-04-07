@@ -2,10 +2,12 @@ import {html} from 'lit';
 import type {ScElementItem, ScElementItemBase} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {ScElement} from './sc-element.ts';
+import {resolveStateValue} from './sc-input.ts';
 
 /**
  * Base class for declarative state elements (sc-control, sc-var).
  * Both hold a named numeric value in their runtime.
+ * When bound to another state element (via targetId), reads value from the target.
  * Subclasses provide a type guard to identify their node type in the store.
  */
 export abstract class ScState<T extends ScElementItem> extends ScElement<T, number> {
@@ -21,7 +23,9 @@ export abstract class ScState<T extends ScElementItem> extends ScElement<T, numb
 
     getState(state: RuntimeState): number {
         const node = state.nodes[this.id];
-        return node && this._match(node) ? (node.runtime as { value: number }).value : 0;
+        if (!node || !this._match(node)) return 0;
+        const rt = node.runtime as { value: number; targetId?: string };
+        return rt.targetId ? resolveStateValue(state, rt.targetId) : rt.value;
     }
 
     render() {

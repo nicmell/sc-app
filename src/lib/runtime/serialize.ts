@@ -12,14 +12,14 @@ function collectEntries(node: ScElementItem, nodes: Record<string, ScElementItem
             entries.push({type: "run", targetPath: path, value: n.runtime.run});
         }
         for (const child of n.children) {
-            if (isControl(child) && child.value != null) {
+            if (isControl(child) && child.value != null && !child.bind) {
                 const controlNode = nodes[child.id] ?? child;
                 if (isControl(controlNode) && controlNode.runtime.value !== child.value) {
                     const path = [...child.runtime.path, child.name].join('.')
                     entries.push({type: "control", targetPath: path, value: controlNode.runtime.value});
                 }
             }
-            if (isVar(child) && child.value != null) {
+            if (isVar(child) && child.value != null && !child.bind) {
                 const varNode = nodes[child.id] ?? child;
                 if (isVar(varNode) && varNode.runtime.value !== child.value) {
                     const path = [...child.runtime.path, child.name].join('.');

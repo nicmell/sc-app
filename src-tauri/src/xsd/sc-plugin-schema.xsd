@@ -261,6 +261,7 @@
   <xs:complexType name="scVarType">
     <xs:attribute name="name" type="xs:string" use="required"/>
     <xs:attribute name="value" type="xs:decimal"/>
+    <xs:attribute name="bind" type="xs:string"/>
     <xs:attributeGroup ref="commonAttrs"/>
   </xs:complexType>
 

@@ -52,10 +52,9 @@ function extractControlProps(el: Element): HtmlProps<ScControlItem> {
 }
 
 function extractVarProps(el: Element): HtmlProps<ScVarItem> {
-    return {
-        name: el.getAttribute('name') ?? '',
-        value: Number(el.getAttribute('value') ?? '0'),
-    };
+    const name = el.getAttribute('name') ?? '';
+    const bind = el.getAttribute('bind');
+    return bind ? {name, bind} : {name, value: Number(el.getAttribute('value') ?? '0')};
 }
 
 function extractRangeProps(el: Element): HtmlProps<ScRangeItem> {

@@ -17,6 +17,7 @@ export type ControlRuntime = {
   enabled: boolean;
   name: string;
   value: number;
+  targetId?: string;
 };
 
 export type VarRuntime = {
@@ -26,6 +27,7 @@ export type VarRuntime = {
   enabled: boolean;
   name: string;
   value: number;
+  targetId?: string;
 };
 
 export type UgenRuntime = {
@@ -130,6 +132,7 @@ export interface ScVarItem {
   id: string;
   name: string;
   value?: number;
+  bind?: string;
   runtime: VarRuntime;
 }
 
