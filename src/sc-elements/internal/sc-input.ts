@@ -1,7 +1,7 @@
 import type {ScElementItem, InputRuntime} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {runtimeApi} from '@/lib/stores/api';
-import {isState, isVar} from '@/lib/utils/guards';
+import {isInput, isState, isVar} from '@/lib/utils/guards';
 import {ScElement} from './sc-element.ts';
 
 /**
@@ -12,8 +12,8 @@ export abstract class ScInput<T extends ScElementItem & { runtime: InputRuntime 
 
     getState(state: RuntimeState): number {
         const self = state.nodes[this.id];
-        if (!self || !('targetId' in self.runtime)) return 0;
-        const target = state.nodes[(self.runtime as InputRuntime).targetId];
+        if (!self || !isInput(self)) return 0;
+        const target = state.nodes[self.runtime.targetId];
         return target && isState(target) ? target.runtime.value : 0;
     }
 

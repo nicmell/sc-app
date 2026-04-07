@@ -29,9 +29,13 @@ export class PluginManager {
 
     async loadPlugin(boxId: string, rootElement: Element): Promise<Map<string, ScElementItem>> {
         const box = layoutApi.getById(boxId);
-        if (!box?.plugin) throw new Error(`No plugin assigned for ${boxId}`);
+        if (!box?.plugin) {
+            throw new Error(`No plugin assigned for ${boxId}`);
+        }
         const plugin = pluginsApi.getById(box.plugin);
-        if (!plugin) throw new Error(`Plugin ${box.plugin} not found`);
+        if (!plugin) {
+            throw new Error(`Plugin ${box.plugin} not found`);
+        }
 
         const resp = await get(`${PLUGINS_URL}/${plugin.id}/${plugin.entry}`);
         const text = await resp.text();
