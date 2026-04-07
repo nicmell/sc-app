@@ -1,8 +1,14 @@
-import {html, svg, css} from 'lit';
-import type {ScRadioGroupItem, ScRadioItem} from '@/types/parsers';
-import {runtimeApi} from '@/lib/stores/api';
-import {isRadio} from '@/lib/utils/guards';
+import {html, css} from 'lit';
+import {ContextProvider, createContext} from '@lit/context';
+import type {ScRadioGroupItem} from '@/types/parsers';
 import {ScInput} from './internal/sc-input.ts';
+
+export interface RadioGroupContext {
+    value: number;
+    select(value: number): void;
+}
+
+export const radioGroupContext = createContext<RadioGroupContext>('sc-radio-group');
 
 export class ScRadioGroup extends ScInput<ScRadioGroupItem> {
     static properties = {
@@ -13,72 +19,43 @@ export class ScRadioGroup extends ScInput<ScRadioGroupItem> {
     declare bind: string;
     declare orientation: 'horizontal' | 'vertical';
 
-    static styles = css`
-        :host { display: inline-flex; gap: 4px; }
-        :host([orientation="vertical"]) { flex-direction: column; }
-        .radio-item { display: inline-flex; align-items: center; gap: 2px; cursor: pointer; user-select: none; }
-        .radio-item svg, .radio-item img { display: block; pointer-events: none; }
-        .radio-label { font-family: system-ui, sans-serif; font-size: 13px; }
-    `;
+    private _provider!: ContextProvider<{ __context__: RadioGroupContext }, this>;
 
-    private get _radios(): ScRadioItem[] {
-        try {
-            const node = runtimeApi.getById(this.id) as ScRadioGroupItem | undefined;
-            return (node?.children ?? []).filter((c): c is ScRadioItem => isRadio(c));
-        } catch {
-            return [];
-        }
-    }
+    static styles = css`
+        :host { display: inline-flex; gap: 4px; align-items: center; }
+        :host([orientation="vertical"]) { flex-direction: column; align-items: flex-start; }
+    `;
 
     constructor() {
         super();
         this.bind = '';
         this.orientation = 'horizontal';
+        this._provider = new ContextProvider(this, {
+            context: radioGroupContext,
+            initialValue: {value: 0, select: () => {}},
+        });
     }
 
-    private _onSelect(value: number) {
+    private _select = (value: number) => {
         if (value !== this._state && this.bind) {
             this._dispatchChange(value);
         }
+    };
+
+    private _updateContext() {
+        this._provider.setValue({
+            value: this._state,
+            select: this._select,
+        }, true);
     }
 
-    private _renderRadio(r: ScRadioItem, selected: boolean) {
-        const w = r.width;
-        const h = r.height;
-        const fg = r.fgcolor || 'var(--color-primary, #0a6dc4)';
-        const bg = r.bgcolor || 'var(--color-bg-secondary, #e8e8e8)';
-
-        if (r.src) {
-            const yOff = selected ? -h : 0;
-            return html`<img
-                width=${w}
-                height=${h}
-                style="object-fit: none; object-position: 0px ${yOff}px;"
-                src=${r.src}
-                alt=""
-            />`;
-        }
-
-        const r2 = Math.min(w, h) * 0.5;
-        return html`
-            <svg width=${w} height=${h} viewBox="0 0 ${w} ${h}">
-                <circle cx=${w * 0.5} cy=${h * 0.5} r=${r2 - 1} fill=${bg} />
-                ${selected
-                    ? svg`<circle cx=${w * 0.5} cy=${h * 0.5} r=${r2 * 0.45} fill=${fg} />`
-                    : ''}
-            </svg>
-        `;
+    protected _onStateChange(prev: number, next: number) {
+        super._onStateChange(prev, next);
+        this._updateContext();
     }
 
     render() {
-        const current = this._state;
-        return html`
-            ${this._radios.map(r => html`
-                <span class="radio-item" @click=${() => this._onSelect(r.value)}>
-                    ${this._renderRadio(r, r.value === current)}
-                    ${r.label ? html`<span class="radio-label">${r.label}</span>` : ''}
-                </span>
-            `)}
-        `;
+        this._updateContext();
+        return html`<slot></slot>`;
     }
 }
