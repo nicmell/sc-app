@@ -30,14 +30,19 @@ export abstract class ScElement<T extends ScElementItem, S = unknown> extends Li
         return this.getState(runtime);
     }
 
+    protected _onStateChange(_prev: S, _next: S): void {
+        this.requestUpdate();
+    }
+
     protected _subscribe(): () => void {
         let prev = this._state;
         return store.subscribe(() => {
             const {runtime} = store.getState();
             const next = this.getState(runtime);
             if (next !== prev) {
+                const p = prev;
                 prev = next;
-                this.requestUpdate();
+                this._onStateChange(p, next);
             }
         });
     }

@@ -4,6 +4,7 @@ export interface NodeRuntime {
   rootId: string;
   parentId: string;
   path: string[];
+  enabled: boolean;
   run: number;
   loaded: boolean;
   nodeId: number;
@@ -13,6 +14,7 @@ export type ControlRuntime = {
   rootId: string;
   parentId: string;
   path: string[];
+  enabled: boolean;
   name: string;
   value: number;
 };
@@ -21,6 +23,7 @@ export type VarRuntime = {
   rootId: string;
   parentId: string;
   path: string[];
+  enabled: boolean;
   name: string;
   value: number;
 };
@@ -29,12 +32,14 @@ export type UgenRuntime = {
   rootId: string;
   parentId: string;
   path: string[];
+  enabled: boolean;
 };
 
 export interface SynthDefRuntime {
   rootId: string;
   parentId: string;
   path: string[];
+  enabled: boolean;
   loaded: boolean;
 }
 
@@ -42,6 +47,7 @@ export interface InputRuntime {
   rootId: string;
   parentId: string;
   path: string[];
+  enabled: boolean;
   targetId: string;
 }
 
@@ -49,6 +55,7 @@ export interface RunRuntime {
   rootId: string;
   parentId: string;
   path: string[];
+  enabled: boolean;
   targetId: string;
 }
 

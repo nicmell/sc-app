@@ -101,7 +101,7 @@ function parentId(ctx: RuntimeContext): string {
 function resolveVisualBind(ctx: RuntimeContext): InputRuntime {
     const {target, controlName} = resolveControlBind(ctx);
     const control = (target as ScParentItem).children.find(c => isState(c) && c.name === controlName)!;
-    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, targetId: control.id};
+    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled: true, targetId: control.id};
 }
 
 // --- Handlers ---
@@ -112,7 +112,7 @@ const pluginHandler = (ctx: RuntimeContext): NodeRuntime => {
         if (n.error) throw new Error(n.error);
         ctx.visit(ctx.tree);
         const run = findRunOverride(ctx, ctx.path) ?? (n.run ? 1 : 0)
-        return {rootId: ctx.rootId, parentId: '', path: ctx.path, run, loaded: false, nodeId: 0};
+        return {rootId: ctx.rootId, parentId: '', path: ctx.path, enabled: true, run, loaded: false, nodeId: 0};
     } catch (e) {
         Object.assign(n, {children: []});
         for (const id of ctx.nodes.keys()) {
@@ -126,7 +126,7 @@ function nodeRuntime(ctx: RuntimeContext): NodeRuntime {
     const n = ctx.tree as StripRuntime<ScGroupItem | ScSynthItem>;
     const path = [...ctx.path, n.name];
     const run = findRunOverride(ctx, path) ?? (n.run ? 1 : 0)
-    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, run, loaded: false, nodeId: 0};
+    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled: true, run, loaded: false, nodeId: 0};
 }
 
 const groupHandler = (ctx: RuntimeContext): NodeRuntime => {
@@ -170,7 +170,7 @@ const synthDefHandler = (ctx: RuntimeContext): SynthDefRuntime => {
         }));
         synthDefManager.compile(ctx.rootId, n.id, n.name, params, specsMap);
     }
-    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, loaded: false};
+    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled: true, loaded: false};
 };
 
 const ugenHandler = (ctx: RuntimeContext): UgenRuntime => {
@@ -185,19 +185,20 @@ const ugenHandler = (ctx: RuntimeContext): UgenRuntime => {
             }
         }
     }
-    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path};
+    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled: false};
 };
 
 const controlHandler = (ctx: RuntimeContext): ControlRuntime => {
     const n = ctx.tree as StripRuntime<ScControlItem>;
+    const enabled = ctx.parentNode != null && isNode(ctx.parentNode);
     const value = findControlOverride(ctx, [...ctx.path, n.name]) ?? n.value ?? 0;
-    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, name: n.name, value};
+    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled, name: n.name, value};
 };
 
 const varHandler = (ctx: RuntimeContext): VarRuntime => {
     const n = ctx.tree as StripRuntime<ScVarItem>;
     const value = findVarOverride(ctx, [...ctx.path, n.name]) ?? n.value ?? 0;
-    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, name: n.name, value};
+    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled: true, name: n.name, value};
 };
 
 const inputHandler = (ctx: RuntimeContext): InputRuntime => {
@@ -210,7 +211,7 @@ const runHandler = (ctx: RuntimeContext): RunRuntime => {
     if (n.bind && (!target || !isNode(target))) {
         throw new Error(`<sc-run>: bind "${n.bind}" does not match any node in scope`);
     }
-    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, targetId: target ? target.id : ''};
+    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled: true, targetId: target ? target.id : ''};
 };
 
 const ifHandler = (ctx: RuntimeContext): InputRuntime => {
@@ -224,7 +225,7 @@ const selectHandler = (ctx: RuntimeContext): InputRuntime => {
 };
 
 const optionHandler = (ctx: RuntimeContext): UgenRuntime => {
-    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path};
+    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled: false};
 };
 
 const radioGroupHandler = (ctx: RuntimeContext): InputRuntime => {
@@ -233,7 +234,7 @@ const radioGroupHandler = (ctx: RuntimeContext): InputRuntime => {
 };
 
 const radioHandler = (ctx: RuntimeContext): UgenRuntime => {
-    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path};
+    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled: false};
 };
 
 // --- Dispatch ---
