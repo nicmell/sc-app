@@ -7,7 +7,6 @@ import {ScInput} from './internal/sc-input.ts';
 
 export interface SelectContext {
     value: number;
-    open: boolean;
     select(value: number): void;
 }
 
@@ -70,18 +69,12 @@ export class ScSelect extends ScInput<ScSelectItem> {
     `;
 
     private get _options(): ScOptionItem[] {
-        try {
-            const node = runtimeApi.getById(this.id) as ScSelectItem | undefined;
-            return (node?.children ?? []).filter((c): c is ScOptionItem => isOption(c));
-        } catch {
-            return [];
-        }
+        const node = runtimeApi.getById(this.id) as ScSelectItem | undefined;
+        return (node?.children ?? []).filter((c): c is ScOptionItem => isOption(c));
     }
 
     private get _selectedLabel(): string {
-        const current = this._state;
-        const match = this._options.find(o => o.value === current);
-        return match?.label ?? String(current);
+        return this._options.find(o => o.value === this._state)?.label ?? String(this._state);
     }
 
     constructor() {
@@ -90,51 +83,35 @@ export class ScSelect extends ScInput<ScSelectItem> {
         this._open = false;
         this._provider = new ContextProvider(this, {
             context: selectContext,
-            initialValue: {value: 0, open: false, select: () => {}},
+            initialValue: {value: 0, select: () => {}},
         });
     }
 
     private _toggle = () => {
         this._open = !this._open;
-        this._updateContext();
     };
 
     private _select = (value: number) => {
         this._open = false;
-        this._updateContext();
-        if (value !== this._state && this.bind) {
-            this._dispatchChange(value);
-        }
+        if (value !== this._state && this.bind) this._dispatchChange(value);
     };
 
     private _onKeydown = (e: KeyboardEvent) => {
         if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
             this._toggle();
-        } else if (e.key === 'Escape' && this._open) {
+        } else if (e.key === 'Escape') {
             this._open = false;
-            this._updateContext();
         }
     };
 
     private _onClickOutside = (e: MouseEvent) => {
-        if (this._open && !this.contains(e.target as Node)) {
-            this._open = false;
-            this._updateContext();
-        }
+        if (this._open && !this.contains(e.target as Node)) this._open = false;
     };
-
-    private _updateContext() {
-        this._provider.setValue({
-            value: this._state,
-            open: this._open,
-            select: this._select,
-        }, true);
-    }
 
     protected _onStateChange(prev: number, next: number) {
         super._onStateChange(prev, next);
-        this._updateContext();
+        this._provider.setValue({value: next, select: this._select}, true);
     }
 
     connectedCallback() {
@@ -148,14 +125,9 @@ export class ScSelect extends ScInput<ScSelectItem> {
     }
 
     render() {
-        this._updateContext();
         return html`
-            <div class="combobox"
-                role="combobox"
-                tabindex="0"
-                aria-expanded=${this._open}
-                @click=${this._toggle}
-                @keydown=${this._onKeydown}>
+            <div class="combobox" role="combobox" tabindex="0" aria-expanded=${this._open}
+                @click=${this._toggle} @keydown=${this._onKeydown}>
                 <span class="combobox-label">${this._selectedLabel}</span>
                 <span class="combobox-arrow">${this._open ? '\u25B2' : '\u25BC'}</span>
             </div>
