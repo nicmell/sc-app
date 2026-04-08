@@ -54,6 +54,8 @@ node scripts/generate_ugen_db.mjs
 - `plugin_manager.rs` — Plugin validation (zip, metadata, XSD, assets), CRUD (add/remove/list)
 - `http_server.rs` — HTTP router for `app://plugins/` (GET list, POST add, DELETE remove, GET file serving)
 - `udp_server.rs` — Async UDP socket management via tokio (no Tauri deps)
+- `buf_reader.rs` — Rust-side `/b_getn` sender + `/b_setn` parser using `rosc` crate. Returns `Vec<f32>` via IPC, bypassing osc-js entirely. Used by sc-scope for real-time buffer reads.
+- `scope_shm.rs` — Shared memory reader for SuperCollider's scope buffers. Opens `/tmp/boost_interprocess/SuperColliderServer_<port>` via mmap (read-only). Scans for audio data offset on first call, caches for subsequent reads. Used by sc-scope when ScopeOut2 UGen is active.
 - `cli.rs` — CLI for validate/add/remove/list (no Tauri deps)
 - `config.rs` — App data dir resolution, config file I/O (`config.json`), plugins dir helper
 
@@ -131,6 +133,7 @@ Plugin HTML is processed in two phases: HTML parsing (`src/lib/html/`) builds a 
 | `ScIfItem` | bind, children | `InputRuntime` | Conditional rendering container |
 | `ScBufferItem` | name, frames, channels | `BufferRuntime` {rootId, parentId, path, enabled, name, bufnum, frames, channels, loaded} | Server-side buffer allocation |
 | `ScRecordItem` | bind, label | `InputRuntime` | Buffer read-back UI with audio playback |
+| `ScScopeItem` | bind, width, height, color | `InputRuntime` | Real-time oscilloscope bound to a buffer |
 
 Union types: `ScNodeItem` (group/synth/plugin), `ScParentItem` (all with children), `ScElementItem` (all items).
 
@@ -232,6 +235,7 @@ ScElement<T, S>          Base class: store subscription, _state, _runtime, _onSt
 ├── ScSynthDef           SynthDef: sends /d_recv when parent loaded
 ├── ScBuffer             Buffer: sends /b_alloc, /b_free
 ├── ScRecord             Record UI: reads buffer back as WAV audio
+├── ScScope              Oscilloscope: polls buffer via Rust buf_read or SHM
 ├── ScRun                Play/pause: sends /n_run
 ├── ScOption             Declarative select option (consumes SelectContext)
 ├── ScRadio              Declarative radio button (consumes RadioGroupContext)
@@ -259,6 +263,7 @@ ScElement<T, S>          Base class: store subscription, _state, _runtime, _onSt
 | `sc-if` | bind, is-truthy/is-falsy/is-equal/etc. | Conditional rendering |
 | `sc-buffer` | name, frames, channels | Allocates server-side buffer. `bufnum` assigned automatically via `oscService.nextBufNum()` |
 | `sc-record` | bind, label | Buffer read-back UI. Reads buffer via chunked `/b_getn`, encodes WAV, renders `<audio>` element |
+| `sc-scope` | bind, width, height, color | Real-time oscilloscope. Decoupled read/draw loops; auto-detects SHM for zero-copy reads, falls back to Rust `buf_read` |
 
 Internal components in `sc-elements/internal/`:
 - `sc-element.ts` — Abstract base for all sc-elements. Store subscription, `_state`, `_runtime`, `_onStateChange(prev, next)`, `_sendCreate`/`_sendDestroy`, parent context consumer
@@ -353,6 +358,19 @@ This means nodes can see:
 - `<sc-radio-group bind="..." orientation="...">` with `<sc-radio>` children — radio buttons
 - `<sc-buffer name="..." frames="..." channels="..."/>` — allocates a server-side buffer
 - `<sc-record bind="bufferName" label="..."/>` — buffer read-back UI with audio playback
+- `<sc-scope bind="bufferName" width="..." height="..." color="..."/>` — real-time oscilloscope
+
+## Scope Performance (`src/sc-elements/sc-scope.ts`)
+
+The sc-scope oscilloscope has a tiered read strategy:
+
+1. **SHM (zero-copy)**: When ScopeOut2 UGen is active and scsynth is local, reads directly from shared memory at `/tmp/boost_interprocess/SuperColliderServer_<port>` via Rust mmap. No network, no serialization. Requires ScopeOut2 in the synthdef.
+2. **Rust `buf_read` (OSC bypass)**: Sends `/b_getn` and parses `/b_setn` entirely in Rust (`rosc` crate), returning `Vec<f32>` via Tauri IPC. Eliminates osc-js encode/decode overhead. Works with any RecordBuf-based synthdef.
+3. **osc-js fallback**: Original path via OSC wildcard listener (used by sc-record, not sc-scope).
+
+Auto-detection: on first read, sc-scope tries SHM for localhost connections. If audio data is found, uses SHM for all subsequent reads. Otherwise falls back to `buf_read`.
+
+Architecture: decoupled async read loop (runs at OSC/SHM speed) + rAF draw loop (runs at display refresh, draws only on new data via dirty flag). Double-buffer swap ensures the draw loop never sees partially-written data.
 
 ## OSC Communication (`src/lib/osc/`)
 
@@ -377,6 +395,9 @@ This means nodes can see:
 | `select-plugin` | sc-select/sc-option dropdowns and sc-radio-group/sc-radio buttons |
 | `waveform-plugin` | Select UGen switching between SinOsc/Saw/Pulse via sc-select |
 | `record-plugin` | Buffer recording with RecordBuf, sc-record playback UI |
+| `scope-plugin` | Oscilloscope with waveform select (RecordBuf + sc-scope, OSC read path) |
+| `scope-shm-plugin` | Oscilloscope with ScopeOut2 for SHM zero-copy reads + RecordBuf fallback |
+| `studio-plugin` | Multi-voice synth with filter, scope, recording, per-voice controls |
 | `bad-bindings` | Intentional binding errors (typos, missing synths) for testing validation |
 | `bad-asset-type` | Invalid asset format for testing validation |
 | `bad-asset-mismatch` | Declared vs actual asset type mismatch |
