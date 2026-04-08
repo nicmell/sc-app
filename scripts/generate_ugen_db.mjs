@@ -34,7 +34,6 @@ const SKIP = new Set([
 // Only list UGens here that sclang compiles with numOutputs=0.
 const ZERO_OUT = new Set([
   'Out', 'ReplaceOut', 'OffsetOut', 'LocalOut', 'XOut',
-  'ScopeOut', 'ScopeOut2',
   'SendTrig', 'SendReply', 'SendPeakRMS',
   'ClearBuf', 'SetBuf', 'SharedOut',
 ]);

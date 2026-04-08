@@ -3,6 +3,7 @@ pub mod config;
 pub mod http_server;
 pub mod plugin_manager;
 mod buf_reader;
+mod scope_shm;
 mod udp_server;
 
 use tauri::{Emitter, Manager, State, UriSchemeContext, Window};
@@ -67,6 +68,16 @@ async fn buf_read(
     buf_reader::read_buffer(&target, bufnum, start, count).await
 }
 
+#[tauri::command]
+fn scope_shm_probe(port: u16) -> Result<scope_shm::ShmProbeResult, String> {
+    scope_shm::probe(port)
+}
+
+#[tauri::command]
+fn scope_shm_read(port: u16, max_samples: usize) -> Result<Vec<f32>, String> {
+    scope_shm::read_scope(port, max_samples)
+}
+
 // --- App entry ---
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -81,6 +92,8 @@ pub fn run() {
             udp_send,
             udp_close,
             buf_read,
+            scope_shm_probe,
+            scope_shm_read,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

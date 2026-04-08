@@ -1,10 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
-    <title>Scope Plugin</title>
+    <title>Scope SHM Plugin</title>
 </head>
 <body>
 
+<!-- Buffer still needed: sc-scope binds to it, and RecordBuf provides the OSC fallback
+     if SHM is unavailable. ScopeOut2 writes to SHM independently. -->
 <sc-buffer name="scopebuf" frames="4096" channels="1"/>
 
 <sc-synthdef name="tone">
@@ -34,6 +36,13 @@
         <sc-control name="bus" value="0"/>
         <sc-control name="channelsArray" bind="vol"/>
     </sc-ugen>
+    <!-- ScopeOut2: writes to SHM scope buffer 0 (zero-copy read path) -->
+    <sc-ugen name="scope" type="ScopeOut2">
+        <sc-control name="inputArray" bind="vol"/>
+        <sc-control name="scopeNum" value="0"/>
+        <sc-control name="maxFrames" value="4096"/>
+    </sc-ugen>
+    <!-- RecordBuf: fallback for when SHM is not available -->
     <sc-ugen name="write" type="RecordBuf">
         <sc-control name="inputArray" bind="vol"/>
         <sc-control name="bufnum" bind="bufnum"/>

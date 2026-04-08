@@ -231,7 +231,7 @@
         0
       ]
     ],
-    "numOutputs": 0
+    "numOutputs": 1
   },
   {
     "name": "ScopeOut2",
@@ -257,7 +257,7 @@
         4096
       ]
     ],
-    "numOutputs": 0
+    "numOutputs": 1
   },
   {
     "name": "SetBuf",
