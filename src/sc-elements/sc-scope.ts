@@ -42,7 +42,7 @@ export class ScScope extends ScElement<ScScopeItem, number> {
         this.bind = '';
         this.width = 200;
         this.height = 100;
-        this.color = '#00ff00';
+        this.color = '';
     }
 
     getState(state: RuntimeState): number {
@@ -153,6 +153,17 @@ export class ScScope extends ScElement<ScScopeItem, number> {
 
         const w = this.width;
         const h = this.height;
+        const dpr = window.devicePixelRatio || 1;
+
+        // Scale canvas for retina
+        if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+            canvas.width = w * dpr;
+            canvas.height = h * dpr;
+            canvas.style.width = w + 'px';
+            canvas.style.height = h + 'px';
+            ctx.scale(dpr, dpr);
+        }
+
         const samples = this._samples;
         const nonZero = samples.length > 0 && samples.some(v => v !== 0);
 
@@ -181,15 +192,28 @@ export class ScScope extends ScElement<ScScopeItem, number> {
             return;
         }
 
-        // Waveform
+        // Trigger: find a rising zero-crossing in the first quarter to stabilize display
+        const quarter = Math.floor(samples.length / 4);
+        let trigger = 0;
+        for (let i = 1; i < quarter; i++) {
+            if (samples[i - 1] <= 0 && samples[i] > 0) { trigger = i; break; }
+        }
+
+        // Draw one quarter of the buffer starting from the trigger point
+        const displayLen = quarter;
+        const step = displayLen / w;
+
         ctx.strokeStyle = lineColor;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
 
-        const step = samples.length / w;
         for (let i = 0; i < w; i++) {
-            const idx = Math.floor(i * step);
-            const val = samples[idx] ?? 0;
+            const fIdx = i * step;
+            const idx = Math.floor(fIdx);
+            const frac = fIdx - idx;
+            const s0 = samples[trigger + idx] ?? 0;
+            const s1 = samples[trigger + idx + 1] ?? s0;
+            const val = s0 + (s1 - s0) * frac;
             const y = (1 - val) * h / 2;
             if (i === 0) ctx.moveTo(i, y);
             else ctx.lineTo(i, y);
@@ -202,6 +226,6 @@ export class ScScope extends ScElement<ScScopeItem, number> {
     }
 
     render() {
-        return html`<canvas width=${this.width} height=${this.height}></canvas>`;
+        return html`<canvas></canvas>`;
     }
 }
