@@ -135,6 +135,7 @@ export class ScScope extends ScElement<ScScopeItem, number> {
 
     private async _poll() {
         if (this._reading) return;
+        if (!this._parent?.runtime.run) return;
         const buf = this._getBuffer();
         if (!buf || !buf.runtime.loaded) return;
 
