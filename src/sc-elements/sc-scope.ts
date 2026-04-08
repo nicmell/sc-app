@@ -7,8 +7,7 @@ import {bufGetnMessage} from '@/lib/osc/messages.ts';
 import {runtimeApi} from '@/lib/stores/api';
 import {ScElement} from './internal/sc-element.ts';
 
-const GETN_CHUNK = 1024;
-const FRAME_INTERVAL = 1000 / 30; // ~30fps
+const FRAME_INTERVAL = 1000 / 30;
 
 export class ScScope extends ScElement<ScScopeItem, number> {
     static properties = {
@@ -27,6 +26,16 @@ export class ScScope extends ScElement<ScScopeItem, number> {
     private _lastFrameTime = 0;
     private _samples: Float32Array = new Float32Array(0);
     private _reading = false;
+    private _canvas: HTMLCanvasElement | null = null;
+    private _ctx: CanvasRenderingContext2D | null = null;
+    private _lineColor = '';
+    private _borderColor = '';
+    private _textColor = '';
+    private _listenerId = 0;
+    private _pendingResolve: ((data: Float32Array) => void) | null = null;
+    private _pendingBufnum = 0;
+    private _pendingStart = 0;
+    private _hasSignal = false;
 
     static styles = css`
         :host { display: inline-block; }
@@ -61,7 +70,7 @@ export class ScScope extends ScElement<ScScopeItem, number> {
 
     protected _sendCreate() {
         super._sendCreate();
-        console.log('[sc-scope] _sendCreate, starting polling');
+        this._cacheStyles();
         this._startPolling();
     }
 
@@ -75,9 +84,33 @@ export class ScScope extends ScElement<ScScopeItem, number> {
         super.disconnectedCallback();
     }
 
+    private _cacheStyles() {
+        const styles = getComputedStyle(this);
+        this._lineColor = this.color || styles.getPropertyValue('--color-primary').trim() || '#00ff00';
+        this._borderColor = styles.getPropertyValue('--color-border').trim() || '#555';
+        this._textColor = styles.getPropertyValue('--color-text').trim() || '#e0e0e0';
+    }
+
     private _startPolling() {
         this._stopPolling();
         this._lastFrameTime = 0;
+
+        // Single persistent listener for /b_setn responses
+        this._listenerId = oscService.on('*', (...args: unknown[]) => {
+            if (!this._pendingResolve) return;
+            const msg = args[0] as { address: string; args: unknown[] };
+            if (msg?.address === '/fail') {
+                this._pendingResolve(new Float32Array(0));
+                this._pendingResolve = null;
+                return;
+            }
+            if (msg?.address !== '/b_setn') return;
+            const [buf, s, , ...data] = msg.args as [number, number, number, ...number[]];
+            if (buf !== this._pendingBufnum || s !== this._pendingStart) return;
+            this._pendingResolve(new Float32Array(data));
+            this._pendingResolve = null;
+        });
+
         this._tick(performance.now());
     }
 
@@ -86,6 +119,11 @@ export class ScScope extends ScElement<ScScopeItem, number> {
             cancelAnimationFrame(this._rafId);
             this._rafId = 0;
         }
+        if (this._listenerId) {
+            oscService.off('*', this._listenerId);
+            this._listenerId = 0;
+        }
+        this._pendingResolve = null;
     }
 
     private _tick = (now: number) => {
@@ -103,9 +141,19 @@ export class ScScope extends ScElement<ScScopeItem, number> {
         this._reading = true;
         try {
             const totalSamples = buf.frames * buf.channels;
-            const samples = await this._readBuffer(buf.runtime.bufnum, totalSamples);
-            if (samples.length > 0) this._samples = samples;
-        } catch (e) {
+
+            // Reuse buffer if size matches
+            if (this._samples.length !== totalSamples) {
+                this._samples = new Float32Array(totalSamples);
+            }
+
+            // Single request — read entire buffer at once (up to ~16K samples fits in UDP)
+            const data = await this._readAll(buf.runtime.bufnum, totalSamples);
+            if (data.length > 0) {
+                this._samples.set(data);
+                if (!this._hasSignal) this._hasSignal = data.some(v => v !== 0);
+            }
+        } catch {
             // ignore — retry on next tick
         } finally {
             this._reading = false;
@@ -113,49 +161,32 @@ export class ScScope extends ScElement<ScScopeItem, number> {
         }
     }
 
-    private async _readBuffer(bufnum: number, totalSamples: number): Promise<Float32Array> {
-        const result = new Float32Array(totalSamples);
-        for (let offset = 0; offset < totalSamples; offset += GETN_CHUNK) {
-            const count = Math.min(GETN_CHUNK, totalSamples - offset);
-            const chunk = await this._readChunk(bufnum, offset, count);
-            result.set(chunk, offset);
-        }
-        return result;
-    }
-
-    private _readChunk(bufnum: number, start: number, count: number): Promise<Float32Array> {
+    private _readAll(bufnum: number, count: number): Promise<Float32Array> {
         return new Promise((resolve) => {
-            let done = false;
-            const cleanup = () => { if (!done) { done = true; oscService.off('*', subId); } };
-
-            const subId = oscService.on('*', (...args: unknown[]) => {
-                const msg = args[0] as { address: string; args: unknown[] };
-                if (msg?.address === '/fail') { cleanup(); resolve(new Float32Array(0)); return; }
-                if (msg?.address !== '/b_setn') return;
-                const [buf, s, c, ...data] = msg.args as [number, number, number, ...number[]];
-                if (buf !== bufnum || s !== start) return;
-                cleanup();
-                resolve(new Float32Array(data.slice(0, c)));
-            });
-
-            // Timeout fallback
-            setTimeout(() => { cleanup(); resolve(new Float32Array(0)); }, 2000);
-
-            oscService.send(bufGetnMessage(bufnum, start, count));
+            this._pendingBufnum = bufnum;
+            this._pendingStart = 0;
+            this._pendingResolve = resolve;
+            oscService.send(bufGetnMessage(bufnum, 0, count));
         });
     }
 
     private _draw() {
-        const canvas = this.renderRoot.querySelector('canvas') as HTMLCanvasElement | null;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!this._canvas) {
+            this._canvas = this.renderRoot.querySelector('canvas') as HTMLCanvasElement | null;
+            if (!this._canvas) return;
+        }
+        if (!this._ctx) {
+            this._ctx = this._canvas.getContext('2d');
+            if (!this._ctx) return;
+        }
 
+        const canvas = this._canvas;
+        const ctx = this._ctx;
         const w = this.width;
         const h = this.height;
         const dpr = window.devicePixelRatio || 1;
 
-        // Scale canvas for retina
+        // Scale canvas for retina (once)
         if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
             canvas.width = w * dpr;
             canvas.height = h * dpr;
@@ -165,25 +196,18 @@ export class ScScope extends ScElement<ScScopeItem, number> {
         }
 
         const samples = this._samples;
-        const nonZero = samples.length > 0 && samples.some(v => v !== 0);
-
         ctx.clearRect(0, 0, w, h);
 
-        const styles = getComputedStyle(this);
-        const lineColor = this.color || styles.getPropertyValue('--color-primary').trim() || '#00ff00';
-        const borderColor = styles.getPropertyValue('--color-border').trim() || '#555';
-        const textColor = styles.getPropertyValue('--color-text').trim() || '#e0e0e0';
-
         // Center line
-        ctx.strokeStyle = borderColor;
+        ctx.strokeStyle = this._borderColor;
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(0, h / 2);
         ctx.lineTo(w, h / 2);
         ctx.stroke();
 
-        if (!nonZero) {
-            ctx.fillStyle = textColor;
+        if (!this._hasSignal) {
+            ctx.fillStyle = this._textColor;
             ctx.globalAlpha = 0.4;
             ctx.font = '11px system-ui, sans-serif';
             ctx.textAlign = 'center';
@@ -203,7 +227,7 @@ export class ScScope extends ScElement<ScScopeItem, number> {
         const displayLen = quarter;
         const step = displayLen / w;
 
-        ctx.strokeStyle = lineColor;
+        ctx.strokeStyle = this._lineColor;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
 
