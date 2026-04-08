@@ -5,6 +5,15 @@
 </head>
 <body>
 
+<!-- Scope buffer. Note: all three voices write to the same scope buffer, so
+     the scope shows the signal from whichever voice wrote last. For a true
+     mix scope you'd need a bus-based approach (In.ar reading from the output
+     bus into a single RecordBuf), but this demonstrates the feature. -->
+<sc-buffer name="scopebuf" frames="4096" channels="1"/>
+
+<!-- Recording buffer: 5 seconds mono -->
+<sc-buffer name="recbuf" frames="240000" channels="1"/>
+
 <!-- SynthDefs -->
 
 <sc-synthdef name="poly">
@@ -14,6 +23,8 @@
     <sc-control name="waveform" value="0"/>
     <sc-control name="cutoff" value="2000"/>
     <sc-control name="res" value="0.5"/>
+    <sc-control name="sbuf" value="0"/>
+    <sc-control name="rbuf" value="0"/>
     <sc-ugen name="sine" type="SinOsc">
         <sc-control name="freq" bind="freq"/>
     </sc-ugen>
@@ -45,6 +56,14 @@
         <sc-control name="bus" value="0"/>
         <sc-control name="channelsArray" bind="panned"/>
     </sc-ugen>
+    <sc-ugen name="scope" type="RecordBuf">
+        <sc-control name="inputArray" bind="vol"/>
+        <sc-control name="bufnum" bind="sbuf"/>
+    </sc-ugen>
+    <sc-ugen name="rec" type="RecordBuf">
+        <sc-control name="inputArray" bind="vol"/>
+        <sc-control name="bufnum" bind="rbuf"/>
+    </sc-ugen>
 </sc-synthdef>
 
 <!-- Voices -->
@@ -62,6 +81,8 @@
             <sc-control name="waveform" bind="master.waveform"/>
             <sc-control name="cutoff" bind="master.cutoff"/>
             <sc-control name="res" bind="master.res"/>
+            <sc-control name="sbuf" bind="scopebuf"/>
+            <sc-control name="rbuf" bind="recbuf"/>
         </sc-synth>
         <sc-synth name="v2" bind="poly">
             <sc-control name="freq" value="329"/>
@@ -70,6 +91,8 @@
             <sc-control name="waveform" bind="master.waveform"/>
             <sc-control name="cutoff" bind="master.cutoff"/>
             <sc-control name="res" bind="master.res"/>
+            <sc-control name="sbuf" bind="scopebuf"/>
+            <sc-control name="rbuf" bind="recbuf"/>
         </sc-synth>
         <sc-synth name="v3" bind="poly">
             <sc-control name="freq" value="392"/>
@@ -78,6 +101,8 @@
             <sc-control name="waveform" bind="master.waveform"/>
             <sc-control name="cutoff" bind="master.cutoff"/>
             <sc-control name="res" bind="master.res"/>
+            <sc-control name="sbuf" bind="scopebuf"/>
+            <sc-control name="rbuf" bind="recbuf"/>
         </sc-synth>
     </sc-group>
 </sc-group>
@@ -202,27 +227,11 @@
         </div>
     </div>
 
-    <!-- Monitor -->
+    <!-- Scope + Record -->
     <div style="display: flex; flex-direction: column; gap: 6px;">
-        <span style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.5;">Monitor</span>
-        <div style="display: flex; gap: 12px;">
-            <div style="display: flex; gap: 4px; align-items: baseline;">
-                <span style="font-size: 10px; opacity: 0.5;">Wave</span>
-                <span style="font-size: 11px;">
-                    <sc-if bind="master.waveform" is-equal="0" is-truthy="Sine" is-falsy=""/>
-                    <sc-if bind="master.waveform" is-equal="1" is-truthy="Saw" is-falsy=""/>
-                    <sc-if bind="master.waveform" is-equal="2" is-truthy="Square" is-falsy=""/>
-                </span>
-            </div>
-            <div style="display: flex; gap: 4px; align-items: baseline;">
-                <span style="font-size: 10px; opacity: 0.5;">Cutoff</span>
-                <span style="font-size: 11px;"><sc-display bind="master.cutoff" format="%d Hz"/></span>
-            </div>
-            <div style="display: flex; gap: 4px; align-items: baseline;">
-                <span style="font-size: 10px; opacity: 0.5;">Res</span>
-                <span style="font-size: 11px;"><sc-display bind="master.res" format="%.2f"/></span>
-            </div>
-        </div>
+        <span style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.5;">Output</span>
+        <sc-scope bind="scopebuf" width="320" height="100"/>
+        <sc-record bind="recbuf" label="Record 5s"/>
     </div>
 
 </div>
