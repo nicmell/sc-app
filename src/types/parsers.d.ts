@@ -222,11 +222,21 @@ export interface ScRecordItem {
   runtime: InputRuntime;
 }
 
+export interface ScScopeItem {
+  type: 'sc-scope';
+  id: string;
+  bind: string;
+  width: number;
+  height: number;
+  color: string;
+  runtime: InputRuntime;
+}
+
 export type ScNodeItem = ScGroupItem | ScSynthItem | ScPluginItem;
 
 export type ScParentItem = ScPluginItem | ScGroupItem | ScSynthItem | ScUgenItem | ScIfItem | ScSynthDefItem | ScSelectItem | ScRadioGroupItem;
 
-export type ScElementItem = ScPluginItem | ScGroupItem | ScSynthItem | ScSynthDefItem | ScUgenItem | ScControlItem | ScVarItem | ScBufferItem | ScRangeItem | ScCheckboxItem | ScRunItem | ScDisplayItem | ScIfItem | ScSelectItem | ScOptionItem | ScRadioGroupItem | ScRadioItem | ScRecordItem;
+export type ScElementItem = ScPluginItem | ScGroupItem | ScSynthItem | ScSynthDefItem | ScUgenItem | ScControlItem | ScVarItem | ScBufferItem | ScRangeItem | ScCheckboxItem | ScRunItem | ScDisplayItem | ScIfItem | ScSelectItem | ScOptionItem | ScRadioGroupItem | ScRadioItem | ScRecordItem | ScScopeItem;
 
 export type NodeType = ScElementItem["type"];
 

@@ -1,6 +1,6 @@
 import type {
     StripRuntime, ScPluginItem, ScGroupItem, ScSynthItem, ScSynthDefItem, ScUgenItem, ScControlItem,
-    ScRangeItem, ScCheckboxItem, ScRunItem, ScDisplayItem, ScIfItem, ScVarItem, ScSelectItem, ScOptionItem, ScRadioGroupItem, ScRadioItem, ScBufferItem, ScRecordItem,
+    ScRangeItem, ScCheckboxItem, ScRunItem, ScDisplayItem, ScIfItem, ScVarItem, ScSelectItem, ScOptionItem, ScRadioGroupItem, ScRadioItem, ScBufferItem, ScRecordItem, ScScopeItem,
 } from "@/types/parsers";
 import {ELEMENTS} from "@/constants/sc-elements";
 
@@ -113,6 +113,15 @@ function extractRecordProps(el: Element): HtmlProps<ScRecordItem> {
     };
 }
 
+function extractScopeProps(el: Element): HtmlProps<ScScopeItem> {
+    return {
+        bind: el.getAttribute('bind') ?? '',
+        width: Number(el.getAttribute('width') ?? '200'),
+        height: Number(el.getAttribute('height') ?? '100'),
+        color: el.getAttribute('color') ?? '#00ff00',
+    };
+}
+
 function extractRadioProps(el: Element): HtmlProps<ScRadioItem> {
     return {
         value: Number(el.getAttribute('value') ?? '0'),
@@ -163,6 +172,8 @@ export function extractProps(type: string, el: Element): Record<string, unknown>
             return extractBufferProps(el);
         case ELEMENTS.SC_RECORD:
             return extractRecordProps(el);
+        case ELEMENTS.SC_SCOPE:
+            return extractScopeProps(el);
         default:
             throw new Error(`Unknown element type: ${type}`);
     }
