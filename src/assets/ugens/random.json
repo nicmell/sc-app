@@ -143,7 +143,7 @@
         0
       ]
     ],
-    "numOutputs": 0,
+    "numOutputs": 1,
     "doc": "Choose which random number generator to use for this synth. All synths that use the same generator reproduce the same sequence of numbers when the same seed is set again.",
     "argDocs": {
       "seed": "Seed id"
@@ -165,7 +165,7 @@
         56789
       ]
     ],
-    "numOutputs": 0,
+    "numOutputs": 1,
     "doc": "When the trigger signal changes from nonpositive to positive, the synth's random generator seed is reset to the given value. All synths that use the same random number generator reproduce the same sequence of numbers again.",
     "argDocs": {
       "trig": "Trigger signal",

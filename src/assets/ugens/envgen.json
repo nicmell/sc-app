@@ -72,7 +72,7 @@
         null
       ]
     ],
-    "numOutputs": 0,
+    "numOutputs": 1,
     "doc": "Free the specified node when triggered",
     "argDocs": {
       "trig": "when triggered, frees node",
@@ -90,7 +90,7 @@
         null
       ]
     ],
-    "numOutputs": 0,
+    "numOutputs": 1,
     "doc": "Free the enclosing synth when triggered",
     "argDocs": {
       "in": "input signal"
@@ -107,7 +107,7 @@
         null
       ]
     ],
-    "numOutputs": 0,
+    "numOutputs": 1,
     "doc": "Free the enclosing synth when the src ugen finishes (e.g. env-gen, play-buf, linen...)",
     "argDocs": {
       "src": "the ugen to check for done"
@@ -185,7 +185,7 @@
         null
       ]
     ],
-    "numOutputs": 0,
+    "numOutputs": 1,
     "doc": "Pause a specified node when triggered",
     "argDocs": {
       "gate": "when gate is 0, node is paused, when 1 it runs",
@@ -203,7 +203,7 @@
         null
       ]
     ],
-    "numOutputs": 0,
+    "numOutputs": 1,
     "doc": "Pause the enclosing synth when triggered",
     "argDocs": {
       "in": "input signal"
@@ -220,7 +220,7 @@
         null
       ]
     ],
-    "numOutputs": 0,
+    "numOutputs": 1,
     "doc": "Pause the enclosing synth when the src ugen finishes (e.g. env-gen, play-buf, linen...)",
     "argDocs": {
       "src": "the ugen to check for done"

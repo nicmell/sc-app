@@ -61,7 +61,7 @@
         1
       ]
     ],
-    "numOutputs": 0,
+    "numOutputs": 1,
     "doc": "writes to a buffer at a given index. Note, buf-wr (in difference to buf-rd) does not do multichannel expansion, because input is an array.",
     "argDocs": {
       "inputArray": "input ugens (channelArray)",
@@ -202,7 +202,7 @@
         0
       ]
     ],
-    "numOutputs": 0,
+    "numOutputs": 1,
     "doc": "record a stream of values into a buffer. If recLevel is 1.0 and preLevel is 0.0 then the new input overwrites the old data. If they are both 1.0 then the new data is added to the existing data. (Any other settings are also valid.) Note that the number of channels must be fixed for the defsynth, it cannot vary depending on which buffer you use.",
     "argDocs": {
       "inputArray": "an Array of input channels",

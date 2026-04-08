@@ -28,14 +28,15 @@ const SKIP = new Set([
   'Control', 'AudioControl', 'TrigControl', 'LagControl',
 ]);
 
-// UGens with 0 outputs (side-effect only)
+// UGens with genuinely 0 outputs (verified against sclang 3.14).
+// Many "side-effect" UGens still have 1 output in SCgf (e.g. RecordBuf
+// outputs the recording phase, BufWr outputs the write phase, etc.).
+// Only list UGens here that sclang compiles with numOutputs=0.
 const ZERO_OUT = new Set([
   'Out', 'ReplaceOut', 'OffsetOut', 'LocalOut', 'XOut',
-  'DiskOut', 'RecordBuf', 'ScopeOut', 'ScopeOut2',
+  'ScopeOut', 'ScopeOut2',
   'SendTrig', 'SendReply', 'SendPeakRMS',
-  'BufWr', 'ClearBuf', 'SetBuf', 'FreeSelf', 'PauseSelf',
-  'FreeSelfWhenDone', 'PauseSelfWhenDone', 'Free', 'Pause',
-  'RandSeed', 'RandID',
+  'ClearBuf', 'SetBuf', 'SharedOut',
 ]);
 
 // Overtone arg names → SC convention

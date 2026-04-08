@@ -96,6 +96,8 @@ Six top-level slices in `src/lib/stores/`:
 | `FREE_GROUP` | `{id}` | Mark group as unloaded |
 | `FREE_SYNTH` | `{id}` | Mark synth as unloaded |
 | `LOAD_SYNTHDEF` | `{id}` | Mark synthdef as loaded |
+| `ALLOC_BUFFER` | `{id, bufnum}` | Mark buffer as allocated with server bufnum |
+| `FREE_BUFFER` | `{id}` | Mark buffer as unloaded |
 
 Each slice has: `slice.ts` (reducer + actions), `selectors.ts`, `index.ts` (barrel).
 
@@ -127,6 +129,8 @@ Plugin HTML is processed in two phases: HTML parsing (`src/lib/html/`) builds a 
 | `ScRunItem` | bind | `RunRuntime` {rootId, parentId, path, enabled, targetId} | Play/pause control |
 | `ScDisplayItem` | bind, format | `InputRuntime` | Read-only value display |
 | `ScIfItem` | bind, children | `InputRuntime` | Conditional rendering container |
+| `ScBufferItem` | name, frames, channels | `BufferRuntime` {rootId, parentId, path, enabled, name, bufnum, frames, channels, loaded} | Server-side buffer allocation |
+| `ScRecordItem` | bind, label | `InputRuntime` | Buffer read-back UI with audio playback |
 
 Union types: `ScNodeItem` (group/synth/plugin), `ScParentItem` (all with children), `ScElementItem` (all items).
 
@@ -163,7 +167,7 @@ Union types: `ScNodeItem` (group/synth/plugin), `ScParentItem` (all with childre
 
 ### SynthDef Manager (`src/lib/synthdef/`)
 
-- **`SynthDefCompiler.ts`** — `compileSynthDef(name, params, specs)` — topologically sorts UGen specs, builds graph via `UGenGraphBuilder`, returns SCgf binary bytes as `number[]`. Resolves `op` attribute to `specialIndex` for BinaryOpUGen/UnaryOpUGen
+- **`SynthDefCompiler.ts`** — `compileSynthDef(name, params, specs)` — topologically sorts UGen specs, builds graph via `UGenGraphBuilder`, returns SCgf binary bytes as `number[]`. Resolves `op` attribute to `specialIndex` for BinaryOpUGen/UnaryOpUGen. **Important**: `channelsArray`/`inputArray` inputs are appended last in the SCgf wire order (matching SC's `multiNewList` behavior), regardless of their position in the Overtone defaults
 - **`SynthDefManager.ts`** — Singleton `synthDefManager` storing compiled bytes keyed by node ID. Methods: `compile(boxId, nodeId, name, controls, specs)`, `get(nodeId)`, `clearBox(boxId)`. Bytes are not persisted to `config.json`
 
 ## UGen System
@@ -199,6 +203,10 @@ At runtime, `src/lib/ugen/registry.ts` imports all JSON files and registers UGen
 
 **Do not edit the JSON files manually** — regenerate them with the script instead.
 
+**Known Overtone metadata issues** (fixed in the generation script):
+- `numOutputs` — Overtone marks some UGens as 0 outputs when SC actually compiles them with 1 (e.g., `RecordBuf`, `BufWr`, `DiskOut`, `Free`, `FreeSelf`, `Pause`, etc.). The script's `ZERO_OUT` set contains only UGens verified to have 0 outputs in sclang. When in doubt, check with `SynthDef(\test, { ... }).children.do { |c| [c.class.name, c.numOutputs].postln }` in sclang.
+- `inputArray`/`channelsArray` argument order — Overtone lists these in the user-facing method signature order, but SC's `multiNewList` places them last in the SCgf wire order. The compiler handles this automatically.
+
 ## Web Components (`src/sc-elements/`)
 
 Lit-based custom elements for plugin authoring. All registered in `index.ts`.
@@ -222,6 +230,8 @@ ScElement<T, S>          Base class: store subscription, _state, _runtime, _onSt
 │   ├── ScControl        Synth control: sends /n_set on value change via _onStateChange
 │   └── ScVar            State variable: no OSC
 ├── ScSynthDef           SynthDef: sends /d_recv when parent loaded
+├── ScBuffer             Buffer: sends /b_alloc, /b_free
+├── ScRecord             Record UI: reads buffer back as WAV audio
 ├── ScRun                Play/pause: sends /n_run
 ├── ScOption             Declarative select option (consumes SelectContext)
 ├── ScRadio              Declarative radio button (consumes RadioGroupContext)
@@ -247,6 +257,8 @@ ScElement<T, S>          Base class: store subscription, _state, _runtime, _onSt
 | `sc-run` | bind, size, src, fgcolor, bgcolor | Play/pause button. Sends `/n_run` directly |
 | `sc-display` | bind, format | Read-only value display. Printf-style format (`%d`, `%.2f`, `%b`, `%s`) |
 | `sc-if` | bind, is-truthy/is-falsy/is-equal/etc. | Conditional rendering |
+| `sc-buffer` | name, frames, channels | Allocates server-side buffer. `bufnum` assigned automatically via `oscService.nextBufNum()` |
+| `sc-record` | bind, label | Buffer read-back UI. Reads buffer via chunked `/b_getn`, encodes WAV, renders `<audio>` element |
 
 Internal components in `sc-elements/internal/`:
 - `sc-element.ts` — Abstract base for all sc-elements. Store subscription, `_state`, `_runtime`, `_onStateChange(prev, next)`, `_sendCreate`/`_sendDestroy`, parent context consumer
@@ -263,6 +275,7 @@ All element-to-data references use `bind`:
 - **sc-display/sc-if** `bind="nodeName.controlName"` — read-only dot-path reference
 - **sc-run** `bind="synthOrGroupName"` — references a synth or group (empty = parent context)
 - **sc-control/sc-var** `bind="nodeName.controlName"` — mirrors another control/var's value (with optional arithmetic expression)
+- **sc-control** `bind="bufferName"` — when bound to an `sc-buffer`, resolves to the buffer's `bufnum` at `/s_new` time
 
 ### Bind Expressions
 
@@ -338,13 +351,16 @@ This means nodes can see:
 - `<sc-range>`, `<sc-checkbox>`, `<sc-run>`, `<sc-display>`, `<sc-if>` — UI controls
 - `<sc-select bind="...">` with `<sc-option>` children — dropdown selector
 - `<sc-radio-group bind="..." orientation="...">` with `<sc-radio>` children — radio buttons
+- `<sc-buffer name="..." frames="..." channels="..."/>` — allocates a server-side buffer
+- `<sc-record bind="bufferName" label="..."/>` — buffer read-back UI with audio playback
 
 ## OSC Communication (`src/lib/osc/`)
 
 - `OscService.ts` — Singleton managing osc-js connection. Polls `/status` at configurable interval. Dispatches replies to store
 - `TauriUdpPlugin.ts` — osc-js plugin adapter wrapping `TauriDatagramSocket`
 - `TauriDatagramSocket.ts` — Bridges to Tauri `udp_bind`/`udp_send`/`udp_close` commands
-- `messages.ts` — OSC message factories: `/status`, `/s_new`, `/g_new`, `/n_set`, `/n_run`, `/n_free`, `/d_recv`, etc.
+- `messages.ts` — OSC message factories: `/status`, `/s_new`, `/g_new`, `/n_set`, `/n_run`, `/n_free`, `/d_recv`, `/b_alloc`, `/b_free`, `/b_getn`, `/b_setn`, etc.
+- `wav.ts` (`src/lib/utils/`) — WAV encoder: 44-byte RIFF header + IEEE float32 PCM data → Blob
 
 ## Example Plugins (`examples/`)
 
@@ -360,6 +376,7 @@ This means nodes can see:
 | `var-plugin` | sc-var elements with bind expressions (mirror, doubled, sum, product) |
 | `select-plugin` | sc-select/sc-option dropdowns and sc-radio-group/sc-radio buttons |
 | `waveform-plugin` | Select UGen switching between SinOsc/Saw/Pulse via sc-select |
+| `record-plugin` | Buffer recording with RecordBuf, sc-record playback UI |
 | `bad-bindings` | Intentional binding errors (typos, missing synths) for testing validation |
 | `bad-asset-type` | Invalid asset format for testing validation |
 | `bad-asset-mismatch` | Declared vs actual asset type mismatch |

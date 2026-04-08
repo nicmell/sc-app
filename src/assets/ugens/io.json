@@ -41,7 +41,7 @@
         null
       ]
     ],
-    "numOutputs": 0,
+    "numOutputs": 1,
     "summary": "stream audio out to disk file",
     "doc": "The output of DiskOut is the number of frames written to disk. Note that the number of channels in the buffer and the channelsArray must be the same, otherwise DiskOut will fail silently (and not write anything to your file).",
     "argDocs": {

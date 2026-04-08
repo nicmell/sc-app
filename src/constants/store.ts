@@ -40,6 +40,8 @@ export const RuntimeAction = {
   FREE_SYNTH: "freeSynth",
   LOAD_SYNTHDEF: "loadSynthdef",
   SET_VAR: "setVar",
+  ALLOC_BUFFER: "allocBuffer",
+  FREE_BUFFER: "freeBuffer",
 } as const;
 
 export const RootAction = {

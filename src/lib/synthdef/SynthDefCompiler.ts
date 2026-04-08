@@ -76,8 +76,9 @@ class UGenGraphBuilder {
   }
 
   private buildUGen(spec: UGenSpec, entry: UGenRegistrySpec, rate: Rate): void {
+    const numChannelsAttr = this.findMatchingInput(spec.inputs, 'numChannels');
+    const numOutputs = numChannelsAttr ? parseInt(numChannelsAttr, 10) : (entry.numOutputs ?? 1);
     const inputs = this.resolveStandardInputs(spec, entry.defaults);
-    const numOutputs = entry.numOutputs ?? 1;
     const specialIndex = this.resolveSpecialIndex(spec);
     this.ugenMap.set(spec.name, new UGen(spec.type, rate, inputs, numOutputs, specialIndex));
   }
@@ -97,13 +98,15 @@ class UGenGraphBuilder {
     defaults: [string, number | undefined][],
   ): UGenInput[] {
     const result: UGenInput[] = [];
+    const arrayInputs: UGenInput[] = []; // channelsArray/inputArray appended last (SC wire order)
     for (const [defName, defValue] of defaults) {
+      if (defName === 'numChannels') continue; // structural, not a signal input
       const attrValue = this.findMatchingInput(spec.inputs, defName);
 
       if (attrValue !== undefined) {
-        if (defName === 'channelsArray') {
+        if (defName === 'channelsArray' || defName === 'inputArray') {
           for (const ref of attrValue.split(',').map(s => s.trim())) {
-            result.push(this.resolveInput(ref));
+            arrayInputs.push(this.resolveInput(ref));
           }
         } else {
           result.push(this.resolveInput(attrValue));
@@ -114,7 +117,7 @@ class UGenGraphBuilder {
         throw new Error(`UGen "${spec.name}" (${spec.type}): missing required input "${defName}"`);
       }
     }
-    return result;
+    return [...result, ...arrayInputs];
   }
 
   private findMatchingInput(inputs: Record<string, string>, paramName: string): string | undefined {

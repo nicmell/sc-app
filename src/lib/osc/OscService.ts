@@ -22,6 +22,7 @@ export class OscService {
   private timeoutId: ReturnType<typeof setTimeout> | null = null;
 
   private currentNodeId = 0;
+  private currentBufNum = 0;
 
   constructor() {
     this.osc = new OSC({ plugin: new TauriUdpPlugin() });
@@ -93,6 +94,7 @@ export class OscService {
   private init(clientId: number) {
     scsynthApi.setClient(clientId);
     this.currentNodeId = this.defaultGroupId();
+    this.currentBufNum = (clientId + 1) * 100;
     this.send(
         newGroupMessage(this.currentNodeId),
         nodeRunMessage(this.currentNodeId, 0),
@@ -183,6 +185,10 @@ export class OscService {
 
   nextNodeId(): number {
     return (this.currentNodeId += 1);
+  }
+
+  nextBufNum(): number {
+    return (this.currentBufNum += 1);
   }
 
   defaultClientId() {
