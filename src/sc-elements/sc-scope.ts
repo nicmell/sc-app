@@ -15,12 +15,14 @@
  * serialization. Achieving parity would require a Tauri Rust plugin that
  * opens scsynth's SHM interface and exposes buffer data as a fast ArrayBuffer.
  *
- * Given the OSC constraint, the most impactful optimization is minimizing the
- * data transferred per frame. The scope only needs enough samples to fill the
- * display width plus trigger headroom. Reading `width * 4` samples (instead
- * of the full buffer) reduces the OSC payload, parse time, and copy cost
- * proportionally. The plugin author sizes the sc-buffer for the audio use
- * case (e.g. recording); the scope reads only what it needs.
+ * Phase 1 mitigation (current): a Tauri Rust command `buf_read` sends /b_getn
+ * and parses /b_setn floats entirely in Rust, returning Vec<f32> via IPC.
+ * This eliminates osc-js encode/decode, the wildcard OSC listener, Tauri
+ * event serialization, and per-sample DataView.getFloat32 calls. Combined
+ * with reading only `width * 4` samples per frame (not the full buffer),
+ * this reduces the per-frame cost enough for ~50-60fps on a 300px scope.
+ *
+ * Phase 2 (future): SHM via ScopeOut2 for true zero-copy 60fps.
  *
  * ## Architecture: decoupled read loop + draw loop
  *
@@ -52,12 +54,11 @@
  *  13. Linear interpolation for smooth sub-pixel rendering.
  */
 import {html, css} from 'lit';
+import {invoke} from '@tauri-apps/api/core';
 import type {ScScopeItem, ScBufferItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {isBuffer} from '@/lib/utils/guards';
-import {oscService} from '@/lib/osc';
-import {bufGetnMessage} from '@/lib/osc/messages.ts';
-import {runtimeApi} from '@/lib/stores/api';
+import {optionsApi, runtimeApi} from '@/lib/stores/api';
 import {ScElement} from './internal/sc-element.ts';
 
 export class ScScope extends ScElement<ScScopeItem, number> {
@@ -82,9 +83,6 @@ export class ScScope extends ScElement<ScScopeItem, number> {
     private _lineColor = '';
     private _borderColor = '';
     private _textColor = '';
-    private _listenerId = 0;
-    private _pendingResolve: ((count: number) => void) | null = null;
-    private _pendingBufnum = 0;
     private _hasSignal = false;
     private _active = false;
     private _lastTrigger = 0;
@@ -142,31 +140,6 @@ export class ScScope extends ScElement<ScScopeItem, number> {
     private _start() {
         this._stop();
         this._active = true;
-
-        // Single persistent OSC listener — writes directly into _backBuffer
-        this._listenerId = oscService.on('*', (...args: unknown[]) => {
-            if (!this._pendingResolve) return;
-            const msg = args[0] as { address: string; args: unknown[] };
-            if (msg?.address === '/fail') {
-                this._pendingResolve(0);
-                this._pendingResolve = null;
-                return;
-            }
-            if (msg?.address !== '/b_setn') return;
-            const msgArgs = msg.args as number[];
-            if (msgArgs[0] !== this._pendingBufnum) return;
-
-            // Write directly into back buffer — zero intermediate allocations
-            const dataStart = 3; // skip bufnum, start, count
-            const count = msgArgs.length - dataStart;
-            for (let i = 0; i < count; i++) {
-                this._backBuffer[i] = msgArgs[i + dataStart];
-            }
-
-            this._pendingResolve(count);
-            this._pendingResolve = null;
-        });
-
         this._rafId = requestAnimationFrame(this._drawLoop);
         this._readLoop();
     }
@@ -177,11 +150,6 @@ export class ScScope extends ScElement<ScScopeItem, number> {
             cancelAnimationFrame(this._rafId);
             this._rafId = 0;
         }
-        if (this._listenerId) {
-            oscService.off('*', this._listenerId);
-            this._listenerId = 0;
-        }
-        this._pendingResolve = null;
     }
 
     private _drawLoop = () => {
@@ -248,12 +216,15 @@ export class ScScope extends ScElement<ScScopeItem, number> {
         }
     }
 
-    private _readOnce(bufnum: number, count: number): Promise<number> {
-        return new Promise((resolve) => {
-            this._pendingBufnum = bufnum;
-            this._pendingResolve = resolve;
-            oscService.send(bufGetnMessage(bufnum, 0, count));
-        });
+    private async _readOnce(bufnum: number, count: number): Promise<number> {
+        const {host, port} = optionsApi.scsynth;
+        const target = `${host}:${port}`;
+        const floats = await invoke<number[]>('buf_read', {target, bufnum, start: 0, count});
+        const len = Math.min(floats.length, this._backBuffer.length);
+        for (let i = 0; i < len; i++) {
+            this._backBuffer[i] = floats[i];
+        }
+        return len;
     }
 
     private _draw() {

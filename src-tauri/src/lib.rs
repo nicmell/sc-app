@@ -2,6 +2,7 @@ pub mod cli;
 pub mod config;
 pub mod http_server;
 pub mod plugin_manager;
+mod buf_reader;
 mod udp_server;
 
 use tauri::{Emitter, Manager, State, UriSchemeContext, Window};
@@ -56,6 +57,16 @@ async fn udp_close(state: State<'_, UdpState>) -> Result<(), String> {
     state.close().await
 }
 
+#[tauri::command]
+async fn buf_read(
+    target: String,
+    bufnum: i32,
+    start: i32,
+    count: i32,
+) -> Result<Vec<f32>, String> {
+    buf_reader::read_buffer(&target, bufnum, start, count).await
+}
+
 // --- App entry ---
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -69,6 +80,7 @@ pub fn run() {
             udp_bind,
             udp_send,
             udp_close,
+            buf_read,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
