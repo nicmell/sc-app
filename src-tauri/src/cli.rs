@@ -43,8 +43,6 @@ pub fn run(context: tauri::Context) -> ! {
                     ipc::commands::udp_send,
                     ipc::commands::udp_close,
                     ipc::commands::buf_read,
-                    ipc::commands::scope_shm_probe,
-                    ipc::commands::scope_shm_read,
                     ipc::commands::scope_read,
                 ])
                 .run(context)

@@ -61,16 +61,6 @@ pub async fn buf_read(
     buf_reader::read_buffer(&target, bufnum, start, count).await
 }
 
-#[tauri::command]
-pub fn scope_shm_probe(port: u16) -> Result<scope_shm::ShmProbeResult, String> {
-    scope_shm::probe(port)
-}
-
-#[tauri::command]
-pub fn scope_shm_read(port: u16, max_samples: usize) -> Result<Vec<f32>, String> {
-    scope_shm::read_scope(port, max_samples)
-}
-
 /// Unified scope buffer reader. Tries SHM first (for localhost connections),
 /// falls back to OSC `/b_getn` transparently. The frontend calls this single
 /// command — the backend picks the fastest available path.
