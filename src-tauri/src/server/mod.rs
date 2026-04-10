@@ -1,3 +1,4 @@
+pub mod scope_ws;
 mod ws_bridge;
 
 use crate::{config, plugin};
@@ -8,7 +9,6 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
-use std::borrow::Cow;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -21,6 +21,20 @@ struct AppState {
 }
 
 pub fn serve(context: tauri::Context, port: u16, scsynth_addr: String) {
+    if cfg!(dev) {
+        let project_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        println!("Building frontend...");
+        let status = std::process::Command::new("yarn")
+            .arg("build")
+            .current_dir(&project_root)
+            .status()
+            .expect("failed to run yarn build");
+        if !status.success() {
+            eprintln!("yarn build failed");
+            std::process::exit(1);
+        }
+    }
+
     let data_dir = config::data_dir().expect("failed to resolve app data dir");
 
     println!("Serving on http://localhost:{port}");
@@ -95,6 +109,9 @@ async fn handle_request(
         .unwrap_or(false);
 
     if is_ws_upgrade {
+        if path == "/scope" {
+            return Ok(scope_ws::handle_ws_upgrade(req, &state.scsynth_addr));
+        }
         return Ok(ws_bridge::handle_ws_upgrade(req, &state.scsynth_addr));
     }
 
@@ -140,8 +157,15 @@ async fn handle_plugin_request(
 
 // --- Static asset serving ---
 
-fn resolve_asset<'a>(path: &str, context: &'a tauri::Context) -> Option<Cow<'a, [u8]>> {
-    context.assets().get(&path.into())
+fn resolve_asset(path: &str, context: &tauri::Context) -> Option<Vec<u8>> {
+    if cfg!(dev) {
+        // Dev mode: assets not embedded, read from dist/ on disk
+        let dist = Path::new(env!("CARGO_MANIFEST_DIR")).join("../dist");
+        std::fs::read(dist.join(path)).ok()
+    } else {
+        // Release: assets embedded via generate_context!()
+        context.assets().get(&path.into()).map(|d| d.into_owned())
+    }
 }
 
 fn serve_asset(path: &str, context: &tauri::Context) -> Response<Full<Bytes>> {
@@ -159,7 +183,7 @@ fn serve_asset(path: &str, context: &tauri::Context) -> Response<Full<Bytes>> {
             .status(StatusCode::OK)
             .header("content-type", mime)
             .header("access-control-allow-origin", "*")
-            .body(Full::new(Bytes::from(bytes.into_owned())))
+            .body(Full::new(Bytes::from(bytes)))
             .unwrap();
     }
 
@@ -169,7 +193,7 @@ fn serve_asset(path: &str, context: &tauri::Context) -> Response<Full<Bytes>> {
             .status(StatusCode::OK)
             .header("content-type", "text/html; charset=utf-8")
             .header("access-control-allow-origin", "*")
-            .body(Full::new(Bytes::from(index.into_owned())))
+            .body(Full::new(Bytes::from(index)))
             .unwrap();
     }
 

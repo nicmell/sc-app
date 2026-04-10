@@ -1,4 +1,3 @@
 pub mod commands;
-mod buf_reader;
-mod scope_shm;
+pub(crate) mod buf_reader;
 pub mod udp;

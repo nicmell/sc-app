@@ -1,6 +1,14 @@
-use super::{buf_reader, scope_shm, udp::UdpState};
+use super::udp::UdpState;
 use crate::plugin;
 use tauri::{Emitter, Manager, State, UriSchemeContext, Window};
+
+/// Managed state holding the scope WebSocket server port.
+pub struct ScopeWsPort(pub u16);
+
+#[tauri::command]
+pub fn scope_ws_port(state: State<'_, ScopeWsPort>) -> u16 {
+    state.0
+}
 
 // --- URI scheme handler ---
 
@@ -49,38 +57,4 @@ pub async fn udp_send(
 #[tauri::command]
 pub async fn udp_close(state: State<'_, UdpState>) -> Result<(), String> {
     state.close().await
-}
-
-#[tauri::command]
-pub async fn buf_read(
-    target: String,
-    bufnum: i32,
-    start: i32,
-    count: i32,
-) -> Result<Vec<f32>, String> {
-    buf_reader::read_buffer(&target, bufnum, start, count).await
-}
-
-/// Unified scope buffer reader. Tries SHM first (for localhost connections),
-/// falls back to OSC `/b_getn` transparently. The frontend calls this single
-/// command — the backend picks the fastest available path.
-#[tauri::command]
-pub async fn scope_read(
-    host: String,
-    port: u16,
-    bufnum: i32,
-    count: i32,
-) -> Result<Vec<f32>, String> {
-    // Try SHM for localhost connections
-    if host == "127.0.0.1" || host == "localhost" {
-        if let Ok(floats) = scope_shm::read_scope(port, count as usize) {
-            if !floats.is_empty() {
-                return Ok(floats);
-            }
-        }
-    }
-
-    // Fall back to OSC buf_read
-    let target = format!("{}:{}", host, port);
-    buf_reader::read_buffer(&target, bufnum, 0, count).await
 }

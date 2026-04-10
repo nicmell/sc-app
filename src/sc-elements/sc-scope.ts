@@ -1,66 +1,52 @@
 /**
  * sc-scope — Real-time oscilloscope bound to an sc-buffer.
  *
- * ## Performance bottleneck analysis
- *
- * The dominant cost is the OSC round-trip for buffer reads, not JS rendering.
- * Each frame requires: JS → Tauri IPC (JSON) → Rust → UDP → scsynth →
- * UDP → Rust → Tauri event → osc-js parse → JS callback. On localhost this
- * takes ~5-10ms, capping throughput at ~100-200fps theoretical. In practice,
- * IPC serialization, osc-js float parsing (one DataView.getFloat32 per
- * sample), GC pauses, and event loop contention bring it to ~20-30fps.
- *
- * SuperCollider's own scope avoids this entirely: ScopeOut writes to a buffer
- * and the IDE reads it via shared memory (mmap) — zero network, zero
- * serialization. Achieving parity would require a Tauri Rust plugin that
- * opens scsynth's SHM interface and exposes buffer data as a fast ArrayBuffer.
- *
- * Phase 1 mitigation (current): a Tauri Rust command `buf_read` sends /b_getn
- * and parses /b_setn floats entirely in Rust, returning Vec<f32> via IPC.
- * This eliminates osc-js encode/decode, the wildcard OSC listener, Tauri
- * event serialization, and per-sample DataView.getFloat32 calls. Combined
- * with reading only `width * 4` samples per frame (not the full buffer),
- * this reduces the per-frame cost enough for ~50-60fps on a 300px scope.
- *
- * Phase 2 (future): SHM via ScopeOut2 for true zero-copy 60fps.
- *
  * ## Architecture: decoupled read loop + draw loop
  *
- *   - Read loop: async while-loop that fires /b_getn for a display-sized
- *     window, awaits the response, writes into a back buffer, swaps, and
- *     immediately fires the next request. Runs at OSC round-trip speed.
+ *   - Read loop: sends binary scope requests over a dedicated WebSocket,
+ *     awaits the response, writes into a back buffer, swaps, and
+ *     immediately sends the next request. Runs at round-trip speed.
  *   - Draw loop: requestAnimationFrame, draws only when _dirty flag is set.
  *     Runs at display refresh rate but skips no-op frames.
+ *
+ * The WebSocket carries raw binary f32 data — no JSON serialization.
+ * In Tauri mode, an embedded WS server runs on an ephemeral port
+ * (retrieved via `invoke('scope_ws_port')`). In browser mode, the
+ * standalone HTTP server handles WS upgrades at `/scope`.
  *
  * ## Optimizations
  *
  *   1. Reads only `width * 4` samples per frame, not the full buffer.
- *      THIS IS THE SINGLE MOST IMPACTFUL OPTIMIZATION — reduced OSC payload
- *      from ~32KB to ~4.8KB (for a 300px scope), directly cutting round-trip
- *      time and osc-js parse cost by ~7x.
- *   2. Single /b_getn request (no chunked round-trips).
- *   3. Single persistent OSC '*' listener — no per-frame register/unregister.
- *   4. Zero-allocation response: listener writes directly into _backBuffer
- *      from msg.args, avoiding rest-spread, intermediate Array, Float32Array
- *      construction, and .set() copy.
- *   5. Double-buffer swap: draw loop never sees a partially-written buffer.
- *   6. _dirty flag: draw loop skips frames when no new data arrived.
- *   7. Canvas, context, and computed styles cached — no per-frame DOM queries.
- *   8. Float32Array reused across frames (allocated only on size change).
- *   9. Retina: canvas scaled by devicePixelRatio once, not per frame.
- *  10. Polling paused when parent node is not running.
- *  11. Signal threshold: suppressed until peak > 0.01 (avoids startup glitch).
- *  12. Trigger hysteresis: ±8 samples around last crossing before full scan.
- *  13. Linear interpolation for smooth sub-pixel rendering.
+ *   2. Single /b_getn request per frame (no chunked round-trips).
+ *   3. Binary WebSocket — 4 bytes per float, zero JSON overhead.
+ *   4. Double-buffer swap: draw loop never sees a partially-written buffer.
+ *   5. _dirty flag: draw loop skips frames when no new data arrived.
+ *   6. Canvas, context, and computed styles cached — no per-frame DOM queries.
+ *   7. Float32Array reused across frames (allocated only on size change).
+ *   8. Retina: canvas scaled by devicePixelRatio once, not per frame.
+ *   9. Polling paused when parent node is not running.
+ *  10. Signal threshold: suppressed until peak > 0.01 (avoids startup glitch).
+ *  11. Trigger hysteresis: ±8 samples around last crossing before full scan.
+ *  12. Linear interpolation for smooth sub-pixel rendering.
  */
 import {html, css} from 'lit';
-import {invoke} from '@tauri-apps/api/core';
 import type {ScScopeItem, ScBufferItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {IS_TAURI} from '@/lib/env';
 import {isBuffer} from '@/lib/utils/guards';
-import {optionsApi, runtimeApi} from '@/lib/stores/api';
+import {runtimeApi} from '@/lib/stores/api';
 import {ScElement} from './internal/sc-element.ts';
+
+/** Resolve the scope WebSocket URL. */
+async function scopeWsUrl(): Promise<string> {
+    if (IS_TAURI) {
+        const {invoke} = await import('@tauri-apps/api/core');
+        const port = await invoke<number>('scope_ws_port');
+        return `ws://127.0.0.1:${port}`;
+    }
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${proto}//${location.host}/scope`;
+}
 
 export class ScScope extends ScElement<ScScopeItem, number> {
     static properties = {
@@ -87,6 +73,8 @@ export class ScScope extends ScElement<ScScopeItem, number> {
     private _hasSignal = false;
     private _active = false;
     private _lastTrigger = 0;
+    private _scopeWs: WebSocket | null = null;
+    private _wsResolve: ((buf: ArrayBuffer) => void) | null = null;
 
     static styles = css`
         :host { display: inline-block; }
@@ -125,15 +113,6 @@ export class ScScope extends ScElement<ScScopeItem, number> {
         this._lineColor = this.color || styles.getPropertyValue('--color-primary').trim() || '#00ff00';
         this._borderColor = styles.getPropertyValue('--color-border').trim() || '#555';
         this._textColor = styles.getPropertyValue('--color-text').trim() || '#e0e0e0';
-        // Temporary: probe SHM layout
-        if (IS_TAURI) {
-            const {port} = optionsApi.scsynth;
-            invoke('scope_shm_probe', {port}).then(
-                (r) => console.log('[sc-scope] SHM probe:', JSON.stringify(r, null, 2)),
-                (e) => console.warn('[sc-scope] SHM probe failed:', e),
-            );
-        }
-
         this._start();
     }
 
@@ -147,10 +126,11 @@ export class ScScope extends ScElement<ScScopeItem, number> {
         super.disconnectedCallback();
     }
 
-    private _start() {
+    private async _start() {
         this._stop();
         this._active = true;
         this._rafId = requestAnimationFrame(this._drawLoop);
+        await this._connectScopeWs();
         this._readLoop();
     }
 
@@ -160,6 +140,29 @@ export class ScScope extends ScElement<ScScopeItem, number> {
             cancelAnimationFrame(this._rafId);
             this._rafId = 0;
         }
+        if (this._scopeWs) {
+            this._scopeWs.close();
+            this._scopeWs = null;
+            this._wsResolve = null;
+        }
+    }
+
+    private async _connectScopeWs() {
+        const url = await scopeWsUrl();
+        const ws = new WebSocket(url);
+        ws.binaryType = 'arraybuffer';
+        ws.onmessage = (ev: MessageEvent) => {
+            if (this._wsResolve && ev.data instanceof ArrayBuffer) {
+                const resolve = this._wsResolve;
+                this._wsResolve = null;
+                resolve(ev.data);
+            }
+        };
+        ws.onclose = () => {
+            this._scopeWs = null;
+            this._wsResolve = null;
+        };
+        this._scopeWs = ws;
     }
 
     private _drawLoop = () => {
@@ -189,8 +192,6 @@ export class ScScope extends ScElement<ScScopeItem, number> {
                 continue;
             }
 
-            // Read only what the display needs: width pixels * 4x for trigger + safety margin.
-            // This minimizes OSC payload — the dominant performance cost.
             const maxSamples = buf.frames * buf.channels;
             const readSamples = Math.min(this.width * 4, maxSamples);
             if (this._backBuffer.length !== readSamples) {
@@ -202,23 +203,24 @@ export class ScScope extends ScElement<ScScopeItem, number> {
 
             try {
                 const count = await this._readOnce(buf.runtime.bufnum, readSamples);
-                if (count > 0) {
-                    // Swap pointers — draw loop sees a complete consistent buffer
-                    const tmp = this._samples;
-                    this._samples = this._backBuffer;
-                    this._backBuffer = tmp;
-                    this._dirty = true;
+                if (count === 0) {
+                    await new Promise(r => setTimeout(r, 50));
+                    continue;
+                }
 
-                    if (!this._hasSignal) {
-                        // Check peak amplitude on first valid read only
-                        let peak = 0;
-                        const s = this._samples;
-                        for (let i = 0; i < s.length; i++) {
-                            const v = s[i] < 0 ? -s[i] : s[i];
-                            if (v > peak) { peak = v; if (peak > 0.01) break; }
-                        }
-                        if (peak > 0.01) this._hasSignal = true;
+                const tmp = this._samples;
+                this._samples = this._backBuffer;
+                this._backBuffer = tmp;
+                this._dirty = true;
+
+                if (!this._hasSignal) {
+                    let peak = 0;
+                    const s = this._samples;
+                    for (let i = 0; i < s.length; i++) {
+                        const v = s[i] < 0 ? -s[i] : s[i];
+                        if (v > peak) { peak = v; if (peak > 0.01) break; }
                     }
+                    if (peak > 0.01) this._hasSignal = true;
                 }
             } catch {
                 await new Promise(r => setTimeout(r, 100));
@@ -227,9 +229,29 @@ export class ScScope extends ScElement<ScScopeItem, number> {
     }
 
     private async _readOnce(bufnum: number, count: number): Promise<number> {
-        if (!IS_TAURI) return 0;
-        const {host, port} = optionsApi.scsynth;
-        const floats = await invoke<number[]>('scope_read', {host, port, bufnum, count});
+        const ws = this._scopeWs;
+        if (!ws || ws.readyState !== WebSocket.OPEN) return 0;
+
+        const req = new ArrayBuffer(8);
+        const view = new DataView(req);
+        view.setInt32(0, bufnum, true);
+        view.setInt32(4, count, true);
+
+        const response = await new Promise<ArrayBuffer | null>((resolve) => {
+            const timeout = setTimeout(() => {
+                this._wsResolve = null;
+                resolve(null);
+            }, 3000);
+            this._wsResolve = (buf) => {
+                clearTimeout(timeout);
+                resolve(buf);
+            };
+            ws.send(req);
+        });
+
+        if (!response || response.byteLength === 0) return 0;
+
+        const floats = new Float32Array(response);
         const len = Math.min(floats.length, this._backBuffer.length);
         for (let i = 0; i < len; i++) this._backBuffer[i] = floats[i];
         return len;
@@ -280,9 +302,12 @@ export class ScScope extends ScElement<ScScopeItem, number> {
             return;
         }
 
-        // Trigger: rising zero-crossing with hysteresis
+        // Trigger: rising zero-crossing with sub-sample interpolation.
+        // Find the integer crossing, then compute the fractional offset so
+        // the waveform is drawn at a stable phase — eliminates per-frame jitter.
         const quarter = samples.length >> 2;
         let trigger = 0;
+        let triggerFrac = 0;
         const HYSTERESIS = 8;
 
         if (this._lastTrigger > 0) {
@@ -299,9 +324,19 @@ export class ScScope extends ScElement<ScScopeItem, number> {
             }
         }
 
+        // Sub-sample interpolation: exact fractional crossing point
+        if (trigger > 0) {
+            const s0 = samples[trigger - 1];
+            const s1 = samples[trigger];
+            if (s1 !== s0) {
+                triggerFrac = -s0 / (s1 - s0); // 0..1: fraction past samples[trigger-1]
+            }
+            // Adjust: trigger-1 is the last negative sample, offset by frac into it
+            triggerFrac = (trigger - 1) + triggerFrac;
+        }
+
         this._lastTrigger = trigger;
 
-        // Draw one quarter starting from trigger, with linear interpolation
         const step = quarter / w;
         const halfH = h / 2;
 
@@ -310,9 +345,9 @@ export class ScScope extends ScElement<ScScopeItem, number> {
         ctx.beginPath();
 
         for (let i = 0; i < w; i++) {
-            const fIdx = i * step;
-            const idx = (fIdx | 0) + trigger;
-            const frac = fIdx - (fIdx | 0);
+            const fIdx = i * step + triggerFrac;
+            const idx = fIdx | 0;
+            const frac = fIdx - idx;
             const s0 = samples[idx];
             const s1 = samples[idx + 1] ?? s0;
             const y = (1 - (s0 + (s1 - s0) * frac)) * halfH;
