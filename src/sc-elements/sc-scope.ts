@@ -57,6 +57,7 @@ import {html, css} from 'lit';
 import {invoke} from '@tauri-apps/api/core';
 import type {ScScopeItem, ScBufferItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
+import {IS_TAURI} from '@/lib/env';
 import {isBuffer} from '@/lib/utils/guards';
 import {optionsApi, runtimeApi} from '@/lib/stores/api';
 import {ScElement} from './internal/sc-element.ts';
@@ -127,11 +128,13 @@ export class ScScope extends ScElement<ScScopeItem, number> {
         this._borderColor = styles.getPropertyValue('--color-border').trim() || '#555';
         this._textColor = styles.getPropertyValue('--color-text').trim() || '#e0e0e0';
         // Temporary: probe SHM layout
-        const {port} = optionsApi.scsynth;
-        invoke('scope_shm_probe', {port}).then(
-            (r) => console.log('[sc-scope] SHM probe:', JSON.stringify(r, null, 2)),
-            (e) => console.warn('[sc-scope] SHM probe failed:', e),
-        );
+        if (IS_TAURI) {
+            const {port} = optionsApi.scsynth;
+            invoke('scope_shm_probe', {port}).then(
+                (r) => console.log('[sc-scope] SHM probe:', JSON.stringify(r, null, 2)),
+                (e) => console.warn('[sc-scope] SHM probe failed:', e),
+            );
+        }
 
         this._start();
     }
@@ -226,6 +229,7 @@ export class ScScope extends ScElement<ScScopeItem, number> {
     }
 
     private async _readOnce(bufnum: number, count: number): Promise<number> {
+        if (!IS_TAURI) return 0;
         const {host, port} = optionsApi.scsynth;
 
         // Try SHM on first call (only for localhost)

@@ -22,8 +22,15 @@ export class ScRadioGroup extends ScInput<ScRadioGroupItem> {
     private _provider!: ContextProvider<{ __context__: RadioGroupContext }, this>;
 
     static styles = css`
-        :host { display: inline-flex; gap: 4px; align-items: center; }
-        :host([orientation="vertical"]) { flex-direction: column; align-items: flex-start; }
+        :host { 
+            display: inline-flex;
+            gap: 4px; 
+            align-items: center; 
+        }
+        :host([orientation="vertical"]) { 
+            flex-direction: column; 
+            align-items: flex-start; 
+        }
     `;
 
     constructor() {

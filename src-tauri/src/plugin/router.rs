@@ -1,4 +1,5 @@
-use crate::{config, plugin_manager};
+use crate::config;
+use super::manager as plugin_manager;
 use http::{Method, Request, Response};
 use std::io::Read;
 use std::path::Path;

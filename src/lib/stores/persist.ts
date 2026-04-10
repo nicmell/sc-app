@@ -1,5 +1,7 @@
 import type {PersistOptions} from "zustand/middleware";
+import {IS_TAURI} from "@/lib/env";
 import {tauriStorage} from "@/lib/storage/tauriStorage";
+import {browserStorage} from "@/lib/storage/browserStorage";
 import type {RootState, ConfigFile} from "@/types/stores";
 import {marshalPreset, unmarshalPreset} from "@/lib/runtime";
 
@@ -8,7 +10,7 @@ import {marshalPreset, unmarshalPreset} from "@/lib/runtime";
 // functions are fully typed via ConfigFile and RootState.
 export const persistConfig: PersistOptions<any, ConfigFile> = {
   name: "config",
-  storage: tauriStorage,
+  storage: IS_TAURI ? tauriStorage : browserStorage,
   partialize: ({options, plugins, runtime}: RootState): ConfigFile => ({
     options,
     plugins: plugins.items

@@ -6,7 +6,9 @@ import {get, post, del} from "@/lib/http";
 import {processHtml} from "@/lib/html";
 import {hydrate} from "@/lib/html/processHtml.ts";
 
-export const PLUGINS_URL = "app://plugins";
+import {IS_TAURI} from "@/lib/env";
+
+export const PLUGINS_URL = IS_TAURI ? "app://plugins" : "/plugins";
 
 export class PluginManager {
 

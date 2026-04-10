@@ -21,11 +21,16 @@ npx tsc --noEmit
 # Rust check
 cd src-tauri && cargo check
 
+# Standalone HTTP server (browser mode)
+yarn build && cargo run --manifest-path src-tauri/Cargo.toml -- serve
+# Options: --port <PORT> (default: 3000, env: SC_PORT)
+#          --scsynth <ADDR> (default: 127.0.0.1:57110, env: SC_SCSYNTH_ADDR)
+
 # CLI (plugin validation/management)
-cargo run --manifest-path src-tauri/Cargo.toml -- validate path/to/plugin.zip
-cargo run --manifest-path src-tauri/Cargo.toml -- add path/to/plugin.zip
-cargo run --manifest-path src-tauri/Cargo.toml -- list
-cargo run --manifest-path src-tauri/Cargo.toml -- remove <name>
+cargo run --manifest-path src-tauri/Cargo.toml -- plugin validate path/to/plugin.zip
+cargo run --manifest-path src-tauri/Cargo.toml -- plugin add path/to/plugin.zip
+cargo run --manifest-path src-tauri/Cargo.toml -- plugin list
+cargo run --manifest-path src-tauri/Cargo.toml -- plugin remove <name>
 
 # Generate example plugin zips
 bash scripts/package_examples.sh tmp
@@ -50,14 +55,35 @@ node scripts/generate_ugen_db.mjs
 
 ### Backend (`src-tauri/src/`)
 
-- `lib.rs` — Tauri glue (sole file with Tauri deps): app builder, commands, URI scheme handler
-- `plugin_manager.rs` — Plugin validation (zip, metadata, XSD, assets), CRUD (add/remove/list)
-- `http_server.rs` — HTTP router for `app://plugins/` (GET list, POST add, DELETE remove, GET file serving)
-- `udp_server.rs` — Async UDP socket management via tokio (no Tauri deps)
-- `buf_reader.rs` — Rust-side `/b_getn` sender + `/b_setn` parser using `rosc` crate. Returns `Vec<f32>` via IPC, bypassing osc-js entirely. Used by sc-scope for real-time buffer reads.
-- `scope_shm.rs` — Shared memory reader for SuperCollider's scope buffers. Opens `/tmp/boost_interprocess/SuperColliderServer_<port>` via mmap (read-only). Scans for audio data offset on first call, caches for subsequent reads. Used by sc-scope when ScopeOut2 UGen is active.
-- `cli.rs` — CLI for validate/add/remove/list (no Tauri deps)
+- `main.rs` — Entry point: calls `cli::run(tauri::generate_context!())`
+- `lib.rs` — Module declarations only
+- `cli.rs` — Clap-based CLI: dispatches to GUI (no args), `serve` (HTTP server), or `plugin` subcommands
 - `config.rs` — App data dir resolution, config file I/O (`config.json`), plugins dir helper
+- `ipc/` — Tauri IPC boundary (all `#[tauri::command]` functions)
+  - `commands.rs` — URI scheme handler (`app://plugins/`) + Tauri commands (`udp_bind`, `buf_read`, `scope_shm_read`, etc.)
+  - `udp.rs` — Async UDP socket state management via tokio
+  - `buf_reader.rs` — Rust-side `/b_getn` sender + `/b_setn` parser using `rosc` crate. Returns `Vec<f32>` via IPC. Used by sc-scope for real-time buffer reads.
+  - `scope_shm.rs` — Shared memory reader for SuperCollider's scope buffers via mmap. Used by sc-scope when ScopeOut2 UGen is active.
+- `plugin/` — Plugin system
+  - `manager.rs` — Plugin validation (zip, metadata, XSD, assets), CRUD (add/remove/list)
+  - `router.rs` — HTTP router for plugin API (GET list, POST add, DELETE remove, GET file serving). Used by both `app://` URI scheme and standalone web server.
+  - `cli.rs` — Plugin CLI command handlers (validate, add, remove, list)
+  - `xsd/sc-plugin-schema.xsd` — XSD schema for plugin entry HTML validation
+- `server/` — Standalone HTTP server (browser mode)
+  - `mod.rs` — Hyper-based HTTP server: static asset serving from `context.assets()`, plugin route bridge, SPA fallback
+  - `ws_bridge.rs` — WebSocket-to-UDP bridge for OSC communication with scsynth
+
+### Browser Support
+
+The app can run in a browser via `sc-app serve`. Platform detection (`src/lib/env.ts`) exports `IS_TAURI` to branch behavior:
+
+- **Storage**: `tauriStorage` (Tauri FS) vs `browserStorage` (localStorage) — selected in `persist.ts`
+- **OSC**: `TauriUdpPlugin` (IPC) vs `OSC.WebsocketClientPlugin` (WebSocket to server) — selected in `OscService.ts`
+- **Plugins**: `app://plugins` (URI scheme) vs `/plugins` (HTTP) — selected in `PluginManager.ts`
+- **Logging**: `logWriter.ts` skips file writes when `!IS_TAURI`
+- **Scope**: `sc-scope.ts` skips `invoke()` calls when `!IS_TAURI`
+
+Tauri module imports use dynamic `await import()` to avoid bundling Tauri-specific code in the browser path.
 
 ### App Data Directory
 
@@ -334,10 +360,10 @@ This means nodes can see:
 
 **Structure:** zip containing `metadata.json` + entry HTML + optional assets (png/jpeg).
 
-**Validation pipeline** (in `plugin_manager.rs`):
+**Validation pipeline** (in `plugin/manager.rs`):
 1. Valid zip archive
 2. `metadata.json` — name (alphanumeric/-/_), semver version, author, entry path, assets array
-3. Entry HTML — validated against XSD schema (`src-tauri/src/xsd/sc-plugin-schema.xsd`)
+3. Entry HTML — validated against XSD schema (`src-tauri/src/plugin/xsd/sc-plugin-schema.xsd`)
 4. Assets — format detection must match declared type
 
 **Frontend loading** (`src/lib/plugins/PluginManager.ts`):
@@ -374,9 +400,9 @@ Architecture: decoupled async read loop (runs at OSC/SHM speed) + rAF draw loop 
 
 ## OSC Communication (`src/lib/osc/`)
 
-- `OscService.ts` — Singleton managing osc-js connection. Polls `/status` at configurable interval. Dispatches replies to store
-- `TauriUdpPlugin.ts` — osc-js plugin adapter wrapping `TauriDatagramSocket`
-- `TauriDatagramSocket.ts` — Bridges to Tauri `udp_bind`/`udp_send`/`udp_close` commands
+- `OscService.ts` — Singleton managing osc-js connection. Polls `/status` at configurable interval. Dispatches replies to store. In Tauri mode uses `TauriUdpPlugin`; in browser mode uses `OSC.WebsocketClientPlugin` (connects to the standalone server's WebSocket endpoint which bridges to scsynth via UDP).
+- `TauriUdpPlugin.ts` — osc-js plugin adapter wrapping `TauriDatagramSocket` (Tauri mode only)
+- `TauriDatagramSocket.ts` — Bridges to Tauri `udp_bind`/`udp_send`/`udp_close` commands (Tauri mode only)
 - `messages.ts` — OSC message factories: `/status`, `/s_new`, `/g_new`, `/n_set`, `/n_run`, `/n_free`, `/d_recv`, `/b_alloc`, `/b_free`, `/b_getn`, `/b_setn`, etc.
 - `wav.ts` (`src/lib/utils/`) — WAV encoder: 44-byte RIFF header + IEEE float32 PCM data → Blob
 
@@ -442,7 +468,9 @@ export function Foo({variant = "a", size = "md", className, ...rest}: FooProps) 
 ### Rust
 
 - Tauri commands return `Result<T, String>` for frontend error handling
-- Public modules in `lib.rs` for CLI access (`pub mod plugin_manager`, `pub mod cli`)
+- `lib.rs` is module declarations only — all logic lives in submodules
+- CLI uses `clap` derive API with subcommands; `--port`/`--scsynth` support env vars (`SC_PORT`, `SC_SCSYNTH_ADDR`)
+- Backend organized into `ipc/` (Tauri commands), `plugin/` (plugin system), `server/` (standalone HTTP)
 - XSD schema embedded via `include_str!`
 
 ### State

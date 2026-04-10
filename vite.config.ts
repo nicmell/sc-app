@@ -7,6 +7,9 @@ const host = process.env.TAURI_DEV_HOST;
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({
   plugins: [react()],
+  build: {
+    manifest: "manifest.json",
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
