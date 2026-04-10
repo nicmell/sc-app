@@ -87,8 +87,6 @@ export class ScScope extends ScElement<ScScopeItem, number> {
     private _hasSignal = false;
     private _active = false;
     private _lastTrigger = 0;
-    private _useSHM = false;
-    private _shmChecked = false;
 
     static styles = css`
         :host { display: inline-block; }
@@ -231,35 +229,7 @@ export class ScScope extends ScElement<ScScopeItem, number> {
     private async _readOnce(bufnum: number, count: number): Promise<number> {
         if (!IS_TAURI) return 0;
         const {host, port} = optionsApi.scsynth;
-
-        // Try SHM on first call (only for localhost)
-        if (!this._shmChecked && (host === '127.0.0.1' || host === 'localhost')) {
-            this._shmChecked = true;
-            try {
-                const floats = await invoke<number[]>('scope_shm_read', {port, maxSamples: count});
-                if (floats.length > 0) {
-                    this._useSHM = true;
-                    console.log(`[sc-scope] SHM available — using zero-copy path (${floats.length} samples)`);
-                    const len = Math.min(floats.length, this._backBuffer.length);
-                    for (let i = 0; i < len; i++) this._backBuffer[i] = floats[i];
-                    return len;
-                }
-            } catch {
-                // SHM not available — fall back to OSC
-            }
-        }
-
-        // SHM fast path
-        if (this._useSHM) {
-            const floats = await invoke<number[]>('scope_shm_read', {port, maxSamples: count});
-            const len = Math.min(floats.length, this._backBuffer.length);
-            for (let i = 0; i < len; i++) this._backBuffer[i] = floats[i];
-            return len;
-        }
-
-        // OSC fallback
-        const target = `${host}:${port}`;
-        const floats = await invoke<number[]>('buf_read', {target, bufnum, start: 0, count});
+        const floats = await invoke<number[]>('scope_read', {host, port, bufnum, count});
         const len = Math.min(floats.length, this._backBuffer.length);
         for (let i = 0; i < len; i++) this._backBuffer[i] = floats[i];
         return len;

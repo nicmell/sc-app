@@ -45,6 +45,7 @@ pub fn run(context: tauri::Context) -> ! {
                     ipc::commands::buf_read,
                     ipc::commands::scope_shm_probe,
                     ipc::commands::scope_shm_read,
+                    ipc::commands::scope_read,
                 ])
                 .run(context)
                 .expect("error while running tauri application");

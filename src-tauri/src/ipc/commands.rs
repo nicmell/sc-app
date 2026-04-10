@@ -70,3 +70,27 @@ pub fn scope_shm_probe(port: u16) -> Result<scope_shm::ShmProbeResult, String> {
 pub fn scope_shm_read(port: u16, max_samples: usize) -> Result<Vec<f32>, String> {
     scope_shm::read_scope(port, max_samples)
 }
+
+/// Unified scope buffer reader. Tries SHM first (for localhost connections),
+/// falls back to OSC `/b_getn` transparently. The frontend calls this single
+/// command — the backend picks the fastest available path.
+#[tauri::command]
+pub async fn scope_read(
+    host: String,
+    port: u16,
+    bufnum: i32,
+    count: i32,
+) -> Result<Vec<f32>, String> {
+    // Try SHM for localhost connections
+    if host == "127.0.0.1" || host == "localhost" {
+        if let Ok(floats) = scope_shm::read_scope(port, count as usize) {
+            if !floats.is_empty() {
+                return Ok(floats);
+            }
+        }
+    }
+
+    // Fall back to OSC buf_read
+    let target = format!("{}:{}", host, port);
+    buf_reader::read_buffer(&target, bufnum, 0, count).await
+}
