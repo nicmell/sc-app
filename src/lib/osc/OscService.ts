@@ -1,5 +1,4 @@
 import OSC from 'osc-js';
-import {TauriUdpPlugin} from './TauriUdpPlugin';
 import {
   groupFreeAllMessage,
   dumpOscMessage,
@@ -14,6 +13,7 @@ import {OSC_MESSAGES, OSC_REPLIES} from '@/constants/osc.ts';
 import {scsynthApi, optionsApi} from '@/lib/stores/api';
 import {logger} from '@/lib/logger';
 import {IS_TAURI} from '@/lib/env';
+import {TauriUdpPlugin} from './TauriUdpPlugin';
 
 import {ConnectionStatus, DEFAULT_CLIENT_ID} from '@/constants/osc';
 

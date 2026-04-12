@@ -3,42 +3,35 @@
  *
  * ## Data transport
  *
- * Both Tauri and browser modes receive scope data as a push stream:
+ * Uses ScopeChannel from `@/lib/socket` which abstracts the platform:
+ *   - Tauri: scope_bind/scope_unbind + scope-data events (push from Rust)
+ *   - Browser: /scope WebSocket with binary f32 request/response
  *
- *   - **Tauri**: `invoke('scope_bind')` starts a Rust read loop that
- *     continuously emits `scope-data` events via `window.emit()` —
- *     same pattern as `udp_bind`/`osc-data` for OSC messages.
- *   - **Browser**: a dedicated `/scope` WebSocket carries binary f32
- *     request/response pairs. The read loop sends a request and awaits
- *     the binary response.
+ * ## Architecture: push data + rAF draw loop
  *
- * ## Architecture: decoupled read + draw loops
- *
- *   - Read: data arrives via event (Tauri) or WS response (browser),
- *     writes into a back buffer, swaps, sets dirty flag.
- *   - Draw: requestAnimationFrame, draws only when dirty.
+ *   - Data arrives via ScopeChannel callback → writes back buffer, swaps, sets dirty.
+ *   - Draw loop: requestAnimationFrame, draws only when dirty.
  *
  * ## Optimizations
  *
- *   1. Reads only `width * 4` samples per frame, not the full buffer.
+ *   1. Reads only `width * 4` samples, not the full buffer.
  *   2. Binary WebSocket in browser — 4 bytes per float, zero JSON overhead.
  *   3. Double-buffer swap: draw loop never sees partially-written data.
  *   4. _dirty flag: draw loop skips no-op frames.
  *   5. Canvas, context, styles cached — no per-frame DOM queries.
  *   6. Float32Array reused (allocated only on size change).
  *   7. Retina: canvas scaled by devicePixelRatio once.
- *   8. Polling paused when parent node is not running.
- *   9. Signal threshold: suppressed until peak > 0.01.
- *  10. Sub-sample trigger interpolation for stable phase alignment.
- *  11. Trigger hysteresis: ±8 samples around last crossing.
- *  12. Linear interpolation for smooth sub-pixel rendering.
+ *   8. Signal threshold: suppressed until peak > 0.01.
+ *   9. Sub-sample trigger interpolation for stable phase alignment.
+ *  10. Trigger hysteresis: ±8 samples around last crossing.
+ *  11. Linear interpolation for smooth sub-pixel rendering.
  */
 import {html, css} from 'lit';
 import type {ScScopeItem, ScBufferItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
-import {IS_TAURI} from '@/lib/env';
 import {isBuffer} from '@/lib/utils/guards';
 import {optionsApi, runtimeApi} from '@/lib/stores/api';
+import {BinaryChannel} from '@/lib/socket';
 import {ScElement} from './internal/sc-element.ts';
 
 export class ScScope extends ScElement<ScScopeItem, number> {
@@ -66,14 +59,7 @@ export class ScScope extends ScElement<ScScopeItem, number> {
     private _hasSignal = false;
     private _active = false;
     private _lastTrigger = 0;
-
-    // Browser mode: WebSocket
-    private _scopeWs: WebSocket | null = null;
-    private _wsResolve: ((buf: ArrayBuffer) => void) | null = null;
-
-    // Tauri mode: event listener
-    private _unlisten: (() => void) | null = null;
-    private _scopeBound = false;
+    private _channel: BinaryChannel | null = null;
 
     static styles = css`
         :host { display: inline-block; }
@@ -129,12 +115,7 @@ export class ScScope extends ScElement<ScScopeItem, number> {
         this._stop();
         this._active = true;
         this._rafId = requestAnimationFrame(this._drawLoop);
-        if (IS_TAURI) {
-            this._tauriReadLoop();
-        } else {
-            this._connectScopeWs();
-            this._wsReadLoop();
-        }
+        this._monitorLoop();
     }
 
     private _stop() {
@@ -143,17 +124,71 @@ export class ScScope extends ScElement<ScScopeItem, number> {
             cancelAnimationFrame(this._rafId);
             this._rafId = 0;
         }
-        // Browser cleanup
-        if (this._scopeWs) {
-            this._scopeWs.close();
-            this._scopeWs = null;
-            this._wsResolve = null;
+        if (this._channel) {
+            this._channel.unbind();
+            this._channel = null;
         }
-        // Tauri cleanup
-        this._tauriUnbind();
     }
 
-    // --- Shared ---
+    private _createChannel(bufnum: number, count: number): BinaryChannel {
+        const {host, port} = optionsApi.scsynth;
+        const req = new ArrayBuffer(8);
+        const view = new DataView(req);
+        view.setInt32(0, bufnum, true);
+        view.setInt32(4, count, true);
+
+        return new BinaryChannel({
+            tauriCommand: 'scope_bind',
+            tauriUnbindCommand: 'scope_unbind',
+            tauriEvent: 'scope-data',
+            tauriArgs: {target: `${host}:${port}`, bufnum, count},
+            wsPath: '/scope',
+            wsRequest: () => {
+                // Return a fresh copy each time (WS may transfer the buffer)
+                const copy = new ArrayBuffer(8);
+                new Uint8Array(copy).set(new Uint8Array(req));
+                return copy;
+            },
+        });
+    }
+
+    /** Monitor buffer/parent state and bind/unbind the channel accordingly. */
+    private async _monitorLoop() {
+        while (this._active) {
+            if (!this._parent?.runtime.run) {
+                if (this._channel) {
+                    await this._channel.unbind();
+                    this._channel = null;
+                }
+                if (this._hasSignal) {
+                    this._hasSignal = false;
+                    this._lastTrigger = 0;
+                    this._dirty = true;
+                }
+                await new Promise(r => setTimeout(r, 200));
+                continue;
+            }
+
+            const buf = this._getBuffer();
+            if (!buf || !buf.runtime.loaded) {
+                if (this._channel) {
+                    await this._channel.unbind();
+                    this._channel = null;
+                }
+                await new Promise(r => setTimeout(r, 100));
+                continue;
+            }
+
+            if (!this._channel) {
+                const count = Math.min(this.width * 4, buf.frames * buf.channels);
+                this._channel = this._createChannel(buf.runtime.bufnum, count);
+                this._channel.onData((floats) => this._onScopeData(floats));
+                await this._channel.bind();
+            }
+
+            await new Promise(r => setTimeout(r, 200));
+        }
+    }
 
     private _onScopeData(floats: ArrayLike<number>) {
         const readSamples = floats.length;
@@ -168,7 +203,6 @@ export class ScScope extends ScElement<ScScopeItem, number> {
 
         for (let i = 0; i < readSamples; i++) this._backBuffer[i] = floats[i];
 
-        // Swap
         const tmp = this._samples;
         this._samples = this._backBuffer;
         this._backBuffer = tmp;
@@ -183,151 +217,6 @@ export class ScScope extends ScElement<ScScopeItem, number> {
             }
             if (peak > 0.01) this._hasSignal = true;
         }
-    }
-
-    // --- Tauri mode: scope_bind + events ---
-
-    private async _tauriBind(buf: ScBufferItem) {
-        if (this._scopeBound) return;
-        const {host, port} = optionsApi.scsynth;
-        const target = `${host}:${port}`;
-        const count = Math.min(this.width * 4, buf.frames * buf.channels);
-
-        const {invoke} = await import('@tauri-apps/api/core');
-        const {listen} = await import('@tauri-apps/api/event');
-
-        this._unlisten = await listen<number[]>('scope-data', (event) => {
-            this._onScopeData(event.payload);
-        });
-
-        await invoke('scope_bind', {target, bufnum: buf.runtime.bufnum, count});
-        this._scopeBound = true;
-    }
-
-    private async _tauriUnbind() {
-        if (!this._scopeBound) return;
-        this._scopeBound = false;
-        if (this._unlisten) {
-            this._unlisten();
-            this._unlisten = null;
-        }
-        try {
-            const {invoke} = await import('@tauri-apps/api/core');
-            await invoke('scope_unbind');
-        } catch { /* ignore during teardown */ }
-    }
-
-    private async _tauriReadLoop() {
-        // Monitor state — bind/unbind as conditions change.
-        // Data arrives via events, not polling.
-        while (this._active) {
-            if (!this._parent?.runtime.run) {
-                await this._tauriUnbind();
-                if (this._hasSignal) {
-                    this._hasSignal = false;
-                    this._lastTrigger = 0;
-                    this._dirty = true;
-                }
-                await new Promise(r => setTimeout(r, 200));
-                continue;
-            }
-
-            const buf = this._getBuffer();
-            if (!buf || !buf.runtime.loaded) {
-                await this._tauriUnbind();
-                await new Promise(r => setTimeout(r, 100));
-                continue;
-            }
-
-            await this._tauriBind(buf);
-            await new Promise(r => setTimeout(r, 200));
-        }
-    }
-
-    // --- Browser mode: WebSocket ---
-
-    private _connectScopeWs() {
-        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const ws = new WebSocket(`${proto}//${location.host}/scope`);
-        ws.binaryType = 'arraybuffer';
-        ws.onmessage = (ev: MessageEvent) => {
-            if (this._wsResolve && ev.data instanceof ArrayBuffer) {
-                const resolve = this._wsResolve;
-                this._wsResolve = null;
-                resolve(ev.data);
-            }
-        };
-        ws.onclose = () => {
-            this._scopeWs = null;
-            this._wsResolve = null;
-        };
-        this._scopeWs = ws;
-    }
-
-    private async _wsReadLoop() {
-        while (this._active) {
-            if (!this._parent?.runtime.run) {
-                if (this._hasSignal) {
-                    this._hasSignal = false;
-                    this._lastTrigger = 0;
-                    this._dirty = true;
-                }
-                await new Promise(r => setTimeout(r, 200));
-                continue;
-            }
-
-            const buf = this._getBuffer();
-            if (!buf || !buf.runtime.loaded) {
-                await new Promise(r => setTimeout(r, 100));
-                continue;
-            }
-
-            const maxSamples = buf.frames * buf.channels;
-            const readSamples = Math.min(this.width * 4, maxSamples);
-
-            try {
-                const count = await this._wsReadOnce(buf.runtime.bufnum, readSamples);
-                if (count === 0) {
-                    await new Promise(r => setTimeout(r, 50));
-                    continue;
-                }
-                this._onScopeData(this._backBuffer.subarray(0, count));
-            } catch {
-                await new Promise(r => setTimeout(r, 100));
-            }
-        }
-    }
-
-    private async _wsReadOnce(bufnum: number, count: number): Promise<number> {
-        const ws = this._scopeWs;
-        if (!ws || ws.readyState !== WebSocket.OPEN) return 0;
-
-        const req = new ArrayBuffer(8);
-        const view = new DataView(req);
-        view.setInt32(0, bufnum, true);
-        view.setInt32(4, count, true);
-
-        const response = await new Promise<ArrayBuffer | null>((resolve) => {
-            const timeout = setTimeout(() => {
-                this._wsResolve = null;
-                resolve(null);
-            }, 3000);
-            this._wsResolve = (buf) => {
-                clearTimeout(timeout);
-                resolve(buf);
-            };
-            ws.send(req);
-        });
-
-        if (!response || response.byteLength === 0) return 0;
-
-        const floats = new Float32Array(response);
-        const len = Math.min(floats.length, this._backBuffer.length);
-        if (this._backBuffer.length !== len) {
-            this._backBuffer = new Float32Array(len);
-        }
-        for (let i = 0; i < len; i++) this._backBuffer[i] = floats[i];
-        return len;
     }
 
     // --- Draw ---
@@ -368,7 +257,6 @@ export class ScScope extends ScElement<ScScopeItem, number> {
         const samples = this._samples;
         ctx.clearRect(0, 0, w, h);
 
-        // Center line
         ctx.strokeStyle = this._borderColor;
         ctx.lineWidth = 1;
         ctx.beginPath();
