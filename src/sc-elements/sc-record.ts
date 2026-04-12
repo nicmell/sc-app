@@ -3,7 +3,6 @@ import type {ScRecordItem, ScBufferItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {isBuffer} from '@/lib/utils/guards';
 import {oscService} from '@/lib/osc';
-import {bufGetnMessage} from '@/lib/osc/messages.ts';
 import {runtimeApi} from '@/lib/stores/api';
 import {encodeWav} from '@/lib/utils/wav';
 import {ScElement} from './internal/sc-element.ts';
@@ -143,7 +142,7 @@ export class ScRecord extends ScElement<ScRecordItem, number> {
                 oscService.off('*', subId);
                 resolve(new Float32Array(data.slice(0, c)));
             });
-            oscService.send(bufGetnMessage(bufnum, start, count));
+            oscService.readBuffer(bufnum, start, count);
         });
     }
 

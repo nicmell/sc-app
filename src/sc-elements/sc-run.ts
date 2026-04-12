@@ -4,7 +4,6 @@ import type {RuntimeState} from '@/types/stores';
 import {runtimeApi} from '@/lib/stores/api';
 import {isRun, isNode} from '@/lib/utils/guards';
 import {oscService} from '@/lib/osc';
-import {nodeRunMessage} from '@/lib/osc/messages.ts';
 import {ScElement} from './internal/sc-element.ts';
 
 export class ScRun extends ScElement<ScRunItem, number> {
@@ -59,7 +58,7 @@ export class ScRun extends ScElement<ScRunItem, number> {
         if (!node || !isNode(node)) return;
         const value = this.run ? 0 : 1;
         runtimeApi.setRunning({nodeId: targetId, value});
-        oscService.send(nodeRunMessage(node.runtime.nodeId, value));
+        oscService.setNodeRun(node.runtime.nodeId, value);
     };
 
     render() {

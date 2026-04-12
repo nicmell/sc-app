@@ -1,12 +1,20 @@
 import OSC from 'osc-js';
 import {
-  groupFreeAllMessage,
+  bufAllocMessage,
+  bufFreeMessage,
+  bufGetnMessage,
+  defRecvMessage,
   dumpOscMessage,
   freeNodeMessage,
+  groupFreeAllMessage,
+  groupTailMessage,
   newGroupMessage,
+  newSynthMessage,
+  nodeRunMessage,
+  nodeSetMessage,
   notifyMessage,
   statusMessage,
-  versionMessage, nodeRunMessage
+  versionMessage,
 } from './messages';
 import type {ScsynthOptions} from '@/types/stores';
 import {OSC_MESSAGES, OSC_REPLIES} from '@/constants/osc.ts';
@@ -187,6 +195,8 @@ export class OscService {
     }
   }
 
+  // --- ID allocation ---
+
   defaultGroupId(): number {
     return (scsynthApi.clientId + 1) * 1000;
   }
@@ -203,11 +213,66 @@ export class OscService {
     return optionsApi.scsynth.clientId || DEFAULT_CLIENT_ID;
   }
 
+  // --- Event subscription ---
+
   on(event: string, handler: (...args: unknown[]) => void): number {
     return this.osc.on(event, handler);
   }
 
   off(event: string, subscriptionId: number): void {
     this.osc.off(event, subscriptionId);
+  }
+
+  // --- scsynth operations ---
+
+  createGroup(nodeId: number, groupId: number, run: boolean): void {
+    this.send(
+        newGroupMessage(nodeId),
+        nodeRunMessage(nodeId, run ? 1 : 0),
+        groupTailMessage(groupId, -1),
+    );
+  }
+
+  freeGroup(nodeId: number): void {
+    this.send(
+        groupFreeAllMessage(nodeId),
+        freeNodeMessage(nodeId),
+    );
+  }
+
+  createSynth(name: string, nodeId: number, groupId: number, controls: Record<string, number>, run: boolean): void {
+    this.send(
+        newSynthMessage(name, nodeId, 0, 0, controls),
+        nodeRunMessage(nodeId, run ? 1 : 0),
+        groupTailMessage(groupId, -1),
+    );
+  }
+
+  freeSynth(nodeId: number): void {
+    this.send(freeNodeMessage(nodeId));
+  }
+
+  sendSynthDef(bytes: Uint8Array): void {
+    this.send(defRecvMessage(bytes));
+  }
+
+  allocBuffer(bufnum: number, frames: number, channels: number): void {
+    this.send(bufAllocMessage(bufnum, frames, channels));
+  }
+
+  freeBuffer(bufnum: number): void {
+    this.send(bufFreeMessage(bufnum));
+  }
+
+  setControl(nodeId: number, name: string, value: number): void {
+    this.send(nodeSetMessage(nodeId, {[name]: value}));
+  }
+
+  setNodeRun(nodeId: number, flag: number): void {
+    this.send(nodeRunMessage(nodeId, flag));
+  }
+
+  readBuffer(bufnum: number, start: number, count: number): void {
+    this.send(bufGetnMessage(bufnum, start, count));
   }
 }

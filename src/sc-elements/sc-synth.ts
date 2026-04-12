@@ -1,11 +1,5 @@
 import {oscService} from '@/lib/osc';
 import {runtimeApi} from '@/lib/stores/api';
-import {
-    newSynthMessage,
-    freeNodeMessage,
-    groupTailMessage,
-    nodeRunMessage
-} from '@/lib/osc/messages.ts';
 import type {ScSynthItem} from '@/types/parsers';
 import {ScNode} from './internal/sc-node.ts';
 
@@ -23,17 +17,13 @@ export class ScSynth extends ScNode<ScSynthItem> {
     }
 
     protected _sendCreate() {
-        oscService.send(
-            newSynthMessage(this.bind, this.nodeId, 0, 0, this.getControls()),
-            nodeRunMessage(this.nodeId, this.run ? 1 : 0),
-            groupTailMessage(this.groupId, -1),
-        );
+        oscService.createSynth(this.bind, this.nodeId, this.groupId, this.getControls(), this.run);
         super._sendCreate();
         runtimeApi.newSynth({id: this.id, nodeId: this.nodeId});
     }
 
     protected _sendDestroy() {
-        oscService.send(freeNodeMessage(this.nodeId));
+        oscService.freeSynth(this.nodeId);
         super._sendDestroy();
         runtimeApi.freeSynth({id: this.id});
     }

@@ -2,7 +2,6 @@ import {html} from 'lit';
 import type {ScSynthDefItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {isSynthDef} from '@/lib/utils/guards';
-import {defRecvMessage} from '@/lib/osc/messages.ts';
 import {oscService} from '@/lib/osc';
 import {synthDefManager} from '@/lib/synthdef';
 import {runtimeApi} from '@/lib/stores/api';
@@ -21,7 +20,7 @@ export class ScSynthDef extends ScElement<ScSynthDefItem, boolean> {
       console.warn(`<sc-synthdef id="${this.id}"> no compiled bytes found`);
       return;
     }
-    oscService.send(defRecvMessage(new Uint8Array(bytes)));
+    oscService.sendSynthDef(new Uint8Array(bytes));
     super._sendCreate();
     runtimeApi.loadSynthdef({id: this.id});
   }

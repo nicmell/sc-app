@@ -1,7 +1,6 @@
 import type {ScControlItem, ScElementItemBase} from '@/types/parsers';
 import {isControl} from '@/lib/utils/guards';
 import {oscService} from '@/lib/osc';
-import {nodeSetMessage} from '@/lib/osc/messages.ts';
 import {ScState} from './internal/sc-state.ts';
 
 export class ScControl extends ScState<ScControlItem> {
@@ -20,7 +19,7 @@ export class ScControl extends ScState<ScControlItem> {
         super._onStateChange(_prev, next);
         const nodeId = this._parent?.runtime.nodeId;
         if (this._runtime?.enabled && nodeId) {
-            oscService.send(nodeSetMessage(nodeId, {[this._runtime.name]: next}));
+            oscService.setControl(nodeId, this._runtime.name, next);
         }
     }
 }

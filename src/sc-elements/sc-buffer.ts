@@ -3,7 +3,6 @@ import type {ScBufferItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {isBuffer} from '@/lib/utils/guards';
 import {oscService} from '@/lib/osc';
-import {bufAllocMessage, bufFreeMessage} from '@/lib/osc/messages.ts';
 import {runtimeApi} from '@/lib/stores/api';
 import {ScElement} from './internal/sc-element.ts';
 
@@ -33,13 +32,13 @@ export class ScBuffer extends ScElement<ScBufferItem, boolean> {
     }
 
     protected _sendCreate() {
-        oscService.send(bufAllocMessage(this.bufnum, this.frames, this.channels));
+        oscService.allocBuffer(this.bufnum, this.frames, this.channels);
         super._sendCreate();
         runtimeApi.allocBuffer({id: this.id, bufnum: this.bufnum});
     }
 
     protected _sendDestroy() {
-        oscService.send(bufFreeMessage(this.bufnum));
+        oscService.freeBuffer(this.bufnum);
         super._sendDestroy();
         runtimeApi.freeBuffer({id: this.id});
     }

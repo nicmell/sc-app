@@ -10,7 +10,6 @@ import runtimeStore from "@/lib/stores/runtime";
 import {layoutApi, pluginsApi, runtimeApi} from "@/lib/stores/api";
 import {isPlugin, isNode} from "@/lib/utils/guards";
 import {oscService} from "@/lib/osc";
-import {nodeRunMessage} from "@/lib/osc/messages";
 import {DashboardPanel} from "./DashboardPanel";
 import {deepEqual} from "@/lib/utils/deepEqual";
 import {randomId} from "@/lib/utils/randomId.ts";
@@ -96,7 +95,7 @@ export function Dashboard() {
             runtimeApi.setRunning({nodeId: item.i, value});
             const node = runtimeApi.getById(item.i);
             if (node && isNode(node)) {
-                oscService.send(nodeRunMessage(node.runtime.nodeId, value));
+                oscService.setNodeRun(node.runtime.nodeId, value);
             }
         } : undefined;
 

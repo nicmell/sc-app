@@ -4,7 +4,6 @@ import {rootApi} from "@/lib/stores/api";
 import {IconButton} from "@/components/ui/IconButton";
 import {SettingsDrawer} from "@/components/SettingsDrawer";
 import {oscService} from "@/lib/osc";
-import {nodeRunMessage} from "@/lib/osc/messages";
 
 export function DashboardHeader() {
     const [settingsOpen, setSettingsOpen] = useState(false);
@@ -14,7 +13,7 @@ export function DashboardHeader() {
         const next = !running;
         setRunning(next);
         const groupId = oscService.defaultGroupId();
-        oscService.send(nodeRunMessage(groupId, next ? 1 : 0));
+        oscService.setNodeRun(groupId, next ? 1 : 0);
         rootApi.setRunning({isRunning: next});
     }, [running]);
 
