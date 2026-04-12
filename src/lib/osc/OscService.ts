@@ -18,7 +18,7 @@ import {
 } from './messages';
 import type {ScsynthOptions} from '@/types/stores';
 import {OSC_MESSAGES, OSC_REPLIES} from '@/constants/osc.ts';
-import {scsynthApi, optionsApi, runtimeApi} from '@/lib/stores/api';
+import {rootApi, optionsApi, runtimeApi} from '@/lib/stores/api';
 import {logger} from '@/lib/logger';
 import {IS_TAURI} from '@/lib/env';
 import {TauriUdpPlugin} from './TauriUdpPlugin';
@@ -43,13 +43,13 @@ export class OscService {
       this.resetTimeout();
       this.startPolling()
       this.osc.send(dumpOscMessage(1))
-      this.osc.send(notifyMessage(1, scsynthApi.clientId || this.defaultClientId()));
+      this.osc.send(notifyMessage(1, rootApi.clientId || this.defaultClientId()));
     });
     this.osc.on('close', () => {
       this.clearTimeout();
       this.stopPolling();
-      scsynthApi.clearClient();
-      scsynthApi.setConnectionStatus(ConnectionStatus.DISCONNECTED);
+      rootApi.clearClient();
+      rootApi.setConnectionStatus(ConnectionStatus.DISCONNECTED);
       logger.log('Disconnected.')
     });
     this.osc.on('error', (err: unknown) => {
@@ -75,13 +75,13 @@ export class OscService {
       case OSC_REPLIES.STATUS: {
         this.resetTimeout();
         const [, ugens, synths, groups, defs, avgCpu, peakCpu, , sampleRate] = msg.args as number[];
-        scsynthApi.setStatus({ugens, synths, groups, defs, avgCpu, peakCpu, sampleRate});
+        rootApi.setStatus({ugens, synths, groups, defs, avgCpu, peakCpu, sampleRate});
         break
       }
 
       case OSC_REPLIES.VERSION: {
         const [name, major, minor, patch, branch, hash] = msg.args as (string | number)[];
-        scsynthApi.setVersion(`${name} ${major}.${minor}.${patch} (${branch} ${hash})`);
+        rootApi.setVersion(`${name} ${major}.${minor}.${patch} (${branch} ${hash})`);
         break
       }
       case OSC_REPLIES.DONE: {
@@ -93,18 +93,18 @@ export class OscService {
       }
     }
     if (this.status() === ConnectionStatus.CONNECTING && this.isReady()) {
-      scsynthApi.setConnectionStatus(ConnectionStatus.CONNECTED);
+      rootApi.setConnectionStatus(ConnectionStatus.CONNECTED);
       logger.log('Connected.');
     }
     this.logMessage(msg);
   }
 
   private status() {
-    return scsynthApi.connectionStatus;
+    return rootApi.connectionStatus;
   }
 
   private init(clientId: number) {
-    scsynthApi.setClient(clientId);
+    rootApi.setClient(clientId);
     this.currentNodeId = this.defaultGroupId();
     this.currentBufNum = (clientId + 1) * 100;
     this.send(
@@ -125,12 +125,12 @@ export class OscService {
 
   private isReady(): boolean {
     return (
-        scsynthApi.clientId >= 0 && scsynthApi.status.sampleRate > 0 && scsynthApi.version.length > 0
+        rootApi.clientId >= 0 && rootApi.serverStatus.sampleRate > 0 && rootApi.serverVersion.length > 0
     );
   }
 
   connect(): void {
-    scsynthApi.setConnectionStatus(ConnectionStatus.CONNECTING);
+    rootApi.setConnectionStatus(ConnectionStatus.CONNECTING);
     if (IS_TAURI) {
       const {host, port} = optionsApi.scsynth;
       this.osc.open({host, port});
@@ -140,7 +140,7 @@ export class OscService {
   }
 
   disconnect(): void {
-    if (this.osc.status() === OSC.STATUS.IS_OPEN && scsynthApi.clientId >= 0) {
+    if (this.osc.status() === OSC.STATUS.IS_OPEN && rootApi.clientId >= 0) {
       this.send(
           groupFreeAllMessage(this.defaultGroupId()),
           freeNodeMessage(this.defaultGroupId()),
@@ -198,7 +198,7 @@ export class OscService {
   // --- ID allocation ---
 
   defaultGroupId(): number {
-    return (scsynthApi.clientId + 1) * 1000;
+    return (rootApi.clientId + 1) * 1000;
   }
 
   nextNodeId(): number {

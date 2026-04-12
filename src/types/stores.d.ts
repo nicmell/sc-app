@@ -1,6 +1,5 @@
 import type {SliceActions} from "@/lib/stores/utils";
 import type {rootSlice} from "@/lib/stores/root/slice";
-import type {scsynthSlice} from "@/lib/stores/scsynth/slice";
 import type {layoutSlice} from "@/lib/stores/layout/slice";
 import type {optionsSlice} from "@/lib/stores/options/slice";
 import type {pluginsSlice} from "@/lib/stores/plugins/slice";
@@ -42,13 +41,6 @@ export interface ScsynthStatus {
   avgCpu: number;
   peakCpu: number;
   sampleRate: number;
-}
-
-export interface ScsynthState {
-  clientId: number;
-  connectionStatus: ConnectionStatus;
-  status: ScsynthStatus;
-  version: string;
 }
 
 export interface LayoutOptions {
@@ -109,16 +101,18 @@ export interface RuntimeState {
 
 export interface RootState {
   isRunning: boolean;
+  clientId: number;
+  connectionStatus: ConnectionStatus;
+  serverStatus: ScsynthStatus;
+  serverVersion: string;
   options: OptionsState;
-  scsynth: ScsynthState;
   plugins: PluginsState;
   runtime: RuntimeState;
 }
 
 export type RootOwnAction = SliceActions<typeof rootSlice.actions>;
 export type OptionsAction = SliceActions<typeof optionsSlice.actions>;
-export type ScsynthAction = SliceActions<typeof scsynthSlice.actions>;
 export type LayoutAction = SliceActions<typeof layoutSlice.actions>;
 export type PluginsAction = SliceActions<typeof pluginsSlice.actions>;
 export type RuntimeAction = SliceActions<typeof runtimeSlice.actions>;
-export type RootAction = RootOwnAction | OptionsAction | ScsynthAction | LayoutAction | PluginsAction | RuntimeAction;
+export type RootAction = RootOwnAction | OptionsAction | LayoutAction | PluginsAction | RuntimeAction;

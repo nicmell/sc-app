@@ -1,17 +1,17 @@
 import {store} from "@/lib/stores/store";
 import root from "./root";
 import options from "./options";
-import scsynth from "./scsynth";
 import layout from "./layout";
 import plugins from "./plugins";
 import runtime from "./runtime";
 import {createApi} from "./utils";
 import {logger} from "@/lib/logger";
+import {ScsynthAction} from "@/constants/store";
 
 const wrappedStore = {
   ...store,
   dispatch: (action: any) => {
-    if (!scsynth.actions.setStatus.match(action)) {
+    if (action.type !== `root/${ScsynthAction.SET_STATUS}`) {
       logger.log(JSON.stringify(action));
     }
     store.getState().dispatch(action);
@@ -26,11 +26,6 @@ export const rootApi = createApi(wrappedStore, {
 export const optionsApi = createApi(wrappedStore, {
   selectors: options.selectors,
   actions: options.actions,
-});
-
-export const scsynthApi = createApi(wrappedStore, {
-  selectors: scsynth.selectors,
-  actions: scsynth.actions,
 });
 
 export const layoutApi = createApi(wrappedStore, {

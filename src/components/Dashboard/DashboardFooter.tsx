@@ -1,10 +1,10 @@
 import {useSelector} from "@/lib/stores/store";
-import scsynth from "@/lib/stores/scsynth";
+import root from "@/lib/stores/root";
 import options from "@/lib/stores/options";
 
 export function DashboardFooter() {
     const address = useSelector(options.selectors.address);
-    const statusText = useSelector(scsynth.selectors.statusText);
+    const statusText = useSelector(root.selectors.statusText);
 
     return (
         <footer className="footer">

@@ -1,7 +1,6 @@
 export const SliceName = {
   ROOT: "root",
   OPTIONS: "options",
-  SCSYNTH: "scsynth",
   LAYOUT: "layout",
   PLUGINS: "plugins",
   RUNTIME: "runtime",
