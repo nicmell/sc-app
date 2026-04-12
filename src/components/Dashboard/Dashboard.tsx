@@ -92,10 +92,9 @@ export function Dashboard() {
 
         const handleToggleRun = isLoaded ? () => {
             const value = isRunning ? 0 : 1;
-            runtimeApi.setRunning({nodeId: item.i, value});
             const node = runtimeApi.getById(item.i);
             if (node && isNode(node)) {
-                oscService.setNodeRun(node.runtime.nodeId, value);
+                oscService.setNodeRun(node.runtime.nodeId, value, item.i);
             }
         } : undefined;
 

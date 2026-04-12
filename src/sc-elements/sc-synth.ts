@@ -1,5 +1,4 @@
 import {oscService} from '@/lib/osc';
-import {runtimeApi} from '@/lib/stores/api';
 import type {ScSynthItem} from '@/types/parsers';
 import {ScNode} from './internal/sc-node.ts';
 
@@ -17,14 +16,12 @@ export class ScSynth extends ScNode<ScSynthItem> {
     }
 
     protected _sendCreate() {
-        oscService.createSynth(this.bind, this.nodeId, this.groupId, this.getControls(), this.run);
+        oscService.createSynth(this.id, this.bind, this.nodeId, this.groupId, this.getControls(), this.run);
         super._sendCreate();
-        runtimeApi.newSynth({id: this.id, nodeId: this.nodeId});
     }
 
     protected _sendDestroy() {
-        oscService.freeSynth(this.nodeId);
+        oscService.freeSynth(this.id, this.nodeId);
         super._sendDestroy();
-        runtimeApi.freeSynth({id: this.id});
     }
 }

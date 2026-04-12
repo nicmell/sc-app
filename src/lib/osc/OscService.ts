@@ -18,7 +18,7 @@ import {
 } from './messages';
 import type {ScsynthOptions} from '@/types/stores';
 import {OSC_MESSAGES, OSC_REPLIES} from '@/constants/osc.ts';
-import {scsynthApi, optionsApi} from '@/lib/stores/api';
+import {scsynthApi, optionsApi, runtimeApi} from '@/lib/stores/api';
 import {logger} from '@/lib/logger';
 import {IS_TAURI} from '@/lib/env';
 import {TauriUdpPlugin} from './TauriUdpPlugin';
@@ -225,51 +225,59 @@ export class OscService {
 
   // --- scsynth operations ---
 
-  createGroup(nodeId: number, groupId: number, run: boolean): void {
+  createGroup(id: string, nodeId: number, groupId: number, run: boolean): void {
     this.send(
         newGroupMessage(nodeId),
         nodeRunMessage(nodeId, run ? 1 : 0),
         groupTailMessage(groupId, -1),
     );
+    runtimeApi.newGroup({id, nodeId});
   }
 
-  freeGroup(nodeId: number): void {
+  freeGroup(id: string, nodeId: number): void {
     this.send(
         groupFreeAllMessage(nodeId),
         freeNodeMessage(nodeId),
     );
+    runtimeApi.freeGroup({id});
   }
 
-  createSynth(name: string, nodeId: number, groupId: number, controls: Record<string, number>, run: boolean): void {
+  createSynth(id: string, name: string, nodeId: number, groupId: number, controls: Record<string, number>, run: boolean): void {
     this.send(
         newSynthMessage(name, nodeId, 0, 0, controls),
         nodeRunMessage(nodeId, run ? 1 : 0),
         groupTailMessage(groupId, -1),
     );
+    runtimeApi.newSynth({id, nodeId});
   }
 
-  freeSynth(nodeId: number): void {
+  freeSynth(id: string, nodeId: number): void {
     this.send(freeNodeMessage(nodeId));
+    runtimeApi.freeSynth({id});
   }
 
-  sendSynthDef(bytes: Uint8Array): void {
+  sendSynthDef(id: string, bytes: Uint8Array): void {
     this.send(defRecvMessage(bytes));
+    runtimeApi.loadSynthdef({id});
   }
 
-  allocBuffer(bufnum: number, frames: number, channels: number): void {
+  allocBuffer(id: string, bufnum: number, frames: number, channels: number): void {
     this.send(bufAllocMessage(bufnum, frames, channels));
+    runtimeApi.allocBuffer({id, bufnum});
   }
 
-  freeBuffer(bufnum: number): void {
+  freeBuffer(id: string, bufnum: number): void {
     this.send(bufFreeMessage(bufnum));
+    runtimeApi.freeBuffer({id});
   }
 
   setControl(nodeId: number, name: string, value: number): void {
     this.send(nodeSetMessage(nodeId, {[name]: value}));
   }
 
-  setNodeRun(nodeId: number, flag: number): void {
+  setNodeRun(nodeId: number, flag: number, id?: string): void {
     this.send(nodeRunMessage(nodeId, flag));
+    if (id) runtimeApi.setRunning({nodeId: id, value: flag});
   }
 
   readBuffer(bufnum: number, start: number, count: number): void {

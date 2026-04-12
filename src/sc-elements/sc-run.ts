@@ -57,8 +57,7 @@ export class ScRun extends ScElement<ScRunItem, number> {
         const node = runtimeApi.getById(targetId);
         if (!node || !isNode(node)) return;
         const value = this.run ? 0 : 1;
-        runtimeApi.setRunning({nodeId: targetId, value});
-        oscService.setNodeRun(node.runtime.nodeId, value);
+        oscService.setNodeRun(node.runtime.nodeId, value, targetId);
     };
 
     render() {
