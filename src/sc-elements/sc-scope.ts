@@ -1,32 +1,36 @@
 /**
  * sc-scope — Real-time oscilloscope bound to an sc-buffer.
  *
- * ## Architecture: decoupled read loop + draw loop
+ * ## Data transport
  *
- *   - Read loop: sends binary scope requests over a dedicated WebSocket,
- *     awaits the response, writes into a back buffer, swaps, and
- *     immediately sends the next request. Runs at round-trip speed.
- *   - Draw loop: requestAnimationFrame, draws only when _dirty flag is set.
- *     Runs at display refresh rate but skips no-op frames.
+ * Both Tauri and browser modes receive scope data as a push stream:
  *
- * The WebSocket carries raw binary f32 data — no JSON serialization.
- * In Tauri mode, an embedded WS server runs on an ephemeral port
- * (retrieved via `invoke('scope_ws_port')`). In browser mode, the
- * standalone HTTP server handles WS upgrades at `/scope`.
+ *   - **Tauri**: `invoke('scope_bind')` starts a Rust read loop that
+ *     continuously emits `scope-data` events via `window.emit()` —
+ *     same pattern as `udp_bind`/`osc-data` for OSC messages.
+ *   - **Browser**: a dedicated `/scope` WebSocket carries binary f32
+ *     request/response pairs. The read loop sends a request and awaits
+ *     the binary response.
+ *
+ * ## Architecture: decoupled read + draw loops
+ *
+ *   - Read: data arrives via event (Tauri) or WS response (browser),
+ *     writes into a back buffer, swaps, sets dirty flag.
+ *   - Draw: requestAnimationFrame, draws only when dirty.
  *
  * ## Optimizations
  *
  *   1. Reads only `width * 4` samples per frame, not the full buffer.
- *   2. Single /b_getn request per frame (no chunked round-trips).
- *   3. Binary WebSocket — 4 bytes per float, zero JSON overhead.
- *   4. Double-buffer swap: draw loop never sees a partially-written buffer.
- *   5. _dirty flag: draw loop skips frames when no new data arrived.
- *   6. Canvas, context, and computed styles cached — no per-frame DOM queries.
- *   7. Float32Array reused across frames (allocated only on size change).
- *   8. Retina: canvas scaled by devicePixelRatio once, not per frame.
- *   9. Polling paused when parent node is not running.
- *  10. Signal threshold: suppressed until peak > 0.01 (avoids startup glitch).
- *  11. Trigger hysteresis: ±8 samples around last crossing before full scan.
+ *   2. Binary WebSocket in browser — 4 bytes per float, zero JSON overhead.
+ *   3. Double-buffer swap: draw loop never sees partially-written data.
+ *   4. _dirty flag: draw loop skips no-op frames.
+ *   5. Canvas, context, styles cached — no per-frame DOM queries.
+ *   6. Float32Array reused (allocated only on size change).
+ *   7. Retina: canvas scaled by devicePixelRatio once.
+ *   8. Polling paused when parent node is not running.
+ *   9. Signal threshold: suppressed until peak > 0.01.
+ *  10. Sub-sample trigger interpolation for stable phase alignment.
+ *  11. Trigger hysteresis: ±8 samples around last crossing.
  *  12. Linear interpolation for smooth sub-pixel rendering.
  */
 import {html, css} from 'lit';
@@ -34,19 +38,8 @@ import type {ScScopeItem, ScBufferItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {IS_TAURI} from '@/lib/env';
 import {isBuffer} from '@/lib/utils/guards';
-import {runtimeApi} from '@/lib/stores/api';
+import {optionsApi, runtimeApi} from '@/lib/stores/api';
 import {ScElement} from './internal/sc-element.ts';
-
-/** Resolve the scope WebSocket URL. */
-async function scopeWsUrl(): Promise<string> {
-    if (IS_TAURI) {
-        const {invoke} = await import('@tauri-apps/api/core');
-        const port = await invoke<number>('scope_ws_port');
-        return `ws://127.0.0.1:${port}`;
-    }
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${proto}//${location.host}/scope`;
-}
 
 export class ScScope extends ScElement<ScScopeItem, number> {
     static properties = {
@@ -73,8 +66,14 @@ export class ScScope extends ScElement<ScScopeItem, number> {
     private _hasSignal = false;
     private _active = false;
     private _lastTrigger = 0;
+
+    // Browser mode: WebSocket
     private _scopeWs: WebSocket | null = null;
     private _wsResolve: ((buf: ArrayBuffer) => void) | null = null;
+
+    // Tauri mode: event listener
+    private _unlisten: (() => void) | null = null;
+    private _scopeBound = false;
 
     static styles = css`
         :host { display: inline-block; }
@@ -126,12 +125,16 @@ export class ScScope extends ScElement<ScScopeItem, number> {
         super.disconnectedCallback();
     }
 
-    private async _start() {
+    private _start() {
         this._stop();
         this._active = true;
         this._rafId = requestAnimationFrame(this._drawLoop);
-        await this._connectScopeWs();
-        this._readLoop();
+        if (IS_TAURI) {
+            this._tauriReadLoop();
+        } else {
+            this._connectScopeWs();
+            this._wsReadLoop();
+        }
     }
 
     private _stop() {
@@ -140,16 +143,112 @@ export class ScScope extends ScElement<ScScopeItem, number> {
             cancelAnimationFrame(this._rafId);
             this._rafId = 0;
         }
+        // Browser cleanup
         if (this._scopeWs) {
             this._scopeWs.close();
             this._scopeWs = null;
             this._wsResolve = null;
         }
+        // Tauri cleanup
+        this._tauriUnbind();
     }
 
-    private async _connectScopeWs() {
-        const url = await scopeWsUrl();
-        const ws = new WebSocket(url);
+    // --- Shared ---
+
+    private _onScopeData(floats: ArrayLike<number>) {
+        const readSamples = floats.length;
+        if (readSamples === 0) return;
+
+        if (this._backBuffer.length !== readSamples) {
+            this._backBuffer = new Float32Array(readSamples);
+        }
+        if (this._samples.length !== readSamples) {
+            this._samples = new Float32Array(readSamples);
+        }
+
+        for (let i = 0; i < readSamples; i++) this._backBuffer[i] = floats[i];
+
+        // Swap
+        const tmp = this._samples;
+        this._samples = this._backBuffer;
+        this._backBuffer = tmp;
+        this._dirty = true;
+
+        if (!this._hasSignal) {
+            let peak = 0;
+            const s = this._samples;
+            for (let i = 0; i < s.length; i++) {
+                const v = s[i] < 0 ? -s[i] : s[i];
+                if (v > peak) { peak = v; if (peak > 0.01) break; }
+            }
+            if (peak > 0.01) this._hasSignal = true;
+        }
+    }
+
+    // --- Tauri mode: scope_bind + events ---
+
+    private async _tauriBind(buf: ScBufferItem) {
+        if (this._scopeBound) return;
+        const {host, port} = optionsApi.scsynth;
+        const target = `${host}:${port}`;
+        const count = Math.min(this.width * 4, buf.frames * buf.channels);
+
+        const {invoke} = await import('@tauri-apps/api/core');
+        const {listen} = await import('@tauri-apps/api/event');
+
+        this._unlisten = await listen<number[]>('scope-data', (event) => {
+            this._onScopeData(event.payload);
+        });
+
+        await invoke('scope_bind', {target, bufnum: buf.runtime.bufnum, count});
+        this._scopeBound = true;
+    }
+
+    private async _tauriUnbind() {
+        if (!this._scopeBound) return;
+        this._scopeBound = false;
+        if (this._unlisten) {
+            this._unlisten();
+            this._unlisten = null;
+        }
+        try {
+            const {invoke} = await import('@tauri-apps/api/core');
+            await invoke('scope_unbind');
+        } catch { /* ignore during teardown */ }
+    }
+
+    private async _tauriReadLoop() {
+        // Monitor state — bind/unbind as conditions change.
+        // Data arrives via events, not polling.
+        while (this._active) {
+            if (!this._parent?.runtime.run) {
+                await this._tauriUnbind();
+                if (this._hasSignal) {
+                    this._hasSignal = false;
+                    this._lastTrigger = 0;
+                    this._dirty = true;
+                }
+                await new Promise(r => setTimeout(r, 200));
+                continue;
+            }
+
+            const buf = this._getBuffer();
+            if (!buf || !buf.runtime.loaded) {
+                await this._tauriUnbind();
+                await new Promise(r => setTimeout(r, 100));
+                continue;
+            }
+
+            await this._tauriBind(buf);
+            await new Promise(r => setTimeout(r, 200));
+        }
+    }
+
+    // --- Browser mode: WebSocket ---
+
+    private _connectScopeWs() {
+        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${proto}//${location.host}/scope`);
         ws.binaryType = 'arraybuffer';
         ws.onmessage = (ev: MessageEvent) => {
             if (this._wsResolve && ev.data instanceof ArrayBuffer) {
@@ -165,16 +264,7 @@ export class ScScope extends ScElement<ScScopeItem, number> {
         this._scopeWs = ws;
     }
 
-    private _drawLoop = () => {
-        if (!this._active) return;
-        this._rafId = requestAnimationFrame(this._drawLoop);
-        if (this._dirty) {
-            this._dirty = false;
-            this._draw();
-        }
-    };
-
-    private async _readLoop() {
+    private async _wsReadLoop() {
         while (this._active) {
             if (!this._parent?.runtime.run) {
                 if (this._hasSignal) {
@@ -194,41 +284,21 @@ export class ScScope extends ScElement<ScScopeItem, number> {
 
             const maxSamples = buf.frames * buf.channels;
             const readSamples = Math.min(this.width * 4, maxSamples);
-            if (this._backBuffer.length !== readSamples) {
-                this._backBuffer = new Float32Array(readSamples);
-            }
-            if (this._samples.length !== readSamples) {
-                this._samples = new Float32Array(readSamples);
-            }
 
             try {
-                const count = await this._readOnce(buf.runtime.bufnum, readSamples);
+                const count = await this._wsReadOnce(buf.runtime.bufnum, readSamples);
                 if (count === 0) {
                     await new Promise(r => setTimeout(r, 50));
                     continue;
                 }
-
-                const tmp = this._samples;
-                this._samples = this._backBuffer;
-                this._backBuffer = tmp;
-                this._dirty = true;
-
-                if (!this._hasSignal) {
-                    let peak = 0;
-                    const s = this._samples;
-                    for (let i = 0; i < s.length; i++) {
-                        const v = s[i] < 0 ? -s[i] : s[i];
-                        if (v > peak) { peak = v; if (peak > 0.01) break; }
-                    }
-                    if (peak > 0.01) this._hasSignal = true;
-                }
+                this._onScopeData(this._backBuffer.subarray(0, count));
             } catch {
                 await new Promise(r => setTimeout(r, 100));
             }
         }
     }
 
-    private async _readOnce(bufnum: number, count: number): Promise<number> {
+    private async _wsReadOnce(bufnum: number, count: number): Promise<number> {
         const ws = this._scopeWs;
         if (!ws || ws.readyState !== WebSocket.OPEN) return 0;
 
@@ -253,9 +323,23 @@ export class ScScope extends ScElement<ScScopeItem, number> {
 
         const floats = new Float32Array(response);
         const len = Math.min(floats.length, this._backBuffer.length);
+        if (this._backBuffer.length !== len) {
+            this._backBuffer = new Float32Array(len);
+        }
         for (let i = 0; i < len; i++) this._backBuffer[i] = floats[i];
         return len;
     }
+
+    // --- Draw ---
+
+    private _drawLoop = () => {
+        if (!this._active) return;
+        this._rafId = requestAnimationFrame(this._drawLoop);
+        if (this._dirty) {
+            this._dirty = false;
+            this._draw();
+        }
+    };
 
     private _draw() {
         if (!this._canvas) {
@@ -302,9 +386,7 @@ export class ScScope extends ScElement<ScScopeItem, number> {
             return;
         }
 
-        // Trigger: rising zero-crossing with sub-sample interpolation.
-        // Find the integer crossing, then compute the fractional offset so
-        // the waveform is drawn at a stable phase — eliminates per-frame jitter.
+        // Trigger: rising zero-crossing with sub-sample interpolation
         const quarter = samples.length >> 2;
         let trigger = 0;
         let triggerFrac = 0;
@@ -324,14 +406,12 @@ export class ScScope extends ScElement<ScScopeItem, number> {
             }
         }
 
-        // Sub-sample interpolation: exact fractional crossing point
         if (trigger > 0) {
             const s0 = samples[trigger - 1];
             const s1 = samples[trigger];
             if (s1 !== s0) {
-                triggerFrac = -s0 / (s1 - s0); // 0..1: fraction past samples[trigger-1]
+                triggerFrac = -s0 / (s1 - s0);
             }
-            // Adjust: trigger-1 is the last negative sample, offset by frac into it
             triggerFrac = (trigger - 1) + triggerFrac;
         }
 

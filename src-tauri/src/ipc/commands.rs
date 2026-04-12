@@ -1,14 +1,6 @@
-use super::udp::UdpState;
+use super::{scope::ScopeState, udp::UdpState};
 use crate::plugin;
 use tauri::{Emitter, Manager, State, UriSchemeContext, Window};
-
-/// Managed state holding the scope WebSocket server port.
-pub struct ScopeWsPort(pub u16);
-
-#[tauri::command]
-pub fn scope_ws_port(state: State<'_, ScopeWsPort>) -> u16 {
-    state.0
-}
 
 // --- URI scheme handler ---
 
@@ -57,4 +49,25 @@ pub async fn udp_send(
 #[tauri::command]
 pub async fn udp_close(state: State<'_, UdpState>) -> Result<(), String> {
     state.close().await
+}
+
+#[tauri::command]
+pub async fn scope_bind(
+    window: Window,
+    target: String,
+    bufnum: i32,
+    count: i32,
+    state: State<'_, ScopeState>,
+) -> Result<(), String> {
+    state
+        .bind(&target, bufnum, count, move |floats| {
+            let _ = window.emit("scope-data", &floats);
+        })
+        .await
+}
+
+#[tauri::command]
+pub async fn scope_unbind(state: State<'_, ScopeState>) -> Result<(), String> {
+    state.unbind().await;
+    Ok(())
 }
