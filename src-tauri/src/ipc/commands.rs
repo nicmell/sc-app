@@ -1,5 +1,7 @@
+use super::buffer::{BufferStreamState, SubId, TauriChannelSink};
 use super::udp::UdpState;
 use crate::plugin;
+use tauri::ipc::Channel;
 use tauri::{Emitter, Manager, State, UriSchemeContext, Window};
 
 // --- URI scheme handler ---
@@ -49,4 +51,28 @@ pub async fn udp_send(
 #[tauri::command]
 pub async fn udp_close(state: State<'_, UdpState>) -> Result<(), String> {
     state.close().await
+}
+
+#[tauri::command]
+pub async fn buffer_subscribe(
+    bufnum: i32,
+    frames: i32,
+    chunk: i32,
+    scsynth_addr: String,
+    channel: Channel<Vec<f32>>,
+    state: State<'_, BufferStreamState>,
+) -> Result<SubId, String> {
+    let sink = Box::new(TauriChannelSink { channel });
+    state
+        .subscribe(bufnum, frames, chunk, &scsynth_addr, sink)
+        .await
+}
+
+#[tauri::command]
+pub async fn buffer_unsubscribe(
+    sub_id: SubId,
+    state: State<'_, BufferStreamState>,
+) -> Result<(), String> {
+    state.unsubscribe(sub_id).await;
+    Ok(())
 }

@@ -39,6 +39,14 @@ export interface SynthDefRuntime extends BaseRuntime {
   loaded: boolean;
 }
 
+export interface BufferRuntime extends BaseRuntime {
+  name: string;
+  bufnum: number;
+  frames: number;
+  channels: number;
+  loaded: boolean;
+}
+
 export interface InputRuntime extends BaseRuntime {
   targetId: string;
 }
@@ -197,11 +205,27 @@ export interface ScIfItem {
   runtime: InputRuntime;
 }
 
+export interface ScBufferItem {
+  type: 'sc-buffer';
+  id: string;
+  name: string;
+  frames: number;
+  channels: number;
+  runtime: BufferRuntime;
+}
+
+export interface ScRecordItem {
+  type: 'sc-record';
+  id: string;
+  bind: string;
+  runtime: InputRuntime;
+}
+
 export type ScNodeItem = ScGroupItem | ScSynthItem | ScPluginItem;
 
 export type ScParentItem = ScPluginItem | ScGroupItem | ScSynthItem | ScUgenItem | ScIfItem | ScSynthDefItem | ScSelectItem | ScRadioGroupItem;
 
-export type ScElementItem = ScPluginItem | ScGroupItem | ScSynthItem | ScSynthDefItem | ScUgenItem | ScControlItem | ScVarItem | ScRangeItem | ScCheckboxItem | ScRunItem | ScDisplayItem | ScIfItem | ScSelectItem | ScOptionItem | ScRadioGroupItem | ScRadioItem;
+export type ScElementItem = ScPluginItem | ScGroupItem | ScSynthItem | ScSynthDefItem | ScUgenItem | ScControlItem | ScVarItem | ScBufferItem | ScRangeItem | ScCheckboxItem | ScRunItem | ScDisplayItem | ScIfItem | ScSelectItem | ScOptionItem | ScRadioGroupItem | ScRadioItem | ScRecordItem;
 
 export type NodeType = ScElementItem["type"];
 

@@ -1865,6 +1865,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"fft.js@npm:^4.0.4":
+  version: 4.0.4
+  resolution: "fft.js@npm:4.0.4"
+  checksum: 10c0/ea9bf9df38204281078629e32e0176035e8121410bb8db67b5544520faa6f567734774afb87eafc31cb43339995295d3d72202917b4f43942be4eca8dd54b226
+  languageName: node
+  linkType: hard
+
 "file-entry-cache@npm:^8.0.0":
   version: 8.0.0
   resolution: "file-entry-cache@npm:8.0.0"
@@ -3017,6 +3024,7 @@ __metadata:
     classnames: "npm:^2.5.1"
     eslint: "npm:^10.0.0"
     eslint-plugin-react-hooks: "npm:^7.0.1"
+    fft.js: "npm:^4.0.4"
     immer: "npm:^11.1.4"
     lit: "npm:^3.3.2"
     normalize.css: "npm:^8.0.1"

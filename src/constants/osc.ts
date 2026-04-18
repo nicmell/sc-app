@@ -32,6 +32,9 @@ export const OSC_MESSAGES = {
   NODE_RUN: '/n_run',
   NODE_SET: '/n_set',
   DEF_RECV: '/d_recv',
+  BUF_ALLOC: '/b_alloc',
+  BUF_FREE: '/b_free',
+  BUF_GETN: '/b_getn',
 } as const;
 
 export const OSC_REPLIES = {

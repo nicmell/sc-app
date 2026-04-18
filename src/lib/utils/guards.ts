@@ -75,6 +75,14 @@ export function isRadio<T extends ScElementItemBase>(el: T): el is Extract<T, { 
   return el.type === 'sc-radio';
 }
 
+export function isBuffer<T extends ScElementItemBase>(el: T): el is Extract<T, { type: 'sc-buffer' }> {
+  return el.type === 'sc-buffer';
+}
+
+export function isRecord<T extends ScElementItemBase>(el: T): el is Extract<T, { type: 'sc-record' }> {
+  return el.type === 'sc-record';
+}
+
 export function isControlOverride(e: OverrideEntry): e is ControlOverrideEntry {
   return e.type === 'control';
 }

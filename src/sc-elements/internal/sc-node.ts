@@ -1,8 +1,9 @@
 import {html} from 'lit';
 import {ContextProvider} from '@lit/context';
 import {oscService} from '@/lib/osc';
-import {isControl, isNode} from '@/lib/utils/guards';
+import {isControl, isNode, isBuffer} from '@/lib/utils/guards';
 import type {ScNodeItem, ScControlItem} from '@/types/parsers';
+import {runtimeApi} from '@/lib/stores/api';
 import type {RuntimeState} from '@/types/stores';
 import {nodeContext, type NodeContext} from '../context.ts';
 import {ScElement} from './sc-element.ts';
@@ -41,7 +42,17 @@ export abstract class ScNode<T extends ScNodeItem = ScNodeItem> extends ScElemen
         return Object.fromEntries(
             (this._state?.children ?? [])
                 .filter((c): c is ScControlItem => isControl(c))
-                .map(c => [c.name, c.runtime.value])
+                .map(c => {
+                    if (c.runtime.targets) {
+                        for (const targetId of Object.values(c.runtime.targets)) {
+                            const target = runtimeApi.getById(targetId);
+                            if (target && isBuffer(target)) {
+                                return [c.name, target.runtime.bufnum];
+                            }
+                        }
+                    }
+                    return [c.name, c.runtime.value];
+                })
         );
     }
 

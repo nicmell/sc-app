@@ -72,3 +72,11 @@ export function nodeSetMessage(nodeId: number, params: Record<string, number>) {
 export function defRecvMessage(bytes: Uint8Array) {
   return new OSC.Message(OSC_MESSAGES.DEF_RECV, bytes as unknown as Blob);
 }
+
+export function bufAllocMessage(bufnum: number, frames: number, channels: number = 1) {
+  return new OSC.Message(OSC_MESSAGES.BUF_ALLOC, bufnum, frames, channels);
+}
+
+export function bufFreeMessage(bufnum: number) {
+  return new OSC.Message(OSC_MESSAGES.BUF_FREE, bufnum);
+}

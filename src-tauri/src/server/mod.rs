@@ -1,5 +1,7 @@
+mod buffer_ws;
 mod ws_bridge;
 
+use crate::ipc::buffer::BufferStreamState;
 use crate::{config, plugin};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
@@ -17,6 +19,7 @@ struct AppState {
     context: tauri::Context,
     data_dir: PathBuf,
     scsynth_addr: String,
+    buffer_streams: Arc<BufferStreamState>,
 }
 
 pub fn serve(context: tauri::Context, port: u16, scsynth_addr: String) {
@@ -56,6 +59,7 @@ async fn run(
         context,
         data_dir,
         scsynth_addr,
+        buffer_streams: Arc::new(BufferStreamState::new()),
     });
 
     let addr: SocketAddr = format!("0.0.0.0:{port}")
@@ -108,6 +112,16 @@ async fn handle_request(
         .unwrap_or(false);
 
     if is_ws_upgrade {
+        if let Some(rest) = path.strip_prefix("/buffer/") {
+            if let Ok(bufnum) = rest.parse::<i32>() {
+                return Ok(buffer_ws::handle_ws_upgrade(
+                    req,
+                    bufnum,
+                    &state.scsynth_addr,
+                    state.buffer_streams.clone(),
+                ));
+            }
+        }
         return Ok(ws_bridge::handle_ws_upgrade(req, &state.scsynth_addr));
     }
 

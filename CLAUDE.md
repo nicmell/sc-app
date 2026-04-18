@@ -60,16 +60,18 @@ node scripts/generate_ugen_db.mjs
 - `cli.rs` — Clap-based CLI: dispatches to GUI (no args), `serve` (HTTP server), or `plugin` subcommands
 - `config.rs` — App data dir resolution, config file I/O (`config.json`), plugins dir helper
 - `ipc/` — Tauri IPC boundary (all `#[tauri::command]` functions)
-  - `commands.rs` — URI scheme handler (`app://plugins/`) + Tauri commands (`udp_bind`, `udp_send`, `udp_close`)
+  - `commands.rs` — URI scheme handler (`app://plugins/`) + Tauri commands (`udp_bind`, `udp_send`, `udp_close`, `buffer_subscribe`, `buffer_unsubscribe`)
   - `udp.rs` — Async UDP socket state management via tokio
+  - `buffer.rs` — Per-bufnum `/b_getn` reader tasks + `/b_setn` parser (`rosc`). Refcounted subscriptions. Two `BufferSink` impls: `TauriChannelSink` (native mode, `Channel<Vec<f32>>`) and `WsSink` (serve mode, binary WS frames).
 - `plugin/` — Plugin system
   - `manager.rs` — Plugin validation (zip, metadata, XSD, assets), CRUD (add/remove/list)
   - `router.rs` — HTTP router for plugin API (GET list, POST add, DELETE remove, GET file serving). Used by both `app://` URI scheme and standalone web server.
   - `cli.rs` — Plugin CLI command handlers (validate, add, remove, list)
   - `xsd/sc-plugin-schema.xsd` — XSD schema for plugin entry HTML validation
 - `server/` — Standalone HTTP server (browser mode)
-  - `mod.rs` — Hyper-based HTTP server: static asset serving from `context.assets()`, plugin route bridge, SPA fallback
+  - `mod.rs` — Hyper-based HTTP server: static asset serving from `context.assets()`, plugin route bridge, SPA fallback. Dispatches `/buffer/{bufnum}` WebSocket upgrades to `buffer_ws`.
   - `ws_bridge.rs` — WebSocket-to-UDP bridge for OSC communication with scsynth
+  - `buffer_ws.rs` — Per-buffer WebSocket handler. Reads a 12-byte config header `[bufnum, chunk, frames]`, wires a `WsSink` into `BufferStreamState`, unsubscribes on close.
 
 ### Browser Support
 
@@ -79,6 +81,7 @@ The app can run in a browser via `sc-app serve`. Platform detection (`src/lib/en
 - **OSC**: `TauriUdpPlugin` (IPC) vs `OSC.WebsocketClientPlugin` (WebSocket to server) — selected in `OscService.ts`
 - **Plugins**: `app://plugins` (URI scheme) vs `/plugins` (HTTP) — selected in `PluginManager.ts`
 - **Logging**: `logWriter.ts` skips file writes when `!IS_TAURI`
+- **Buffer streams**: `BufferStream` factory in `src/lib/bufferStream/` picks `TauriChannelStream` (invokes `buffer_subscribe` with a typed `Channel<number[]>`) vs `WebSocketStream` (opens `/buffer/{bufnum}`, binary f32 frames with a 4-byte length header).
 
 Tauri module imports use dynamic `await import()` to avoid bundling Tauri-specific code in the browser path.
 
@@ -121,6 +124,8 @@ Six top-level slices in `src/lib/stores/`:
 | `FREE_GROUP` | `{id}` | Mark group as unloaded |
 | `FREE_SYNTH` | `{id}` | Mark synth as unloaded |
 | `LOAD_SYNTHDEF` | `{id}` | Mark synthdef as loaded |
+| `ALLOC_BUFFER` | `{id, bufnum}` | Mark buffer as allocated with server bufnum |
+| `FREE_BUFFER` | `{id}` | Mark buffer as unloaded |
 
 Each slice has: `slice.ts` (reducer + actions), `selectors.ts`, `index.ts` (barrel).
 
@@ -152,6 +157,8 @@ Plugin HTML is processed in two phases: HTML parsing (`src/lib/html/`) builds a 
 | `ScRunItem` | bind | `RunRuntime` {rootId, parentId, path, enabled, targetId} | Play/pause control |
 | `ScDisplayItem` | bind, format | `InputRuntime` | Read-only value display |
 | `ScIfItem` | bind, children | `InputRuntime` | Conditional rendering container |
+| `ScBufferItem` | name, frames, channels | `BufferRuntime` {name, bufnum, frames, channels, loaded, ...} | Server-side buffer allocation |
+| `ScRecordItem` | bind, width, height | `InputRuntime` | Live spectrogram of a bound buffer |
 
 Union types: `ScNodeItem` (group/synth/plugin), `ScParentItem` (all with children), `ScElementItem` (all items).
 
@@ -251,6 +258,8 @@ ScElement<T, S>          Base class: store subscription, _state, _runtime, _onSt
 │   ├── ScControl        Synth control: sends /n_set on value change via _onStateChange
 │   └── ScVar            State variable: no OSC
 ├── ScSynthDef           SynthDef: sends /d_recv when parent loaded
+├── ScBuffer             Buffer: sends /b_alloc on create, /b_free on destroy
+├── ScRecord             Spectrogram: opens BufferStream, FFTs ticks, draws rolling waterfall
 ├── ScRun                Play/pause: sends /n_run
 ├── ScOption             Declarative select option (consumes SelectContext)
 ├── ScRadio              Declarative radio button (consumes RadioGroupContext)
@@ -276,6 +285,8 @@ ScElement<T, S>          Base class: store subscription, _state, _runtime, _onSt
 | `sc-run` | bind, size, src, fgcolor, bgcolor | Play/pause button. Sends `/n_run` directly |
 | `sc-display` | bind, format | Read-only value display. Printf-style format (`%d`, `%.2f`, `%b`, `%s`) |
 | `sc-if` | bind, is-truthy/is-falsy/is-equal/etc. | Conditional rendering |
+| `sc-buffer` | name, frames, channels | Allocates a server-side buffer. `bufnum` assigned automatically via `oscService.nextBufNum()` |
+| `sc-record` | bind, width, height | Live waterfall spectrogram of a bound buffer. Opens a per-buffer stream (Tauri Channel in native, WebSocket in serve mode). N=1024 Hann-windowed FFT, hop=512, HSL dB colormap. |
 
 Internal components in `sc-elements/internal/`:
 - `sc-element.ts` — Abstract base for all sc-elements. Store subscription, `_state`, `_runtime`, `_onStateChange(prev, next)`, `_sendCreate`/`_sendDestroy`, parent context consumer
@@ -292,6 +303,7 @@ All element-to-data references use `bind`:
 - **sc-display/sc-if** `bind="nodeName.controlName"` — read-only dot-path reference
 - **sc-run** `bind="synthOrGroupName"` — references a synth or group (empty = parent context)
 - **sc-control/sc-var** `bind="nodeName.controlName"` — mirrors another control/var's value (with optional arithmetic expression)
+- **sc-control** `bind="bufferName"` — when bound to an `sc-buffer`, resolves to the buffer's `bufnum` at `/s_new` time (implicit substitution in `ScNode.getControls`)
 
 ### Bind Expressions
 
@@ -367,13 +379,24 @@ This means nodes can see:
 - `<sc-range>`, `<sc-checkbox>`, `<sc-run>`, `<sc-display>`, `<sc-if>` — UI controls
 - `<sc-select bind="...">` with `<sc-option>` children — dropdown selector
 - `<sc-radio-group bind="..." orientation="...">` with `<sc-radio>` children — radio buttons
+- `<sc-buffer name="..." frames="..." channels="..."/>` — allocates a server-side buffer
+- `<sc-record bind="bufferName" width="..." height="..."/>` — live spectrogram of the bound buffer
 
 ## OSC Communication (`src/lib/osc/`)
 
 - `OscService.ts` — Singleton managing osc-js connection. Polls `/status` at configurable interval. Dispatches replies to store. In Tauri mode uses `TauriUdpPlugin`; in browser mode uses `OSC.WebsocketClientPlugin` (connects to the standalone server's WebSocket endpoint which bridges to scsynth via UDP).
 - `TauriUdpPlugin.ts` — osc-js plugin adapter wrapping `TauriDatagramSocket` (Tauri mode only)
 - `TauriDatagramSocket.ts` — Bridges to Tauri `udp_bind`/`udp_send`/`udp_close` commands (Tauri mode only)
-- `messages.ts` — OSC message factories: `/status`, `/s_new`, `/g_new`, `/n_set`, `/n_run`, `/n_free`, `/d_recv`, etc.
+- `messages.ts` — OSC message factories: `/status`, `/s_new`, `/g_new`, `/n_set`, `/n_run`, `/n_free`, `/d_recv`, `/b_alloc`, `/b_free`, etc.
+
+## Buffer Streaming (`src/lib/bufferStream/`, `src-tauri/src/ipc/buffer.rs`, `src-tauri/src/server/buffer_ws.rs`)
+
+`sc-record` (and future buffer consumers) stream audio data from scsynth without going through osc-js. The Rust reader core owns a tokio task per active bufnum that sends `/b_getn` every ~33 ms and parses `/b_setn` replies with `rosc`, fanning f32 samples out to all registered sinks. Subscriptions are refcounted — two `sc-record`s on the same buffer share a single read loop.
+
+- **Native mode:** `buffer_subscribe` Tauri command wraps a `Channel<Vec<f32>>`; frontend `TauriChannelStream` dispatches ticks via `channel.onmessage`.
+- **Serve mode:** `/buffer/{bufnum}` WebSocket route; client opens WS, sends `[bufnum, chunk, frames]` (12 bytes LE), server pushes `[numSamples u32 LE, f32 LE × n]` per tick.
+
+Backpressure: sinks are drop-on-slow. `WsSink` uses a bounded `mpsc(4)`; `TauriChannelSink.send` returns false only when the frontend has dropped the channel.
 
 ## Example Plugins (`examples/`)
 
@@ -389,6 +412,7 @@ This means nodes can see:
 | `var-plugin` | sc-var elements with bind expressions (mirror, doubled, sum, product) |
 | `select-plugin` | sc-select/sc-option dropdowns and sc-radio-group/sc-radio buttons |
 | `waveform-plugin` | Select UGen switching between SinOsc/Saw/Pulse via sc-select |
+| `record-plugin` | Chirping sine recorded into a buffer with RecordBuf; visualised by sc-record spectrogram. Exercises the per-buffer streaming path end-to-end. |
 | `bad-bindings` | Intentional binding errors (typos, missing synths) for testing validation |
 | `bad-asset-type` | Invalid asset format for testing validation |
 | `bad-asset-mismatch` | Declared vs actual asset type mismatch |
