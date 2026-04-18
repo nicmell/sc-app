@@ -36,6 +36,7 @@ pub fn run(context: tauri::Context) -> ! {
             tauri::Builder::default()
                 .plugin(tauri_plugin_opener::init())
                 .plugin(tauri_plugin_fs::init())
+                .plugin(tauri_plugin_dialog::init())
                 .manage(ipc::udp::UdpState::new())
                 .manage(ipc::buffer::BufferStreamState::new())
                 .manage(recording::state::RecordingState::new())

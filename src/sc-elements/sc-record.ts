@@ -3,13 +3,15 @@ import type {ScRecordItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {isBuffer, isRecord} from '@/lib/utils/guards';
 import {optionsApi, rootApi} from '@/lib/stores/api';
+import {IS_TAURI} from '@/lib/env';
 import {oscService} from '@/lib/osc';
 import {
-    createRecordingTail,
+    RECORDINGS_URL,
+    createRecordingStream,
     openRecording,
     readRecording,
-    type RecordingTail,
-} from '@/lib/recordingTail/RecordingTail';
+    type RecordingStream,
+} from '@/lib/streams/RecordingStream';
 import {ScElement} from './internal/sc-element.ts';
 
 interface RecordState {
@@ -45,12 +47,17 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
     static styles = css`
         :host { display: inline-block; user-select: none; }
         .toolbar { display: flex; gap: 6px; align-items: center; margin-bottom: 4px; }
-        button {
+        button, a.download {
             all: unset;
             display: block;
             cursor: pointer;
         }
-        button[disabled] { cursor: not-allowed; opacity: 0.4; }
+        button[disabled],
+        a.download[aria-disabled="true"] {
+            cursor: not-allowed;
+            opacity: 0.4;
+            pointer-events: none;
+        }
         svg { display: block; pointer-events: none; }
         canvas {
             display: block;
@@ -67,12 +74,11 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
     private _rafId: number | null = null;
     private _dirty = true;
 
-    private _tail: RecordingTail | null = null;
+    private _tail: RecordingStream | null = null;
     private _recordingId: string | null = null;
     private _captured: Float32Array = new Float32Array(0);
     private _capturedLen = 0;
     private _frozen: Float32Array | null = null;
-    private _downloadBlob: Blob | null = null;
     private _sampleRate = 0;
     private _scrollSample = 0;
     private _autoScroll = false;
@@ -150,7 +156,6 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
             this._captured = new Float32Array(initialCap);
             this._capturedLen = 0;
             this._frozen = null;
-            this._downloadBlob = null;
             this._hasFrozen = false;
             this._scrollSample = 0;
             this._sampleRate = sampleRate;
@@ -158,7 +163,7 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
             this._autoScroll = true;
             this._dirty = true;
 
-            const tail = createRecordingTail(handle.id);
+            const tail = createRecordingStream(handle.id);
             tail.onSamples((samples) => this._appendSamples(samples));
             await tail.open();
             this._tail = tail;
@@ -198,7 +203,6 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
             await delay(latency + 80);
 
             const blob = await readRecording(id);
-            this._downloadBlob = blob;
             this._frozen = await parseWavFloat32(blob);
             this._hasFrozen = true;
             this._scrollSample = 0;
@@ -238,17 +242,35 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
 
     // ── Download ───────────────────────────────────────────────────────────
 
-    private _onDownloadClick = () => {
-        if (!this._downloadBlob || this._recording) return;
-        const url = URL.createObjectURL(this._downloadBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-        a.download = `record-${stamp}.wav`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
+    /**
+     * In serve mode we let the browser navigate to the `<a href download>` —
+     * `Content-Disposition: attachment` triggers a standard download dialog.
+     * In native (Tauri) mode we open a save-as dialog defaulted to the
+     * platform Audio dir (`~/Music` on desktop, MediaStore Music on Android),
+     * fetch the WAV through `app://recordings/…`, and write it to the chosen
+     * path via the fs plugin.
+     */
+    private _onDownloadClick = async (e: Event) => {
+        if (!IS_TAURI) return;
+        e.preventDefault();
+        if (!this._recordingId) return;
+        const id = this._recordingId;
+        try {
+            const {audioDir, join} = await import('@tauri-apps/api/path');
+            const defaultPath = await join(await audioDir(), `record-${id}.wav`);
+            const {save} = await import('@tauri-apps/plugin-dialog');
+            const dest = await save({
+                defaultPath,
+                filters: [{name: 'WAV', extensions: ['wav']}],
+            });
+            if (!dest) return; // user cancelled
+            const blob = await readRecording(id);
+            const bytes = new Uint8Array(await blob.arrayBuffer());
+            const {writeFile} = await import('@tauri-apps/plugin-fs');
+            await writeFile(dest, bytes);
+        } catch (err) {
+            console.error('sc-record: save-as failed', err);
+        }
     };
 
     // ── Waveform drawing ───────────────────────────────────────────────────
@@ -415,11 +437,14 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
     render() {
         const bufferReady = this._state.loaded && this._state.bufnum > 0;
         const canRecord = bufferReady && !this._busy;
-        const canDownload = this._hasFrozen && !this._recording && !this._busy;
+        const canDownload = this._hasFrozen && !this._recording && !this._busy && !!this._recordingId;
+        const downloadUrl = this._recordingId
+            ? `${RECORDINGS_URL}/${encodeURIComponent(this._recordingId)}.wav`
+            : '';
         return html`
             <div class="toolbar">
                 ${this._recordButton(canRecord)}
-                ${this._downloadButton(canDownload)}
+                ${this._downloadLink(downloadUrl, this._recordingId ?? '', canDownload)}
             </div>
             <canvas width=${this.width} height=${this.height}></canvas>
         `;
@@ -443,13 +468,17 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
         </button>`;
     }
 
-    private _downloadButton(enabled: boolean) {
+    private _downloadLink(url: string, id: string, enabled: boolean) {
         const s = this.size;
         const r = s * 0.15;
         const arrowColor = this.fgcolor;
-        return html`<button
-            title="Download WAV"
-            ?disabled=${!enabled}
+        const title = IS_TAURI ? 'Open WAV' : 'Download WAV';
+        return html`<a
+            class="download"
+            title=${title}
+            href=${url}
+            download=${`record-${id}.wav`}
+            aria-disabled=${enabled ? 'false' : 'true'}
             @click=${this._onDownloadClick}>
             <svg width=${s} height=${s} viewBox="0 0 ${s} ${s}">
                 <rect width=${s} height=${s} rx=${r} ry=${r} fill=${this.bgcolor} />
@@ -467,7 +496,7 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
                     stroke-linejoin="round"
                     fill="none" />
             </svg>
-        </button>`;
+        </a>`;
     }
 }
 

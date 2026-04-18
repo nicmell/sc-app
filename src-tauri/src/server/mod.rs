@@ -113,7 +113,7 @@ async fn handle_request(
             }
         }
         if let Some(rest) = path.strip_prefix("/recordings/") {
-            if let Some(id) = rest.strip_suffix("/tail") {
+            if let Some(id) = rest.strip_suffix("/stream") {
                 return Ok(recording_ws::handle_ws_upgrade(
                     req,
                     id.to_string(),

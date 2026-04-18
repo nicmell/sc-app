@@ -1,7 +1,7 @@
 import {IS_TAURI} from '@/lib/env';
 import {createSampleStream, type SampleStream} from '@/lib/sampleStream/SampleStream';
 
-export type RecordingTail = SampleStream;
+export type RecordingStream = SampleStream;
 
 /** HTTP root for recording CRUD, matching the plugins pattern. */
 export const RECORDINGS_URL = IS_TAURI ? 'app://recordings' : '/recordings';
@@ -44,9 +44,9 @@ export async function deleteRecording(id: string): Promise<void> {
     }
 }
 
-// ── Streaming tail on a recording id ───────────────────────────────────────
+// ── Live streaming tail on a recording id ─────────────────────────────────
 
-export function createRecordingTail(id: string): RecordingTail {
+export function createRecordingStream(id: string): RecordingStream {
     return createSampleStream({
         tauri: {
             start: async (channel) => {
@@ -60,7 +60,7 @@ export function createRecordingTail(id: string): RecordingTail {
             },
         },
         ws: {
-            path: `/recordings/${encodeURIComponent(id)}/tail`,
+            path: `/recordings/${encodeURIComponent(id)}/stream`,
         },
     });
 }

@@ -73,10 +73,10 @@ node scripts/generate_ugen_db.mjs
   - `cli.rs` — Plugin CLI command handlers (validate, add, remove, list)
   - `xsd/sc-plugin-schema.xsd` — XSD schema for plugin entry HTML validation
 - `server/` — Standalone HTTP server (browser mode)
-  - `mod.rs` — Hyper-based HTTP server: static asset serving from `context.assets()`, SPA fallback. Bridges `/plugins/…` and `/recordings/…` into their respective routers; dispatches `/buffer/{bufnum}` and `/recordings/{id}/tail` WebSocket upgrades.
+  - `mod.rs` — Hyper-based HTTP server: static asset serving from `context.assets()`, SPA fallback. Bridges `/plugins/…` and `/recordings/…` into their respective routers; dispatches `/buffer/{bufnum}` and `/recordings/{id}/stream` WebSocket upgrades.
   - `ws_bridge.rs` — WebSocket-to-UDP bridge for OSC communication with scsynth
   - `buffer_ws.rs` — Per-buffer WebSocket handler. Reads a 12-byte config header `[bufnum, chunk, frames]`, wires a `WsSink` into `BufferStreamState`, unsubscribes on close.
-  - `recording_ws.rs` — WebSocket handler for `/recordings/{id}/tail`. Wires a `WsSink` into `RecordingState`; the tail task streams sample frames as the WAV grows, stops when the client disconnects.
+  - `recording_ws.rs` — WebSocket handler for `/recordings/{id}/stream`. Wires a `WsSink` into `RecordingState`; the tail task streams sample frames as the WAV grows, stops when the client disconnects.
 
 ### Browser Support
 
@@ -86,7 +86,7 @@ The app can run in a browser via `sc-app serve`. Platform detection (`src/lib/en
 - **OSC**: `TauriUdpPlugin` (IPC) vs `OSC.WebsocketClientPlugin` (WebSocket to server) — selected in `OscService.ts`
 - **Plugins**: `app://plugins` (URI scheme) vs `/plugins` (HTTP) — selected in `PluginManager.ts`
 - **Logging**: `logWriter.ts` skips file writes when `!IS_TAURI`
-- **Buffer streams**: `BufferStream` factory in `src/lib/bufferStream/` picks `TauriChannelStream` (invokes `buffer_subscribe` with a typed `Channel<number[]>`) vs `WebSocketStream` (opens `/buffer/{bufnum}`, binary f32 frames with a 4-byte length header).
+- **Buffer streams**: `BufferStream` factory in `src/lib/streams/` picks `TauriChannelStream` (invokes `buffer_subscribe` with a typed `Channel<number[]>`) vs `WebSocketStream` (opens `/buffer/{bufnum}`, binary f32 frames with a 4-byte length header).
 
 Tauri module imports use dynamic `await import()` to avoid bundling Tauri-specific code in the browser path.
 
@@ -394,7 +394,7 @@ This means nodes can see:
 - `TauriDatagramSocket.ts` — Bridges to Tauri `udp_bind`/`udp_send`/`udp_close` commands (Tauri mode only)
 - `messages.ts` — OSC message factories: `/status`, `/s_new`, `/g_new`, `/n_set`, `/n_run`, `/n_free`, `/d_recv`, `/b_alloc`, `/b_free`, etc.
 
-## Recording (`src/lib/recordingTail/`, `src-tauri/src/recording/`, `src-tauri/src/server/recording_ws.rs`)
+## Recording (`src/lib/streams/RecordingStream.ts`, `src-tauri/src/recording/`, `src-tauri/src/server/recording_ws.rs`)
 
 `sc-record` implements an Audacity-style track by letting scsynth write the audio directly to a WAV file on disk and tailing that file as it grows. This gives chronological, sample-accurate content both for the live view and for the download, with no OSC polling of audio data.
 
@@ -422,7 +422,7 @@ The bound `sc-buffer` is a DiskOut *streaming* buffer — it's not the recording
 
 ### Flow
 
-1. **Record click.** `sc-record` calls `openRecording()` → `POST {RECORDINGS_URL}` (native: `app://recordings`, serve: `/recordings`), getting `{id, path}`. It sends `/b_write bufnum path "wav" "float" -1 0 1` to scsynth, waits one OSC `msgLatency` for the file to appear, then opens a `RecordingTail` (`record_tail_start` Tauri command or `WS /recordings/{id}/tail`). The Rust tail task watches the file size, reads new 4-byte-aligned f32 LE chunks past the 44-byte WAV header, and forwards them to the frontend. Samples append to the growing `_captured` array and the canvas auto-scrolls to the tail.
+1. **Record click.** `sc-record` calls `openRecording()` → `POST {RECORDINGS_URL}` (native: `app://recordings`, serve: `/recordings`), getting `{id, path}`. It sends `/b_write bufnum path "wav" "float" -1 0 1` to scsynth, waits one OSC `msgLatency` for the file to appear, then opens a `RecordingStream` (`record_tail_start` Tauri command or `WS /recordings/{id}/stream`). The Rust tail task watches the file size, reads new 4-byte-aligned f32 LE chunks past the 44-byte WAV header, and forwards them to the frontend. Samples append to the growing `_captured` array and the canvas auto-scrolls to the tail.
 2. **Stop click.** `sc-record` sends `/b_close bufnum` to scsynth, closes the tail, waits one `msgLatency` for the file header to be finalised, then `readRecording(id)` pulls the whole WAV back. It parses out the float32 samples (scanning RIFF chunks for `data`) → `_frozen`. The blob is kept in memory for the download button.
 3. **Download click.** The blob is written to a temporary anchor with `download="record-<timestamp>.wav"`; the user gets the exact file scsynth wrote.
 4. **Cleanup.** WAV files live under `{data_dir}/recordings/` (same root as `plugins/`, `config.json`). Use `DELETE {RECORDINGS_URL}/{id}` to remove individual recordings; otherwise they persist across runs.
@@ -431,7 +431,7 @@ The bound `sc-buffer` is a DiskOut *streaming* buffer — it's not the recording
 
 Same split-by-`IS_TAURI` pattern as the rest of the app:
 - **Native:** Tauri `Channel<Vec<f32>>` for the live tail; all CRUD (list / create / download / delete) flows through the `app://recordings/…` URI scheme, same shape as `app://plugins/…`.
-- **Serve:** `WS /recordings/{id}/tail` (binary `[numSamples u32 LE, f32 LE × n]` frames); `/recordings/…` HTTP routes bridge into the same shared router.
+- **Serve:** `WS /recordings/{id}/stream` (binary `[numSamples u32 LE, f32 LE × n]` frames); `/recordings/…` HTTP routes bridge into the same shared router.
 
 ### CRUD surface
 
@@ -442,7 +442,7 @@ Same split-by-`IS_TAURI` pattern as the rest of the app:
 - `GET  {RECORDINGS_URL}/{id}.wav` → the WAV bytes with `content-disposition: attachment`
 - `DELETE {RECORDINGS_URL}/{id}` → removes the file from disk (no-op if missing)
 
-Frontend helpers in `src/lib/recordingTail/RecordingTail.ts`: `openRecording`, `readRecording`, `listRecordings`, `deleteRecording`, plus `createRecordingTail(id)` for the streaming tail.
+Frontend helpers in `src/lib/streams/RecordingStream.ts`: `openRecording`, `readRecording`, `listRecordings`, `deleteRecording`, plus `createRecordingStream(id)` for the live sample stream.
 
 ### Filesystem assumption
 
