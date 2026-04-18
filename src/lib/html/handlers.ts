@@ -107,7 +107,13 @@ function extractBufferProps(el: Element): HtmlProps<ScBufferItem> {
 }
 
 function extractRecordProps(el: Element): HtmlProps<ScRecordItem> {
-    return {bind: el.getAttribute('bind') ?? ''};
+    return {
+        bind: el.getAttribute('bind') ?? '',
+        width: Number(el.getAttribute('width') ?? '320'),
+        height: Number(el.getAttribute('height') ?? '96'),
+        window: Number(el.getAttribute('window') ?? '5'),
+        size: Number(el.getAttribute('size') ?? '24'),
+    };
 }
 
 function extractRadioProps(el: Element): HtmlProps<ScRadioItem> {

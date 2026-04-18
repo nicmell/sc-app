@@ -5,8 +5,8 @@
 </head>
 <body>
 
-<!-- 1 second mono recording buffer at 48 kHz -->
-<sc-buffer name="rec" frames="48000" channels="1"/>
+<!-- 8 second mono recording buffer at 48 kHz -->
+<sc-buffer name="rec" frames="384000" channels="1"/>
 
 <sc-synthdef name="chirp">
     <sc-control name="bufnum" value="0"/>
@@ -74,7 +74,7 @@
         </label>
     </div>
 
-    <sc-record bind="rec" width="360" height="160"/>
+    <sc-record bind="rec" window="8" width="360" height="120"/>
 
 </div>
 

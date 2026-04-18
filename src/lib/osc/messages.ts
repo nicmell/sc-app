@@ -80,3 +80,7 @@ export function bufAllocMessage(bufnum: number, frames: number, channels: number
 export function bufFreeMessage(bufnum: number) {
   return new OSC.Message(OSC_MESSAGES.BUF_FREE, bufnum);
 }
+
+export function bufGetnMessage(bufnum: number, start: number, count: number) {
+  return new OSC.Message(OSC_MESSAGES.BUF_GETN, bufnum, start, count);
+}

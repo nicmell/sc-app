@@ -269,11 +269,13 @@
     <xs:attributeGroup ref="commonAttrs"/>
   </xs:complexType>
 
-  <!-- sc-record (live spectrogram bound to a buffer) -->
+  <!-- sc-record (waveform viewer + WAV downloader bound to a buffer) -->
   <xs:complexType name="scRecordType">
     <xs:attribute name="bind" type="xs:string" use="required"/>
     <xs:attribute name="width" type="xs:decimal"/>
     <xs:attribute name="height" type="xs:decimal"/>
+    <xs:attribute name="window" type="xs:decimal"/>
+    <xs:attribute name="size" type="xs:decimal"/>
     <xs:attributeGroup ref="commonAttrs"/>
   </xs:complexType>
 

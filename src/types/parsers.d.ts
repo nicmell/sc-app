@@ -218,6 +218,10 @@ export interface ScRecordItem {
   type: 'sc-record';
   id: string;
   bind: string;
+  width: number;
+  height: number;
+  window: number;
+  size: number;
   runtime: InputRuntime;
 }
 

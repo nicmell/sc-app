@@ -2,6 +2,7 @@ import OSC from 'osc-js';
 import {
   bufAllocMessage,
   bufFreeMessage,
+  bufGetnMessage,
   defRecvMessage,
   dumpOscMessage,
   freeNodeMessage,
@@ -277,5 +278,9 @@ export class OscService {
   freeBuffer(id: string, bufnum: number): void {
     this.send(bufFreeMessage(bufnum));
     runtimeApi.freeBuffer({id});
+  }
+
+  readBuffer(bufnum: number, start: number, count: number): void {
+    this.send(bufGetnMessage(bufnum, start, count));
   }
 }

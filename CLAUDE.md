@@ -158,7 +158,7 @@ Plugin HTML is processed in two phases: HTML parsing (`src/lib/html/`) builds a 
 | `ScDisplayItem` | bind, format | `InputRuntime` | Read-only value display |
 | `ScIfItem` | bind, children | `InputRuntime` | Conditional rendering container |
 | `ScBufferItem` | name, frames, channels | `BufferRuntime` {name, bufnum, frames, channels, loaded, ...} | Server-side buffer allocation |
-| `ScRecordItem` | bind, width, height | `InputRuntime` | Live spectrogram of a bound buffer |
+| `ScRecordItem` | bind, width, height, window, size | `InputRuntime` | Waveform viewer + WAV downloader for a bound buffer |
 
 Union types: `ScNodeItem` (group/synth/plugin), `ScParentItem` (all with children), `ScElementItem` (all items).
 
@@ -259,7 +259,7 @@ ScElement<T, S>          Base class: store subscription, _state, _runtime, _onSt
 │   └── ScVar            State variable: no OSC
 ├── ScSynthDef           SynthDef: sends /d_recv when parent loaded
 ├── ScBuffer             Buffer: sends /b_alloc on create, /b_free on destroy
-├── ScRecord             Spectrogram: opens BufferStream, FFTs ticks, draws rolling waterfall
+├── ScRecord             Waveform viewer + WAV downloader (pure client-side, plugin author owns the recorder synth)
 ├── ScRun                Play/pause: sends /n_run
 ├── ScOption             Declarative select option (consumes SelectContext)
 ├── ScRadio              Declarative radio button (consumes RadioGroupContext)
@@ -286,7 +286,7 @@ ScElement<T, S>          Base class: store subscription, _state, _runtime, _onSt
 | `sc-display` | bind, format | Read-only value display. Printf-style format (`%d`, `%.2f`, `%b`, `%s`) |
 | `sc-if` | bind, is-truthy/is-falsy/is-equal/etc. | Conditional rendering |
 | `sc-buffer` | name, frames, channels | Allocates a server-side buffer. `bufnum` assigned automatically via `oscService.nextBufNum()` |
-| `sc-record` | bind, width, height | Live waterfall spectrogram of a bound buffer. Opens a per-buffer stream (Tauri Channel in native, WebSocket in serve mode). N=1024 Hann-windowed FFT, hop=512, HSL dB colormap. |
+| `sc-record` | bind, width, height, window (s), size | Waveform viewer for a bound buffer. Record/stop button (styled like sc-run, with record-circle / stop-square icons) toggles a client-side capture. The live canvas shows a min/max envelope of incoming stream ticks; on stop, a sample-accurate snapshot of the full buffer is taken via a chunked one-shot `/b_getn` read and that becomes the frozen view + downloaded WAV. Horizontal drag / wheel scrolls the captured timeline while idle. |
 
 Internal components in `sc-elements/internal/`:
 - `sc-element.ts` — Abstract base for all sc-elements. Store subscription, `_state`, `_runtime`, `_onStateChange(prev, next)`, `_sendCreate`/`_sendDestroy`, parent context consumer
@@ -380,7 +380,7 @@ This means nodes can see:
 - `<sc-select bind="...">` with `<sc-option>` children — dropdown selector
 - `<sc-radio-group bind="..." orientation="...">` with `<sc-radio>` children — radio buttons
 - `<sc-buffer name="..." frames="..." channels="..."/>` — allocates a server-side buffer
-- `<sc-record bind="bufferName" width="..." height="..."/>` — live spectrogram of the bound buffer
+- `<sc-record bind="bufferName" window="..." width="..." height="..."/>` — waveform viewer with record/stop and WAV download for the bound buffer
 
 ## OSC Communication (`src/lib/osc/`)
 
@@ -391,12 +391,16 @@ This means nodes can see:
 
 ## Buffer Streaming (`src/lib/bufferStream/`, `src-tauri/src/ipc/buffer.rs`, `src-tauri/src/server/buffer_ws.rs`)
 
-`sc-record` (and future buffer consumers) stream audio data from scsynth without going through osc-js. The Rust reader core owns a tokio task per active bufnum that sends `/b_getn` every ~33 ms and parses `/b_setn` replies with `rosc`, fanning f32 samples out to all registered sinks. Subscriptions are refcounted — two `sc-record`s on the same buffer share a single read loop.
+Buffer consumers (currently only `sc-record`'s live waveform) stream audio data from scsynth without going through osc-js. The Rust reader core owns a tokio task per active bufnum that sends `/b_getn` every ~33 ms sweeping the buffer cyclically, parses `/b_setn` replies with `rosc`, and fans f32 samples out to all registered sinks. Subscriptions are refcounted — two consumers on the same buffer share a single read loop.
 
 - **Native mode:** `buffer_subscribe` Tauri command wraps a `Channel<Vec<f32>>`; frontend `TauriChannelStream` dispatches ticks via `channel.onmessage`.
 - **Serve mode:** `/buffer/{bufnum}` WebSocket route; client opens WS, sends `[bufnum, chunk, frames]` (12 bytes LE), server pushes `[numSamples u32 LE, f32 LE × n]` per tick.
 
 Backpressure: sinks are drop-on-slow. `WsSink` uses a bounded `mpsc(4)`; `TauriChannelSink.send` returns false only when the frontend has dropped the channel.
+
+### Caveat: stream vs download
+
+The stream is a cyclic-sweep view of the buffer, not a chronological sample stream. For `sc-record`'s *live* waveform this is illustrative — useful as an activity indicator but not sample-accurate. The **downloaded WAV is sample-accurate** because it comes from a separate path: on stop, `sc-record` issues a chunked one-shot `/b_getn` (via `oscService.readBuffer` + `/b_setn` wildcard listener) that reads the whole buffer once in order, and this snapshot is what's encoded. For a `RecordBuf loop=1` synth this snapshot is the most recent `frames / sampleRate` seconds of audio.
 
 ## Example Plugins (`examples/`)
 
