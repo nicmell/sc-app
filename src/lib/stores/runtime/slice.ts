@@ -1,6 +1,6 @@
 import type {RuntimeState} from "@/types/stores";
 import type {ScElementItem} from "@/types/parsers";
-import {isParent, isNode, isControl, isVar, isSynthDef, isBuffer} from "@/lib/utils/guards";
+import {isParent, isNode, isControl, isVar, isSynthDef} from "@/lib/utils/guards";
 import {combineReducers, createSlice, type CaseReducer} from "@/lib/stores/utils";
 import {SliceName, RuntimeAction} from "@/constants/store";
 import layout from "../layout";
@@ -121,22 +121,6 @@ export const runtimeSlice = createSlice({
       const node = state.nodes[action.payload.id];
       if (node && isSynthDef(node)) {
         node.runtime.loaded = true;
-        syncToTree(state, action.payload.id);
-      }
-    },
-    [RuntimeAction.ALLOC_BUFFER]: (state, action: { payload: { id: string; bufnum: number } }) => {
-      const node = state.nodes[action.payload.id];
-      if (node && isBuffer(node)) {
-        node.runtime.loaded = true;
-        node.runtime.bufnum = action.payload.bufnum;
-        syncToTree(state, action.payload.id);
-      }
-    },
-    [RuntimeAction.FREE_BUFFER]: (state, action: { payload: { id: string } }) => {
-      const node = state.nodes[action.payload.id];
-      if (node && isBuffer(node)) {
-        node.runtime.loaded = false;
-        node.runtime.bufnum = 0;
         syncToTree(state, action.payload.id);
       }
     },

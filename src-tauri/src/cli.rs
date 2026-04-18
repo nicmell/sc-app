@@ -37,14 +37,11 @@ pub fn run(context: tauri::Context) -> ! {
                 .plugin(tauri_plugin_opener::init())
                 .plugin(tauri_plugin_fs::init())
                 .manage(ipc::udp::UdpState::new())
-                .manage(ipc::scope::ScopeState::new())
                 .register_uri_scheme_protocol("app", ipc::commands::handle_uri)
                 .invoke_handler(tauri::generate_handler![
                     ipc::commands::udp_bind,
                     ipc::commands::udp_send,
                     ipc::commands::udp_close,
-                    ipc::commands::scope_bind,
-                    ipc::commands::scope_unbind,
                 ])
                 .run(context)
                 .expect("error while running tauri application");

@@ -1,4 +1,3 @@
-pub mod scope_ws;
 mod ws_bridge;
 
 use crate::{config, plugin};
@@ -109,9 +108,6 @@ async fn handle_request(
         .unwrap_or(false);
 
     if is_ws_upgrade {
-        if path == "/scope" {
-            return Ok(scope_ws::handle_ws_upgrade(req, &state.scsynth_addr));
-        }
         return Ok(ws_bridge::handle_ws_upgrade(req, &state.scsynth_addr));
     }
 

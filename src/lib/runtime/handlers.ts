@@ -1,9 +1,9 @@
 import type {
     ScElementItem, ScElementItemBase, ScParentItem, ScGroupItem, ScSynthItem, ScSynthDefItem, ScUgenItem,
-    ScRunItem, ScControlItem, ScVarItem, ScBufferItem, ScRecordItem, ScScopeItem,
-    ScPluginItem, Expr, NodeRuntime, ControlRuntime, VarRuntime, UgenRuntime, SynthDefRuntime, BufferRuntime, InputRuntime, RunRuntime, OverrideEntry, StripRuntime,
+    ScRunItem, ScControlItem, ScVarItem,
+    ScPluginItem, Expr, NodeRuntime, ControlRuntime, VarRuntime, UgenRuntime, SynthDefRuntime, InputRuntime, RunRuntime, OverrideEntry, StripRuntime,
 } from "@/types/parsers";
-import {isNode, isParent, isControl, isState, isBuffer, isControlOverride, isRunOverride, isVarOverride} from "@/lib/utils/guards";
+import {isNode, isParent, isControl, isState, isControlOverride, isRunOverride, isVarOverride} from "@/lib/utils/guards";
 import {ELEMENTS} from "@/constants/sc-elements";
 import {synthDefManager} from "@/lib/synthdef";
 import {parseBind} from "@/lib/utils/expression";
@@ -106,16 +106,10 @@ function resolveStateBind(ctx: RuntimeContext): { targets: Record<string, string
 
     for (const path of parsed.paths) {
         n.bind = path;
-        // Try resolving as a buffer (single-name reference)
-        const bufferTarget = resolve(ctx, [path]);
-        if (bufferTarget && isBuffer(bufferTarget)) {
-            targets[path] = bufferTarget.id;
-        } else {
-            const {target, controlName} = resolveControlBind(ctx);
-            const targetState = (target as ScParentItem).children.find(c => isState(c) && c.name === controlName)!;
-            checkCircularBind(ctx, targetState.id);
-            targets[path] = targetState.id;
-        }
+        const {target, controlName} = resolveControlBind(ctx);
+        const targetState = (target as ScParentItem).children.find(c => isState(c) && c.name === controlName)!;
+        checkCircularBind(ctx, targetState.id);
+        targets[path] = targetState.id;
     }
 
     n.bind = origBind;
@@ -285,29 +279,6 @@ const radioHandler = (ctx: RuntimeContext): UgenRuntime => {
     return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled: false};
 };
 
-const bufferHandler = (ctx: RuntimeContext): BufferRuntime => {
-    const n = ctx.tree as StripRuntime<ScBufferItem>;
-    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled: true, name: n.name, bufnum: 0, frames: n.frames, channels: n.channels, loaded: false};
-};
-
-const recordHandler = (ctx: RuntimeContext): InputRuntime => {
-    const n = ctx.tree as StripRuntime<ScRecordItem>;
-    const target = n.bind ? resolve(ctx, [n.bind]) : undefined;
-    if (!target || !isBuffer(target)) {
-        throw new Error(`<sc-record bind="${n.bind}">: does not match any <sc-buffer>`);
-    }
-    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled: true, targetId: target.id};
-};
-
-const scopeHandler = (ctx: RuntimeContext): InputRuntime => {
-    const n = ctx.tree as StripRuntime<ScScopeItem>;
-    const target = n.bind ? resolve(ctx, [n.bind]) : undefined;
-    if (!target || !isBuffer(target)) {
-        throw new Error(`<sc-scope bind="${n.bind}">: does not match any <sc-buffer>`);
-    }
-    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled: true, targetId: target.id};
-};
-
 // --- Dispatch ---
 
 export function processElement(ctx: RuntimeContext): ScElementItem {
@@ -339,9 +310,6 @@ export function processElement(ctx: RuntimeContext): ScElementItem {
         case ELEMENTS.SC_OPTION: runtime = optionHandler(ctx); break;
         case ELEMENTS.SC_RADIO_GROUP: runtime = radioGroupHandler(ctx); break;
         case ELEMENTS.SC_RADIO: runtime = radioHandler(ctx); break;
-        case ELEMENTS.SC_BUFFER: runtime = bufferHandler(ctx); break;
-        case ELEMENTS.SC_RECORD: runtime = recordHandler(ctx); break;
-        case ELEMENTS.SC_SCOPE: runtime = scopeHandler(ctx); break;
         default: {
             throw new Error(`Unknown element type: ${(ctx.tree as ScElementItemBase).type}`);
         }

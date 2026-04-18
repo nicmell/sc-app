@@ -60,10 +60,8 @@ node scripts/generate_ugen_db.mjs
 - `cli.rs` — Clap-based CLI: dispatches to GUI (no args), `serve` (HTTP server), or `plugin` subcommands
 - `config.rs` — App data dir resolution, config file I/O (`config.json`), plugins dir helper
 - `ipc/` — Tauri IPC boundary (all `#[tauri::command]` functions)
-  - `commands.rs` — URI scheme handler (`app://plugins/`) + Tauri commands (`udp_bind`, `buf_read`, `scope_shm_read`, etc.)
+  - `commands.rs` — URI scheme handler (`app://plugins/`) + Tauri commands (`udp_bind`, `udp_send`, `udp_close`)
   - `udp.rs` — Async UDP socket state management via tokio
-  - `buf_reader.rs` — Rust-side `/b_getn` sender + `/b_setn` parser using `rosc` crate. Returns `Vec<f32>` via IPC. Used by sc-scope for real-time buffer reads.
-  - `scope_shm.rs` — Shared memory reader for SuperCollider's scope buffers via mmap. Used by sc-scope when ScopeOut2 UGen is active.
 - `plugin/` — Plugin system
   - `manager.rs` — Plugin validation (zip, metadata, XSD, assets), CRUD (add/remove/list)
   - `router.rs` — HTTP router for plugin API (GET list, POST add, DELETE remove, GET file serving). Used by both `app://` URI scheme and standalone web server.
@@ -81,7 +79,6 @@ The app can run in a browser via `sc-app serve`. Platform detection (`src/lib/en
 - **OSC**: `TauriUdpPlugin` (IPC) vs `OSC.WebsocketClientPlugin` (WebSocket to server) — selected in `OscService.ts`
 - **Plugins**: `app://plugins` (URI scheme) vs `/plugins` (HTTP) — selected in `PluginManager.ts`
 - **Logging**: `logWriter.ts` skips file writes when `!IS_TAURI`
-- **Scope**: `sc-scope.ts` skips `invoke()` calls when `!IS_TAURI`
 
 Tauri module imports use dynamic `await import()` to avoid bundling Tauri-specific code in the browser path.
 
@@ -124,8 +121,6 @@ Six top-level slices in `src/lib/stores/`:
 | `FREE_GROUP` | `{id}` | Mark group as unloaded |
 | `FREE_SYNTH` | `{id}` | Mark synth as unloaded |
 | `LOAD_SYNTHDEF` | `{id}` | Mark synthdef as loaded |
-| `ALLOC_BUFFER` | `{id, bufnum}` | Mark buffer as allocated with server bufnum |
-| `FREE_BUFFER` | `{id}` | Mark buffer as unloaded |
 
 Each slice has: `slice.ts` (reducer + actions), `selectors.ts`, `index.ts` (barrel).
 
@@ -157,9 +152,6 @@ Plugin HTML is processed in two phases: HTML parsing (`src/lib/html/`) builds a 
 | `ScRunItem` | bind | `RunRuntime` {rootId, parentId, path, enabled, targetId} | Play/pause control |
 | `ScDisplayItem` | bind, format | `InputRuntime` | Read-only value display |
 | `ScIfItem` | bind, children | `InputRuntime` | Conditional rendering container |
-| `ScBufferItem` | name, frames, channels | `BufferRuntime` {rootId, parentId, path, enabled, name, bufnum, frames, channels, loaded} | Server-side buffer allocation |
-| `ScRecordItem` | bind, label | `InputRuntime` | Buffer read-back UI with audio playback |
-| `ScScopeItem` | bind, width, height, color | `InputRuntime` | Real-time oscilloscope bound to a buffer |
 
 Union types: `ScNodeItem` (group/synth/plugin), `ScParentItem` (all with children), `ScElementItem` (all items).
 
@@ -259,9 +251,6 @@ ScElement<T, S>          Base class: store subscription, _state, _runtime, _onSt
 │   ├── ScControl        Synth control: sends /n_set on value change via _onStateChange
 │   └── ScVar            State variable: no OSC
 ├── ScSynthDef           SynthDef: sends /d_recv when parent loaded
-├── ScBuffer             Buffer: sends /b_alloc, /b_free
-├── ScRecord             Record UI: reads buffer back as WAV audio
-├── ScScope              Oscilloscope: polls buffer via Rust buf_read or SHM
 ├── ScRun                Play/pause: sends /n_run
 ├── ScOption             Declarative select option (consumes SelectContext)
 ├── ScRadio              Declarative radio button (consumes RadioGroupContext)
@@ -287,9 +276,6 @@ ScElement<T, S>          Base class: store subscription, _state, _runtime, _onSt
 | `sc-run` | bind, size, src, fgcolor, bgcolor | Play/pause button. Sends `/n_run` directly |
 | `sc-display` | bind, format | Read-only value display. Printf-style format (`%d`, `%.2f`, `%b`, `%s`) |
 | `sc-if` | bind, is-truthy/is-falsy/is-equal/etc. | Conditional rendering |
-| `sc-buffer` | name, frames, channels | Allocates server-side buffer. `bufnum` assigned automatically via `oscService.nextBufNum()` |
-| `sc-record` | bind, label | Buffer read-back UI. Reads buffer via chunked `/b_getn`, encodes WAV, renders `<audio>` element |
-| `sc-scope` | bind, width, height, color | Real-time oscilloscope. Decoupled read/draw loops; auto-detects SHM for zero-copy reads, falls back to Rust `buf_read` |
 
 Internal components in `sc-elements/internal/`:
 - `sc-element.ts` — Abstract base for all sc-elements. Store subscription, `_state`, `_runtime`, `_onStateChange(prev, next)`, `_sendCreate`/`_sendDestroy`, parent context consumer
@@ -306,7 +292,6 @@ All element-to-data references use `bind`:
 - **sc-display/sc-if** `bind="nodeName.controlName"` — read-only dot-path reference
 - **sc-run** `bind="synthOrGroupName"` — references a synth or group (empty = parent context)
 - **sc-control/sc-var** `bind="nodeName.controlName"` — mirrors another control/var's value (with optional arithmetic expression)
-- **sc-control** `bind="bufferName"` — when bound to an `sc-buffer`, resolves to the buffer's `bufnum` at `/s_new` time
 
 ### Bind Expressions
 
@@ -382,29 +367,13 @@ This means nodes can see:
 - `<sc-range>`, `<sc-checkbox>`, `<sc-run>`, `<sc-display>`, `<sc-if>` — UI controls
 - `<sc-select bind="...">` with `<sc-option>` children — dropdown selector
 - `<sc-radio-group bind="..." orientation="...">` with `<sc-radio>` children — radio buttons
-- `<sc-buffer name="..." frames="..." channels="..."/>` — allocates a server-side buffer
-- `<sc-record bind="bufferName" label="..."/>` — buffer read-back UI with audio playback
-- `<sc-scope bind="bufferName" width="..." height="..." color="..."/>` — real-time oscilloscope
-
-## Scope Performance (`src/sc-elements/sc-scope.ts`)
-
-The sc-scope oscilloscope has a tiered read strategy:
-
-1. **SHM (zero-copy)**: When ScopeOut2 UGen is active and scsynth is local, reads directly from shared memory at `/tmp/boost_interprocess/SuperColliderServer_<port>` via Rust mmap. No network, no serialization. Requires ScopeOut2 in the synthdef.
-2. **Rust `buf_read` (OSC bypass)**: Sends `/b_getn` and parses `/b_setn` entirely in Rust (`rosc` crate), returning `Vec<f32>` via Tauri IPC. Eliminates osc-js encode/decode overhead. Works with any RecordBuf-based synthdef.
-3. **osc-js fallback**: Original path via OSC wildcard listener (used by sc-record, not sc-scope).
-
-Auto-detection: on first read, sc-scope tries SHM for localhost connections. If audio data is found, uses SHM for all subsequent reads. Otherwise falls back to `buf_read`.
-
-Architecture: decoupled async read loop (runs at OSC/SHM speed) + rAF draw loop (runs at display refresh, draws only on new data via dirty flag). Double-buffer swap ensures the draw loop never sees partially-written data.
 
 ## OSC Communication (`src/lib/osc/`)
 
 - `OscService.ts` — Singleton managing osc-js connection. Polls `/status` at configurable interval. Dispatches replies to store. In Tauri mode uses `TauriUdpPlugin`; in browser mode uses `OSC.WebsocketClientPlugin` (connects to the standalone server's WebSocket endpoint which bridges to scsynth via UDP).
 - `TauriUdpPlugin.ts` — osc-js plugin adapter wrapping `TauriDatagramSocket` (Tauri mode only)
 - `TauriDatagramSocket.ts` — Bridges to Tauri `udp_bind`/`udp_send`/`udp_close` commands (Tauri mode only)
-- `messages.ts` — OSC message factories: `/status`, `/s_new`, `/g_new`, `/n_set`, `/n_run`, `/n_free`, `/d_recv`, `/b_alloc`, `/b_free`, `/b_getn`, `/b_setn`, etc.
-- `wav.ts` (`src/lib/utils/`) — WAV encoder: 44-byte RIFF header + IEEE float32 PCM data → Blob
+- `messages.ts` — OSC message factories: `/status`, `/s_new`, `/g_new`, `/n_set`, `/n_run`, `/n_free`, `/d_recv`, etc.
 
 ## Example Plugins (`examples/`)
 
@@ -420,10 +389,6 @@ Architecture: decoupled async read loop (runs at OSC/SHM speed) + rAF draw loop 
 | `var-plugin` | sc-var elements with bind expressions (mirror, doubled, sum, product) |
 | `select-plugin` | sc-select/sc-option dropdowns and sc-radio-group/sc-radio buttons |
 | `waveform-plugin` | Select UGen switching between SinOsc/Saw/Pulse via sc-select |
-| `record-plugin` | Buffer recording with RecordBuf, sc-record playback UI |
-| `scope-plugin` | Oscilloscope with waveform select (RecordBuf + sc-scope, OSC read path) |
-| `scope-shm-plugin` | Oscilloscope with ScopeOut2 for SHM zero-copy reads + RecordBuf fallback |
-| `studio-plugin` | Multi-voice synth with filter, scope, recording, per-voice controls |
 | `bad-bindings` | Intentional binding errors (typos, missing synths) for testing validation |
 | `bad-asset-type` | Invalid asset format for testing validation |
 | `bad-asset-mismatch` | Declared vs actual asset type mismatch |

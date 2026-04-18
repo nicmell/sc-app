@@ -1,13 +1,12 @@
 import type {ScElementItem, InputRuntime} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {runtimeApi} from '@/lib/stores/api';
-import {isInput, isVisual, isState, isVar, isBuffer} from '@/lib/utils/guards';
+import {isInput, isVisual, isState, isVar} from '@/lib/utils/guards';
 import {evalExpr} from '@/lib/utils/expression';
 import {ScElement} from './sc-element.ts';
 
 function readStateValue(state: RuntimeState, id: string): number {
     const node = state.nodes[id];
-    if (node && isBuffer(node)) return node.runtime.bufnum;
     if (!node || !isState(node)) return 0;
     const rt = node.runtime;
     if (rt.targets) {

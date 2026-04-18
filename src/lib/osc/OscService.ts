@@ -1,8 +1,5 @@
 import OSC from 'osc-js';
 import {
-  bufAllocMessage,
-  bufFreeMessage,
-  bufGetnMessage,
   defRecvMessage,
   dumpOscMessage,
   freeNodeMessage,
@@ -31,7 +28,6 @@ export class OscService {
   private timeoutId: ReturnType<typeof setTimeout> | null = null;
 
   private currentNodeId = 0;
-  private currentBufNum = 0;
 
   constructor() {
     const plugin = IS_TAURI
@@ -106,7 +102,6 @@ export class OscService {
   private init(clientId: number) {
     rootApi.setClient(clientId);
     this.currentNodeId = this.defaultGroupId();
-    this.currentBufNum = (clientId + 1) * 100;
     this.send(
         newGroupMessage(this.currentNodeId),
         nodeRunMessage(this.currentNodeId, 0),
@@ -205,10 +200,6 @@ export class OscService {
     return (this.currentNodeId += 1);
   }
 
-  nextBufNum(): number {
-    return (this.currentBufNum += 1);
-  }
-
   defaultClientId() {
     return optionsApi.scsynth.clientId || DEFAULT_CLIENT_ID;
   }
@@ -261,16 +252,6 @@ export class OscService {
     runtimeApi.loadSynthdef({id});
   }
 
-  allocBuffer(id: string, bufnum: number, frames: number, channels: number): void {
-    this.send(bufAllocMessage(bufnum, frames, channels));
-    runtimeApi.allocBuffer({id, bufnum});
-  }
-
-  freeBuffer(id: string, bufnum: number): void {
-    this.send(bufFreeMessage(bufnum));
-    runtimeApi.freeBuffer({id});
-  }
-
   setControl(nodeId: number, name: string, value: number): void {
     this.send(nodeSetMessage(nodeId, {[name]: value}));
   }
@@ -278,9 +259,5 @@ export class OscService {
   setNodeRun(nodeId: number, flag: number, id?: string): void {
     this.send(nodeRunMessage(nodeId, flag));
     if (id) runtimeApi.setRunning({nodeId: id, value: flag});
-  }
-
-  readBuffer(bufnum: number, start: number, count: number): void {
-    this.send(bufGetnMessage(bufnum, start, count));
   }
 }
