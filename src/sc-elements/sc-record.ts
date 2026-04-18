@@ -307,11 +307,9 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
         const fg = cs.getPropertyValue('--color-primary').trim() || '#0a6dc4';
         const border = cs.getPropertyValue('--color-border').trim() || '#444';
 
-        ctx.strokeStyle = border;
-        ctx.beginPath();
-        ctx.moveTo(0, h / 2 + 0.5);
-        ctx.lineTo(w, h / 2 + 0.5);
-        ctx.stroke();
+        // Centre line.
+        ctx.fillStyle = border;
+        ctx.fillRect(0, Math.floor(h / 2), w, 1);
 
         const samples = this._viewSamples();
         if (!samples || this._sampleRate <= 0) return;
@@ -320,9 +318,10 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
         const len = this._viewLength();
         const mid = h / 2;
 
-        ctx.strokeStyle = fg;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
+        // `fillRect` per column instead of stroked 1px lines: macOS WKWebView
+        // antialiases sub-pixel vertical strokes into near-invisibility during
+        // rapid rAF redraws. Integer-aligned fills render reliably.
+        ctx.fillStyle = fg;
         for (let x = 0; x < w; x++) {
             const s0 = Math.floor(this._scrollSample + x * samplesPerCol);
             const s1 = Math.floor(this._scrollSample + (x + 1) * samplesPerCol);
@@ -338,10 +337,10 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
             if (min > max) continue;
             const yMax = mid - max * (h / 2 - 1);
             const yMin = mid - min * (h / 2 - 1);
-            ctx.moveTo(x + 0.5, yMax);
-            ctx.lineTo(x + 0.5, Math.max(yMax + 1, yMin));
+            const barTop = Math.min(yMax, yMin);
+            const barHeight = Math.max(1, Math.abs(yMin - yMax));
+            ctx.fillRect(x, barTop, 1, barHeight);
         }
-        ctx.stroke();
     }
 
     // ── Scroll + zoom (idle only) ─────────────────────────────────────────

@@ -397,10 +397,12 @@ This means nodes can see:
 
 ### Plugin author contract
 
-The bound `sc-buffer` is a DiskOut *streaming* buffer — it's not the recording length, it's the block ring DiskOut uses to stream to disk (typical size `65536` frames, mono or stereo matching the signal). The plugin's synthdef must feed that buffer with `<sc-ugen type="DiskOut">` (inputArray = signal, bufnum = the buffer):
+The bound `sc-buffer` is a DiskOut *streaming* buffer — it's not the recording length, it's the block ring DiskOut uses to stream to disk. Recording length is disk-limited, not buffer-limited.
+
+**Size it for responsiveness.** DiskOut only flushes to disk when the buffer is half-full, so the live viz is limited by that cadence. A small power-of-two size that's also a multiple of `2×blockSize` (default `128`) — e.g. `2048` — flushes every ~21 ms at 48 kHz, which feels live. The SC docs recommend `65536`+ for long unattended renders; for interactive recording prefer smaller. The plugin's synthdef must feed the buffer with `<sc-ugen type="DiskOut">` (inputArray = signal, bufnum = the buffer):
 
 ```xml
-<sc-buffer name="rec" frames="65536" channels="1"/>
+<sc-buffer name="rec" frames="2048" channels="1"/>
 <sc-synthdef name="foo">
     <sc-control name="bufnum" value="0"/>
     ...produce `sig`...
@@ -414,8 +416,6 @@ The bound `sc-buffer` is a DiskOut *streaming* buffer — it's not the recording
 </sc-synth>
 <sc-record bind="rec" window="5"/>
 ```
-
-Recording length is disk-limited, not buffer-limited.
 
 ### Flow
 

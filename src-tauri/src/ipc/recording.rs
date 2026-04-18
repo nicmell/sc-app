@@ -32,8 +32,12 @@ impl RecordingState {
     }
 
     /// Reserve a fresh recording slot. Produces a unique id + an absolute path
-    /// under the system temp dir. The file is NOT created here — scsynth creates
-    /// it in response to `/b_write`.
+    /// in a well-known shared temp dir. The file is NOT created here — scsynth
+    /// creates it in response to `/b_write`, and sc-record's tail task reads
+    /// that same path as it grows. Using a shared path (/tmp on Unix, %TEMP%
+    /// on Windows) avoids mismatches between the Tauri process's $TMPDIR and
+    /// scsynth's $TMPDIR, which can differ when the two processes were launched
+    /// from different environments.
     pub async fn open(&self) -> (String, PathBuf) {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -41,7 +45,7 @@ impl RecordingState {
             .unwrap_or(0);
         let n = self.seq.fetch_add(1, Ordering::SeqCst);
         let id = format!("{nanos:x}-{n:x}");
-        let path = std::env::temp_dir().join(format!("sc-record-{id}.wav"));
+        let path = shared_temp_dir().join(format!("sc-record-{id}.wav"));
         let session = Arc::new(Session {
             path: path.clone(),
             tail_task: Mutex::new(None),
@@ -102,6 +106,24 @@ impl RecordingState {
     }
 }
 
+fn shared_temp_dir() -> PathBuf {
+    #[cfg(unix)]
+    {
+        PathBuf::from("/tmp")
+    }
+    #[cfg(windows)]
+    {
+        std::env::var_os("TEMP")
+            .or_else(|| std::env::var_os("TMP"))
+            .map(PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir)
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        std::env::temp_dir()
+    }
+}
+
 fn spawn_tail_reader(
     path: PathBuf,
     sink: Arc<Mutex<Box<dyn BufferSink>>>,
@@ -111,7 +133,11 @@ fn spawn_tail_reader(
         let file = match wait_for_file(&path, Duration::from_secs(5)).await {
             Some(f) => f,
             None => {
-                eprintln!("record tail: file never appeared: {}", path.display());
+                eprintln!(
+                    "record tail: file never appeared after 5s: {}. scsynth and \
+                     the sc-app process must share a filesystem.",
+                    path.display()
+                );
                 return;
             }
         };
@@ -157,21 +183,21 @@ async fn tail_loop(
         if size <= pos {
             continue;
         }
-        // Only read a 4-byte-aligned chunk; the next tick will pick up any
-        // partial float that wasn't fully written yet.
+        // Read a 4-byte-aligned chunk; the next tick will pick up any partial
+        // float that wasn't fully written yet.
         let available = size - pos;
-        let aligned = available - (available % 4);
-        if aligned == 0 {
+        let aligned_bytes = (available - (available % 4)) as usize;
+        if aligned_bytes == 0 {
             continue;
         }
         file.seek(SeekFrom::Start(pos)).await?;
-        let mut buf = vec![0u8; aligned as usize];
+        let mut buf = vec![0u8; aligned_bytes];
         file.read_exact(&mut buf).await?;
         let samples: Vec<f32> = buf
             .chunks_exact(4)
             .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
             .collect();
-        pos += aligned;
+        pos += aligned_bytes as u64;
 
         let alive = {
             let mut s = sink.lock().await;

@@ -5,10 +5,12 @@
 </head>
 <body>
 
-<!-- DiskOut streaming buffer: 65536 frames, mono. This is NOT the recording length
-     — sc-record streams this buffer's contents straight to a temp file on disk
-     every block. Recording length is disk-limited. -->
-<sc-buffer name="rec" frames="65536" channels="1"/>
+<!-- DiskOut streaming buffer. This is NOT the recording length — scsynth streams
+     this buffer's contents to a temp file on disk every time it fills. 2048
+     frames at 48 kHz ≈ 42 ms of latency, small enough for a smooth live
+     waveform; recording length itself is disk-limited. Must be a power of two
+     and a multiple of 2×blockSize (128). -->
+<sc-buffer name="rec" frames="2048" channels="1"/>
 
 <sc-synthdef name="chirp">
     <sc-control name="bufnum" value="0"/>
