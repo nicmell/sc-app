@@ -3,7 +3,6 @@ mod recording_ws;
 mod ws_bridge;
 
 use crate::ipc::buffer::BufferStreamState;
-use crate::recording::state::RecordingState;
 use crate::{config, plugin, recording};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
@@ -22,7 +21,6 @@ struct AppState {
     data_dir: PathBuf,
     scsynth_addr: String,
     buffer_streams: Arc<BufferStreamState>,
-    recordings: Arc<RecordingState>,
 }
 
 pub fn serve(context: tauri::Context, port: u16, scsynth_addr: String) {
@@ -49,7 +47,6 @@ async fn run(
         data_dir,
         scsynth_addr,
         buffer_streams: Arc::new(BufferStreamState::new()),
-        recordings: Arc::new(RecordingState::new()),
     });
 
     let addr: SocketAddr = format!("0.0.0.0:{port}")
@@ -118,7 +115,8 @@ async fn handle_request(
                     req,
                     id.to_string(),
                     state.data_dir.clone(),
-                    state.recordings.clone(),
+                    state.scsynth_addr.clone(),
+                    state.buffer_streams.clone(),
                 ));
             }
         }

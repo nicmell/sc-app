@@ -2,7 +2,7 @@ use rosc::{decoder, encoder, OscMessage, OscPacket, OscType};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::ipc::Channel;
 use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, Mutex};
@@ -72,6 +72,7 @@ impl BufferStreamState {
         bufnum: i32,
         frames: i32,
         chunk: i32,
+        sample_rate: i32,
         scsynth_addr: &str,
         sink: Box<dyn BufferSink>,
     ) -> Result<SubId, String> {
@@ -83,7 +84,14 @@ impl BufferStreamState {
             let mut initial = HashMap::new();
             initial.insert(sub_id, sink);
             let sinks = Arc::new(Mutex::new(initial));
-            let task = spawn_reader(bufnum, frames, chunk, scsynth_addr.to_string(), sinks.clone());
+            let task = spawn_reader(
+                bufnum,
+                frames,
+                chunk,
+                sample_rate,
+                scsynth_addr.to_string(),
+                sinks.clone(),
+            );
             readers.insert(bufnum, ReaderHandle { task, sinks });
         }
         drop(readers);
@@ -112,10 +120,19 @@ impl BufferStreamState {
     }
 }
 
+/// The reader runs a time-tracked catch-up loop. Each tick we compute the
+/// number of buffer frames the writer *should* have produced by now given the
+/// elapsed wall-clock time (`target = elapsed_ms * sample_rate / 1000`) and
+/// issue as many `/b_getn` requests as needed to keep `samples_issued` level
+/// with `target`. `chunk` just caps the max samples per single request (and
+/// the request never crosses the buffer wrap-around). This way the read rate
+/// matches the writer's rate exactly regardless of tick-interval drift, so
+/// the downstream WAV isn't time-stretched.
 fn spawn_reader(
     bufnum: i32,
     frames: i32,
     chunk: i32,
+    sample_rate: i32,
     addr: String,
     sinks: Arc<Mutex<HashMap<SubId, Box<dyn BufferSink>>>>,
 ) -> JoinHandle<()> {
@@ -132,27 +149,39 @@ fn spawn_reader(
             return;
         }
 
-        let mut interval = tokio::time::interval(Duration::from_millis(33));
-        let mut start: i32 = 0;
+        let mut interval = tokio::time::interval(Duration::from_millis(16));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let start_time = Instant::now();
+        let mut samples_issued: i64 = 0;
         let mut buf = [0u8; 65536];
+        let sr = sample_rate.max(1) as i64;
+        let frames_i64 = frames.max(1) as i64;
 
         loop {
             tokio::select! {
                 _ = interval.tick() => {
-                    let remaining = (frames - start).max(1);
-                    let count = chunk.min(remaining);
-                    let msg = OscMessage {
-                        addr: "/b_getn".into(),
-                        args: vec![
-                            OscType::Int(bufnum),
-                            OscType::Int(start),
-                            OscType::Int(count),
-                        ],
-                    };
-                    if let Ok(bytes) = encoder::encode(&OscPacket::Message(msg)) {
-                        let _ = sock.send(&bytes).await;
+                    let elapsed_ms = start_time.elapsed().as_millis() as i64;
+                    let target = (elapsed_ms * sr) / 1000;
+                    while samples_issued < target {
+                        let pos = (samples_issued % frames_i64) as i32;
+                        let until_wrap = frames - pos;
+                        let delta = (target - samples_issued).min(chunk as i64).min(until_wrap as i64) as i32;
+                        if delta <= 0 {
+                            break;
+                        }
+                        let msg = OscMessage {
+                            addr: "/b_getn".into(),
+                            args: vec![
+                                OscType::Int(bufnum),
+                                OscType::Int(pos),
+                                OscType::Int(delta),
+                            ],
+                        };
+                        if let Ok(bytes) = encoder::encode(&OscPacket::Message(msg)) {
+                            let _ = sock.send(&bytes).await;
+                        }
+                        samples_issued += delta as i64;
                     }
-                    start = (start + count) % frames.max(1);
                 }
                 r = sock.recv(&mut buf) => {
                     match r {

@@ -4,7 +4,6 @@ import type {RuntimeState} from '@/types/stores';
 import {isBuffer, isRecord} from '@/lib/utils/guards';
 import {optionsApi, rootApi} from '@/lib/stores/api';
 import {IS_TAURI} from '@/lib/env';
-import {oscService} from '@/lib/osc';
 import {
     RECORDINGS_URL,
     createRecordingStream,
@@ -14,9 +13,20 @@ import {
 } from '@/lib/streams/RecordingStream';
 import {ScElement} from './internal/sc-element.ts';
 
+const FINALISE_DELAY_MS = 150;
+
+/**
+ * Cap on samples per `/b_getn` request. The Rust reader runs a wall-clock
+ * catch-up loop keyed to the buffer's sample rate and issues as many requests
+ * as needed each tick; this just bounds UDP payload size.
+ */
+const STREAM_CHUNK = 1024;
+
 interface RecordState {
     bufnum: number;
     loaded: boolean;
+    frames: number;
+    channels: number;
 }
 
 export class ScRecord extends ScElement<ScRecordItem, RecordState> {
@@ -99,11 +109,17 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
     }
 
     getState(state: RuntimeState): RecordState {
+        const empty: RecordState = {bufnum: 0, loaded: false, frames: 0, channels: 1};
         const self = state.nodes[this.id];
-        if (!self || !isRecord(self)) return {bufnum: 0, loaded: false};
+        if (!self || !isRecord(self)) return empty;
         const buf = state.nodes[self.runtime.targetId];
-        if (!buf || !isBuffer(buf)) return {bufnum: 0, loaded: false};
-        return {bufnum: buf.runtime.bufnum, loaded: buf.runtime.loaded};
+        if (!buf || !isBuffer(buf)) return empty;
+        return {
+            bufnum: buf.runtime.bufnum,
+            loaded: buf.runtime.loaded,
+            frames: buf.runtime.frames,
+            channels: buf.runtime.channels,
+        };
     }
 
     protected _onStateChange(prev: RecordState, next: RecordState): void {
@@ -144,14 +160,6 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
             const handle = await openRecording();
             this._recordingId = handle.id;
 
-            // Tell scsynth to open the file for streaming writes via DiskOut.
-            oscService.openBufferWrite(s.bufnum, handle.path);
-
-            // Wait for the OSC bundle to arrive + scsynth to flush the WAV header
-            // to disk before the Rust tail starts reading.
-            const latency = optionsApi.scsynth.msgLatencyMs;
-            await delay(latency + 40);
-
             const initialCap = Math.max(1, Math.ceil(Math.max(60, this.window) * sampleRate));
             this._captured = new Float32Array(initialCap);
             this._capturedLen = 0;
@@ -163,7 +171,16 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
             this._autoScroll = true;
             this._dirty = true;
 
-            const tail = createRecordingStream(handle.id);
+            const {host, port} = optionsApi.scsynth;
+            const tail = createRecordingStream({
+                id: handle.id,
+                bufnum: s.bufnum,
+                frames: s.frames,
+                chunk: STREAM_CHUNK,
+                sampleRate: Math.round(sampleRate),
+                channels: s.channels,
+                scsynthAddr: `${host}:${port}`,
+            });
             tail.onSamples((samples) => this._appendSamples(samples));
             await tail.open();
             this._tail = tail;
@@ -177,14 +194,11 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
     }
 
     private async _stopRecording(): Promise<void> {
-        const s = this._state;
         this._recording = false;
         this._autoScroll = false;
 
-        if (s.loaded && s.bufnum > 0) {
-            oscService.closeBufferWrite(s.bufnum);
-        }
-
+        // Closing the stream unsubscribes on the Rust side; the RecordingSink's
+        // Drop finalises the WAV header on disk.
         if (this._tail) {
             this._tail.close();
             this._tail = null;
@@ -198,9 +212,8 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
 
         this._busy = true;
         try {
-            // Give scsynth time to fully finalise the WAV header on disk.
-            const latency = optionsApi.scsynth.msgLatencyMs;
-            await delay(latency + 80);
+            // Give the Rust side a moment to drop the sink and flush the WAV.
+            await delay(FINALISE_DELAY_MS);
 
             const blob = await readRecording(id);
             this._frozen = await parseWavFloat32(blob);

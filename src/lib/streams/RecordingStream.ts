@@ -17,6 +17,16 @@ export interface RecordingInfo {
     size_bytes: number;
 }
 
+export interface RecordingStreamConfig {
+    id: string;
+    bufnum: number;
+    frames: number;
+    chunk: number;
+    sampleRate: number;
+    channels: number;
+    scsynthAddr: string;
+}
+
 // ── CRUD (via the `app://recordings/…` URI scheme / `/recordings/…` HTTP) ──
 
 export async function openRecording(): Promise<RecordingHandle> {
@@ -44,23 +54,47 @@ export async function deleteRecording(id: string): Promise<void> {
     }
 }
 
-// ── Live streaming tail on a recording id ─────────────────────────────────
+// ── Live streaming from the recording's source buffer ──────────────────────
+//
+// The stream polls scsynth for samples on `bufnum` (via `/b_getn`), forwards
+// them to the frontend for the live waveform, and writes the same samples
+// into the `{id}.wav` file on disk as a side effect. Closing the stream
+// unsubscribes on the Rust side, which drops the recording sink and finalises
+// the WAV header.
 
-export function createRecordingStream(id: string): RecordingStream {
+export function createRecordingStream(cfg: RecordingStreamConfig): RecordingStream {
     return createSampleStream({
         tauri: {
             start: async (channel) => {
                 const {invoke} = await import('@tauri-apps/api/core');
-                await invoke('record_tail_start', {id, channel});
-                return id;
+                return invoke<number>('record_stream_start', {
+                    id: cfg.id,
+                    bufnum: cfg.bufnum,
+                    frames: cfg.frames,
+                    chunk: cfg.chunk,
+                    sampleRate: cfg.sampleRate,
+                    channels: cfg.channels,
+                    scsynthAddr: cfg.scsynthAddr,
+                    channel,
+                });
             },
-            stop: async () => {
+            stop: async (handle) => {
                 const {invoke} = await import('@tauri-apps/api/core');
-                await invoke('record_tail_stop', {id});
+                await invoke('buffer_unsubscribe', {subId: handle});
             },
         },
         ws: {
-            path: `/recordings/${encodeURIComponent(id)}/stream`,
+            path: `/recordings/${encodeURIComponent(cfg.id)}/stream`,
+            onOpen: (ws) => {
+                const header = new ArrayBuffer(20);
+                const view = new DataView(header);
+                view.setInt32(0, cfg.bufnum, true);
+                view.setInt32(4, cfg.chunk, true);
+                view.setInt32(8, cfg.frames, true);
+                view.setInt32(12, cfg.sampleRate, true);
+                view.setInt32(16, cfg.channels, true);
+                ws.send(header);
+            },
         },
     });
 }

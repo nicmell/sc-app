@@ -6,6 +6,7 @@ export interface BufferStreamConfig {
     bufnum: number;
     frames: number;
     chunk: number;
+    sampleRate: number;
     scsynthAddr: string;
 }
 
@@ -18,6 +19,7 @@ export function createBufferStream(cfg: BufferStreamConfig): BufferStream {
                     bufnum: cfg.bufnum,
                     frames: cfg.frames,
                     chunk: cfg.chunk,
+                    sampleRate: cfg.sampleRate,
                     scsynthAddr: cfg.scsynthAddr,
                     channel,
                 });
@@ -30,11 +32,12 @@ export function createBufferStream(cfg: BufferStreamConfig): BufferStream {
         ws: {
             path: `/buffer/${cfg.bufnum}`,
             onOpen: (ws) => {
-                const header = new ArrayBuffer(12);
+                const header = new ArrayBuffer(16);
                 const view = new DataView(header);
                 view.setInt32(0, cfg.bufnum, true);
                 view.setInt32(4, cfg.chunk, true);
                 view.setInt32(8, cfg.frames, true);
+                view.setInt32(12, cfg.sampleRate, true);
                 ws.send(header);
             },
         },

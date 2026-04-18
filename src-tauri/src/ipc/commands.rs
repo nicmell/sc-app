@@ -1,9 +1,8 @@
-use super::buffer::{BufferStreamState, SubId, TauriChannelSink};
+use super::buffer::{BufferSink, BufferStreamState, SubId, TauriChannelSink};
 use super::udp::UdpState;
-use crate::recording::state::RecordingState;
 use crate::{plugin, recording};
 use tauri::ipc::Channel;
-use tauri::{Emitter, Manager, State, UriSchemeContext, Window};
+use tauri::{AppHandle, Emitter, Manager, State, UriSchemeContext, Window};
 
 // --- URI scheme handler (`app://…`) ---
 
@@ -71,13 +70,14 @@ pub async fn buffer_subscribe(
     bufnum: i32,
     frames: i32,
     chunk: i32,
+    sample_rate: i32,
     scsynth_addr: String,
     channel: Channel<Vec<f32>>,
     state: State<'_, BufferStreamState>,
 ) -> Result<SubId, String> {
     let sink = Box::new(TauriChannelSink { channel });
     state
-        .subscribe(bufnum, frames, chunk, &scsynth_addr, sink)
+        .subscribe(bufnum, frames, chunk, sample_rate, &scsynth_addr, sink)
         .await
 }
 
@@ -90,33 +90,40 @@ pub async fn buffer_unsubscribe(
     Ok(())
 }
 
-// --- Recording tail (streaming) ---
-//
-// CRUD on recording files is served by the `app://recordings/…` URI scheme
-// handler above (see `recording::router`). Only the live-tail streaming goes
-// through a Tauri Channel, since it requires native message passing rather
-// than HTTP.
-
+/// Start a recording stream: poll `bufnum` via `/b_getn`, forward samples to
+/// `channel` for the live waveform, and stream them into a WAV file at
+/// `{data_dir}/recordings/{id}.wav`. Stop by calling `buffer_unsubscribe(sub_id)`;
+/// the recording sink finalises the WAV header on drop.
 #[tauri::command]
-pub async fn record_tail_start(
-    app: tauri::AppHandle,
+#[allow(clippy::too_many_arguments)]
+pub async fn record_stream_start(
+    app: AppHandle,
     id: String,
+    bufnum: i32,
+    frames: i32,
+    chunk: i32,
+    sample_rate: u32,
+    channels: u16,
+    scsynth_addr: String,
     channel: Channel<Vec<f32>>,
-    state: State<'_, RecordingState>,
-) -> Result<(), String> {
+    buffer_state: State<'_, BufferStreamState>,
+) -> Result<SubId, String> {
     let data_dir = app
         .path()
         .app_data_dir()
         .map_err(|e| format!("data dir: {e}"))?;
-    let sink = Box::new(TauriChannelSink { channel });
-    state.start_tail(&data_dir, &id, sink).await
-}
-
-#[tauri::command]
-pub async fn record_tail_stop(
-    id: String,
-    state: State<'_, RecordingState>,
-) -> Result<(), String> {
-    state.stop_tail(&id).await;
-    Ok(())
+    let inner: Box<dyn BufferSink> = Box::new(TauriChannelSink { channel });
+    recording::state::start_stream(
+        &data_dir,
+        &id,
+        bufnum,
+        frames,
+        chunk,
+        sample_rate,
+        channels,
+        &scsynth_addr,
+        inner,
+        &buffer_state,
+    )
+    .await
 }

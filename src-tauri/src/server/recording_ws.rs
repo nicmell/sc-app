@@ -1,5 +1,5 @@
-use crate::ipc::buffer::WsSink;
-use crate::recording::state::RecordingState;
+use crate::ipc::buffer::{BufferStreamState, WsSink};
+use crate::recording;
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
 use http_body_util::Full;
@@ -15,7 +15,8 @@ pub fn handle_ws_upgrade(
     req: Request<Incoming>,
     id: String,
     data_dir: PathBuf,
-    state: Arc<RecordingState>,
+    scsynth_addr: String,
+    buffer_state: Arc<BufferStreamState>,
 ) -> Response<Full<Bytes>> {
     let key = match req.headers().get("sec-websocket-key") {
         Some(k) => k.as_bytes().to_vec(),
@@ -31,7 +32,9 @@ pub fn handle_ws_upgrade(
 
     tokio::spawn(async move {
         match hyper::upgrade::on(req).await {
-            Ok(upgraded) => handle_ws_connection(upgraded, id, data_dir, state).await,
+            Ok(upgraded) => {
+                handle_ws_connection(upgraded, id, data_dir, scsynth_addr, buffer_state).await
+            }
             Err(e) => eprintln!("Recording WS upgrade error: {e}"),
         }
     });
@@ -49,7 +52,8 @@ async fn handle_ws_connection(
     upgraded: hyper::upgrade::Upgraded,
     id: String,
     data_dir: PathBuf,
-    state: Arc<RecordingState>,
+    scsynth_addr: String,
+    buffer_state: Arc<BufferStreamState>,
 ) {
     let ws = tokio_tungstenite::WebSocketStream::from_raw_socket(
         TokioIo::new(upgraded),
@@ -60,12 +64,39 @@ async fn handle_ws_connection(
 
     let (mut ws_sink, mut ws_stream) = ws.split();
 
+    // Config header: [bufnum i32, chunk i32, frames i32, sampleRate i32, channels i32] (20 bytes LE).
+    let config = match ws_stream.next().await {
+        Some(Ok(Message::Binary(data))) if data.len() >= 20 => data,
+        _ => return,
+    };
+    let bufnum = i32::from_le_bytes(config[0..4].try_into().unwrap());
+    let chunk = i32::from_le_bytes(config[4..8].try_into().unwrap());
+    let frames = i32::from_le_bytes(config[8..12].try_into().unwrap());
+    let sample_rate = i32::from_le_bytes(config[12..16].try_into().unwrap()).max(0) as u32;
+    let channels = i32::from_le_bytes(config[16..20].try_into().unwrap()).max(1) as u16;
+
     let (tx, mut rx) = mpsc::channel::<Message>(4);
-    let sink = Box::new(WsSink { tx });
-    if let Err(e) = state.start_tail(&data_dir, &id, sink).await {
-        eprintln!("recording tail start failed ({id}): {e}");
-        return;
-    }
+    let inner: Box<dyn crate::ipc::buffer::BufferSink> = Box::new(WsSink { tx });
+    let sub_id = match recording::state::start_stream(
+        &data_dir,
+        &id,
+        bufnum,
+        frames,
+        chunk,
+        sample_rate,
+        channels,
+        &scsynth_addr,
+        inner,
+        &buffer_state,
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err(e) => {
+            eprintln!("recording WS start failed ({id}): {e}");
+            return;
+        }
+    };
 
     let mut pump = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
@@ -88,5 +119,5 @@ async fn handle_ws_connection(
         _ = &mut drain => pump.abort(),
     }
 
-    state.stop_tail(&id).await;
+    buffer_state.unsubscribe(sub_id).await;
 }

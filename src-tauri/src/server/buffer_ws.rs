@@ -60,14 +60,16 @@ async fn handle_ws_connection(
 
     let (mut ws_sink, mut ws_stream) = ws.split();
 
-    // Wait for initial config frame: [bufnum i32 LE, chunk i32 LE, frames i32 LE]
+    // Wait for initial config frame:
+    // [bufnum i32 LE, chunk i32 LE, frames i32 LE, sampleRate i32 LE].
     let config = match ws_stream.next().await {
-        Some(Ok(Message::Binary(data))) if data.len() >= 12 => data,
+        Some(Ok(Message::Binary(data))) if data.len() >= 16 => data,
         _ => return,
     };
     let client_bufnum = i32::from_le_bytes(config[0..4].try_into().unwrap());
     let chunk = i32::from_le_bytes(config[4..8].try_into().unwrap());
     let frames = i32::from_le_bytes(config[8..12].try_into().unwrap());
+    let sample_rate = i32::from_le_bytes(config[12..16].try_into().unwrap());
 
     if client_bufnum != bufnum {
         eprintln!("Buffer WS: bufnum mismatch (url {bufnum}, config {client_bufnum})");
@@ -76,7 +78,10 @@ async fn handle_ws_connection(
 
     let (tx, mut rx) = mpsc::channel::<Message>(4);
     let sink = Box::new(WsSink { tx });
-    let sub_id = match state.subscribe(bufnum, frames, chunk, &scsynth_addr, sink).await {
+    let sub_id = match state
+        .subscribe(bufnum, frames, chunk, sample_rate, &scsynth_addr, sink)
+        .await
+    {
         Ok(id) => id,
         Err(e) => {
             eprintln!("Buffer WS subscribe failed: {e}");
