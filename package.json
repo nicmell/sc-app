@@ -10,7 +10,8 @@
     "tauri": "tauri",
     "build-android": "yarn tauri android build --apk",
     "lint": "eslint src",
-    "lint:fix": "eslint src --fix"
+    "lint:fix": "eslint src --fix",
+    "serve": "yarn build && cargo run --manifest-path src-tauri/Cargo.toml -- serve --port 3000"
   },
   "dependencies": {
     "@lit/context": "^1.1.6",

@@ -1,6 +1,8 @@
 use super::buffer::{BufferStreamState, SubId, TauriChannelSink};
+use super::recording::RecordingState;
 use super::udp::UdpState;
 use crate::plugin;
+use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::{Emitter, Manager, State, UriSchemeContext, Window};
 
@@ -74,5 +76,58 @@ pub async fn buffer_unsubscribe(
     state: State<'_, BufferStreamState>,
 ) -> Result<(), String> {
     state.unsubscribe(sub_id).await;
+    Ok(())
+}
+
+// --- Recording (DiskOut + file tail) ---
+
+#[derive(Serialize)]
+pub struct RecordHandle {
+    pub id: String,
+    pub path: String,
+}
+
+#[tauri::command]
+pub async fn record_open(state: State<'_, RecordingState>) -> Result<RecordHandle, String> {
+    let (id, path) = state.open().await;
+    Ok(RecordHandle {
+        id,
+        path: path.to_string_lossy().to_string(),
+    })
+}
+
+#[tauri::command]
+pub async fn record_tail_start(
+    id: String,
+    channel: Channel<Vec<f32>>,
+    state: State<'_, RecordingState>,
+) -> Result<(), String> {
+    let sink = Box::new(TauriChannelSink { channel });
+    state.start_tail(&id, sink).await
+}
+
+#[tauri::command]
+pub async fn record_tail_stop(
+    id: String,
+    state: State<'_, RecordingState>,
+) -> Result<(), String> {
+    state.stop_tail(&id).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn record_read(
+    id: String,
+    state: State<'_, RecordingState>,
+) -> Result<Vec<u8>, String> {
+    state.read_all(&id).await
+}
+
+#[tauri::command]
+pub async fn record_cleanup(
+    id: String,
+    state: State<'_, RecordingState>,
+) -> Result<(), String> {
+    state.cleanup(&id).await;
     Ok(())
 }

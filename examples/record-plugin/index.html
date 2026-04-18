@@ -5,8 +5,10 @@
 </head>
 <body>
 
-<!-- 8 second mono recording buffer at 48 kHz -->
-<sc-buffer name="rec" frames="384000" channels="1"/>
+<!-- DiskOut streaming buffer: 65536 frames, mono. This is NOT the recording length
+     — sc-record streams this buffer's contents straight to a temp file on disk
+     every block. Recording length is disk-limited. -->
+<sc-buffer name="rec" frames="65536" channels="1"/>
 
 <sc-synthdef name="chirp">
     <sc-control name="bufnum" value="0"/>
@@ -31,10 +33,9 @@
         <sc-control name="a" bind="osc"/>
         <sc-control name="b" bind="amp"/>
     </sc-ugen>
-    <sc-ugen name="rec" type="RecordBuf">
-        <sc-control name="inputArray" bind="sig"/>
+    <sc-ugen name="disk" type="DiskOut">
         <sc-control name="bufnum" bind="bufnum"/>
-        <sc-control name="loop" value="1"/>
+        <sc-control name="channelsArray" bind="sig"/>
     </sc-ugen>
     <sc-ugen name="out" type="Out">
         <sc-control name="bus" value="0"/>
@@ -74,7 +75,7 @@
         </label>
     </div>
 
-    <sc-record bind="rec" window="8" width="360" height="120"/>
+    <sc-record bind="rec" window="30" width="360" height="120"/>
 
 </div>
 

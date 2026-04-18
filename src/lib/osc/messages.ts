@@ -84,3 +84,33 @@ export function bufFreeMessage(bufnum: number) {
 export function bufGetnMessage(bufnum: number, start: number, count: number) {
   return new OSC.Message(OSC_MESSAGES.BUF_GETN, bufnum, start, count);
 }
+
+/**
+ * Open `path` for writing and wire it to `bufnum` as a streaming sink (used with
+ * `DiskOut.ar`). `leaveOpen=1` keeps the file open so DiskOut can keep writing
+ * blocks; pair with `bufCloseMessage` to finalise.
+ */
+export function bufWriteMessage(
+  bufnum: number,
+  path: string,
+  headerFormat: string = 'wav',
+  sampleFormat: string = 'float',
+  numFrames: number = -1,
+  startFrame: number = 0,
+  leaveOpen: boolean = true,
+) {
+  return new OSC.Message(
+    OSC_MESSAGES.BUF_WRITE,
+    bufnum,
+    path,
+    headerFormat,
+    sampleFormat,
+    numFrames,
+    startFrame,
+    leaveOpen ? 1 : 0,
+  );
+}
+
+export function bufCloseMessage(bufnum: number) {
+  return new OSC.Message(OSC_MESSAGES.BUF_CLOSE, bufnum);
+}

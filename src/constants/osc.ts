@@ -35,6 +35,8 @@ export const OSC_MESSAGES = {
   BUF_ALLOC: '/b_alloc',
   BUF_FREE: '/b_free',
   BUF_GETN: '/b_getn',
+  BUF_WRITE: '/b_write',
+  BUF_CLOSE: '/b_close',
 } as const;
 
 export const OSC_REPLIES = {

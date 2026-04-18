@@ -1,14 +1,16 @@
 mod buffer_ws;
+mod recording_ws;
 mod ws_bridge;
 
 use crate::ipc::buffer::BufferStreamState;
+use crate::ipc::recording::RecordingState;
 use crate::{config, plugin};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
-use hyper::{Request, Response, StatusCode};
+use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -20,23 +22,10 @@ struct AppState {
     data_dir: PathBuf,
     scsynth_addr: String,
     buffer_streams: Arc<BufferStreamState>,
+    recordings: Arc<RecordingState>,
 }
 
 pub fn serve(context: tauri::Context, port: u16, scsynth_addr: String) {
-    if cfg!(dev) {
-        let project_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-        println!("Building frontend...");
-        let status = std::process::Command::new("yarn")
-            .arg("build")
-            .current_dir(&project_root)
-            .status()
-            .expect("failed to run yarn build");
-        if !status.success() {
-            eprintln!("yarn build failed");
-            std::process::exit(1);
-        }
-    }
-
     let data_dir = config::data_dir().expect("failed to resolve app data dir");
 
     println!("Serving on http://localhost:{port}");
@@ -60,6 +49,7 @@ async fn run(
         data_dir,
         scsynth_addr,
         buffer_streams: Arc::new(BufferStreamState::new()),
+        recordings: Arc::new(RecordingState::new()),
     });
 
     let addr: SocketAddr = format!("0.0.0.0:{port}")
@@ -122,6 +112,15 @@ async fn handle_request(
                 ));
             }
         }
+        if let Some(rest) = path.strip_prefix("/recording/") {
+            if let Some(id) = rest.strip_suffix("/tail") {
+                return Ok(recording_ws::handle_ws_upgrade(
+                    req,
+                    id.to_string(),
+                    state.recordings.clone(),
+                ));
+            }
+        }
         return Ok(ws_bridge::handle_ws_upgrade(req, &state.scsynth_addr));
     }
 
@@ -130,8 +129,69 @@ async fn handle_request(
         return Ok(handle_plugin_request(req, &path, &state.data_dir).await);
     }
 
+    // Recording routes (HTTP verbs; WS tail handled above)
+    if path == "/recording" && req.method() == Method::POST {
+        return Ok(handle_recording_open(state.recordings.clone()).await);
+    }
+    if let Some(rest) = path.strip_prefix("/recording/") {
+        if let Some(id) = rest.strip_suffix(".wav") {
+            if req.method() == Method::GET {
+                return Ok(handle_recording_download(id, state.recordings.clone()).await);
+            }
+        }
+        if req.method() == Method::DELETE {
+            return Ok(handle_recording_cleanup(rest, state.recordings.clone()).await);
+        }
+    }
+
     // Static asset serving with SPA fallback
     Ok(serve_asset(&path, &state.context))
+}
+
+// --- Recording HTTP ---
+
+async fn handle_recording_open(state: Arc<RecordingState>) -> Response<Full<Bytes>> {
+    let (id, path) = state.open().await;
+    let body = format!(
+        "{{\"id\":\"{}\",\"path\":\"{}\"}}",
+        id,
+        path.to_string_lossy().replace('\\', "\\\\").replace('"', "\\\"")
+    );
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .header("access-control-allow-origin", "*")
+        .body(Full::new(Bytes::from(body)))
+        .unwrap()
+}
+
+async fn handle_recording_download(
+    id: &str,
+    state: Arc<RecordingState>,
+) -> Response<Full<Bytes>> {
+    match state.read_all(id).await {
+        Ok(bytes) => Response::builder()
+            .status(StatusCode::OK)
+            .header("content-type", "audio/wav")
+            .header("content-disposition", format!("attachment; filename=\"record-{id}.wav\""))
+            .header("access-control-allow-origin", "*")
+            .body(Full::new(Bytes::from(bytes)))
+            .unwrap(),
+        Err(_) => Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .header("content-type", "text/plain")
+            .body(Full::new(Bytes::from("Recording not found")))
+            .unwrap(),
+    }
+}
+
+async fn handle_recording_cleanup(id: &str, state: Arc<RecordingState>) -> Response<Full<Bytes>> {
+    state.cleanup(id).await;
+    Response::builder()
+        .status(StatusCode::NO_CONTENT)
+        .header("access-control-allow-origin", "*")
+        .body(Full::new(Bytes::new()))
+        .unwrap()
 }
 
 // --- Plugin route bridge ---

@@ -60,18 +60,20 @@ node scripts/generate_ugen_db.mjs
 - `cli.rs` — Clap-based CLI: dispatches to GUI (no args), `serve` (HTTP server), or `plugin` subcommands
 - `config.rs` — App data dir resolution, config file I/O (`config.json`), plugins dir helper
 - `ipc/` — Tauri IPC boundary (all `#[tauri::command]` functions)
-  - `commands.rs` — URI scheme handler (`app://plugins/`) + Tauri commands (`udp_bind`, `udp_send`, `udp_close`, `buffer_subscribe`, `buffer_unsubscribe`)
+  - `commands.rs` — URI scheme handler (`app://plugins/`) + Tauri commands (`udp_bind`, `udp_send`, `udp_close`, `buffer_subscribe`, `buffer_unsubscribe`, `record_open`, `record_tail_start`, `record_tail_stop`, `record_read`, `record_cleanup`)
   - `udp.rs` — Async UDP socket state management via tokio
   - `buffer.rs` — Per-bufnum `/b_getn` reader tasks + `/b_setn` parser (`rosc`). Refcounted subscriptions. Two `BufferSink` impls: `TauriChannelSink` (native mode, `Channel<Vec<f32>>`) and `WsSink` (serve mode, binary WS frames).
+  - `recording.rs` — DiskOut recording sessions. `RecordingState::open()` mints a `{id, path}` under the system temp dir; scsynth writes WAV to that path via `/b_write leaveOpen=1`. A tail task polls file size every 33 ms, forwards new 32-bit float samples past the 44-byte WAV header to a `BufferSink` (reused from `buffer.rs`). `read_all` serves the finished file for download.
 - `plugin/` — Plugin system
   - `manager.rs` — Plugin validation (zip, metadata, XSD, assets), CRUD (add/remove/list)
   - `router.rs` — HTTP router for plugin API (GET list, POST add, DELETE remove, GET file serving). Used by both `app://` URI scheme and standalone web server.
   - `cli.rs` — Plugin CLI command handlers (validate, add, remove, list)
   - `xsd/sc-plugin-schema.xsd` — XSD schema for plugin entry HTML validation
 - `server/` — Standalone HTTP server (browser mode)
-  - `mod.rs` — Hyper-based HTTP server: static asset serving from `context.assets()`, plugin route bridge, SPA fallback. Dispatches `/buffer/{bufnum}` WebSocket upgrades to `buffer_ws`.
+  - `mod.rs` — Hyper-based HTTP server: static asset serving from `context.assets()`, plugin route bridge, SPA fallback. Dispatches `/buffer/{bufnum}` WebSocket upgrades to `buffer_ws`; exposes `POST /recording`, `WS /recording/{id}/tail`, `GET /recording/{id}.wav`, `DELETE /recording/{id}` for the DiskOut recording flow.
   - `ws_bridge.rs` — WebSocket-to-UDP bridge for OSC communication with scsynth
   - `buffer_ws.rs` — Per-buffer WebSocket handler. Reads a 12-byte config header `[bufnum, chunk, frames]`, wires a `WsSink` into `BufferStreamState`, unsubscribes on close.
+  - `recording_ws.rs` — WebSocket handler for `/recording/{id}/tail`. Wires a `WsSink` into `RecordingState`; the tail task streams sample frames as the WAV grows, stops when the client disconnects.
 
 ### Browser Support
 
@@ -158,7 +160,7 @@ Plugin HTML is processed in two phases: HTML parsing (`src/lib/html/`) builds a 
 | `ScDisplayItem` | bind, format | `InputRuntime` | Read-only value display |
 | `ScIfItem` | bind, children | `InputRuntime` | Conditional rendering container |
 | `ScBufferItem` | name, frames, channels | `BufferRuntime` {name, bufnum, frames, channels, loaded, ...} | Server-side buffer allocation |
-| `ScRecordItem` | bind, width, height, window, size | `InputRuntime` | Waveform viewer + WAV downloader for a bound buffer |
+| `ScRecordItem` | bind, width, height, window, size | `InputRuntime` | Audacity-style track: controls a plugin-provided `DiskOut` via `/b_write` + `/b_close`, tails the growing WAV file on disk |
 
 Union types: `ScNodeItem` (group/synth/plugin), `ScParentItem` (all with children), `ScElementItem` (all items).
 
@@ -286,7 +288,7 @@ ScElement<T, S>          Base class: store subscription, _state, _runtime, _onSt
 | `sc-display` | bind, format | Read-only value display. Printf-style format (`%d`, `%.2f`, `%b`, `%s`) |
 | `sc-if` | bind, is-truthy/is-falsy/is-equal/etc. | Conditional rendering |
 | `sc-buffer` | name, frames, channels | Allocates a server-side buffer. `bufnum` assigned automatically via `oscService.nextBufNum()` |
-| `sc-record` | bind, width, height, window (s), size | Waveform viewer for a bound buffer. Record/stop button (styled like sc-run, with record-circle / stop-square icons) toggles a client-side capture. The live canvas shows a min/max envelope of incoming stream ticks; on stop, a sample-accurate snapshot of the full buffer is taken via a chunked one-shot `/b_getn` read and that becomes the frozen view + downloaded WAV. Horizontal drag / wheel scrolls the captured timeline while idle. |
+| `sc-record` | bind, width, height, window (s), size | Audacity-style track. On record, sc-record asks the Rust side for a temp WAV path, sends `/b_write bufnum <path>` to scsynth (which is running a `DiskOut` UGen) and streams the growing file back to the canvas in real time. On stop, sc-record sends `/b_close bufnum`, reads the finished WAV as the frozen view, and offers the same blob as the WAV download. Horizontal drag pans; mouse wheel zooms (centered at cursor). |
 
 Internal components in `sc-elements/internal/`:
 - `sc-element.ts` — Abstract base for all sc-elements. Store subscription, `_state`, `_runtime`, `_onStateChange(prev, next)`, `_sendCreate`/`_sendDestroy`, parent context consumer
@@ -380,7 +382,7 @@ This means nodes can see:
 - `<sc-select bind="...">` with `<sc-option>` children — dropdown selector
 - `<sc-radio-group bind="..." orientation="...">` with `<sc-radio>` children — radio buttons
 - `<sc-buffer name="..." frames="..." channels="..."/>` — allocates a server-side buffer
-- `<sc-record bind="bufferName" window="..." width="..." height="..."/>` — waveform viewer with record/stop and WAV download for the bound buffer
+- `<sc-record bind="bufferName" window="..." width="..." height="..."/>` — waveform track with record/stop + WAV download. The plugin's synthdef must drive the bound buffer with `<sc-ugen type="DiskOut">`; sc-record manages the file lifecycle via `/b_write` + `/b_close`
 
 ## OSC Communication (`src/lib/osc/`)
 
@@ -389,18 +391,48 @@ This means nodes can see:
 - `TauriDatagramSocket.ts` — Bridges to Tauri `udp_bind`/`udp_send`/`udp_close` commands (Tauri mode only)
 - `messages.ts` — OSC message factories: `/status`, `/s_new`, `/g_new`, `/n_set`, `/n_run`, `/n_free`, `/d_recv`, `/b_alloc`, `/b_free`, etc.
 
-## Buffer Streaming (`src/lib/bufferStream/`, `src-tauri/src/ipc/buffer.rs`, `src-tauri/src/server/buffer_ws.rs`)
+## Recording (`src/lib/recordingTail/`, `src-tauri/src/ipc/recording.rs`, `src-tauri/src/server/recording_ws.rs`)
 
-Buffer consumers (currently only `sc-record`'s live waveform) stream audio data from scsynth without going through osc-js. The Rust reader core owns a tokio task per active bufnum that sends `/b_getn` every ~33 ms sweeping the buffer cyclically, parses `/b_setn` replies with `rosc`, and fans f32 samples out to all registered sinks. Subscriptions are refcounted — two consumers on the same buffer share a single read loop.
+`sc-record` implements an Audacity-style track by letting scsynth write the audio directly to a WAV file on disk and tailing that file as it grows. This gives chronological, sample-accurate content both for the live view and for the download, with no OSC polling of audio data.
 
-- **Native mode:** `buffer_subscribe` Tauri command wraps a `Channel<Vec<f32>>`; frontend `TauriChannelStream` dispatches ticks via `channel.onmessage`.
-- **Serve mode:** `/buffer/{bufnum}` WebSocket route; client opens WS, sends `[bufnum, chunk, frames]` (12 bytes LE), server pushes `[numSamples u32 LE, f32 LE × n]` per tick.
+### Plugin author contract
 
-Backpressure: sinks are drop-on-slow. `WsSink` uses a bounded `mpsc(4)`; `TauriChannelSink.send` returns false only when the frontend has dropped the channel.
+The bound `sc-buffer` is a DiskOut *streaming* buffer — it's not the recording length, it's the block ring DiskOut uses to stream to disk (typical size `65536` frames, mono or stereo matching the signal). The plugin's synthdef must feed that buffer with `<sc-ugen type="DiskOut">` (inputArray = signal, bufnum = the buffer):
 
-### Caveat: stream vs download
+```xml
+<sc-buffer name="rec" frames="65536" channels="1"/>
+<sc-synthdef name="foo">
+    <sc-control name="bufnum" value="0"/>
+    ...produce `sig`...
+    <sc-ugen name="disk" type="DiskOut">
+        <sc-control name="bufnum" bind="bufnum"/>
+        <sc-control name="channelsArray" bind="sig"/>
+    </sc-ugen>
+</sc-synthdef>
+<sc-synth name="voice" bind="foo">
+    <sc-control name="bufnum" bind="rec"/>
+</sc-synth>
+<sc-record bind="rec" window="5"/>
+```
 
-The stream is a cyclic-sweep view of the buffer, not a chronological sample stream. For `sc-record`'s *live* waveform this is illustrative — useful as an activity indicator but not sample-accurate. The **downloaded WAV is sample-accurate** because it comes from a separate path: on stop, `sc-record` issues a chunked one-shot `/b_getn` (via `oscService.readBuffer` + `/b_setn` wildcard listener) that reads the whole buffer once in order, and this snapshot is what's encoded. For a `RecordBuf loop=1` synth this snapshot is the most recent `frames / sampleRate` seconds of audio.
+Recording length is disk-limited, not buffer-limited.
+
+### Flow
+
+1. **Record click.** `sc-record` calls `openRecording()` (Tauri `record_open` or `POST /recording`), getting `{id, path}`. It sends `/b_write bufnum path "wav" "float" -1 0 1` to scsynth, waits one OSC `msgLatency` for the file to appear, then opens a `RecordingTail` (`record_tail_start` or `WS /recording/{id}/tail`). The Rust tail task watches the file size, reads new 4-byte-aligned f32 LE chunks past the 44-byte WAV header, and forwards them to the frontend. Samples append to the growing `_captured` array and the canvas auto-scrolls to the tail.
+2. **Stop click.** `sc-record` sends `/b_close bufnum` to scsynth, closes the tail, waits one `msgLatency` for the file header to be finalised, then `readRecording(id)` pulls the whole WAV back. It parses out the float32 samples (scanning RIFF chunks for `data`) → `_frozen`. The blob is kept in memory for the download button.
+3. **Download click.** The blob is written to a temporary anchor with `download="record-<timestamp>.wav"`; the user gets the exact file scsynth wrote.
+4. **Cleanup.** The temp file is removed via `record_cleanup` (or `DELETE /recording/{id}`) when a new recording is started or the component is destroyed.
+
+### Transport
+
+Same split-by-`IS_TAURI` pattern as the rest of the app:
+- **Native:** Tauri `Channel<Vec<f32>>` for the tail; `invoke('record_read', {id})` returns the file bytes as `Vec<u8>`.
+- **Serve:** `WS /recording/{id}/tail` (binary `[numSamples u32 LE, f32 LE × n]` frames); `GET /recording/{id}.wav` streams the file with `content-type: audio/wav`.
+
+### Filesystem assumption
+
+The Rust process and scsynth must share a filesystem (the usual localhost case). In serve mode this means the machine running `sc-app serve` is the same machine running scsynth. For split-host setups, extend `recording.rs` to fetch the file over SC's `/b_read`+network or use a different transport.
 
 ## Example Plugins (`examples/`)
 

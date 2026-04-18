@@ -1,8 +1,10 @@
 import OSC from 'osc-js';
 import {
   bufAllocMessage,
+  bufCloseMessage,
   bufFreeMessage,
   bufGetnMessage,
+  bufWriteMessage,
   defRecvMessage,
   dumpOscMessage,
   freeNodeMessage,
@@ -282,5 +284,15 @@ export class OscService {
 
   readBuffer(bufnum: number, start: number, count: number): void {
     this.send(bufGetnMessage(bufnum, start, count));
+  }
+
+  /** Open a file for streaming writes from `bufnum` (used by sc-record + DiskOut). */
+  openBufferWrite(bufnum: number, path: string): void {
+    this.send(bufWriteMessage(bufnum, path));
+  }
+
+  /** Finalise the WAV file tied to `bufnum` via `openBufferWrite`. */
+  closeBufferWrite(bufnum: number): void {
+    this.send(bufCloseMessage(bufnum));
   }
 }

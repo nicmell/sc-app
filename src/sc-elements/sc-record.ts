@@ -4,18 +4,18 @@ import type {RuntimeState} from '@/types/stores';
 import {isBuffer, isRecord} from '@/lib/utils/guards';
 import {optionsApi, rootApi} from '@/lib/stores/api';
 import {oscService} from '@/lib/osc';
-import {createBufferStream, type BufferStream} from '@/lib/bufferStream/BufferStream';
+import {
+    createRecordingTail,
+    openRecording,
+    readRecording,
+    cleanupRecording,
+    type RecordingTail,
+} from '@/lib/recordingTail/RecordingTail';
 import {ScElement} from './internal/sc-element.ts';
-
-const STREAM_CHUNK = 1024;
-const GETN_CHUNK = 256;
-const READ_TIMEOUT_MS = 3000;
 
 interface RecordState {
     bufnum: number;
     loaded: boolean;
-    frames: number;
-    channels: number;
 }
 
 export class ScRecord extends ScElement<ScRecordItem, RecordState> {
@@ -68,10 +68,12 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
     private _rafId: number | null = null;
     private _dirty = true;
 
-    private _stream: BufferStream | null = null;
+    private _tail: RecordingTail | null = null;
+    private _recordingId: string | null = null;
     private _captured: Float32Array = new Float32Array(0);
     private _capturedLen = 0;
     private _frozen: Float32Array | null = null;
+    private _downloadBlob: Blob | null = null;
     private _sampleRate = 0;
     private _scrollSample = 0;
     private _autoScroll = false;
@@ -93,19 +95,13 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
 
     getState(state: RuntimeState): RecordState {
         const self = state.nodes[this.id];
-        if (!self || !isRecord(self)) return {bufnum: 0, loaded: false, frames: 0, channels: 1};
+        if (!self || !isRecord(self)) return {bufnum: 0, loaded: false};
         const buf = state.nodes[self.runtime.targetId];
-        if (!buf || !isBuffer(buf)) return {bufnum: 0, loaded: false, frames: 0, channels: 1};
-        return {
-            bufnum: buf.runtime.bufnum,
-            loaded: buf.runtime.loaded,
-            frames: buf.runtime.frames,
-            channels: buf.runtime.channels,
-        };
+        if (!buf || !isBuffer(buf)) return {bufnum: 0, loaded: false};
+        return {bufnum: buf.runtime.bufnum, loaded: buf.runtime.loaded};
     }
 
     protected _onStateChange(prev: RecordState, next: RecordState): void {
-        // Buffer disappeared mid-record: stop cleanly.
         if (this._recording && (!next.loaded || next.bufnum <= 0)) {
             void this._stopRecording();
         }
@@ -115,6 +111,7 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
     protected _sendDestroy() {
         super._sendDestroy();
         if (this._recording) void this._stopRecording();
+        void this._cleanupPrevious();
     }
 
     // ── Record / stop ─────────────────────────────────────────────────────
@@ -128,6 +125,14 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
         }
     };
 
+    private async _cleanupPrevious() {
+        if (this._recordingId) {
+            const id = this._recordingId;
+            this._recordingId = null;
+            try { await cleanupRecording(id); } catch { /* best-effort */ }
+        }
+    }
+
     private async _startRecording(): Promise<void> {
         const s = this._state;
         if (!s.loaded || s.bufnum <= 0) return;
@@ -138,65 +143,87 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
             return;
         }
 
-        const initialCap = Math.max(1, Math.ceil(this.window * sampleRate));
-        this._captured = new Float32Array(initialCap);
-        this._capturedLen = 0;
-        this._frozen = null;
-        this._hasFrozen = false;
-        this._scrollSample = 0;
-        this._sampleRate = sampleRate;
-        this._zoomWindow = 0; // reset to authored window
-        this._autoScroll = true;
-        this._recording = true;
-        this._dirty = true;
-
-        const {host, port} = optionsApi.scsynth;
-        const stream = createBufferStream({
-            bufnum: s.bufnum,
-            frames: s.frames,
-            chunk: STREAM_CHUNK,
-            scsynthAddr: `${host}:${port}`,
-        });
-        stream.onTick((samples) => this._appendSamples(samples));
-        this._stream = stream;
+        this._busy = true;
         try {
-            await stream.open();
+            await this._cleanupPrevious();
+
+            const handle = await openRecording();
+            this._recordingId = handle.id;
+
+            // Tell scsynth to open the file for streaming writes via DiskOut.
+            oscService.openBufferWrite(s.bufnum, handle.path);
+
+            // Wait for the OSC bundle to arrive + scsynth to flush the WAV header
+            // to disk before the Rust tail starts reading.
+            const latency = optionsApi.scsynth.msgLatencyMs;
+            await delay(latency + 40);
+
+            const initialCap = Math.max(1, Math.ceil(Math.max(60, this.window) * sampleRate));
+            this._captured = new Float32Array(initialCap);
+            this._capturedLen = 0;
+            this._frozen = null;
+            this._downloadBlob = null;
+            this._hasFrozen = false;
+            this._scrollSample = 0;
+            this._sampleRate = sampleRate;
+            this._zoomWindow = 0;
+            this._autoScroll = true;
+            this._dirty = true;
+
+            const tail = createRecordingTail(handle.id);
+            tail.onSamples((samples) => this._appendSamples(samples));
+            await tail.open();
+            this._tail = tail;
+            this._recording = true;
         } catch (e) {
-            console.error('sc-record: stream open failed', e);
-            this._stream = null;
-            this._recording = false;
+            console.error('sc-record: start failed', e);
+            await this._cleanupPrevious();
+        } finally {
+            this._busy = false;
         }
     }
 
     private async _stopRecording(): Promise<void> {
-        if (this._stream) {
-            this._stream.close();
-            this._stream = null;
-        }
+        const s = this._state;
         this._recording = false;
         this._autoScroll = false;
 
-        const s = this._state;
-        if (!s.loaded || s.bufnum <= 0 || s.frames <= 0) {
+        if (s.loaded && s.bufnum > 0) {
+            oscService.closeBufferWrite(s.bufnum);
+        }
+
+        if (this._tail) {
+            this._tail.close();
+            this._tail = null;
+        }
+
+        const id = this._recordingId;
+        if (!id) {
             this._dirty = true;
             return;
         }
 
         this._busy = true;
         try {
-            const frozen = await this._readFullBuffer(s.bufnum, s.frames);
-            this._frozen = frozen;
+            // Give scsynth time to fully finalise the WAV header on disk.
+            const latency = optionsApi.scsynth.msgLatencyMs;
+            await delay(latency + 80);
+
+            const blob = await readRecording(id);
+            this._downloadBlob = blob;
+            this._frozen = await parseWavFloat32(blob);
             this._hasFrozen = true;
             this._scrollSample = 0;
+            this._zoomWindow = 0;
         } catch (e) {
-            console.error('sc-record: full-buffer read failed', e);
+            console.error('sc-record: read-back failed', e);
         } finally {
             this._busy = false;
             this._dirty = true;
         }
     }
 
-    // ── Live streaming tick ─────────────────────────────────────────────────
+    // ── Live tail tick ─────────────────────────────────────────────────────
 
     private _appendSamples(samples: Float32Array): void {
         const needed = this._capturedLen + samples.length;
@@ -221,49 +248,11 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
         return this._zoomWindow > 0 ? this._zoomWindow : this.window;
     }
 
-    // ── Sample-accurate full-buffer read via chunked /b_getn ───────────────
-
-    private _readFullBuffer(bufnum: number, frames: number): Promise<Float32Array> {
-        const out = new Float32Array(frames);
-        const chunks: Array<{start: number; count: number}> = [];
-        for (let offset = 0; offset < frames; offset += GETN_CHUNK) {
-            chunks.push({start: offset, count: Math.min(GETN_CHUNK, frames - offset)});
-        }
-        const pending = new Set(chunks.map(c => c.start));
-
-        return new Promise<Float32Array>((resolve) => {
-            const subId = oscService.on('*', (...args: unknown[]) => {
-                const msg = args[0] as {address: string; args: unknown[]} | undefined;
-                if (!msg || msg.address !== '/b_setn') return;
-                const [b, start, count, ...values] = msg.args as [number, number, number, ...number[]];
-                if (b !== bufnum || !pending.has(start)) return;
-                const end = Math.min(frames, start + count);
-                for (let i = 0; i < end - start && i < values.length; i++) {
-                    out[start + i] = values[i];
-                }
-                pending.delete(start);
-                if (pending.size === 0) {
-                    clearTimeout(timeout);
-                    oscService.off('*', subId);
-                    resolve(out);
-                }
-            });
-            const timeout = setTimeout(() => {
-                oscService.off('*', subId);
-                resolve(out); // resolve with partial data
-            }, READ_TIMEOUT_MS);
-            for (const c of chunks) {
-                oscService.readBuffer(bufnum, c.start, c.count);
-            }
-        });
-    }
-
     // ── Download ───────────────────────────────────────────────────────────
 
     private _onDownloadClick = () => {
-        if (!this._frozen || this._recording) return;
-        const blob = encodeWav(this._frozen, this._sampleRate);
-        const url = URL.createObjectURL(blob);
+        if (!this._downloadBlob || this._recording) return;
+        const url = URL.createObjectURL(this._downloadBlob);
         const a = document.createElement('a');
         a.href = url;
         const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -355,7 +344,7 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
         ctx.stroke();
     }
 
-    // ── Scroll interaction (idle only) ─────────────────────────────────────
+    // ── Scroll + zoom (idle only) ─────────────────────────────────────────
 
     private _maxScroll(): number {
         const len = this._viewLength();
@@ -428,10 +417,11 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
             cancelAnimationFrame(this._rafId);
             this._rafId = null;
         }
-        if (this._stream) {
-            this._stream.close();
-            this._stream = null;
+        if (this._tail) {
+            this._tail.close();
+            this._tail = null;
         }
+        void this._cleanupPrevious();
     }
 
     // ── Render ─────────────────────────────────────────────────────────────
@@ -470,7 +460,6 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
     private _downloadButton(enabled: boolean) {
         const s = this.size;
         const r = s * 0.15;
-        // Arrow into tray
         const arrowColor = this.fgcolor;
         return html`<button
             title="Download WAV"
@@ -496,35 +485,40 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
     }
 }
 
-// ── WAV encoder (inline; IEEE float32, mono) ───────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────
 
-function encodeWav(samples: Float32Array, sampleRate: number): Blob {
-    const numFrames = samples.length;
-    const bytesPerSample = 4;
-    const dataBytes = numFrames * bytesPerSample;
-    const buf = new ArrayBuffer(44 + dataBytes);
+function delay(ms: number): Promise<void> {
+    return new Promise(r => setTimeout(r, ms));
+}
+
+/**
+ * Parse a scsynth-written WAV (IEEE float32, mono or interleaved) into a
+ * Float32Array. Scans the RIFF chunks for `data` rather than assuming the
+ * canonical 44-byte header, since format=3 WAV files may include a `fact`
+ * chunk.
+ */
+async function parseWavFloat32(blob: Blob): Promise<Float32Array> {
+    const buf = await blob.arrayBuffer();
+    if (buf.byteLength < 12) return new Float32Array(0);
     const view = new DataView(buf);
-
-    const writeStr = (o: number, s: string) => {
-        for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i));
-    };
-
-    writeStr(0, 'RIFF');
-    view.setUint32(4, 36 + dataBytes, true);
-    writeStr(8, 'WAVE');
-    writeStr(12, 'fmt ');
-    view.setUint32(16, 16, true);        // PCM-style header size
-    view.setUint16(20, 3, true);         // format = IEEE float
-    view.setUint16(22, 1, true);         // channels
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * bytesPerSample, true);
-    view.setUint16(32, bytesPerSample, true);
-    view.setUint16(34, 32, true);        // bit depth
-    writeStr(36, 'data');
-    view.setUint32(40, dataBytes, true);
-
-    for (let i = 0; i < numFrames; i++) {
-        view.setFloat32(44 + i * 4, samples[i], true);
+    // 'data' = 0x64 0x61 0x74 0x61 (big-endian marker read via getUint32).
+    const DATA = 0x64617461;
+    let off = 12;
+    while (off + 8 <= buf.byteLength) {
+        const marker = view.getUint32(off, false);
+        const size = view.getUint32(off + 4, true);
+        if (marker === DATA) {
+            const start = off + 8;
+            const bytes = Math.min(size, buf.byteLength - start);
+            const n = Math.floor(bytes / 4);
+            // Copy into a freshly-allocated Float32Array (not a view) so the
+            // underlying ArrayBuffer can be GC'd after this function returns.
+            const out = new Float32Array(n);
+            const src = new Float32Array(buf, start, n);
+            out.set(src);
+            return out;
+        }
+        off += 8 + size + (size & 1); // chunks are word-aligned
     }
-    return new Blob([buf], {type: 'audio/wav'});
+    return new Float32Array(0);
 }
