@@ -1,9 +1,9 @@
-use super::buffer::BufferSink;
+use crate::ipc::buffer::BufferSink;
+use crate::recording::manager;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
 use tokio::sync::Mutex;
@@ -14,66 +14,46 @@ use tokio::task::JoinHandle;
 const WAV_HEADER_BYTES: u64 = 44;
 
 struct Session {
-    path: PathBuf,
     tail_task: Mutex<Option<JoinHandle<()>>>,
 }
 
+/// In-memory registry of active file-tail tasks, keyed by recording id.
+/// Persistent state (the WAV files) lives on disk and is managed by
+/// `recording::manager`.
 pub struct RecordingState {
     sessions: Mutex<HashMap<String, Arc<Session>>>,
-    seq: AtomicU64,
 }
 
 impl RecordingState {
     pub fn new() -> Self {
         Self {
             sessions: Mutex::new(HashMap::new()),
-            seq: AtomicU64::new(0),
         }
     }
 
-    /// Reserve a fresh recording slot. Produces a unique id + an absolute path
-    /// in a well-known shared temp dir. The file is NOT created here — scsynth
-    /// creates it in response to `/b_write`, and sc-record's tail task reads
-    /// that same path as it grows. Using a shared path (/tmp on Unix, %TEMP%
-    /// on Windows) avoids mismatches between the Tauri process's $TMPDIR and
-    /// scsynth's $TMPDIR, which can differ when the two processes were launched
-    /// from different environments.
-    pub async fn open(&self) -> (String, PathBuf) {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        let n = self.seq.fetch_add(1, Ordering::SeqCst);
-        let id = format!("{nanos:x}-{n:x}");
-        let path = shared_temp_dir().join(format!("sc-record-{id}.wav"));
-        let session = Arc::new(Session {
-            path: path.clone(),
-            tail_task: Mutex::new(None),
-        });
-        self.sessions.lock().await.insert(id.clone(), session);
-        (id, path)
-    }
-
-    pub async fn path_of(&self, id: &str) -> Option<PathBuf> {
-        self.sessions.lock().await.get(id).map(|s| s.path.clone())
-    }
-
-    pub async fn start_tail(&self, id: &str, sink: Box<dyn BufferSink>) -> Result<(), String> {
+    pub async fn start_tail(
+        &self,
+        data_dir: &Path,
+        id: &str,
+        sink: Box<dyn BufferSink>,
+    ) -> Result<(), String> {
+        let path = manager::path_for(data_dir, id);
         let session = self
             .sessions
             .lock()
             .await
-            .get(id)
-            .cloned()
-            .ok_or_else(|| format!("unknown recording id: {id}"))?;
+            .entry(id.to_string())
+            .or_insert_with(|| {
+                Arc::new(Session {
+                    tail_task: Mutex::new(None),
+                })
+            })
+            .clone();
         let mut guard = session.tail_task.lock().await;
         if let Some(t) = guard.take() {
             t.abort();
         }
-        let path = session.path.clone();
-        let sink = Arc::new(Mutex::new(sink));
-        let task = spawn_tail_reader(path, sink);
-        *guard = Some(task);
+        *guard = Some(spawn_tail_reader(path, Arc::new(Mutex::new(sink))));
         Ok(())
     }
 
@@ -84,44 +64,6 @@ impl RecordingState {
             }
         }
     }
-
-    pub async fn read_all(&self, id: &str) -> Result<Vec<u8>, String> {
-        let path = self
-            .path_of(id)
-            .await
-            .ok_or_else(|| format!("unknown recording id: {id}"))?;
-        tokio::fs::read(&path)
-            .await
-            .map_err(|e| format!("read {}: {e}", path.display()))
-    }
-
-    pub async fn cleanup(&self, id: &str) {
-        let session = self.sessions.lock().await.remove(id);
-        if let Some(session) = session {
-            if let Some(t) = session.tail_task.lock().await.take() {
-                t.abort();
-            }
-            let _ = tokio::fs::remove_file(&session.path).await;
-        }
-    }
-}
-
-fn shared_temp_dir() -> PathBuf {
-    #[cfg(unix)]
-    {
-        PathBuf::from("/tmp")
-    }
-    #[cfg(windows)]
-    {
-        std::env::var_os("TEMP")
-            .or_else(|| std::env::var_os("TMP"))
-            .map(PathBuf::from)
-            .unwrap_or_else(std::env::temp_dir)
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        std::env::temp_dir()
-    }
 }
 
 fn spawn_tail_reader(
@@ -129,7 +71,6 @@ fn spawn_tail_reader(
     sink: Arc<Mutex<Box<dyn BufferSink>>>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
-        // Wait for scsynth to create the file (bundle latency + disk).
         let file = match wait_for_file(&path, Duration::from_secs(5)).await {
             Some(f) => f,
             None => {
@@ -151,7 +92,6 @@ async fn wait_for_file(path: &Path, timeout: Duration) -> Option<File> {
     let start = std::time::Instant::now();
     loop {
         if let Ok(f) = File::open(path).await {
-            // Also wait for the WAV header to be flushed.
             if let Ok(meta) = tokio::fs::metadata(path).await {
                 if meta.len() >= WAV_HEADER_BYTES {
                     return Some(f);

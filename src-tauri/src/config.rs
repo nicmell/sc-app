@@ -35,6 +35,10 @@ pub fn plugins_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("plugins")
 }
 
+pub fn recordings_dir(data_dir: &Path) -> PathBuf {
+    data_dir.join("recordings")
+}
+
 fn config_path(data_dir: &Path) -> PathBuf {
     data_dir.join("config.json")
 }

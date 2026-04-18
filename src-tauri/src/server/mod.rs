@@ -3,14 +3,14 @@ mod recording_ws;
 mod ws_bridge;
 
 use crate::ipc::buffer::BufferStreamState;
-use crate::ipc::recording::RecordingState;
-use crate::{config, plugin};
+use crate::recording::state::RecordingState;
+use crate::{config, plugin, recording};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
-use hyper::{Method, Request, Response, StatusCode};
+use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -112,11 +112,12 @@ async fn handle_request(
                 ));
             }
         }
-        if let Some(rest) = path.strip_prefix("/recording/") {
+        if let Some(rest) = path.strip_prefix("/recordings/") {
             if let Some(id) = rest.strip_suffix("/tail") {
                 return Ok(recording_ws::handle_ws_upgrade(
                     req,
                     id.to_string(),
+                    state.data_dir.clone(),
                     state.recordings.clone(),
                 ));
             }
@@ -124,103 +125,40 @@ async fn handle_request(
         return Ok(ws_bridge::handle_ws_upgrade(req, &state.scsynth_addr));
     }
 
-    // Plugin routes
-    if path.starts_with("/plugins") {
-        return Ok(handle_plugin_request(req, &path, &state.data_dir).await);
+    // Plugins: bridge to plugin::router.
+    if let Some(inner) = path.strip_prefix("/plugins") {
+        return Ok(bridge_router(req, inner, &state.data_dir, plugin::router::handle).await);
     }
-
-    // Recording routes (HTTP verbs; WS tail handled above)
-    if path == "/recording" && req.method() == Method::POST {
-        return Ok(handle_recording_open(state.recordings.clone()).await);
-    }
-    if let Some(rest) = path.strip_prefix("/recording/") {
-        if let Some(id) = rest.strip_suffix(".wav") {
-            if req.method() == Method::GET {
-                return Ok(handle_recording_download(id, state.recordings.clone()).await);
-            }
-        }
-        if req.method() == Method::DELETE {
-            return Ok(handle_recording_cleanup(rest, state.recordings.clone()).await);
-        }
+    // Recordings: bridge to recording::router.
+    if let Some(inner) = path.strip_prefix("/recordings") {
+        return Ok(bridge_router(req, inner, &state.data_dir, recording::router::handle).await);
     }
 
     // Static asset serving with SPA fallback
     Ok(serve_asset(&path, &state.context))
 }
 
-// --- Recording HTTP ---
-
-async fn handle_recording_open(state: Arc<RecordingState>) -> Response<Full<Bytes>> {
-    let (id, path) = state.open().await;
-    let body = format!(
-        "{{\"id\":\"{}\",\"path\":\"{}\"}}",
-        id,
-        path.to_string_lossy().replace('\\', "\\\\").replace('"', "\\\"")
-    );
-    Response::builder()
-        .status(StatusCode::OK)
-        .header("content-type", "application/json")
-        .header("access-control-allow-origin", "*")
-        .body(Full::new(Bytes::from(body)))
-        .unwrap()
-}
-
-async fn handle_recording_download(
-    id: &str,
-    state: Arc<RecordingState>,
-) -> Response<Full<Bytes>> {
-    match state.read_all(id).await {
-        Ok(bytes) => Response::builder()
-            .status(StatusCode::OK)
-            .header("content-type", "audio/wav")
-            .header("content-disposition", format!("attachment; filename=\"record-{id}.wav\""))
-            .header("access-control-allow-origin", "*")
-            .body(Full::new(Bytes::from(bytes)))
-            .unwrap(),
-        Err(_) => Response::builder()
-            .status(StatusCode::NOT_FOUND)
-            .header("content-type", "text/plain")
-            .body(Full::new(Bytes::from("Recording not found")))
-            .unwrap(),
-    }
-}
-
-async fn handle_recording_cleanup(id: &str, state: Arc<RecordingState>) -> Response<Full<Bytes>> {
-    state.cleanup(id).await;
-    Response::builder()
-        .status(StatusCode::NO_CONTENT)
-        .header("access-control-allow-origin", "*")
-        .body(Full::new(Bytes::new()))
-        .unwrap()
-}
-
-// --- Plugin route bridge ---
-
-async fn handle_plugin_request(
+/// Generic bridge from a `hyper` request to a `http`-crate Request/Response
+/// router (the shared plugin/recording router surface).
+async fn bridge_router(
     req: Request<Incoming>,
-    path: &str,
+    inner_path: &str,
     data_dir: &Path,
+    router: fn(&Path, &http::Request<Vec<u8>>) -> http::Response<Vec<u8>>,
 ) -> Response<Full<Bytes>> {
-    let stripped = path.strip_prefix("/plugins").unwrap_or("/");
-    let stripped = if stripped.is_empty() { "/" } else { stripped };
-
+    let uri = if inner_path.is_empty() { "/" } else { inner_path };
     let method = req.method().clone();
     let headers = req.headers().clone();
     let body_bytes = match req.into_body().collect().await {
         Ok(collected) => collected.to_bytes().to_vec(),
         Err(_) => Vec::new(),
     };
-
-    let mut builder = http::Request::builder()
-        .method(method)
-        .uri(stripped);
+    let mut builder = http::Request::builder().method(method).uri(uri);
     for (k, v) in &headers {
         builder = builder.header(k, v);
     }
     let http_req = builder.body(body_bytes).unwrap();
-
-    let http_resp = plugin::router::handle(data_dir, &http_req);
-
+    let http_resp = router(data_dir, &http_req);
     let (parts, body) = http_resp.into_parts();
     Response::from_parts(parts, Full::new(Bytes::from(body)))
 }

@@ -8,7 +8,6 @@ import {
     createRecordingTail,
     openRecording,
     readRecording,
-    cleanupRecording,
     type RecordingTail,
 } from '@/lib/recordingTail/RecordingTail';
 import {ScElement} from './internal/sc-element.ts';
@@ -111,7 +110,6 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
     protected _sendDestroy() {
         super._sendDestroy();
         if (this._recording) void this._stopRecording();
-        void this._cleanupPrevious();
     }
 
     // ── Record / stop ─────────────────────────────────────────────────────
@@ -125,14 +123,6 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
         }
     };
 
-    private async _cleanupPrevious() {
-        if (this._recordingId) {
-            const id = this._recordingId;
-            this._recordingId = null;
-            try { await cleanupRecording(id); } catch { /* best-effort */ }
-        }
-    }
-
     private async _startRecording(): Promise<void> {
         const s = this._state;
         if (!s.loaded || s.bufnum <= 0) return;
@@ -145,8 +135,6 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
 
         this._busy = true;
         try {
-            await this._cleanupPrevious();
-
             const handle = await openRecording();
             this._recordingId = handle.id;
 
@@ -177,7 +165,7 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
             this._recording = true;
         } catch (e) {
             console.error('sc-record: start failed', e);
-            await this._cleanupPrevious();
+            this._recordingId = null;
         } finally {
             this._busy = false;
         }
@@ -420,7 +408,6 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
             this._tail.close();
             this._tail = null;
         }
-        void this._cleanupPrevious();
     }
 
     // ── Render ─────────────────────────────────────────────────────────────

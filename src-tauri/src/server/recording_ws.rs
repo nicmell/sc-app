@@ -1,11 +1,12 @@
 use crate::ipc::buffer::WsSink;
-use crate::ipc::recording::RecordingState;
+use crate::recording::state::RecordingState;
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
 use http_body_util::Full;
 use hyper::body::Incoming;
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
@@ -13,6 +14,7 @@ use tokio_tungstenite::tungstenite::Message;
 pub fn handle_ws_upgrade(
     req: Request<Incoming>,
     id: String,
+    data_dir: PathBuf,
     state: Arc<RecordingState>,
 ) -> Response<Full<Bytes>> {
     let key = match req.headers().get("sec-websocket-key") {
@@ -29,7 +31,7 @@ pub fn handle_ws_upgrade(
 
     tokio::spawn(async move {
         match hyper::upgrade::on(req).await {
-            Ok(upgraded) => handle_ws_connection(upgraded, id, state).await,
+            Ok(upgraded) => handle_ws_connection(upgraded, id, data_dir, state).await,
             Err(e) => eprintln!("Recording WS upgrade error: {e}"),
         }
     });
@@ -46,6 +48,7 @@ pub fn handle_ws_upgrade(
 async fn handle_ws_connection(
     upgraded: hyper::upgrade::Upgraded,
     id: String,
+    data_dir: PathBuf,
     state: Arc<RecordingState>,
 ) {
     let ws = tokio_tungstenite::WebSocketStream::from_raw_socket(
@@ -59,7 +62,7 @@ async fn handle_ws_connection(
 
     let (tx, mut rx) = mpsc::channel::<Message>(4);
     let sink = Box::new(WsSink { tx });
-    if let Err(e) = state.start_tail(&id, sink).await {
+    if let Err(e) = state.start_tail(&data_dir, &id, sink).await {
         eprintln!("recording tail start failed ({id}): {e}");
         return;
     }
