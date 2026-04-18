@@ -12,7 +12,7 @@ import {ScUgen} from './sc-ugen.ts';
 import {ScControl} from './sc-control.ts';
 import {ScVar} from './sc-var.ts';
 import {ScBuffer} from './sc-buffer.ts';
-import {ScRecord} from './sc-record.ts';
+import {ScWaveform} from './sc-waveform.ts';
 import {ScSelect} from './sc-select.ts';
 import {ScOption} from './sc-option.ts';
 import {ScRadioGroup} from './sc-radio-group.ts';
@@ -36,5 +36,5 @@ export default {
   [ELEMENTS.SC_RADIO_GROUP]: ScRadioGroup,
   [ELEMENTS.SC_RADIO]: ScRadio,
   [ELEMENTS.SC_BUFFER]: ScBuffer,
-  [ELEMENTS.SC_RECORD]: ScRecord,
+  [ELEMENTS.SC_WAVEFORM]: ScWaveform,
 };

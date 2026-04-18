@@ -21,8 +21,7 @@ export interface SampleStream {
  *   header once the socket is up.
  *
  * Consumers use `createSampleStream(spec)` with a small recipe object
- * describing the two backends; see `createBufferStream` / `createRecordingStream`
- * for examples.
+ * describing the two backends; see `createBufferStream` for an example.
  */
 export interface SampleStreamSpec {
     tauri: {

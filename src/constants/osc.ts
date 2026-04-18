@@ -22,7 +22,6 @@ export const OSC_MESSAGES = {
   STATUS: '/status',
   DUMP_OSC: '/dumpOSC',
   NOTIFY: '/notify',
-  QUIT: '/quit',
   VERSION: '/version',
   SYNTH_NEW: '/s_new',
   GROUP_NEW: '/g_new',

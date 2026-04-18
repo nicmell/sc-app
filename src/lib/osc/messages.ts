@@ -17,10 +17,6 @@ export function notifyMessage(flag: number = 1, clientId: number = -1) {
   return msg;
 }
 
-export function quitMessage() {
-  return new OSC.Message(OSC_MESSAGES.QUIT);
-}
-
 export function versionMessage() {
   return new OSC.Message(OSC_MESSAGES.VERSION);
 }

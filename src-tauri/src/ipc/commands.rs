@@ -1,8 +1,8 @@
-use super::buffer::{BufferSink, BufferStreamState, SubId, TauriChannelSink};
+use super::buffer::{BufferStreamState, SubId, TauriChannelSink};
 use super::udp::UdpState;
-use crate::{plugin, recording};
+use crate::plugin;
 use tauri::ipc::Channel;
-use tauri::{AppHandle, Emitter, Manager, State, UriSchemeContext, Window};
+use tauri::{Emitter, Manager, State, UriSchemeContext, Window};
 
 // --- URI scheme handler (`app://…`) ---
 
@@ -26,7 +26,6 @@ pub fn handle_uri<R: tauri::Runtime>(
     let host = request.uri().host().unwrap_or("").to_string();
     match host.as_str() {
         "plugins" => plugin::router::handle(&data_dir, &request),
-        "recordings" => recording::router::handle(&data_dir, &request),
         _ => tauri::http::Response::builder()
             .status(404)
             .header("content-type", "text/plain")
@@ -88,42 +87,4 @@ pub async fn buffer_unsubscribe(
 ) -> Result<(), String> {
     state.unsubscribe(sub_id).await;
     Ok(())
-}
-
-/// Start a recording stream: poll `bufnum` via `/b_getn`, forward samples to
-/// `channel` for the live waveform, and stream them into a WAV file at
-/// `{data_dir}/recordings/{id}.wav`. Stop by calling `buffer_unsubscribe(sub_id)`;
-/// the recording sink finalises the WAV header on drop.
-#[tauri::command]
-#[allow(clippy::too_many_arguments)]
-pub async fn record_stream_start(
-    app: AppHandle,
-    id: String,
-    bufnum: i32,
-    frames: i32,
-    chunk: i32,
-    sample_rate: u32,
-    channels: u16,
-    scsynth_addr: String,
-    channel: Channel<Vec<f32>>,
-    buffer_state: State<'_, BufferStreamState>,
-) -> Result<SubId, String> {
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("data dir: {e}"))?;
-    let inner: Box<dyn BufferSink> = Box::new(TauriChannelSink { channel });
-    recording::state::start_stream(
-        &data_dir,
-        &id,
-        bufnum,
-        frames,
-        chunk,
-        sample_rate,
-        channels,
-        &scsynth_addr,
-        inner,
-        &buffer_state,
-    )
-    .await
 }

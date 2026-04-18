@@ -36,7 +36,6 @@ pub fn run(context: tauri::Context) -> ! {
             tauri::Builder::default()
                 .plugin(tauri_plugin_opener::init())
                 .plugin(tauri_plugin_fs::init())
-                .plugin(tauri_plugin_dialog::init())
                 .manage(ipc::udp::UdpState::new())
                 .manage(ipc::buffer::BufferStreamState::new())
                 .register_uri_scheme_protocol("app", ipc::commands::handle_uri)
@@ -46,7 +45,6 @@ pub fn run(context: tauri::Context) -> ! {
                     ipc::commands::udp_close,
                     ipc::commands::buffer_subscribe,
                     ipc::commands::buffer_unsubscribe,
-                    ipc::commands::record_stream_start,
                 ])
                 .run(context)
                 .expect("error while running tauri application");

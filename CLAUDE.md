@@ -60,23 +60,18 @@ node scripts/generate_ugen_db.mjs
 - `cli.rs` — Clap-based CLI: dispatches to GUI (no args), `serve` (HTTP server), or `plugin` subcommands
 - `config.rs` — App data dir resolution, config file I/O (`config.json`), plugins dir helper
 - `ipc/` — Tauri IPC boundary (all `#[tauri::command]` functions)
-  - `commands.rs` — URI scheme handler (`app://plugins/…` and `app://recordings/…`, dispatched by host) + Tauri commands (`udp_bind`, `udp_send`, `udp_close`, `buffer_subscribe`, `buffer_unsubscribe`, `record_stream_start`)
+  - `commands.rs` — URI scheme handler (`app://plugins/…`, dispatched by host) + Tauri commands (`udp_bind`, `udp_send`, `udp_close`, `buffer_subscribe`, `buffer_unsubscribe`)
   - `udp.rs` — Async UDP socket state management via tokio
   - `buffer.rs` — Per-bufnum `/b_getn` reader tasks + `/b_setn` parser (`rosc`). Refcounted subscriptions. Two `BufferSink` impls: `TauriChannelSink` (native mode, `Channel<Vec<f32>>`) and `WsSink` (serve mode, binary WS frames).
-- `recording/` — RecordBuf-driven recording subsystem (mirrors the `plugin/` module layout)
-  - `manager.rs` — FS CRUD against `{data_dir}/recordings/*.wav`: `create`, `list`, `read`, `remove`, `path_for`. Pure filesystem operations, no in-memory state.
-  - `state.rs` — `RecordingSink`: a `BufferSink` that wraps an inner sink (WS / Tauri Channel) and owns the recording's WAV file handle. `send` forwards to the inner sink AND writes raw f32 LE samples into the file; `Drop`/`close` patches the RIFF + data-chunk sizes and flushes. Helper `start_stream(...)` opens the file with a 44-byte header and subscribes on `BufferStreamState`.
-  - `router.rs` — HTTP router (GET list, POST create, GET `{id}.wav`, DELETE `{id}`). Shared between the Tauri `app://recordings/…` URI scheme handler and the serve-mode `/recordings/…` HTTP bridge.
 - `plugin/` — Plugin system
   - `manager.rs` — Plugin validation (zip, metadata, XSD, assets), CRUD (add/remove/list)
   - `router.rs` — HTTP router for plugin API (GET list, POST add, DELETE remove, GET file serving). Used by both `app://` URI scheme and standalone web server.
   - `cli.rs` — Plugin CLI command handlers (validate, add, remove, list)
   - `xsd/sc-plugin-schema.xsd` — XSD schema for plugin entry HTML validation
 - `server/` — Standalone HTTP server (browser mode)
-  - `mod.rs` — Hyper-based HTTP server: static asset serving from `context.assets()`, SPA fallback. Bridges `/plugins/…` and `/recordings/…` into their respective routers; dispatches `/buffer/{bufnum}` and `/recordings/{id}/stream` WebSocket upgrades.
+  - `mod.rs` — Hyper-based HTTP server: static asset serving from `context.assets()`, SPA fallback. Bridges `/plugins/…` into the plugin router and dispatches `/buffer/{bufnum}` WebSocket upgrades.
   - `ws_bridge.rs` — WebSocket-to-UDP bridge for OSC communication with scsynth
-  - `buffer_ws.rs` — Per-buffer WebSocket handler. Reads a 12-byte config header `[bufnum, chunk, frames]`, wires a `WsSink` into `BufferStreamState`, unsubscribes on close.
-  - `recording_ws.rs` — WebSocket handler for `/recordings/{id}/stream`. Reads a 20-byte config header `[bufnum, chunk, frames, sampleRate, channels]`, wraps a `WsSink` in a `RecordingSink` via `recording::state::start_stream`, unsubscribes on close (which drops the sink and finalises the WAV).
+  - `buffer_ws.rs` — Per-buffer WebSocket handler. Reads a 16-byte config header `[bufnum, chunk, frames, sampleRate]`, wires a `WsSink` into `BufferStreamState`, unsubscribes on close.
 
 ### Browser Support
 
@@ -163,7 +158,7 @@ Plugin HTML is processed in two phases: HTML parsing (`src/lib/html/`) builds a 
 | `ScDisplayItem` | bind, format | `InputRuntime` | Read-only value display |
 | `ScIfItem` | bind, children | `InputRuntime` | Conditional rendering container |
 | `ScBufferItem` | name, frames, channels | `BufferRuntime` {name, bufnum, frames, channels, loaded, ...} | Server-side buffer allocation |
-| `ScRecordItem` | bind, width, height, window, size | `InputRuntime` | Waveform track: polls the plugin-provided `RecordBuf`-filled buffer and writes the streamed samples to a WAV on disk |
+| `ScWaveformItem` | bind, width, height, window, size | `InputRuntime` | In-memory waveform viewer: polls a `RecordBuf`-filled buffer and keeps samples only in frontend memory (no file, no download) |
 
 Union types: `ScNodeItem` (group/synth/plugin), `ScParentItem` (all with children), `ScElementItem` (all items).
 
@@ -264,7 +259,7 @@ ScElement<T, S>          Base class: store subscription, _state, _runtime, _onSt
 │   └── ScVar            State variable: no OSC
 ├── ScSynthDef           SynthDef: sends /d_recv when parent loaded
 ├── ScBuffer             Buffer: sends /b_alloc on create, /b_free on destroy
-├── ScRecord             Waveform viewer + WAV downloader (pure client-side, plugin author owns the recorder synth)
+├── ScWaveform           In-memory waveform viewer (no file, no download) — drives `createBufferStream`
 ├── ScRun                Play/pause: sends /n_run
 ├── ScOption             Declarative select option (consumes SelectContext)
 ├── ScRadio              Declarative radio button (consumes RadioGroupContext)
@@ -291,7 +286,7 @@ ScElement<T, S>          Base class: store subscription, _state, _runtime, _onSt
 | `sc-display` | bind, format | Read-only value display. Printf-style format (`%d`, `%.2f`, `%b`, `%s`) |
 | `sc-if` | bind, is-truthy/is-falsy/is-equal/etc. | Conditional rendering |
 | `sc-buffer` | name, frames, channels | Allocates a server-side buffer. `bufnum` assigned automatically via `oscService.nextBufNum()` |
-| `sc-record` | bind, width, height, window (s), size | Waveform track. On record, sc-record mints a recording id + path, opens a stream that polls the bound buffer (the plugin's `RecordBuf` target) via `/b_getn`, and asks the Rust side to write each tick's samples into `{data_dir}/recordings/{id}.wav` while forwarding them to the canvas. On stop, the stream closes — the RecordingSink's Drop finalises the WAV header — and `readRecording(id)` loads it into the frozen view. Horizontal drag pans; mouse wheel zooms (centered at cursor). |
+| `sc-waveform` | bind, width, height, window (s), size | In-memory waveform track. On record, opens a `createBufferStream` subscription on the bound `sc-buffer` (which a `RecordBuf` UGen on the plugin side is filling) and appends each polled tick to a Float32Array on the component. No file, no download. On stop, the captured samples stay in memory as the frozen view. Horizontal drag pans; mouse wheel zooms (centered at cursor). |
 
 Internal components in `sc-elements/internal/`:
 - `sc-element.ts` — Abstract base for all sc-elements. Store subscription, `_state`, `_runtime`, `_onStateChange(prev, next)`, `_sendCreate`/`_sendDestroy`, parent context consumer
@@ -385,7 +380,7 @@ This means nodes can see:
 - `<sc-select bind="...">` with `<sc-option>` children — dropdown selector
 - `<sc-radio-group bind="..." orientation="...">` with `<sc-radio>` children — radio buttons
 - `<sc-buffer name="..." frames="..." channels="..."/>` — allocates a server-side buffer
-- `<sc-record bind="bufferName" window="..." width="..." height="..."/>` — waveform track with record/stop + WAV download. The plugin's synthdef must drive the bound buffer with `<sc-ugen type="RecordBuf">`; sc-record polls the buffer and writes the WAV file on its own
+- `<sc-waveform bind="bufferName" window="..." width="..." height="..."/>` — in-memory waveform viewer with record/stop. The plugin's synthdef must drive the bound buffer with `<sc-ugen type="RecordBuf">`; sc-waveform polls via `/b_getn` and keeps samples on the component only — no file is written
 
 ## OSC Communication (`src/lib/osc/`)
 
@@ -394,15 +389,15 @@ This means nodes can see:
 - `TauriDatagramSocket.ts` — Bridges to Tauri `udp_bind`/`udp_send`/`udp_close` commands (Tauri mode only)
 - `messages.ts` — OSC message factories: `/status`, `/s_new`, `/g_new`, `/n_set`, `/n_run`, `/n_free`, `/d_recv`, `/b_alloc`, `/b_free`, etc.
 
-## Recording (`src/lib/streams/RecordingStream.ts`, `src-tauri/src/recording/`, `src-tauri/src/server/recording_ws.rs`)
+## Waveform streaming (`src/lib/streams/BufferStream.ts`, `src-tauri/src/ipc/buffer.rs`, `src-tauri/src/server/buffer_ws.rs`)
 
-`sc-record` drives a RecordBuf-based recording: the plugin writes audio continuously into a cyclic buffer, the Rust side polls that buffer via `/b_getn`, forwarding samples to the frontend for the live waveform **and** streaming them into a WAV file on disk as a side effect. When the stream closes (user hits stop), the recording sink is dropped and the WAV header is finalised — file ready to download.
+`sc-waveform` drives an in-memory buffer stream: the plugin fills a cyclic `sc-buffer` with a `RecordBuf` UGen, the Rust side polls that buffer via `/b_getn`, and the frontend appends polled samples to a Float32Array on the component. No file is written anywhere — samples live purely in the component's memory and are discarded on disconnect.
 
 ### Plugin author contract
 
-The bound `sc-buffer` is a **streaming** buffer, not the recording store — the Rust side copies every polled tick to disk, so recording length is disk-limited, not buffer-limited. `RecordBuf` writes into it cyclically (`loop=1`).
+The bound `sc-buffer` is a **streaming** buffer that `RecordBuf` writes into cyclically (`loop=1`).
 
-**Size the buffer small.** The reader starts at position 0 but the writer is at some unknown cyclic position P0 by the time sc-record subscribes, so the apparent lag between audio-into-RecordBuf and samples-at-the-canvas is bounded by `frames / sampleRate`. A 2048-frame buffer at 48 kHz caps that at ~43 ms (imperceptible); 384000 frames (8 s) makes the live waveform feel seconds behind the audio. Pick a power-of-two ≥ `2 × chunk`, e.g. `2048` or `4096`.
+**Size the buffer small.** The reader starts at position 0 but the writer is at some unknown cyclic position P0 by the time sc-waveform subscribes, so the apparent lag between audio-into-RecordBuf and samples-at-the-canvas is bounded by `frames / sampleRate`. A 2048-frame buffer at 48 kHz caps that at ~43 ms (imperceptible); 384000 frames (8 s) makes the live waveform feel seconds behind the audio. Pick a power-of-two ≥ `2 × chunk`, e.g. `2048` or `4096`.
 
 ```xml
 <sc-buffer name="rec" frames="2048" channels="1"/>
@@ -418,36 +413,19 @@ The bound `sc-buffer` is a **streaming** buffer, not the recording store — the
 <sc-synth name="voice" bind="foo">
     <sc-control name="bufnum" bind="rec"/>
 </sc-synth>
-<sc-record bind="rec" window="5"/>
+<sc-waveform bind="rec" window="5"/>
 ```
 
 ### Flow
 
-1. **Record click.** `sc-record` calls `openRecording()` → `POST {RECORDINGS_URL}` (native: `app://recordings`, serve: `/recordings`), getting `{id, path}`. It opens a `RecordingStream` (`record_stream_start` Tauri command or `WS /recordings/{id}/stream`) passing `{bufnum, frames, chunk, sampleRate, channels}`. The Rust side opens `{data_dir}/recordings/{id}.wav`, writes a 44-byte WAV header, wraps the frontend sink in a `RecordingSink`, and subscribes on `BufferStreamState`. The reader ticks every 16 ms and issues as many `/b_getn` requests as needed to match the buffer's real-time sample rate (`elapsed_ms * sampleRate / 1000`), wrapping around the cyclic buffer as it goes. Each tick the sink writes samples to the file and forwards them to the frontend; the canvas auto-scrolls to the tail.
-2. **Stop click.** `sc-record` closes the stream. Native: `invoke('buffer_unsubscribe', {subId})`. Serve: the WS closes, the server calls `buffer_state.unsubscribe(sub_id)`. Either way the `RecordingSink` is dropped, which patches the RIFF + data-chunk sizes in the WAV header. `readRecording(id)` pulls the finalised WAV back; its samples become the frozen view.
-3. **Download click.** Native uses a save-as dialog + `fs::writeFile`; serve uses `<a href="{RECORDINGS_URL}/{id}.wav" download>` with the server's `Content-Disposition`.
-4. **Cleanup.** WAV files live under `{data_dir}/recordings/` (same root as `plugins/`, `config.json`). Use `DELETE {RECORDINGS_URL}/{id}` to remove individual recordings; otherwise they persist across runs.
+1. **Record click.** `sc-waveform` opens a `BufferStream` (`buffer_subscribe` Tauri command or `WS /buffer/{bufnum}`) passing `{bufnum, frames, chunk, sampleRate}`. The Rust side subscribes on `BufferStreamState`; the reader ticks every 16 ms and issues as many `/b_getn` requests as needed to match the buffer's real-time sample rate (`elapsed_ms * sampleRate / 1000`), wrapping around the cyclic buffer as it goes. Each polled tick is forwarded to the frontend sink; sc-waveform appends the samples to a growing `Float32Array` and auto-scrolls the canvas.
+2. **Stop click.** `sc-waveform` closes the stream. Native: `invoke('buffer_unsubscribe', {subId})`. Serve: the WS closes, the server calls `buffer_state.unsubscribe(sub_id)`. The captured samples stay in memory as the frozen view.
 
 ### Transport
 
 Same split-by-`IS_TAURI` pattern as the rest of the app:
-- **Native:** Tauri `Channel<Vec<f32>>` for the live samples; all CRUD flows through the `app://recordings/…` URI scheme.
-- **Serve:** `WS /recordings/{id}/stream` with 20-byte config header `[bufnum, chunk, frames, sampleRate, channels]` (all i32 LE); tick frames are `[numSamples u32 LE, f32 LE × n]`; CRUD via the bridged `/recordings/…` HTTP router.
-
-### CRUD surface
-
-`RECORDINGS_URL` = `app://recordings` (native) or `/recordings` (serve). The `recording::router` exposes:
-
-- `GET  {RECORDINGS_URL}` → JSON `RecordingInfo[]` (id, path, size_bytes)
-- `POST {RECORDINGS_URL}` → `{id, path}` — mints a fresh id and ensures `{data_dir}/recordings/` exists; the file is then created by the Rust side when the stream starts
-- `GET  {RECORDINGS_URL}/{id}.wav` → the WAV bytes with `content-disposition: attachment`
-- `DELETE {RECORDINGS_URL}/{id}` → removes the file from disk (no-op if missing)
-
-Frontend helpers in `src/lib/streams/RecordingStream.ts`: `openRecording`, `readRecording`, `listRecordings`, `deleteRecording`, plus `createRecordingStream(cfg)` for the live sample stream.
-
-### Filesystem assumption
-
-The Rust process writes the WAV file; scsynth never touches the filesystem in this flow. The only cross-process requirement is the usual localhost OSC link — no shared filesystem needed (in contrast to the old DiskOut flow).
+- **Native:** Tauri `Channel<Vec<f32>>` for the live samples via `buffer_subscribe`.
+- **Serve:** `WS /buffer/{bufnum}` with 16-byte config header `[bufnum, chunk, frames, sampleRate]` (all i32 LE); tick frames are `[numSamples u32 LE, f32 LE × n]`.
 
 ## Example Plugins (`examples/`)
 
@@ -463,7 +441,7 @@ The Rust process writes the WAV file; scsynth never touches the filesystem in th
 | `var-plugin` | sc-var elements with bind expressions (mirror, doubled, sum, product) |
 | `select-plugin` | sc-select/sc-option dropdowns and sc-radio-group/sc-radio buttons |
 | `waveform-plugin` | Select UGen switching between SinOsc/Saw/Pulse via sc-select |
-| `record-plugin` | Chirping sine recorded into a buffer with RecordBuf; visualised by sc-record spectrogram. Exercises the per-buffer streaming path end-to-end. |
+| `scope-plugin` | Vibrato sine + RecordBuf visualised by sc-waveform. Exercises the in-memory buffer stream (no file, no download). |
 | `bad-bindings` | Intentional binding errors (typos, missing synths) for testing validation |
 | `bad-asset-type` | Invalid asset format for testing validation |
 | `bad-asset-mismatch` | Declared vs actual asset type mismatch |

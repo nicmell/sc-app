@@ -6,16 +6,8 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "dialog:default",
-    "dialog:allow-save",
     "fs:default",
     "fs:allow-appdata-write-recursive",
-    "fs:allow-appdata-read-recursive",
-    "fs:allow-audio-read-recursive",
-    "fs:allow-audio-write-recursive",
-    {
-      "identifier": "fs:allow-write-file",
-      "allow": [{"path": "$HOME/**"}]
-    }
+    "fs:allow-appdata-read-recursive"
   ]
 }

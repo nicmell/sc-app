@@ -79,8 +79,8 @@ export function isBuffer<T extends ScElementItemBase>(el: T): el is Extract<T, {
   return el.type === 'sc-buffer';
 }
 
-export function isRecord<T extends ScElementItemBase>(el: T): el is Extract<T, { type: 'sc-record' }> {
-  return el.type === 'sc-record';
+export function isWaveform<T extends ScElementItemBase>(el: T): el is Extract<T, { type: 'sc-waveform' }> {
+  return el.type === 'sc-waveform';
 }
 
 export function isControlOverride(e: OverrideEntry): e is ControlOverrideEntry {

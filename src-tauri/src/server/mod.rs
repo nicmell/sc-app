@@ -1,9 +1,8 @@
 mod buffer_ws;
-mod recording_ws;
 mod ws_bridge;
 
 use crate::ipc::buffer::BufferStreamState;
-use crate::{config, plugin, recording};
+use crate::{config, plugin};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
@@ -109,27 +108,12 @@ async fn handle_request(
                 ));
             }
         }
-        if let Some(rest) = path.strip_prefix("/recordings/") {
-            if let Some(id) = rest.strip_suffix("/stream") {
-                return Ok(recording_ws::handle_ws_upgrade(
-                    req,
-                    id.to_string(),
-                    state.data_dir.clone(),
-                    state.scsynth_addr.clone(),
-                    state.buffer_streams.clone(),
-                ));
-            }
-        }
         return Ok(ws_bridge::handle_ws_upgrade(req, &state.scsynth_addr));
     }
 
     // Plugins: bridge to plugin::router.
     if let Some(inner) = path.strip_prefix("/plugins") {
         return Ok(bridge_router(req, inner, &state.data_dir, plugin::router::handle).await);
-    }
-    // Recordings: bridge to recording::router.
-    if let Some(inner) = path.strip_prefix("/recordings") {
-        return Ok(bridge_router(req, inner, &state.data_dir, recording::router::handle).await);
     }
 
     // Static asset serving with SPA fallback

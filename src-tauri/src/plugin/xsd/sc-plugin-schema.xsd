@@ -48,7 +48,7 @@
   <xs:element name="sc-radio" type="scRadioType"/>
   <xs:element name="sc-var" type="scVarType"/>
   <xs:element name="sc-buffer" type="scBufferType"/>
-  <xs:element name="sc-record" type="scRecordType"/>
+  <xs:element name="sc-waveform" type="scWaveformType"/>
   <xs:element name="sc-select" type="scSelectType"/>
   <xs:element name="sc-option" type="scOptionType"/>
 
@@ -82,7 +82,7 @@
       <xs:element ref="sc-run"/>
       <xs:element ref="sc-select"/>
       <xs:element ref="sc-radio-group"/>
-      <xs:element ref="sc-record"/>
+      <xs:element ref="sc-waveform"/>
     </xs:choice>
   </xs:group>
 
@@ -269,8 +269,8 @@
     <xs:attributeGroup ref="commonAttrs"/>
   </xs:complexType>
 
-  <!-- sc-record (waveform viewer + WAV downloader bound to a buffer) -->
-  <xs:complexType name="scRecordType">
+  <!-- sc-waveform (in-memory waveform viewer bound to a buffer; no file side effect) -->
+  <xs:complexType name="scWaveformType">
     <xs:attribute name="bind" type="xs:string" use="required"/>
     <xs:attribute name="width" type="xs:decimal"/>
     <xs:attribute name="height" type="xs:decimal"/>

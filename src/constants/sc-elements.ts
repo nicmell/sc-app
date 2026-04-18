@@ -16,5 +16,5 @@ export const ELEMENTS = {
   SC_RADIO_GROUP: 'sc-radio-group',
   SC_RADIO: 'sc-radio',
   SC_BUFFER: 'sc-buffer',
-  SC_RECORD: 'sc-record',
+  SC_WAVEFORM: 'sc-waveform',
 } as const;

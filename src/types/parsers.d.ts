@@ -214,8 +214,8 @@ export interface ScBufferItem {
   runtime: BufferRuntime;
 }
 
-export interface ScRecordItem {
-  type: 'sc-record';
+export interface ScWaveformItem {
+  type: 'sc-waveform';
   id: string;
   bind: string;
   width: number;
@@ -229,7 +229,7 @@ export type ScNodeItem = ScGroupItem | ScSynthItem | ScPluginItem;
 
 export type ScParentItem = ScPluginItem | ScGroupItem | ScSynthItem | ScUgenItem | ScIfItem | ScSynthDefItem | ScSelectItem | ScRadioGroupItem;
 
-export type ScElementItem = ScPluginItem | ScGroupItem | ScSynthItem | ScSynthDefItem | ScUgenItem | ScControlItem | ScVarItem | ScBufferItem | ScRangeItem | ScCheckboxItem | ScRunItem | ScDisplayItem | ScIfItem | ScSelectItem | ScOptionItem | ScRadioGroupItem | ScRadioItem | ScRecordItem;
+export type ScElementItem = ScPluginItem | ScGroupItem | ScSynthItem | ScSynthDefItem | ScUgenItem | ScControlItem | ScVarItem | ScBufferItem | ScRangeItem | ScCheckboxItem | ScRunItem | ScDisplayItem | ScIfItem | ScSelectItem | ScOptionItem | ScRadioGroupItem | ScRadioItem | ScWaveformItem;
 
 export type NodeType = ScElementItem["type"];
 

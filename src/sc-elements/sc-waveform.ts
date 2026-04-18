@@ -1,19 +1,10 @@
 import {html, svg, css} from 'lit';
-import type {ScRecordItem} from '@/types/parsers';
+import type {ScWaveformItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
-import {isBuffer, isRecord} from '@/lib/utils/guards';
+import {isBuffer, isWaveform} from '@/lib/utils/guards';
 import {optionsApi, rootApi} from '@/lib/stores/api';
-import {IS_TAURI} from '@/lib/env';
-import {
-    RECORDINGS_URL,
-    createRecordingStream,
-    openRecording,
-    readRecording,
-    type RecordingStream,
-} from '@/lib/streams/RecordingStream';
+import {createBufferStream, type BufferStream} from '@/lib/streams/BufferStream';
 import {ScElement} from './internal/sc-element.ts';
-
-const FINALISE_DELAY_MS = 150;
 
 /**
  * Cap on samples per `/b_getn` request. The Rust reader runs a wall-clock
@@ -22,14 +13,20 @@ const FINALISE_DELAY_MS = 150;
  */
 const STREAM_CHUNK = 1024;
 
-interface RecordState {
+interface WaveformState {
     bufnum: number;
     loaded: boolean;
     frames: number;
     channels: number;
 }
 
-export class ScRecord extends ScElement<ScRecordItem, RecordState> {
+/**
+ * In-memory waveform track: polls the bound `sc-buffer` via `/b_getn` while
+ * recording and keeps every sample in a Float32Array. No file is written, no
+ * download is offered — the captured samples live purely in the component
+ * and are thrown away on disconnect.
+ */
+export class ScWaveform extends ScElement<ScWaveformItem, WaveformState> {
     static properties = {
         bind: {type: String},
         width: {type: Number},
@@ -40,7 +37,6 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
         bgcolor: {type: String},
         _recording: {state: true},
         _busy: {state: true},
-        _hasFrozen: {state: true},
     };
 
     declare bind: string;
@@ -52,18 +48,16 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
     declare bgcolor: string;
     declare _recording: boolean;
     declare _busy: boolean;
-    declare _hasFrozen: boolean;
 
     static styles = css`
         :host { display: inline-block; user-select: none; }
         .toolbar { display: flex; gap: 6px; align-items: center; margin-bottom: 4px; }
-        button, a.download {
+        button {
             all: unset;
             display: block;
             cursor: pointer;
         }
-        button[disabled],
-        a.download[aria-disabled="true"] {
+        button[disabled] {
             cursor: not-allowed;
             opacity: 0.4;
             pointer-events: none;
@@ -84,11 +78,9 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
     private _rafId: number | null = null;
     private _dirty = true;
 
-    private _tail: RecordingStream | null = null;
-    private _recordingId: string | null = null;
+    private _stream: BufferStream | null = null;
     private _captured: Float32Array = new Float32Array(0);
     private _capturedLen = 0;
-    private _frozen: Float32Array | null = null;
     private _sampleRate = 0;
     private _scrollSample = 0;
     private _autoScroll = false;
@@ -105,13 +97,12 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
         this.bgcolor = 'var(--color-bg-secondary, #e8e8e8)';
         this._recording = false;
         this._busy = false;
-        this._hasFrozen = false;
     }
 
-    getState(state: RuntimeState): RecordState {
-        const empty: RecordState = {bufnum: 0, loaded: false, frames: 0, channels: 1};
+    getState(state: RuntimeState): WaveformState {
+        const empty: WaveformState = {bufnum: 0, loaded: false, frames: 0, channels: 1};
         const self = state.nodes[this.id];
-        if (!self || !isRecord(self)) return empty;
+        if (!self || !isWaveform(self)) return empty;
         const buf = state.nodes[self.runtime.targetId];
         if (!buf || !isBuffer(buf)) return empty;
         return {
@@ -122,7 +113,7 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
         };
     }
 
-    protected _onStateChange(prev: RecordState, next: RecordState): void {
+    protected _onStateChange(prev: WaveformState, next: WaveformState): void {
         if (this._recording && (!next.loaded || next.bufnum <= 0)) {
             void this._stopRecording();
         }
@@ -151,20 +142,15 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
 
         const sampleRate = rootApi.serverStatus.sampleRate;
         if (sampleRate <= 0) {
-            console.warn('sc-record: sample rate unknown (not connected?)');
+            console.warn('sc-waveform: sample rate unknown (not connected?)');
             return;
         }
 
         this._busy = true;
         try {
-            const handle = await openRecording();
-            this._recordingId = handle.id;
-
             const initialCap = Math.max(1, Math.ceil(Math.max(60, this.window) * sampleRate));
             this._captured = new Float32Array(initialCap);
             this._capturedLen = 0;
-            this._frozen = null;
-            this._hasFrozen = false;
             this._scrollSample = 0;
             this._sampleRate = sampleRate;
             this._zoomWindow = 0;
@@ -172,22 +158,19 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
             this._dirty = true;
 
             const {host, port} = optionsApi.scsynth;
-            const tail = createRecordingStream({
-                id: handle.id,
+            const stream = createBufferStream({
                 bufnum: s.bufnum,
                 frames: s.frames,
                 chunk: STREAM_CHUNK,
                 sampleRate: Math.round(sampleRate),
-                channels: s.channels,
                 scsynthAddr: `${host}:${port}`,
             });
-            tail.onSamples((samples) => this._appendSamples(samples));
-            await tail.open();
-            this._tail = tail;
+            stream.onSamples((samples) => this._appendSamples(samples));
+            await stream.open();
+            this._stream = stream;
             this._recording = true;
         } catch (e) {
-            console.error('sc-record: start failed', e);
-            this._recordingId = null;
+            console.error('sc-waveform: start failed', e);
         } finally {
             this._busy = false;
         }
@@ -197,35 +180,11 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
         this._recording = false;
         this._autoScroll = false;
 
-        // Closing the stream unsubscribes on the Rust side; the RecordingSink's
-        // Drop finalises the WAV header on disk.
-        if (this._tail) {
-            this._tail.close();
-            this._tail = null;
+        if (this._stream) {
+            this._stream.close();
+            this._stream = null;
         }
-
-        const id = this._recordingId;
-        if (!id) {
-            this._dirty = true;
-            return;
-        }
-
-        this._busy = true;
-        try {
-            // Give the Rust side a moment to drop the sink and flush the WAV.
-            await delay(FINALISE_DELAY_MS);
-
-            const blob = await readRecording(id);
-            this._frozen = await parseWavFloat32(blob);
-            this._hasFrozen = true;
-            this._scrollSample = 0;
-            this._zoomWindow = 0;
-        } catch (e) {
-            console.error('sc-record: read-back failed', e);
-        } finally {
-            this._busy = false;
-            this._dirty = true;
-        }
+        this._dirty = true;
     }
 
     // ── Live tail tick ─────────────────────────────────────────────────────
@@ -253,39 +212,6 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
         return this._zoomWindow > 0 ? this._zoomWindow : this.window;
     }
 
-    // ── Download ───────────────────────────────────────────────────────────
-
-    /**
-     * In serve mode we let the browser navigate to the `<a href download>` —
-     * `Content-Disposition: attachment` triggers a standard download dialog.
-     * In native (Tauri) mode we open a save-as dialog defaulted to the
-     * platform Audio dir (`~/Music` on desktop, MediaStore Music on Android),
-     * fetch the WAV through `app://recordings/…`, and write it to the chosen
-     * path via the fs plugin.
-     */
-    private _onDownloadClick = async (e: Event) => {
-        if (!IS_TAURI) return;
-        e.preventDefault();
-        if (!this._recordingId) return;
-        const id = this._recordingId;
-        try {
-            const {audioDir, join} = await import('@tauri-apps/api/path');
-            const defaultPath = await join(await audioDir(), `record-${id}.wav`);
-            const {save} = await import('@tauri-apps/plugin-dialog');
-            const dest = await save({
-                defaultPath,
-                filters: [{name: 'WAV', extensions: ['wav']}],
-            });
-            if (!dest) return; // user cancelled
-            const blob = await readRecording(id);
-            const bytes = new Uint8Array(await blob.arrayBuffer());
-            const {writeFile} = await import('@tauri-apps/plugin-fs');
-            await writeFile(dest, bytes);
-        } catch (err) {
-            console.error('sc-record: save-as failed', err);
-        }
-    };
-
     // ── Waveform drawing ───────────────────────────────────────────────────
 
     firstUpdated() {
@@ -309,13 +235,11 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
     }
 
     private _viewSamples(): Float32Array | null {
-        if (!this._recording && this._frozen) return this._frozen;
         if (this._capturedLen > 0) return this._captured.subarray(0, this._capturedLen);
         return null;
     }
 
     private _viewLength(): number {
-        if (!this._recording && this._frozen) return this._frozen.length;
         return this._capturedLen;
     }
 
@@ -341,9 +265,6 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
         const len = this._viewLength();
         const mid = h / 2;
 
-        // `fillRect` per column instead of stroked 1px lines: macOS WKWebView
-        // antialiases sub-pixel vertical strokes into near-invisibility during
-        // rapid rAF redraws. Integer-aligned fills render reliably.
         ctx.fillStyle = fg;
         for (let x = 0; x < w; x++) {
             const s0 = Math.floor(this._scrollSample + x * samplesPerCol);
@@ -423,7 +344,6 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
         const sppBefore = (winBefore * this._sampleRate) / this.width;
         const anchorSample = this._scrollSample + cursorX * sppBefore;
 
-        // Positive deltaY (scroll down) → zoom out; negative → zoom in.
         const factor = Math.pow(1.15, (e.deltaY || 0) / 100);
         const winAfter = this._clampWindow(winBefore * factor);
         this._zoomWindow = winAfter;
@@ -439,9 +359,9 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
             cancelAnimationFrame(this._rafId);
             this._rafId = null;
         }
-        if (this._tail) {
-            this._tail.close();
-            this._tail = null;
+        if (this._stream) {
+            this._stream.close();
+            this._stream = null;
         }
     }
 
@@ -450,14 +370,9 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
     render() {
         const bufferReady = this._state.loaded && this._state.bufnum > 0;
         const canRecord = bufferReady && !this._busy;
-        const canDownload = this._hasFrozen && !this._recording && !this._busy && !!this._recordingId;
-        const downloadUrl = this._recordingId
-            ? `${RECORDINGS_URL}/${encodeURIComponent(this._recordingId)}.wav`
-            : '';
         return html`
             <div class="toolbar">
                 ${this._recordButton(canRecord)}
-                ${this._downloadLink(downloadUrl, this._recordingId ?? '', canDownload)}
             </div>
             <canvas width=${this.width} height=${this.height}></canvas>
         `;
@@ -480,73 +395,4 @@ export class ScRecord extends ScElement<ScRecordItem, RecordState> {
             </svg>
         </button>`;
     }
-
-    private _downloadLink(url: string, id: string, enabled: boolean) {
-        const s = this.size;
-        const r = s * 0.15;
-        const arrowColor = this.fgcolor;
-        const title = IS_TAURI ? 'Open WAV' : 'Download WAV';
-        return html`<a
-            class="download"
-            title=${title}
-            href=${url}
-            download=${`record-${id}.wav`}
-            aria-disabled=${enabled ? 'false' : 'true'}
-            @click=${this._onDownloadClick}>
-            <svg width=${s} height=${s} viewBox="0 0 ${s} ${s}">
-                <rect width=${s} height=${s} rx=${r} ry=${r} fill=${this.bgcolor} />
-                <path
-                    d="M ${s * 0.5} ${s * 0.25}
-                       L ${s * 0.5} ${s * 0.62}
-                       M ${s * 0.33} ${s * 0.48}
-                       L ${s * 0.5} ${s * 0.65}
-                       L ${s * 0.67} ${s * 0.48}
-                       M ${s * 0.28} ${s * 0.75}
-                       L ${s * 0.72} ${s * 0.75}"
-                    stroke=${arrowColor}
-                    stroke-width=${Math.max(1, s * 0.08)}
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    fill="none" />
-            </svg>
-        </a>`;
-    }
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-function delay(ms: number): Promise<void> {
-    return new Promise(r => setTimeout(r, ms));
-}
-
-/**
- * Parse a scsynth-written WAV (IEEE float32, mono or interleaved) into a
- * Float32Array. Scans the RIFF chunks for `data` rather than assuming the
- * canonical 44-byte header, since format=3 WAV files may include a `fact`
- * chunk.
- */
-async function parseWavFloat32(blob: Blob): Promise<Float32Array> {
-    const buf = await blob.arrayBuffer();
-    if (buf.byteLength < 12) return new Float32Array(0);
-    const view = new DataView(buf);
-    // 'data' = 0x64 0x61 0x74 0x61 (big-endian marker read via getUint32).
-    const DATA = 0x64617461;
-    let off = 12;
-    while (off + 8 <= buf.byteLength) {
-        const marker = view.getUint32(off, false);
-        const size = view.getUint32(off + 4, true);
-        if (marker === DATA) {
-            const start = off + 8;
-            const bytes = Math.min(size, buf.byteLength - start);
-            const n = Math.floor(bytes / 4);
-            // Copy into a freshly-allocated Float32Array (not a view) so the
-            // underlying ArrayBuffer can be GC'd after this function returns.
-            const out = new Float32Array(n);
-            const src = new Float32Array(buf, start, n);
-            out.set(src);
-            return out;
-        }
-        off += 8 + size + (size & 1); // chunks are word-aligned
-    }
-    return new Float32Array(0);
 }

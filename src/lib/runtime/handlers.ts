@@ -1,6 +1,6 @@
 import type {
     ScElementItem, ScElementItemBase, ScParentItem, ScGroupItem, ScSynthItem, ScSynthDefItem, ScUgenItem,
-    ScRunItem, ScControlItem, ScVarItem, ScBufferItem, ScRecordItem,
+    ScRunItem, ScControlItem, ScVarItem, ScBufferItem, ScWaveformItem,
     ScPluginItem, Expr, NodeRuntime, ControlRuntime, VarRuntime, UgenRuntime, SynthDefRuntime, BufferRuntime, InputRuntime, RunRuntime, OverrideEntry, StripRuntime,
 } from "@/types/parsers";
 import {isNode, isParent, isControl, isState, isBuffer, isControlOverride, isRunOverride, isVarOverride} from "@/lib/utils/guards";
@@ -299,11 +299,11 @@ const bufferHandler = (ctx: RuntimeContext): BufferRuntime => {
     };
 };
 
-const recordHandler = (ctx: RuntimeContext): InputRuntime => {
-    const n = ctx.tree as StripRuntime<ScRecordItem>;
+const waveformHandler = (ctx: RuntimeContext): InputRuntime => {
+    const n = ctx.tree as StripRuntime<ScWaveformItem>;
     const target = n.bind ? resolve(ctx, [n.bind]) : undefined;
     if (!target || !isBuffer(target)) {
-        throw new Error(`<sc-record bind="${n.bind}">: does not match any <sc-buffer>`);
+        throw new Error(`<sc-waveform bind="${n.bind}">: does not match any <sc-buffer>`);
     }
     return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled: true, targetId: target.id};
 };
@@ -340,7 +340,7 @@ export function processElement(ctx: RuntimeContext): ScElementItem {
         case ELEMENTS.SC_RADIO_GROUP: runtime = radioGroupHandler(ctx); break;
         case ELEMENTS.SC_RADIO: runtime = radioHandler(ctx); break;
         case ELEMENTS.SC_BUFFER: runtime = bufferHandler(ctx); break;
-        case ELEMENTS.SC_RECORD: runtime = recordHandler(ctx); break;
+        case ELEMENTS.SC_WAVEFORM: runtime = waveformHandler(ctx); break;
         default: {
             throw new Error(`Unknown element type: ${(ctx.tree as ScElementItemBase).type}`);
         }
