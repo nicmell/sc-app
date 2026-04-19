@@ -3,7 +3,7 @@ import type {ScWaveformItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {isBuffer, isWaveform} from '@/lib/utils/guards';
 import {rootApi} from '@/lib/stores/api';
-import {bufferManager, type BufferStream} from '@/lib/buffers';
+import {bufferManager, type BufferSubscription} from '@/lib/buffers';
 import {ScElement} from './internal/sc-element.ts';
 
 interface WaveformState {
@@ -27,7 +27,6 @@ export class ScWaveform extends ScElement<ScWaveformItem, WaveformState> {
         fgcolor: {type: String},
         bgcolor: {type: String},
         _recording: {state: true},
-        _busy: {state: true},
     };
 
     declare bind: string;
@@ -38,7 +37,6 @@ export class ScWaveform extends ScElement<ScWaveformItem, WaveformState> {
     declare fgcolor: string;
     declare bgcolor: string;
     declare _recording: boolean;
-    declare _busy: boolean;
 
     static styles = css`
         :host { display: inline-block; user-select: none; }
@@ -69,7 +67,7 @@ export class ScWaveform extends ScElement<ScWaveformItem, WaveformState> {
     private _rafId: number | null = null;
     private _dirty = true;
 
-    private _subscription: {stream: BufferStream; handler: (samples: Float32Array) => void} | null = null;
+    private _subscription: BufferSubscription | null = null;
     private _captured: Float32Array = new Float32Array(0);
     private _capturedLen = 0;
     private _sampleRate = 0;
@@ -87,7 +85,6 @@ export class ScWaveform extends ScElement<ScWaveformItem, WaveformState> {
         this.fgcolor = 'var(--color-primary, #0a6dc4)';
         this.bgcolor = 'var(--color-bg-secondary, #e8e8e8)';
         this._recording = false;
-        this._busy = false;
     }
 
     getState(state: RuntimeState): WaveformState {
@@ -117,55 +114,47 @@ export class ScWaveform extends ScElement<ScWaveformItem, WaveformState> {
     // ── Record / stop ─────────────────────────────────────────────────────
 
     private _onRecordClick = () => {
-        if (this._busy) return;
         if (this._recording) {
             this._stopRecording();
         } else {
-            void this._startRecording();
+            this._startRecording();
         }
     };
 
-    private async _startRecording(): Promise<void> {
+    private _startRecording(): void {
         const s = this._state;
         if (!s.ready) return;
 
         const sampleRate = rootApi.serverStatus.sampleRate;
         if (sampleRate <= 0) return;
 
-        const stream = bufferManager.getBuffer(s.bufferId);
-        if (!stream) return;
+        const subscription = bufferManager.subscribe(
+            s.bufferId,
+            (samples) => this._appendSamples(samples),
+        );
+        if (!subscription) return;
 
-        this._busy = true;
-        try {
-            const initialCap = Math.max(1, Math.ceil(Math.max(60, this.window) * sampleRate));
-            this._captured = new Float32Array(initialCap);
-            this._capturedLen = 0;
-            this._scrollSample = 0;
-            this._sampleRate = sampleRate;
-            this._zoomWindow = 0;
-            this._autoScroll = true;
-            this._dirty = true;
-
-            const handler = (samples: Float32Array) => this._appendSamples(samples);
-            stream.on('message', handler);
-            if (!stream.isOpen) await stream.open();
-            this._subscription = {stream, handler};
-            this._recording = true;
-        } catch (e) {
-            console.error('sc-waveform: start failed', e);
-        } finally {
-            this._busy = false;
-        }
+        const initialCap = Math.max(1, Math.ceil(Math.max(60, this.window) * sampleRate));
+        this._captured = new Float32Array(initialCap);
+        this._capturedLen = 0;
+        this._scrollSample = 0;
+        this._sampleRate = sampleRate;
+        this._zoomWindow = 0;
+        this._autoScroll = true;
+        this._dirty = true;
+        this._subscription = subscription;
+        this._recording = true;
     }
 
     private _stopRecording(): void {
         this._recording = false;
         this._autoScroll = false;
 
-        // Unsubscribe only — the stream is shared via BufferManager and stays
-        // open for other subscribers.
+        // Release our subscription — the BufferManager refcounts per buffer,
+        // so the underlying stream is closed (and the buffer zeroed) only when
+        // the last subscriber releases.
         if (this._subscription) {
-            this._subscription.stream.off('message', this._subscription.handler);
+            this._subscription.close();
             this._subscription = null;
         }
         this._dirty = true;
@@ -344,7 +333,7 @@ export class ScWaveform extends ScElement<ScWaveformItem, WaveformState> {
             this._rafId = null;
         }
         if (this._subscription) {
-            this._subscription.stream.off('message', this._subscription.handler);
+            this._subscription.close();
             this._subscription = null;
         }
     }
@@ -352,7 +341,7 @@ export class ScWaveform extends ScElement<ScWaveformItem, WaveformState> {
     // ── Render ─────────────────────────────────────────────────────────────
 
     render() {
-        const canRecord = this._state.ready && !this._busy;
+        const canRecord = this._state.ready;
         return html`
             <div class="toolbar">
                 ${this._recordButton(canRecord)}

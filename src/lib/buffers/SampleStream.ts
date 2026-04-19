@@ -44,6 +44,7 @@ export class SampleStream {
     private listeners: Record<string, Listener[]> = {};
     private _isOpen = false;
     private _closed = false;
+    private _openPromise: Promise<void> | null = null;
 
     constructor(private adapter: SampleStreamAdapter) {
         this.adapter.onMessages((samples) => this.emit('message', samples));
@@ -53,11 +54,16 @@ export class SampleStream {
         return this._isOpen;
     }
 
-    async open(): Promise<void> {
-        await this.adapter.open();
-        // Guard against a `close()` that landed while `adapter.open()` was
-        // still pending — don't flip `isOpen` back to `true` in that case.
-        if (!this._closed) this._isOpen = true;
+    open(): Promise<void> {
+        if (this._isOpen) return Promise.resolve();
+        if (this._openPromise) return this._openPromise;
+        this._openPromise = (async () => {
+            await this.adapter.open();
+            // Guard against a `close()` that landed while `adapter.open()` was
+            // still pending — don't flip `isOpen` back to `true` in that case.
+            if (!this._closed) this._isOpen = true;
+        })();
+        return this._openPromise;
     }
 
     close(): void {

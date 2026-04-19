@@ -2,7 +2,7 @@ import {html, css} from 'lit';
 import type {ScScopeItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {isBuffer, isScope} from '@/lib/utils/guards';
-import {bufferManager, type BufferStream} from '@/lib/buffers';
+import {bufferManager, type BufferSubscription} from '@/lib/buffers';
 import {ScElement} from './internal/sc-element.ts';
 
 interface ScopeState {
@@ -10,17 +10,29 @@ interface ScopeState {
     ready: boolean;
 }
 
-/** Fallback display window in samples if `width * 4` is smaller than this. */
-const DISPLAY_SAMPLES_MIN = 512;
+/**
+ * Fallback shot size in samples if `width * 4` is smaller than this. A shot is
+ * the unit the scope draws at a time: we accumulate streaming batches into a
+ * fill buffer until it reaches this size, then swap it into the display buffer
+ * wholesale. Smaller → higher update rate but less audio on screen; larger →
+ * lower rate but more cycles visible. 2048 at 48 kHz ≈ 43 ms / ~23 FPS, and
+ * matches the recommended plugin-side streaming buffer.
+ */
+const SHOT_SAMPLES_MIN = 2048;
 
 /**
  * Real-time oscilloscope bound to an `sc-buffer`. Subscribes to the shared
- * `BufferManager` stream for that buffer, keeps a rolling window of the most
- * recent samples, and draws a trigger-aligned waveform via requestAnimationFrame.
+ * `BufferManager` stream for that buffer, accumulates incoming batches into
+ * fixed-size shots, and draws each completed shot via requestAnimationFrame.
  *
- * Key rendering details retained from the original implementation:
- * - Rising zero-crossing trigger with ±8-sample hysteresis for stable phase.
- * - Sub-sample trigger interpolation + linear inter-pixel interpolation.
+ * Shot-based design (versus sliding window): each drawn frame is a single
+ * contiguous chunk of audio that arrived together. There is no cross-frame
+ * state to keep coherent — the trigger search runs fresh on every draw, so
+ * consecutive frames phase-lock for stable signals without needing hysteresis.
+ *
+ * Rendering retained from the original sc-scope:
+ * - Rising zero-crossing trigger with sub-sample interpolation.
+ * - Sub-pixel linear interpolation along the drawn path.
  * - Retina-aware canvas scaling via devicePixelRatio.
  * - Signal-threshold overlay ("no signal" until peak > 0.01).
  */
@@ -51,10 +63,15 @@ export class ScScope extends ScElement<ScScopeItem, ScopeState> {
     private _rafId: number | null = null;
     private _dirty = false;
 
-    private _subscription: {stream: BufferStream; handler: (samples: Float32Array) => void} | null = null;
+    private _subscription: BufferSubscription | null = null;
+
+    // Two equally-sized buffers. `_display` is what the draw loop reads and is
+    // only ever whole-written between draws; `_shot` is the fill target that
+    // accumulates incoming batches. On shot completion the two are swapped.
     private _display: Float32Array = new Float32Array(0);
+    private _shot: Float32Array = new Float32Array(0);
+    private _fillPos = 0;
     private _hasSignal = false;
-    private _lastTrigger = 0;
 
     private _lineColor = '';
     private _borderColor = '';
@@ -86,7 +103,7 @@ export class ScScope extends ScElement<ScScopeItem, ScopeState> {
         this._lineColor = this.color || styles.getPropertyValue('--color-primary').trim() || '#00ff00';
         this._borderColor = styles.getPropertyValue('--color-border').trim() || '#555';
         this._textColor = styles.getPropertyValue('--color-text').trim() || '#e0e0e0';
-        if (this._state?.ready) void this._activate();
+        if (this._state?.ready) this._activate();
     }
 
     protected _sendDestroy() {
@@ -96,7 +113,7 @@ export class ScScope extends ScElement<ScScopeItem, ScopeState> {
 
     protected _onStateChange(prev: ScopeState, next: ScopeState): void {
         if (next.ready && !prev.ready) {
-            void this._activate();
+            this._activate();
         } else if (!next.ready && prev.ready) {
             this._deactivate();
         }
@@ -114,59 +131,77 @@ export class ScScope extends ScElement<ScScopeItem, ScopeState> {
 
     // ── Subscription lifecycle ────────────────────────────────────────────
 
-    private async _activate() {
+    private _activate() {
         if (this._subscription) return;
-        const stream = bufferManager.getBuffer(this._state.bufferId);
-        if (!stream) return;
+        const subscription = bufferManager.subscribe(
+            this._state.bufferId,
+            (samples) => this._onSamples(samples),
+        );
+        if (!subscription) return;
+        subscription.on('idle', this._onStreamIdle);
 
-        const displaySize = Math.max(this.width * 4, DISPLAY_SAMPLES_MIN);
-        if (this._display.length !== displaySize) {
-            this._display = new Float32Array(displaySize);
+        const size = Math.max(this.width * 4, SHOT_SAMPLES_MIN);
+        if (this._display.length !== size) {
+            this._display = new Float32Array(size);
+            this._shot = new Float32Array(size);
         }
+        this._fillPos = 0;
         this._hasSignal = false;
-        this._lastTrigger = 0;
         this._dirty = true;
-
-        const handler = (samples: Float32Array) => this._onSamples(samples);
-        stream.on('message', handler);
-        if (!stream.isOpen) await stream.open();
-        this._subscription = {stream, handler};
+        this._subscription = subscription;
     }
 
     private _deactivate() {
         if (this._subscription) {
-            this._subscription.stream.off('message', this._subscription.handler);
+            this._subscription.off('idle', this._onStreamIdle);
+            this._subscription.close();
             this._subscription = null;
         }
+        this._fillPos = 0;
         this._hasSignal = false;
-        this._lastTrigger = 0;
         this._dirty = true;
     }
 
-    private _onSamples(batch: Float32Array) {
-        const display = this._display;
-        const n = display.length;
-        const b = batch.length;
-        if (n === 0 || b === 0) return;
-
-        // Slide the display window: drop the oldest `b` samples, append `batch`.
-        // If the batch is larger than the display, keep only its last `n` samples.
-        if (b >= n) {
-            display.set(batch.subarray(b - n));
-        } else {
-            display.copyWithin(0, b, n);
-            display.set(batch, n - b);
-        }
+    /** Stream went quiet (BufferManager deactivated it). Reset display state
+     *  to the "no signal" view. The `active` event isn't needed: incoming
+     *  samples naturally trigger `_detectSignal` to flip `_hasSignal` back. */
+    private _onStreamIdle = () => {
+        this._fillPos = 0;
+        this._hasSignal = false;
         this._dirty = true;
+    };
 
-        if (!this._hasSignal) {
-            let peak = 0;
-            for (let i = 0; i < b; i++) {
-                const v = batch[i] < 0 ? -batch[i] : batch[i];
-                if (v > peak) { peak = v; if (peak > 0.01) break; }
+    private _onSamples(batch: Float32Array) {
+        const size = this._shot.length;
+        if (size === 0 || batch.length === 0) return;
+
+        let rem = batch;
+        while (rem.length > 0) {
+            const need = size - this._fillPos;
+            const take = Math.min(need, rem.length);
+            this._shot.set(rem.subarray(0, take), this._fillPos);
+            this._fillPos += take;
+            if (this._fillPos === size) {
+                // Shot complete — swap with display. Double-buffering ensures
+                // the draw loop never sees a half-filled shot.
+                const done = this._shot;
+                this._shot = this._display;
+                this._display = done;
+                this._fillPos = 0;
+                this._dirty = true;
+                this._detectSignal(done);
             }
-            if (peak > 0.01) this._hasSignal = true;
+            rem = rem.subarray(take);
         }
+    }
+
+    private _detectSignal(shot: Float32Array) {
+        let peak = 0;
+        for (let i = 0; i < shot.length; i++) {
+            const v = shot[i] < 0 ? -shot[i] : shot[i];
+            if (v > peak) peak = v;
+        }
+        this._hasSignal = peak > 0.01;
     }
 
     // ── Draw loop ─────────────────────────────────────────────────────────
@@ -216,7 +251,7 @@ export class ScScope extends ScElement<ScScopeItem, ScopeState> {
         ctx.lineTo(w, h / 2);
         ctx.stroke();
 
-        if (!this._hasSignal) {
+        if (!this._hasSignal || samples.length === 0) {
             ctx.fillStyle = this._textColor;
             ctx.globalAlpha = 0.4;
             ctx.font = '11px system-ui, sans-serif';
@@ -226,26 +261,15 @@ export class ScScope extends ScElement<ScScopeItem, ScopeState> {
             return;
         }
 
-        // Trigger: rising zero-crossing with sub-sample interpolation.
-        // Search only the first quarter of the window so the draw has room on
-        // the right side without running off the buffer.
+        // Fresh trigger search every draw. We search the first quarter of the
+        // shot so the draw has `quarter` samples to the right of the trigger
+        // without running off the end — `samples.length / 2` total usage.
         const quarter = samples.length >> 2;
         let trigger = 0;
         let triggerFrac = 0;
-        const HYSTERESIS = 8;
 
-        if (this._lastTrigger > 0) {
-            const lo = Math.max(1, this._lastTrigger - HYSTERESIS);
-            const hi = Math.min(quarter, this._lastTrigger + HYSTERESIS);
-            for (let i = lo; i < hi; i++) {
-                if (samples[i - 1] <= 0 && samples[i] > 0) { trigger = i; break; }
-            }
-        }
-
-        if (trigger === 0) {
-            for (let i = 1; i < quarter; i++) {
-                if (samples[i - 1] <= 0 && samples[i] > 0) { trigger = i; break; }
-            }
+        for (let i = 1; i < quarter; i++) {
+            if (samples[i - 1] <= 0 && samples[i] > 0) { trigger = i; break; }
         }
 
         if (trigger > 0) {
@@ -256,8 +280,6 @@ export class ScScope extends ScElement<ScScopeItem, ScopeState> {
             }
             triggerFrac = (trigger - 1) + triggerFrac;
         }
-
-        this._lastTrigger = trigger;
 
         const step = quarter / w;
         const halfH = h / 2;
