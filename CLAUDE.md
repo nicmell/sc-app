@@ -440,8 +440,8 @@ Same split-by-`IS_TAURI` pattern as the rest of the app:
 | `conditional-plugin` | sc-if with controls binding to siblings — tests sc-if scope transparency |
 | `var-plugin` | sc-var elements with bind expressions (mirror, doubled, sum, product) |
 | `select-plugin` | sc-select/sc-option dropdowns and sc-radio-group/sc-radio buttons |
-| `waveform-plugin` | Select UGen switching between SinOsc/Saw/Pulse via sc-select |
-| `scope-plugin` | Vibrato sine + RecordBuf visualised by sc-waveform. Exercises the in-memory buffer stream (no file, no download). |
+| `waveselect-plugin` | Select UGen switching between SinOsc/Saw/Pulse via sc-select |
+| `waveform-plugin` | Vibrato sine + RecordBuf visualised by sc-waveform. Exercises the in-memory buffer stream (no file, no download). |
 | `bad-bindings` | Intentional binding errors (typos, missing synths) for testing validation |
 | `bad-asset-type` | Invalid asset format for testing validation |
 | `bad-asset-mismatch` | Declared vs actual asset type mismatch |

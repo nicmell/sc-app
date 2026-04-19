@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>Waveform Select</title>
+</head>
+<body>
+<sc-synthdef name="waveselect">
+    <sc-control name="freq" value="440"/>
+    <sc-control name="amp" value="0.2"/>
+    <sc-control name="waveform" value="0"/>
+    <sc-ugen name="sine" type="SinOsc">
+        <sc-control name="freq" bind="freq"/>
+    </sc-ugen>
+    <sc-ugen name="saw" type="Saw">
+        <sc-control name="freq" bind="freq"/>
+    </sc-ugen>
+    <sc-ugen name="square" type="Pulse">
+        <sc-control name="freq" bind="freq"/>
+        <sc-control name="width" value="0.5"/>
+    </sc-ugen>
+    <sc-ugen name="wave" type="Select">
+        <sc-control name="which" bind="waveform"/>
+        <sc-control name="channelsArray" bind="sine,saw,square"/>
+    </sc-ugen>
+    <sc-ugen name="vol" type="BinaryOpUGen" op="*">
+        <sc-control name="a" bind="wave"/>
+        <sc-control name="b" bind="amp"/>
+    </sc-ugen>
+    <sc-ugen name="out" type="Out">
+        <sc-control name="bus" value="0"/>
+        <sc-control name="channelsArray" bind="vol"/>
+    </sc-ugen>
+</sc-synthdef>
+<sc-synth name="s1" bind="waveselect">
+    <sc-control name="freq" value="440"/>
+    <sc-control name="amp" value="0.2"/>
+    <sc-control name="waveform" value="0"/>
+</sc-synth>
+<div class="controls">
+    <label>
+        <span>Waveform:</span>
+        <sc-select bind="s1.waveform">
+            <sc-option value="0" label="Sine"/>
+            <sc-option value="1" label="Saw"/>
+            <sc-option value="2" label="Square"/>
+        </sc-select>
+    </label>
+    <label>
+        <span>Frequency:</span>
+        <sc-range type="knob" bind="s1.freq" min="20" max="2000" step="1" diameter="48"/>
+        <span><sc-display bind="s1.freq" format="%d Hz"/></span>
+    </label>
+    <label>
+        <span>Amplitude:</span>
+        <sc-range type="knob" bind="s1.amp" min="0" max="1" step="0.01" diameter="48"/>
+        <span><sc-display bind="s1.amp" format="%.2f"/></span>
+    </label>
+    <label>
+        <sc-run size="24"/>
+    </label>
+</div>
+</body>
+</html>
