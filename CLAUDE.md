@@ -389,7 +389,7 @@ This means nodes can see:
 - `TauriDatagramSocket.ts` — Bridges to Tauri `udp_bind`/`udp_send`/`udp_close` commands (Tauri mode only)
 - `messages.ts` — OSC message factories: `/status`, `/s_new`, `/g_new`, `/n_set`, `/n_run`, `/n_free`, `/d_recv`, `/b_alloc`, `/b_free`, etc.
 
-## Waveform streaming (`src/lib/streams/BufferStream.ts`, `src-tauri/src/ipc/buffer.rs`, `src-tauri/src/server/buffer_ws.rs`)
+## Waveform streaming (`src/lib/buffers/BufferManager.ts`, `src-tauri/src/ipc/buffer.rs`, `src-tauri/src/server/buffer_ws.rs`)
 
 `sc-waveform` drives an in-memory buffer stream: the plugin fills a cyclic `sc-buffer` with a `RecordBuf` UGen, the Rust side polls that buffer via `/b_getn`, and the frontend appends polled samples to a Float32Array on the component. No file is written anywhere — samples live purely in the component's memory and are discarded on disconnect.
 

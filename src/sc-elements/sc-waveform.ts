@@ -2,22 +2,13 @@ import {html, svg, css} from 'lit';
 import type {ScWaveformItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {isBuffer, isWaveform} from '@/lib/utils/guards';
-import {optionsApi, rootApi} from '@/lib/stores/api';
-import {createBufferStream, type BufferStream} from '@/lib/streams/BufferStream';
+import {rootApi} from '@/lib/stores/api';
+import {bufferManager, type BufferStream} from '@/lib/buffers';
 import {ScElement} from './internal/sc-element.ts';
 
-/**
- * Cap on samples per `/b_getn` request. The Rust reader runs a wall-clock
- * catch-up loop keyed to the buffer's sample rate and issues as many requests
- * as needed each tick; this just bounds UDP payload size.
- */
-const STREAM_CHUNK = 1024;
-
 interface WaveformState {
-    bufnum: number;
-    loaded: boolean;
-    frames: number;
-    channels: number;
+    bufferId: string;
+    ready: boolean;
 }
 
 /**
@@ -78,7 +69,7 @@ export class ScWaveform extends ScElement<ScWaveformItem, WaveformState> {
     private _rafId: number | null = null;
     private _dirty = true;
 
-    private _stream: BufferStream | null = null;
+    private _subscription: {stream: BufferStream; handler: (samples: Float32Array) => void} | null = null;
     private _captured: Float32Array = new Float32Array(0);
     private _capturedLen = 0;
     private _sampleRate = 0;
@@ -100,29 +91,27 @@ export class ScWaveform extends ScElement<ScWaveformItem, WaveformState> {
     }
 
     getState(state: RuntimeState): WaveformState {
-        const empty: WaveformState = {bufnum: 0, loaded: false, frames: 0, channels: 1};
+        const empty: WaveformState = {bufferId: '', ready: false};
         const self = state.nodes[this.id];
         if (!self || !isWaveform(self)) return empty;
         const buf = state.nodes[self.runtime.targetId];
         if (!buf || !isBuffer(buf)) return empty;
         return {
-            bufnum: buf.runtime.bufnum,
-            loaded: buf.runtime.loaded,
-            frames: buf.runtime.frames,
-            channels: buf.runtime.channels,
+            bufferId: buf.id,
+            ready: buf.runtime.loaded && buf.runtime.bufnum > 0,
         };
     }
 
     protected _onStateChange(prev: WaveformState, next: WaveformState): void {
-        if (this._recording && (!next.loaded || next.bufnum <= 0)) {
-            void this._stopRecording();
+        if (this._recording && !next.ready) {
+            this._stopRecording();
         }
         super._onStateChange(prev, next);
     }
 
     protected _sendDestroy() {
         super._sendDestroy();
-        if (this._recording) void this._stopRecording();
+        if (this._recording) this._stopRecording();
     }
 
     // ── Record / stop ─────────────────────────────────────────────────────
@@ -130,7 +119,7 @@ export class ScWaveform extends ScElement<ScWaveformItem, WaveformState> {
     private _onRecordClick = () => {
         if (this._busy) return;
         if (this._recording) {
-            void this._stopRecording();
+            this._stopRecording();
         } else {
             void this._startRecording();
         }
@@ -138,13 +127,13 @@ export class ScWaveform extends ScElement<ScWaveformItem, WaveformState> {
 
     private async _startRecording(): Promise<void> {
         const s = this._state;
-        if (!s.loaded || s.bufnum <= 0) return;
+        if (!s.ready) return;
 
         const sampleRate = rootApi.serverStatus.sampleRate;
-        if (sampleRate <= 0) {
-            console.warn('sc-waveform: sample rate unknown (not connected?)');
-            return;
-        }
+        if (sampleRate <= 0) return;
+
+        const stream = bufferManager.getBuffer(s.bufferId);
+        if (!stream) return;
 
         this._busy = true;
         try {
@@ -157,17 +146,10 @@ export class ScWaveform extends ScElement<ScWaveformItem, WaveformState> {
             this._autoScroll = true;
             this._dirty = true;
 
-            const {host, port} = optionsApi.scsynth;
-            const stream = createBufferStream({
-                bufnum: s.bufnum,
-                frames: s.frames,
-                chunk: STREAM_CHUNK,
-                sampleRate: Math.round(sampleRate),
-                scsynthAddr: `${host}:${port}`,
-            });
-            stream.onSamples((samples) => this._appendSamples(samples));
-            await stream.open();
-            this._stream = stream;
+            const handler = (samples: Float32Array) => this._appendSamples(samples);
+            stream.on('message', handler);
+            if (!stream.isOpen) await stream.open();
+            this._subscription = {stream, handler};
             this._recording = true;
         } catch (e) {
             console.error('sc-waveform: start failed', e);
@@ -176,13 +158,15 @@ export class ScWaveform extends ScElement<ScWaveformItem, WaveformState> {
         }
     }
 
-    private async _stopRecording(): Promise<void> {
+    private _stopRecording(): void {
         this._recording = false;
         this._autoScroll = false;
 
-        if (this._stream) {
-            this._stream.close();
-            this._stream = null;
+        // Unsubscribe only — the stream is shared via BufferManager and stays
+        // open for other subscribers.
+        if (this._subscription) {
+            this._subscription.stream.off('message', this._subscription.handler);
+            this._subscription = null;
         }
         this._dirty = true;
     }
@@ -359,17 +343,16 @@ export class ScWaveform extends ScElement<ScWaveformItem, WaveformState> {
             cancelAnimationFrame(this._rafId);
             this._rafId = null;
         }
-        if (this._stream) {
-            this._stream.close();
-            this._stream = null;
+        if (this._subscription) {
+            this._subscription.stream.off('message', this._subscription.handler);
+            this._subscription = null;
         }
     }
 
     // ── Render ─────────────────────────────────────────────────────────────
 
     render() {
-        const bufferReady = this._state.loaded && this._state.bufnum > 0;
-        const canRecord = bufferReady && !this._busy;
+        const canRecord = this._state.ready && !this._busy;
         return html`
             <div class="toolbar">
                 ${this._recordButton(canRecord)}
