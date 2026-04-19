@@ -206,15 +206,6 @@ export class ScWaveform extends ScElement<ScWaveformItem, WaveformState> {
         this._rafId = requestAnimationFrame(draw);
     }
 
-    private _viewSamples(): Float32Array | null {
-        if (this._capturedLen > 0) return this._captured.subarray(0, this._capturedLen);
-        return null;
-    }
-
-    private _viewLength(): number {
-        return this._capturedLen;
-    }
-
     private _draw() {
         const ctx = this._ctx;
         if (!ctx) return;
@@ -230,11 +221,11 @@ export class ScWaveform extends ScElement<ScWaveformItem, WaveformState> {
         ctx.fillStyle = border;
         ctx.fillRect(0, Math.floor(h / 2), w, 1);
 
-        const samples = this._viewSamples();
-        if (!samples || this._sampleRate <= 0) return;
+        const len = this._capturedLen;
+        if (len === 0 || this._sampleRate <= 0) return;
+        const samples = this._captured.subarray(0, len);
 
         const samplesPerCol = (this._effectiveWindow() * this._sampleRate) / w;
-        const len = this._viewLength();
         const mid = h / 2;
 
         ctx.fillStyle = fg;
@@ -261,24 +252,19 @@ export class ScWaveform extends ScElement<ScWaveformItem, WaveformState> {
 
     // ── Scroll + zoom (idle only) ─────────────────────────────────────────
 
-    private _maxScroll(): number {
-        const len = this._viewLength();
-        if (this._sampleRate <= 0) return 0;
-        const visible = Math.round(this._effectiveWindow() * this._sampleRate);
-        return Math.max(0, len - visible);
-    }
-
     private _clampWindow(w: number): number {
         if (this._sampleRate <= 0) return w;
         const minW = this.width / this._sampleRate; // 1 sample per pixel
-        const len = this._viewLength();
-        const captureWin = len > 0 ? len / this._sampleRate : this.window;
+        const captureWin = this._capturedLen > 0 ? this._capturedLen / this._sampleRate : this.window;
         const maxW = Math.max(this.window, captureWin);
         return Math.max(minW, Math.min(maxW, w));
     }
 
     private _clampScroll(s: number): number {
-        return Math.max(0, Math.min(this._maxScroll(), s));
+        if (this._sampleRate <= 0) return 0;
+        const visible = Math.round(this._effectiveWindow() * this._sampleRate);
+        const max = Math.max(0, this._capturedLen - visible);
+        return Math.max(0, Math.min(max, s));
     }
 
     private _onPointerDown = (e: PointerEvent) => {
@@ -331,10 +317,7 @@ export class ScWaveform extends ScElement<ScWaveformItem, WaveformState> {
             cancelAnimationFrame(this._rafId);
             this._rafId = null;
         }
-        if (this._subscription) {
-            this._subscription.stream.off('message', this._subscription.handler);
-            this._subscription = null;
-        }
+        this._stopRecording();
     }
 
     // ── Render ─────────────────────────────────────────────────────────────

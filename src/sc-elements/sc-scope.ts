@@ -8,6 +8,7 @@ import {ScElement} from './internal/sc-element.ts';
 interface ScopeState {
     bufferId: string;
     ready: boolean;
+    active: boolean;
 }
 
 /**
@@ -86,7 +87,7 @@ export class ScScope extends ScElement<ScScopeItem, ScopeState> {
     }
 
     getState(state: RuntimeState): ScopeState {
-        const empty: ScopeState = {bufferId: '', ready: false};
+        const empty: ScopeState = {bufferId: '', ready: false, active: false};
         const self = state.nodes[this.id];
         if (!self || !isScope(self)) return empty;
         const buf = state.nodes[self.runtime.targetId];
@@ -94,6 +95,7 @@ export class ScScope extends ScElement<ScScopeItem, ScopeState> {
         return {
             bufferId: buf.id,
             ready: buf.runtime.loaded && buf.runtime.bufnum > 0,
+            active: buf.runtime.active,
         };
     }
 
@@ -117,7 +119,20 @@ export class ScScope extends ScElement<ScScopeItem, ScopeState> {
         } else if (!next.ready && prev.ready) {
             this._deactivate();
         }
+        // When the buffer goes inactive (writer synth stopped), no new shots
+        // will arrive to update `_hasSignal` or mark the canvas dirty. Reset
+        // the visual state so the "no signal" overlay comes back instead of
+        // leaving the last-drawn frame frozen on screen.
+        if (prev?.active && !next.active) {
+            this._resetVisualState();
+        }
         super._onStateChange(prev, next);
+    }
+
+    private _resetVisualState() {
+        this._fillPos = 0;
+        this._hasSignal = false;
+        this._dirty = true;
     }
 
     disconnectedCallback() {
@@ -141,9 +156,7 @@ export class ScScope extends ScElement<ScScopeItem, ScopeState> {
             this._display = new Float32Array(size);
             this._shot = new Float32Array(size);
         }
-        this._fillPos = 0;
-        this._hasSignal = false;
-        this._dirty = true;
+        this._resetVisualState();
 
         const handler = (samples: Float32Array) => this._onSamples(samples);
         stream.on('message', handler);
@@ -155,9 +168,7 @@ export class ScScope extends ScElement<ScScopeItem, ScopeState> {
             this._subscription.stream.off('message', this._subscription.handler);
             this._subscription = null;
         }
-        this._fillPos = 0;
-        this._hasSignal = false;
-        this._dirty = true;
+        this._resetVisualState();
     }
 
     private _onSamples(batch: Float32Array) {
@@ -187,7 +198,7 @@ export class ScScope extends ScElement<ScScopeItem, ScopeState> {
     private _detectSignal(shot: Float32Array) {
         let peak = 0;
         for (let i = 0; i < shot.length; i++) {
-            const v = shot[i] < 0 ? -shot[i] : shot[i];
+            const v = Math.abs(shot[i]);
             if (v > peak) peak = v;
         }
         this._hasSignal = peak > 0.01;
