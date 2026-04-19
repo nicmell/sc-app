@@ -83,6 +83,10 @@ export function isWaveform<T extends ScElementItemBase>(el: T): el is Extract<T,
   return el.type === 'sc-waveform';
 }
 
+export function isScope<T extends ScElementItemBase>(el: T): el is Extract<T, { type: 'sc-scope' }> {
+  return el.type === 'sc-scope';
+}
+
 export function isControlOverride(e: OverrideEntry): e is ControlOverrideEntry {
   return e.type === 'control';
 }

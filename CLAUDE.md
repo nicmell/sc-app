@@ -159,6 +159,7 @@ Plugin HTML is processed in two phases: HTML parsing (`src/lib/html/`) builds a 
 | `ScIfItem` | bind, children | `InputRuntime` | Conditional rendering container |
 | `ScBufferItem` | name, frames, channels | `BufferRuntime` {name, bufnum, frames, channels, loaded, ...} | Server-side buffer allocation |
 | `ScWaveformItem` | bind, width, height, window, size | `InputRuntime` | In-memory waveform viewer: polls a `RecordBuf`-filled buffer and keeps samples only in frontend memory (no file, no download) |
+| `ScScopeItem` | bind, width, height, color | `InputRuntime` | Real-time oscilloscope: subscribes to a buffer via `BufferManager`, maintains a rolling window of recent samples, draws a trigger-aligned waveform |
 
 Union types: `ScNodeItem` (group/synth/plugin), `ScParentItem` (all with children), `ScElementItem` (all items).
 
@@ -259,7 +260,8 @@ ScElement<T, S>          Base class: store subscription, _state, _runtime, _onSt
 │   └── ScVar            State variable: no OSC
 ├── ScSynthDef           SynthDef: sends /d_recv when parent loaded
 ├── ScBuffer             Buffer: sends /b_alloc on create, /b_free on destroy
-├── ScWaveform           In-memory waveform viewer (no file, no download) — drives `createBufferStream`
+├── ScWaveform           In-memory waveform viewer (no file, no download) — subscribes via `bufferManager.getBuffer`
+├── ScScope              Real-time oscilloscope — subscribes via `bufferManager.getBuffer`, trigger-aligned draw loop
 ├── ScRun                Play/pause: sends /n_run
 ├── ScOption             Declarative select option (consumes SelectContext)
 ├── ScRadio              Declarative radio button (consumes RadioGroupContext)
@@ -286,7 +288,8 @@ ScElement<T, S>          Base class: store subscription, _state, _runtime, _onSt
 | `sc-display` | bind, format | Read-only value display. Printf-style format (`%d`, `%.2f`, `%b`, `%s`) |
 | `sc-if` | bind, is-truthy/is-falsy/is-equal/etc. | Conditional rendering |
 | `sc-buffer` | name, frames, channels | Allocates a server-side buffer. `bufnum` assigned automatically via `oscService.nextBufNum()` |
-| `sc-waveform` | bind, width, height, window (s), size | In-memory waveform track. On record, opens a `createBufferStream` subscription on the bound `sc-buffer` (which a `RecordBuf` UGen on the plugin side is filling) and appends each polled tick to a Float32Array on the component. No file, no download. On stop, the captured samples stay in memory as the frozen view. Horizontal drag pans; mouse wheel zooms (centered at cursor). |
+| `sc-waveform` | bind, width, height, window (s), size | In-memory waveform track. On record, subscribes to the bound `sc-buffer`'s shared `SampleStream` (via `bufferManager.getBuffer`) and appends each polled tick to a Float32Array on the component. No file, no download. On stop, the captured samples stay in memory as the frozen view. Horizontal drag pans; mouse wheel zooms (centered at cursor). |
+| `sc-scope` | bind, width, height, color | Real-time oscilloscope. Subscribes to the bound `sc-buffer`'s shared `SampleStream` as soon as the buffer is ready, maintains a rolling window of the most recent `max(width × 4, 512)` samples, and renders a trigger-aligned waveform via rAF. Retina-scaled; shows a "no signal" overlay until the peak exceeds 0.01. |
 
 Internal components in `sc-elements/internal/`:
 - `sc-element.ts` — Abstract base for all sc-elements. Store subscription, `_state`, `_runtime`, `_onStateChange(prev, next)`, `_sendCreate`/`_sendDestroy`, parent context consumer
@@ -381,6 +384,7 @@ This means nodes can see:
 - `<sc-radio-group bind="..." orientation="...">` with `<sc-radio>` children — radio buttons
 - `<sc-buffer name="..." frames="..." channels="..."/>` — allocates a server-side buffer
 - `<sc-waveform bind="bufferName" window="..." width="..." height="..."/>` — in-memory waveform viewer with record/stop. The plugin's synthdef must drive the bound buffer with `<sc-ugen type="RecordBuf">`; sc-waveform polls via `/b_getn` and keeps samples on the component only — no file is written
+- `<sc-scope bind="bufferName" width="..." height="..." color="..."/>` — real-time oscilloscope. Same plugin-side contract as sc-waveform (`RecordBuf` filling the buffer); sc-scope auto-starts when the buffer is allocated
 
 ## OSC Communication (`src/lib/osc/`)
 
@@ -442,6 +446,7 @@ Same split-by-`IS_TAURI` pattern as the rest of the app:
 | `select-plugin` | sc-select/sc-option dropdowns and sc-radio-group/sc-radio buttons |
 | `waveselect-plugin` | Select UGen switching between SinOsc/Saw/Pulse via sc-select |
 | `waveform-plugin` | Vibrato sine + RecordBuf visualised by sc-waveform. Exercises the in-memory buffer stream (no file, no download). |
+| `scope-plugin` | Waveform selector (Sine/Saw/Square via sc-select) feeding a RecordBuf, rendered by sc-scope with trigger alignment. |
 | `bad-bindings` | Intentional binding errors (typos, missing synths) for testing validation |
 | `bad-asset-type` | Invalid asset format for testing validation |
 | `bad-asset-mismatch` | Declared vs actual asset type mismatch |

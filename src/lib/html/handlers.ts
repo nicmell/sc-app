@@ -1,6 +1,6 @@
 import type {
     StripRuntime, ScPluginItem, ScGroupItem, ScSynthItem, ScSynthDefItem, ScUgenItem, ScControlItem,
-    ScRangeItem, ScCheckboxItem, ScRunItem, ScDisplayItem, ScIfItem, ScVarItem, ScSelectItem, ScOptionItem, ScRadioGroupItem, ScRadioItem, ScBufferItem, ScWaveformItem,
+    ScRangeItem, ScCheckboxItem, ScRunItem, ScDisplayItem, ScIfItem, ScVarItem, ScSelectItem, ScOptionItem, ScRadioGroupItem, ScRadioItem, ScBufferItem, ScWaveformItem, ScScopeItem,
 } from "@/types/parsers";
 import {ELEMENTS} from "@/constants/sc-elements";
 
@@ -116,6 +116,15 @@ function extractWaveformProps(el: Element): HtmlProps<ScWaveformItem> {
     };
 }
 
+function extractScopeProps(el: Element): HtmlProps<ScScopeItem> {
+    return {
+        bind: el.getAttribute('bind') ?? '',
+        width: Number(el.getAttribute('width') ?? '200'),
+        height: Number(el.getAttribute('height') ?? '100'),
+        color: el.getAttribute('color') ?? '',
+    };
+}
+
 function extractRadioProps(el: Element): HtmlProps<ScRadioItem> {
     return {
         value: Number(el.getAttribute('value') ?? '0'),
@@ -166,6 +175,8 @@ export function extractProps(type: string, el: Element): Record<string, unknown>
             return extractBufferProps(el);
         case ELEMENTS.SC_WAVEFORM:
             return extractWaveformProps(el);
+        case ELEMENTS.SC_SCOPE:
+            return extractScopeProps(el);
         default:
             throw new Error(`Unknown element type: ${type}`);
     }

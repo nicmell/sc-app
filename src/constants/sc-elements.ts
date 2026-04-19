@@ -17,4 +17,5 @@ export const ELEMENTS = {
   SC_RADIO: 'sc-radio',
   SC_BUFFER: 'sc-buffer',
   SC_WAVEFORM: 'sc-waveform',
+  SC_SCOPE: 'sc-scope',
 } as const;
