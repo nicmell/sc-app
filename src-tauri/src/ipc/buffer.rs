@@ -149,20 +149,6 @@ fn spawn_reader(
             return;
         }
 
-        // Zero the buffer before any `/b_getn` goes out so subscribers don't
-        // start on stale content left by the previous session's writer. UDP
-        // messages sent from the same socket to a localhost peer preserve
-        // order at the kernel level, and the first `/b_getn` is gated on the
-        // interval tick ~16 ms later — scsynth processes `/b_zero` long
-        // before then.
-        let zero_msg = OscMessage {
-            addr: "/b_zero".into(),
-            args: vec![OscType::Int(bufnum)],
-        };
-        if let Ok(bytes) = encoder::encode(&OscPacket::Message(zero_msg)) {
-            let _ = sock.send(&bytes).await;
-        }
-
         let mut interval = tokio::time::interval(Duration::from_millis(16));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let start_time = Instant::now();

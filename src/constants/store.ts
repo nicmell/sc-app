@@ -41,6 +41,8 @@ export const RuntimeAction = {
   SET_VAR: "setVar",
   ALLOC_BUFFER: "allocBuffer",
   FREE_BUFFER: "freeBuffer",
+  START_BUFFER: "startBuffer",
+  STOP_BUFFER: "stopBuffer",
 } as const;
 
 export const RootAction = {

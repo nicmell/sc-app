@@ -45,6 +45,7 @@ export interface BufferRuntime extends BaseRuntime {
   frames: number;
   channels: number;
   loaded: boolean;
+  active: boolean;
 }
 
 export interface InputRuntime extends BaseRuntime {

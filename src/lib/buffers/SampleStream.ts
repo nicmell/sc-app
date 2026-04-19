@@ -43,8 +43,7 @@ type Listener = (...args: unknown[]) => void;
 export class SampleStream {
     private listeners: Record<string, Listener[]> = {};
     private _isOpen = false;
-    private _closed = false;
-    private _openPromise: Promise<void> | null = null;
+    private _gen = 0;
 
     constructor(private adapter: SampleStreamAdapter) {
         this.adapter.onMessages((samples) => this.emit('message', samples));
@@ -54,20 +53,16 @@ export class SampleStream {
         return this._isOpen;
     }
 
-    open(): Promise<void> {
-        if (this._isOpen) return Promise.resolve();
-        if (this._openPromise) return this._openPromise;
-        this._openPromise = (async () => {
-            await this.adapter.open();
-            // Guard against a `close()` that landed while `adapter.open()` was
-            // still pending — don't flip `isOpen` back to `true` in that case.
-            if (!this._closed) this._isOpen = true;
-        })();
-        return this._openPromise;
+    async open(): Promise<void> {
+        const gen = ++this._gen;
+        await this.adapter.open();
+        // Skip the flip if a `close()` (or another `open()`) landed while the
+        // adapter was still starting — our open is superseded.
+        if (gen === this._gen) this._isOpen = true;
     }
 
     close(): void {
-        this._closed = true;
+        this._gen++;
         this._isOpen = false;
         this.adapter.close();
     }
@@ -104,7 +99,7 @@ export class SampleStream {
 export class TauriSampleStreamAdapter implements SampleStreamAdapter {
     private cb: SampleHandler = () => {};
     private handle: unknown = null;
-    private closed = false;
+    private _gen = 0;
 
     constructor(private spec: TauriSampleStreamSpec) {}
 
@@ -113,17 +108,22 @@ export class TauriSampleStreamAdapter implements SampleStreamAdapter {
     }
 
     async open(): Promise<void> {
+        const gen = ++this._gen;
         const {Channel} = await import('@tauri-apps/api/core');
         const channel = new Channel<number[]>();
-        channel.onmessage = (samples) => {
-            if (!this.closed) this.cb(Float32Array.from(samples));
-        };
-        this.handle = await this.spec.start(channel);
+        channel.onmessage = (samples) => this.cb(Float32Array.from(samples));
+        const handle = await this.spec.start(channel);
+        if (gen !== this._gen) {
+            // close() landed during the await — free the subscription we
+            // just acquired so scsynth doesn't keep sending to an orphan.
+            void this.spec.stop(handle);
+            return;
+        }
+        this.handle = handle;
     }
 
     close(): void {
-        if (this.closed) return;
-        this.closed = true;
+        this._gen++;
         const handle = this.handle;
         this.handle = null;
         if (handle !== null) void this.spec.stop(handle);
@@ -133,7 +133,7 @@ export class TauriSampleStreamAdapter implements SampleStreamAdapter {
 export class WebSocketSampleStreamAdapter implements SampleStreamAdapter {
     private cb: SampleHandler = () => {};
     private ws: WebSocket | null = null;
-    private closed = false;
+    private _gen = 0;
 
     constructor(private spec: WebSocketSampleStreamSpec) {}
 
@@ -142,10 +142,10 @@ export class WebSocketSampleStreamAdapter implements SampleStreamAdapter {
     }
 
     async open(): Promise<void> {
+        const gen = ++this._gen;
         const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         const ws = new WebSocket(`${proto}//${location.host}${this.spec.path}`);
         ws.binaryType = 'arraybuffer';
-        this.ws = ws;
         await new Promise<void>((resolve, reject) => {
             ws.onopen = () => {
                 try {
@@ -159,8 +159,14 @@ export class WebSocketSampleStreamAdapter implements SampleStreamAdapter {
                 reject(new Error('WebSocket error'));
             };
         });
+        if (gen !== this._gen) {
+            // close() landed during the handshake — drop the socket we just
+            // opened before wiring its onmessage handler.
+            ws.close();
+            return;
+        }
+        this.ws = ws;
         ws.onmessage = (ev) => {
-            if (this.closed) return;
             const data = ev.data as ArrayBuffer;
             if (data.byteLength < 4) return;
             const view = new DataView(data);
@@ -171,8 +177,7 @@ export class WebSocketSampleStreamAdapter implements SampleStreamAdapter {
     }
 
     close(): void {
-        if (this.closed) return;
-        this.closed = true;
+        this._gen++;
         this.ws?.close();
         this.ws = null;
     }

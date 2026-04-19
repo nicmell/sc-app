@@ -3,7 +3,7 @@ import type {ScWaveformItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {isBuffer, isWaveform} from '@/lib/utils/guards';
 import {rootApi} from '@/lib/stores/api';
-import {bufferManager, type BufferSubscription} from '@/lib/buffers';
+import {bufferManager, type BufferStream} from '@/lib/buffers';
 import {ScElement} from './internal/sc-element.ts';
 
 interface WaveformState {
@@ -67,7 +67,7 @@ export class ScWaveform extends ScElement<ScWaveformItem, WaveformState> {
     private _rafId: number | null = null;
     private _dirty = true;
 
-    private _subscription: BufferSubscription | null = null;
+    private _subscription: {stream: BufferStream; handler: (samples: Float32Array) => void} | null = null;
     private _captured: Float32Array = new Float32Array(0);
     private _capturedLen = 0;
     private _sampleRate = 0;
@@ -128,11 +128,8 @@ export class ScWaveform extends ScElement<ScWaveformItem, WaveformState> {
         const sampleRate = rootApi.serverStatus.sampleRate;
         if (sampleRate <= 0) return;
 
-        const subscription = bufferManager.subscribe(
-            s.bufferId,
-            (samples) => this._appendSamples(samples),
-        );
-        if (!subscription) return;
+        const stream = bufferManager.getBuffer(s.bufferId);
+        if (!stream) return;
 
         const initialCap = Math.max(1, Math.ceil(Math.max(60, this.window) * sampleRate));
         this._captured = new Float32Array(initialCap);
@@ -142,7 +139,10 @@ export class ScWaveform extends ScElement<ScWaveformItem, WaveformState> {
         this._zoomWindow = 0;
         this._autoScroll = true;
         this._dirty = true;
-        this._subscription = subscription;
+
+        const handler = (samples: Float32Array) => this._appendSamples(samples);
+        stream.on('message', handler);
+        this._subscription = {stream, handler};
         this._recording = true;
     }
 
@@ -150,11 +150,10 @@ export class ScWaveform extends ScElement<ScWaveformItem, WaveformState> {
         this._recording = false;
         this._autoScroll = false;
 
-        // Release our subscription — the BufferManager refcounts per buffer,
-        // so the underlying stream is closed (and the buffer zeroed) only when
-        // the last subscriber releases.
+        // Unsubscribe only — the stream lifecycle is owned by sc-buffer, which
+        // decides when to open/close based on writer-synth run state.
         if (this._subscription) {
-            this._subscription.close();
+            this._subscription.stream.off('message', this._subscription.handler);
             this._subscription = null;
         }
         this._dirty = true;
@@ -333,7 +332,7 @@ export class ScWaveform extends ScElement<ScWaveformItem, WaveformState> {
             this._rafId = null;
         }
         if (this._subscription) {
-            this._subscription.close();
+            this._subscription.stream.off('message', this._subscription.handler);
             this._subscription = null;
         }
     }

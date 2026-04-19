@@ -2,7 +2,7 @@ import {html, css} from 'lit';
 import type {ScScopeItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {isBuffer, isScope} from '@/lib/utils/guards';
-import {bufferManager, type BufferSubscription} from '@/lib/buffers';
+import {bufferManager, type BufferStream} from '@/lib/buffers';
 import {ScElement} from './internal/sc-element.ts';
 
 interface ScopeState {
@@ -63,7 +63,7 @@ export class ScScope extends ScElement<ScScopeItem, ScopeState> {
     private _rafId: number | null = null;
     private _dirty = false;
 
-    private _subscription: BufferSubscription | null = null;
+    private _subscription: {stream: BufferStream; handler: (samples: Float32Array) => void} | null = null;
 
     // Two equally-sized buffers. `_display` is what the draw loop reads and is
     // only ever whole-written between draws; `_shot` is the fill target that
@@ -103,7 +103,7 @@ export class ScScope extends ScElement<ScScopeItem, ScopeState> {
         this._lineColor = this.color || styles.getPropertyValue('--color-primary').trim() || '#00ff00';
         this._borderColor = styles.getPropertyValue('--color-border').trim() || '#555';
         this._textColor = styles.getPropertyValue('--color-text').trim() || '#e0e0e0';
-        if (this._state?.ready) this._activate();
+        if (this._state?.ready) void this._activate();
     }
 
     protected _sendDestroy() {
@@ -113,7 +113,7 @@ export class ScScope extends ScElement<ScScopeItem, ScopeState> {
 
     protected _onStateChange(prev: ScopeState, next: ScopeState): void {
         if (next.ready && !prev.ready) {
-            this._activate();
+            void this._activate();
         } else if (!next.ready && prev.ready) {
             this._deactivate();
         }
@@ -133,12 +133,8 @@ export class ScScope extends ScElement<ScScopeItem, ScopeState> {
 
     private _activate() {
         if (this._subscription) return;
-        const subscription = bufferManager.subscribe(
-            this._state.bufferId,
-            (samples) => this._onSamples(samples),
-        );
-        if (!subscription) return;
-        subscription.on('idle', this._onStreamIdle);
+        const stream = bufferManager.getBuffer(this._state.bufferId);
+        if (!stream) return;
 
         const size = Math.max(this.width * 4, SHOT_SAMPLES_MIN);
         if (this._display.length !== size) {
@@ -148,28 +144,21 @@ export class ScScope extends ScElement<ScScopeItem, ScopeState> {
         this._fillPos = 0;
         this._hasSignal = false;
         this._dirty = true;
-        this._subscription = subscription;
+
+        const handler = (samples: Float32Array) => this._onSamples(samples);
+        stream.on('message', handler);
+        this._subscription = {stream, handler};
     }
 
     private _deactivate() {
         if (this._subscription) {
-            this._subscription.off('idle', this._onStreamIdle);
-            this._subscription.close();
+            this._subscription.stream.off('message', this._subscription.handler);
             this._subscription = null;
         }
         this._fillPos = 0;
         this._hasSignal = false;
         this._dirty = true;
     }
-
-    /** Stream went quiet (BufferManager deactivated it). Reset display state
-     *  to the "no signal" view. The `active` event isn't needed: incoming
-     *  samples naturally trigger `_detectSignal` to flip `_hasSignal` back. */
-    private _onStreamIdle = () => {
-        this._fillPos = 0;
-        this._hasSignal = false;
-        this._dirty = true;
-    };
 
     private _onSamples(batch: Float32Array) {
         const size = this._shot.length;

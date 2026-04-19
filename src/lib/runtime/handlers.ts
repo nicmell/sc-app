@@ -296,6 +296,7 @@ const bufferHandler = (ctx: RuntimeContext): BufferRuntime => {
         frames: n.frames,
         channels: n.channels,
         loaded: false,
+        active: false,
     };
 };
 

@@ -140,6 +140,22 @@ export const runtimeSlice = createSlice({
         syncToTree(state, action.payload.id);
       }
     },
+    [RuntimeAction.START_BUFFER]: (state, action: { payload: { id: string } }) => {
+      const node = state.nodes[action.payload.id];
+      if (!node || !isBuffer(node)) return;
+      if (!node.runtime.active) {
+        node.runtime.active = true;
+        syncToTree(state, action.payload.id);
+      }
+    },
+    [RuntimeAction.STOP_BUFFER]: (state, action: { payload: { id: string } }) => {
+      const node = state.nodes[action.payload.id];
+      if (!node || !isBuffer(node)) return;
+      if (node.runtime.active) {
+        node.runtime.active = false;
+        syncToTree(state, action.payload.id);
+      }
+    },
   },
   defaultReducer: combineReducers({
     layout: layout.reducer,
