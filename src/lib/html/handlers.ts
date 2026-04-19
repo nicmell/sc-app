@@ -1,6 +1,6 @@
 import type {
     StripRuntime, ScPluginItem, ScGroupItem, ScSynthItem, ScSynthDefItem, ScUgenItem, ScControlItem,
-    ScRangeItem, ScCheckboxItem, ScRunItem, ScDisplayItem, ScIfItem, ScVarItem, ScSelectItem, ScOptionItem, ScRadioGroupItem, ScRadioItem, ScBufferItem, ScWaveformItem, ScScopeItem,
+    ScRangeItem, ScCheckboxItem, ScRunItem, ScDisplayItem, ScIfItem, ScVarItem, ScSelectItem, ScOptionItem, ScRadioGroupItem, ScRadioItem, ScBufferItem, ScWaveformItem, ScScopeItem, ScTestItem,
 } from "@/types/parsers";
 import {ELEMENTS} from "@/constants/sc-elements";
 
@@ -103,6 +103,17 @@ function extractBufferProps(el: Element): HtmlProps<ScBufferItem> {
         name: el.getAttribute('name') ?? '',
         frames: Number(el.getAttribute('frames') ?? '44100'),
         channels: Number(el.getAttribute('channels') ?? '1'),
+        chunks: Number(el.getAttribute('chunks') ?? '4'),
+    };
+}
+
+function extractTestProps(el: Element): HtmlProps<ScTestItem> {
+    return {
+        bus: Number(el.getAttribute('bus') ?? '0'),
+        channels: Number(el.getAttribute('channels') ?? '1'),
+        width: Number(el.getAttribute('width') ?? '200'),
+        height: Number(el.getAttribute('height') ?? '100'),
+        color: el.getAttribute('color') ?? '',
     };
 }
 
@@ -177,6 +188,8 @@ export function extractProps(type: string, el: Element): Record<string, unknown>
             return extractWaveformProps(el);
         case ELEMENTS.SC_SCOPE:
             return extractScopeProps(el);
+        case ELEMENTS.SC_TEST:
+            return extractTestProps(el);
         default:
             throw new Error(`Unknown element type: ${type}`);
     }

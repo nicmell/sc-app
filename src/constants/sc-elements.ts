@@ -18,4 +18,5 @@ export const ELEMENTS = {
   SC_BUFFER: 'sc-buffer',
   SC_WAVEFORM: 'sc-waveform',
   SC_SCOPE: 'sc-scope',
+  SC_TEST: 'sc-test',
 } as const;

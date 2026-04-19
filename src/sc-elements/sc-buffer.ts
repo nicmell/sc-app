@@ -55,11 +55,13 @@ export class ScBuffer extends ScElement<ScBufferItem, BufferState> {
         name: {type: String, reflect: true},
         frames: {type: Number},
         channels: {type: Number},
+        chunks: {type: Number},
     };
 
     declare name: string;
     declare frames: number;
     declare channels: number;
+    declare chunks: number;
 
     readonly bufnum = oscService.nextBufNum();
 
@@ -70,6 +72,7 @@ export class ScBuffer extends ScElement<ScBufferItem, BufferState> {
         this.name = '';
         this.frames = 44100;
         this.channels = 1;
+        this.chunks = 4;
     }
 
     getState(state: RuntimeState): BufferState {

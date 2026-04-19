@@ -87,6 +87,10 @@ export function isScope<T extends ScElementItemBase>(el: T): el is Extract<T, { 
   return el.type === 'sc-scope';
 }
 
+export function isTest<T extends ScElementItemBase>(el: T): el is Extract<T, { type: 'sc-test' }> {
+  return el.type === 'sc-test';
+}
+
 export function isControlOverride(e: OverrideEntry): e is ControlOverrideEntry {
   return e.type === 'control';
 }

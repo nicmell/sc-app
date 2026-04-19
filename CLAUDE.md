@@ -157,9 +157,10 @@ Plugin HTML is processed in two phases: HTML parsing (`src/lib/html/`) builds a 
 | `ScRunItem` | bind | `RunRuntime` {rootId, parentId, path, enabled, targetId} | Play/pause control |
 | `ScDisplayItem` | bind, format | `InputRuntime` | Read-only value display |
 | `ScIfItem` | bind, children | `InputRuntime` | Conditional rendering container |
-| `ScBufferItem` | name, frames, channels | `BufferRuntime` {name, bufnum, frames, channels, loaded, ...} | Server-side buffer allocation |
+| `ScBufferItem` | name, frames, channels, chunks | `BufferRuntime` {name, bufnum, frames, channels, chunks, loaded, active} | Server-side buffer allocation. `chunks` controls `/b_getn` splitting (`chunk_size = frames / chunks`); `active` tracks whether a writer synth is effectively running. |
 | `ScWaveformItem` | bind, width, height, window, size | `InputRuntime` | In-memory waveform viewer: polls a `RecordBuf`-filled buffer and keeps samples only in frontend memory (no file, no download) |
 | `ScScopeItem` | bind, width, height, color | `InputRuntime` | Real-time oscilloscope: subscribes to a buffer via `BufferManager`, maintains a rolling window of recent samples, draws a trigger-aligned waveform |
+| `ScTestItem` | bus, channels, width, height, color | `BaseRuntime` | Self-contained oscilloscope. Compiles a private recorder synthdef (once per session), allocates a private buffer, spawns a RecordBuf synth reading the bus, and renders the stream with the same trigger-aligned draw as sc-scope — but the plugin author just outputs audio to a bus |
 
 Union types: `ScNodeItem` (group/synth/plugin), `ScParentItem` (all with children), `ScElementItem` (all items).
 
@@ -262,6 +263,7 @@ ScElement<T, S>          Base class: store subscription, _state, _runtime, _onSt
 ├── ScBuffer             Buffer: sends /b_alloc on create, /b_free on destroy
 ├── ScWaveform           In-memory waveform viewer (no file, no download) — subscribes via `bufferManager.getBuffer`
 ├── ScScope              Real-time oscilloscope — subscribes via `bufferManager.getBuffer`, trigger-aligned draw loop
+├── ScTest               Self-contained oscilloscope — compiles a private recorder synthdef + allocates its own buffer + spawns its own synth; plugin just writes audio to a bus
 ├── ScRun                Play/pause: sends /n_run
 ├── ScOption             Declarative select option (consumes SelectContext)
 ├── ScRadio              Declarative radio button (consumes RadioGroupContext)
@@ -287,9 +289,10 @@ ScElement<T, S>          Base class: store subscription, _state, _runtime, _onSt
 | `sc-run` | bind, size, src, fgcolor, bgcolor | Play/pause button. Sends `/n_run` directly |
 | `sc-display` | bind, format | Read-only value display. Printf-style format (`%d`, `%.2f`, `%b`, `%s`) |
 | `sc-if` | bind, is-truthy/is-falsy/is-equal/etc. | Conditional rendering |
-| `sc-buffer` | name, frames, channels | Allocates a server-side buffer. `bufnum` assigned automatically via `oscService.nextBufNum()` |
+| `sc-buffer` | name, frames, channels, chunks | Allocates a server-side buffer. `bufnum` assigned automatically via `oscService.nextBufNum()`. `chunks` (default 4) controls how the Rust reader splits each buffer cycle into `/b_getn` reads: higher values reduce the probability of a read straddling the server-side write head (see Waveform streaming §). |
 | `sc-waveform` | bind, width, height, window (s), size | In-memory waveform track. On record, subscribes to the bound `sc-buffer`'s shared `SampleStream` (via `bufferManager.getBuffer`) and appends each polled tick to a Float32Array on the component. No file, no download. On stop, the captured samples stay in memory as the frozen view. Horizontal drag pans; mouse wheel zooms (centered at cursor). |
 | `sc-scope` | bind, width, height, color | Real-time oscilloscope. Subscribes to the bound `sc-buffer`'s shared `SampleStream` as soon as the buffer is ready, maintains a rolling window of the most recent `max(width × 4, 512)` samples, and renders a trigger-aligned waveform via rAF. Retina-scaled; shows a "no signal" overlay until the peak exceeds 0.01. |
+| `sc-test` | bus, channels, width, height, color | Self-contained oscilloscope. On activation, sends `/d_recv` for a private recorder synthdef (compiled once per session), `/b_alloc` for a private 8192-frame buffer, `/s_new` for a `RecordBuf`-based recorder targeted at the parent group. Plugin author writes audio to the bus via `Out.ar`; sc-test handles buffer + synth lifecycle itself and draws the stream with the same trigger-aligned rendering as sc-scope. Activates/deactivates based on the parent chain's `run` state. |
 
 Internal components in `sc-elements/internal/`:
 - `sc-element.ts` — Abstract base for all sc-elements. Store subscription, `_state`, `_runtime`, `_onStateChange(prev, next)`, `_sendCreate`/`_sendDestroy`, parent context consumer
@@ -382,9 +385,10 @@ This means nodes can see:
 - `<sc-range>`, `<sc-checkbox>`, `<sc-run>`, `<sc-display>`, `<sc-if>` — UI controls
 - `<sc-select bind="...">` with `<sc-option>` children — dropdown selector
 - `<sc-radio-group bind="..." orientation="...">` with `<sc-radio>` children — radio buttons
-- `<sc-buffer name="..." frames="..." channels="..."/>` — allocates a server-side buffer
+- `<sc-buffer name="..." frames="..." channels="..." chunks="..."/>` — allocates a server-side buffer. `chunks` (default 4) sets the number of `/b_getn` reads per buffer cycle; raise to 8 or 16 to reduce the chance of a read straddling the write head for scope-style consumers
 - `<sc-waveform bind="bufferName" window="..." width="..." height="..."/>` — in-memory waveform viewer with record/stop. The plugin's synthdef must drive the bound buffer with `<sc-ugen type="RecordBuf">`; sc-waveform polls via `/b_getn` and keeps samples on the component only — no file is written
 - `<sc-scope bind="bufferName" width="..." height="..." color="..."/>` — real-time oscilloscope. Same plugin-side contract as sc-waveform (`RecordBuf` filling the buffer); sc-scope auto-starts when the buffer is allocated
+- `<sc-test bus="..." channels="..." width="..." height="..." color="..."/>` — self-contained oscilloscope. Plugin author just outputs audio to the bus via `Out.ar`; sc-test compiles its own recorder synthdef, allocates its own buffer, and spawns its own RecordBuf synth internally. No `sc-buffer` or `RecordBuf` in the plugin markup
 
 ## OSC Communication (`src/lib/osc/`)
 
@@ -401,10 +405,20 @@ This means nodes can see:
 
 The bound `sc-buffer` is a **streaming** buffer that `RecordBuf` writes into cyclically (`loop=1`).
 
-**Size the buffer small.** The reader starts at position 0 but the writer is at some unknown cyclic position P0 by the time sc-waveform subscribes, so the apparent lag between audio-into-RecordBuf and samples-at-the-canvas is bounded by `frames / sampleRate`. A 2048-frame buffer at 48 kHz caps that at ~43 ms (imperceptible); 384000 frames (8 s) makes the live waveform feel seconds behind the audio. Pick a power-of-two ≥ `2 × chunk`, e.g. `2048` or `4096`.
+**Sizing: `frames` and `chunks` together.** `sc-buffer` has a `chunks` attribute (default `4`) that tells `BufferManager` how to split each buffer cycle into `/b_getn` reads: `chunk_size = frames / chunks`. The RecordBuf writer and the Rust reader both advance at real-time sample rate, so they maintain a constant phase offset determined at startup. Whenever the writer's head falls *inside* the read range of an individual `/b_getn` — the "seam zone" — that single reply interleaves samples from two different cycles, which renders as a kink mid-waveform on sc-scope / sc-waveform.
+
+The probability of that ever happening is `≈ 1 / chunks` (the seam zone is `chunk_size` wide out of `frames` possible offsets). Widening `chunks` shrinks the seam zone. For a clean scope on a steady tone:
+
+- `chunks=4` (default): ~25% seam probability — occasionally visible kinks.
+- `chunks=8`: ~12.5% — usually clean on localhost.
+- `chunks=16`: ~6.25% — essentially never visible, but each shot shows fewer audio samples.
+
+Each displayed shot in `sc-scope` / `sc-waveform` corresponds to one `/b_getn` response, so smaller `chunk_size` = fewer audio samples per drawn frame. Balance by raising `frames` as you raise `chunks`: `frames = 16384 chunks = 8` keeps `chunk_size = 2048` (same shot size as `frames=8192 chunks=4`) while halving the seam probability. The cost of larger `frames` is higher phase-offset lag worst-case (`frames / sampleRate`), but for a visual scope/waveform that's invisible.
+
+**Recommended starting point**: `frames=16384 chunks=8 channels=1` for scope-style use.
 
 ```xml
-<sc-buffer name="rec" frames="2048" channels="1"/>
+<sc-buffer name="rec" frames="16384" chunks="8" channels="1"/>
 <sc-synthdef name="foo">
     <sc-control name="bufnum" value="0"/>
     ...produce `sig`...
@@ -447,6 +461,7 @@ Same split-by-`IS_TAURI` pattern as the rest of the app:
 | `waveselect-plugin` | Select UGen switching between SinOsc/Saw/Pulse via sc-select |
 | `waveform-plugin` | Vibrato sine + RecordBuf visualised by sc-waveform. Exercises the in-memory buffer stream (no file, no download). |
 | `scope-plugin` | Waveform selector (Sine/Saw/Square via sc-select) feeding a RecordBuf, rendered by sc-scope with trigger alignment. |
+| `test-plugin` | Same signal as scope-plugin, rendered by sc-test — no `sc-buffer` / `RecordBuf` on the plugin side. Demonstrates the self-contained oscilloscope contract. |
 | `bad-bindings` | Intentional binding errors (typos, missing synths) for testing validation |
 | `bad-asset-type` | Invalid asset format for testing validation |
 | `bad-asset-mismatch` | Declared vs actual asset type mismatch |

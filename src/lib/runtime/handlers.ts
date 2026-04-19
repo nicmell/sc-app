@@ -1,7 +1,7 @@
 import type {
     ScElementItem, ScElementItemBase, ScParentItem, ScGroupItem, ScSynthItem, ScSynthDefItem, ScUgenItem,
     ScRunItem, ScControlItem, ScVarItem, ScBufferItem, ScWaveformItem, ScScopeItem,
-    ScPluginItem, Expr, NodeRuntime, ControlRuntime, VarRuntime, UgenRuntime, SynthDefRuntime, BufferRuntime, InputRuntime, RunRuntime, OverrideEntry, StripRuntime,
+    ScPluginItem, Expr, NodeRuntime, ControlRuntime, VarRuntime, UgenRuntime, SynthDefRuntime, BufferRuntime, InputRuntime, RunRuntime, BaseRuntime, OverrideEntry, StripRuntime,
 } from "@/types/parsers";
 import {isNode, isParent, isControl, isState, isBuffer, isControlOverride, isRunOverride, isVarOverride} from "@/lib/utils/guards";
 import {ELEMENTS} from "@/constants/sc-elements";
@@ -295,6 +295,7 @@ const bufferHandler = (ctx: RuntimeContext): BufferRuntime => {
         bufnum: 0,
         frames: n.frames,
         channels: n.channels,
+        chunks: Math.max(1, n.chunks),
         loaded: false,
         active: false,
     };
@@ -316,6 +317,10 @@ const scopeHandler = (ctx: RuntimeContext): InputRuntime => {
         throw new Error(`<sc-scope bind="${n.bind}">: does not match any <sc-buffer>`);
     }
     return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled: true, targetId: target.id};
+};
+
+const testHandler = (ctx: RuntimeContext): BaseRuntime => {
+    return {rootId: ctx.rootId, parentId: parentId(ctx), path: ctx.path, enabled: true};
 };
 
 // --- Dispatch ---
@@ -352,6 +357,7 @@ export function processElement(ctx: RuntimeContext): ScElementItem {
         case ELEMENTS.SC_BUFFER: runtime = bufferHandler(ctx); break;
         case ELEMENTS.SC_WAVEFORM: runtime = waveformHandler(ctx); break;
         case ELEMENTS.SC_SCOPE: runtime = scopeHandler(ctx); break;
+        case ELEMENTS.SC_TEST: runtime = testHandler(ctx); break;
         default: {
             throw new Error(`Unknown element type: ${(ctx.tree as ScElementItemBase).type}`);
         }

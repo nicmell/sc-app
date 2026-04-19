@@ -50,6 +50,7 @@
   <xs:element name="sc-buffer" type="scBufferType"/>
   <xs:element name="sc-waveform" type="scWaveformType"/>
   <xs:element name="sc-scope" type="scScopeType"/>
+  <xs:element name="sc-test" type="scTestType"/>
   <xs:element name="sc-select" type="scSelectType"/>
   <xs:element name="sc-option" type="scOptionType"/>
 
@@ -85,6 +86,7 @@
       <xs:element ref="sc-radio-group"/>
       <xs:element ref="sc-waveform"/>
       <xs:element ref="sc-scope"/>
+      <xs:element ref="sc-test"/>
     </xs:choice>
   </xs:group>
 
@@ -268,6 +270,7 @@
     <xs:attribute name="name" type="xs:string" use="required"/>
     <xs:attribute name="frames" type="xs:integer"/>
     <xs:attribute name="channels" type="xs:integer"/>
+    <xs:attribute name="chunks" type="xs:integer"/>
     <xs:attributeGroup ref="commonAttrs"/>
   </xs:complexType>
 
@@ -284,6 +287,16 @@
   <!-- sc-scope (oscilloscope: trigger-aligned real-time view of a buffer's most recent samples) -->
   <xs:complexType name="scScopeType">
     <xs:attribute name="bind" type="xs:string" use="required"/>
+    <xs:attribute name="width" type="xs:decimal"/>
+    <xs:attribute name="height" type="xs:decimal"/>
+    <xs:attribute name="color" type="xs:string"/>
+    <xs:attributeGroup ref="commonAttrs"/>
+  </xs:complexType>
+
+  <!-- sc-test (self-contained scope: creates its own recorder synth + buffer for the given bus) -->
+  <xs:complexType name="scTestType">
+    <xs:attribute name="bus" type="xs:integer"/>
+    <xs:attribute name="channels" type="xs:integer"/>
     <xs:attribute name="width" type="xs:decimal"/>
     <xs:attribute name="height" type="xs:decimal"/>
     <xs:attribute name="color" type="xs:string"/>

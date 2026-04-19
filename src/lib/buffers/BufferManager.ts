@@ -10,14 +10,7 @@ import {isBuffer} from '@/lib/utils/guards';
 
 export type BufferStream = SampleStream;
 
-/**
- * Cap on samples per `/b_getn` request. The Rust reader runs a wall-clock
- * catch-up loop keyed to the buffer's sample rate and issues as many requests
- * as needed each tick; this just bounds UDP payload size.
- */
-const STREAM_CHUNK = 1024;
-
-interface BufferStreamConfig {
+export interface BufferStreamConfig {
     bufnum: number;
     frames: number;
     chunk: number;
@@ -25,7 +18,12 @@ interface BufferStreamConfig {
     scsynthAddr: string;
 }
 
-function createStream(cfg: BufferStreamConfig): SampleStream {
+/**
+ * Build a `SampleStream` for a specific buffer. Exported for consumers that
+ * manage their own bufnums outside the runtime store (e.g. `sc-test`, which
+ * creates a private recorder synth + buffer pair).
+ */
+export function createBufferStream(cfg: BufferStreamConfig): SampleStream {
     const adapter: SampleStreamAdapter = IS_TAURI
         ? new TauriSampleStreamAdapter({
             start: async (channel) => {
@@ -62,9 +60,15 @@ function createStream(cfg: BufferStreamConfig): SampleStream {
 /**
  * Lazily-populated cache of per-buffer `SampleStream` instances, keyed by the
  * `sc-buffer` node's runtime id. The first `getBuffer(id)` call reads the
- * buffer's current `bufnum` / `frames` from the runtime store, together with
- * the current sample rate and scsynth address, and builds the transport-
- * appropriate stream; subsequent calls return the cached instance.
+ * buffer's current `bufnum` / `frames` / `chunks` from the runtime store,
+ * together with the current sample rate and scsynth address, and builds the
+ * transport-appropriate stream; subsequent calls return the cached instance.
+ *
+ * The chunk size for `/b_getn` requests is derived per-buffer as
+ * `frames / chunks` — `chunks` is how many equal-sized reads cover one buffer
+ * cycle. A ratio of 4 gives a 50% "safe zone" between reader and writer heads
+ * (no within-read wrap of the cyclic buffer's write cursor); larger ratios
+ * trade safe-zone width for more frequent reads.
  *
  * Streams cached here are not closed automatically — they are shared across
  * any component bound to the same buffer and live for the lifetime of the
@@ -86,11 +90,14 @@ export class BufferManager {
         const sampleRate = rootApi.serverStatus.sampleRate;
         if (sampleRate <= 0) return null;
 
+        const chunks = Math.max(1, buf.chunks);
+        const chunk = Math.max(1, Math.floor(buf.frames / chunks));
+
         const {host, port} = optionsApi.scsynth;
-        const stream = createStream({
+        const stream = createBufferStream({
             bufnum: buf.bufnum,
             frames: buf.frames,
-            chunk: STREAM_CHUNK,
+            chunk,
             sampleRate: Math.round(sampleRate),
             scsynthAddr: `${host}:${port}`,
         });
