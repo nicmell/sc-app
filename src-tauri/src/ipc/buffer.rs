@@ -120,14 +120,28 @@ impl BufferStreamState {
     }
 }
 
-/// The reader runs a time-tracked catch-up loop. Each tick we compute the
-/// number of buffer frames the writer *should* have produced by now given the
-/// elapsed wall-clock time (`target = elapsed_ms * sample_rate / 1000`) and
+/// The reader runs a time-tracked catch-up loop. Each tick we compute a
+/// `target` absolute sample count the reader should have issued by now, and
 /// issue as many `/b_getn` requests as needed to keep `samples_issued` level
-/// with `target`. `chunk` just caps the max samples per single request (and
-/// the request never crosses the buffer wrap-around). This way the read rate
-/// matches the writer's rate exactly regardless of tick-interval drift, so
-/// the downstream WAV isn't time-stretched.
+/// with `target`. `chunk` caps the max samples per single request, and reads
+/// never cross the buffer wrap.
+///
+/// Two modes of `target` computation, switching automatically:
+///
+///   1. **Wall-clock mode** (default, applies to plain `RecordBuf`
+///      producers): `target = elapsed_ms * sample_rate / 1000`. Reader and
+///      writer heads start at arbitrary phase relative to each other; if
+///      that phase puts the writer inside one of the reader's read ranges,
+///      the returned samples are seam-interleaved between two buffer cycles.
+///
+///   2. **Phase-tracked mode** (activates on first `/tr` with id == bufnum,
+///      emitted by synthdefs that use `SendTrig.kr` + `A2K.kr(Phasor.ar)`):
+///      `target` is derived from the writer's reported phase + elapsed,
+///      minus a safety margin of `2 × chunk` samples. The reader stays
+///      safely behind the write head — reads never straddle the writer,
+///      so samples are always from one continuous cycle. This is required
+///      for gap-free recording quality; for scope-style visual use cases
+///      wall-clock mode is usually good enough.
 fn spawn_reader(
     bufnum: i32,
     frames: i32,
@@ -149,6 +163,19 @@ fn spawn_reader(
             return;
         }
 
+        // Register this socket for server-side reply broadcasts. scsynth's
+        // SendTrig uses `SendDoneToAllNotified`, so /tr messages reach every
+        // notified client — not only the one that created the synth. This
+        // means the reader can observe phase reports from synths owned by
+        // the frontend's main OSC socket.
+        let notify = OscMessage {
+            addr: "/notify".into(),
+            args: vec![OscType::Int(1)],
+        };
+        if let Ok(bytes) = encoder::encode(&OscPacket::Message(notify)) {
+            let _ = sock.send(&bytes).await;
+        }
+
         let mut interval = tokio::time::interval(Duration::from_millis(16));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let start_time = Instant::now();
@@ -156,14 +183,31 @@ fn spawn_reader(
         let mut buf = [0u8; 65536];
         let sr = sample_rate.max(1) as i64;
         let frames_i64 = frames.max(1) as i64;
+        // Phase-tracked safety: keep reader this many samples behind the
+        // writer's head. Needs to exceed chunk (so reads don't straddle
+        // the writer) plus a jitter budget. `2 * chunk` is comfortable for
+        // localhost; for tiny buffers, clamp so the safety plus one chunk
+        // still fits within a cycle.
+        let safety_samples: i64 = (2 * chunk as i64).min(frames_i64 / 2);
+
+        // Set when we first hear a /tr reply with id == bufnum, switching
+        // the reader into phase-tracked mode. `anchor.0` is the writer's
+        // phase (samples) at anchor time.
+        let mut writer_anchor: Option<(i64, Instant)> = None;
 
         loop {
             tokio::select! {
                 _ = interval.tick() => {
-                    let elapsed_ms = start_time.elapsed().as_millis() as i64;
-                    let target = (elapsed_ms * sr) / 1000;
+                    let target = if let Some((anchor_samples, anchor_time)) = writer_anchor {
+                        let elapsed_secs = anchor_time.elapsed().as_secs_f64();
+                        anchor_samples + (elapsed_secs * sr as f64) as i64 - safety_samples
+                    } else {
+                        let elapsed_ms = start_time.elapsed().as_millis() as i64;
+                        (elapsed_ms * sr) / 1000
+                    };
                     while samples_issued < target {
-                        let pos = (samples_issued % frames_i64) as i32;
+                        let pos_mod = ((samples_issued % frames_i64) + frames_i64) % frames_i64;
+                        let pos = pos_mod as i32;
                         let until_wrap = frames - pos;
                         let delta = (target - samples_issued).min(chunk as i64).min(until_wrap as i64) as i32;
                         if delta <= 0 {
@@ -186,11 +230,31 @@ fn spawn_reader(
                 r = sock.recv(&mut buf) => {
                     match r {
                         Ok(n) => {
-                            if let Some(samples) = extract_b_setn(&buf[..n], bufnum) {
+                            let Ok((_, packet)) = decoder::decode_udp(&buf[..n]) else { continue };
+
+                            // /b_setn replies — forward samples to sinks.
+                            let mut samples = Vec::new();
+                            walk_b_setn(&packet, bufnum, &mut samples);
+                            if !samples.is_empty() {
                                 let mut guard = sinks.lock().await;
                                 guard.retain(|_, sink| sink.send(&samples));
                                 if guard.is_empty() {
                                     break;
+                                }
+                            }
+
+                            // /tr phase updates — on first arrival, lock the
+                            // reader into phase-tracked mode. Reposition
+                            // `samples_issued` to be `safety_samples` behind
+                            // the writer's head so the next tick's reads are
+                            // guaranteed not to straddle it.
+                            if writer_anchor.is_none() {
+                                if let Some(phase) = extract_tr_phase(&packet, bufnum) {
+                                    let phase_i = phase as i64;
+                                    writer_anchor = Some((phase_i, Instant::now()));
+                                    let mut start = phase_i - safety_samples;
+                                    while start < 0 { start += frames_i64; }
+                                    samples_issued = start;
                                 }
                             }
                         }
@@ -202,18 +266,7 @@ fn spawn_reader(
     })
 }
 
-fn extract_b_setn(bytes: &[u8], target: i32) -> Option<Vec<f32>> {
-    let packet = decoder::decode_udp(bytes).ok()?.1;
-    let mut samples = Vec::new();
-    walk(&packet, target, &mut samples);
-    if samples.is_empty() {
-        None
-    } else {
-        Some(samples)
-    }
-}
-
-fn walk(packet: &OscPacket, target: i32, out: &mut Vec<f32>) {
+fn walk_b_setn(packet: &OscPacket, target: i32, out: &mut Vec<f32>) {
     match packet {
         OscPacket::Message(m) => {
             if m.addr != "/b_setn" {
@@ -234,8 +287,42 @@ fn walk(packet: &OscPacket, target: i32, out: &mut Vec<f32>) {
         }
         OscPacket::Bundle(b) => {
             for p in &b.content {
-                walk(p, target, out);
+                walk_b_setn(p, target, out);
             }
+        }
+    }
+}
+
+/// Extract the phase value from a `/tr [nodeId, triggerId, value]` reply
+/// when `triggerId == bufnum`. The synthdef uses `SendTrig.kr(trig, bufnum,
+/// A2K.kr(phase))` so the third arg is the writer's buffer phase in samples.
+fn extract_tr_phase(packet: &OscPacket, bufnum: i32) -> Option<f32> {
+    match packet {
+        OscPacket::Message(m) => {
+            if m.addr != "/tr" {
+                return None;
+            }
+            let mut it = m.args.iter();
+            let _node = it.next()?;
+            let id = match it.next()? {
+                OscType::Int(i) => *i,
+                _ => return None,
+            };
+            if id != bufnum {
+                return None;
+            }
+            match it.next()? {
+                OscType::Float(f) => Some(*f),
+                _ => None,
+            }
+        }
+        OscPacket::Bundle(b) => {
+            for p in &b.content {
+                if let Some(v) = extract_tr_phase(p, bufnum) {
+                    return Some(v);
+                }
+            }
+            None
         }
     }
 }

@@ -190,7 +190,18 @@ export class OscService {
     if (filtered.length === 1) {
       return this.osc.send(filtered[0]);
     } else if (filtered.length > 1) {
-      const bundle = new OSC.Bundle(filtered, Date.now() + optionsApi.scsynth.msgLatencyMs);
+      const bundle = new OSC.Bundle(filtered);
+      // Force the OSC "immediately" timetag (seconds=0, fractions=1 per spec)
+      // rather than letting osc-js default to Date.now(). `Bundle.timetag` is
+      // an `AtomicTimetag` wrapping a `Timetag`; writing `0,1` into the inner
+      // Timetag produces the immediate-execution sentinel. Without this,
+      // scsynth schedules the bundle at the encoded NTP timestamp — which is
+      // fine when the system clock is accurate, but any clock drift or
+      // osc-js conversion quirk pushes the execution into the future, and
+      // subsequent non-bundled commands that depend on the bundle's effects
+      // fail ("Group X not found" etc.).
+      bundle.timetag.value.seconds = 0;
+      bundle.timetag.value.fractions = 1;
       return this.osc.send(bundle);
     }
   }

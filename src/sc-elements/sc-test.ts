@@ -12,21 +12,46 @@ import {ScElement} from './internal/sc-element.ts';
 // ── Shared recorder synthdef ──────────────────────────────────────────────
 
 const RECORDER_SYNTHDEF_NAME = '__sc_test_rec__';
+const RECORDER_LOAD_DELAY_MS = 100;
 let recorderBytes: number[] | null = null;
-let recorderLoaded = false;
+let recorderReady: Promise<void> | null = null;
 
-function ensureRecorderLoaded(): void {
+/**
+ * Build + send the self-contained recorder synthdef. Uses `Phasor.ar` to
+ * drive `BufWr.ar` (instead of `RecordBuf.ar`) so the write head position
+ * is explicit and can be reported to the client via `SendTrig.kr`, tagged
+ * with `bufnum`. The Rust reader picks those /tr messages up and anchors
+ * its read positions safely behind the actual write head — eliminating the
+ * "read straddles writer" artefact that plain cyclic polling is vulnerable to.
+ *
+ * The Phasor's `end` is hardcoded to `TEST_FRAMES` since the recorder always
+ * allocates a private buffer of that exact size.
+ *
+ * Returns a promise that resolves once scsynth has had enough time to
+ * process `/d_recv`. Callers MUST await this before issuing `/s_new` —
+ * Tauri commands run concurrently on the Rust side, so a large `/d_recv`
+ * blob can arrive at scsynth AFTER a subsequent small `/s_new` if we just
+ * fire them both synchronously.
+ */
+function ensureRecorderLoaded(): Promise<void> {
+    if (recorderReady) return recorderReady;
     if (!recorderBytes) {
         const specs = new Map<string, UGenSpec>([
-            ['read', {name: 'read', type: 'In', rate: 'ar', inputs: {bus: 'bus', numChannels: '1'}}],
-            ['write', {name: 'write', type: 'RecordBuf', rate: 'ar', inputs: {inputArray: 'read', bufnum: 'bufnum', loop: '1'}}],
+            ['read',    {name: 'read',    type: 'In',        rate: 'ar', inputs: {bus: 'bus', numChannels: '1'}}],
+            ['phase',   {name: 'phase',   type: 'Phasor',    rate: 'ar', inputs: {trig: '0', rate: '1', start: '0', end: String(TEST_FRAMES), resetPos: '0'}}],
+            ['write',   {name: 'write',   type: 'BufWr',     rate: 'ar', inputs: {inputArray: 'read', bufnum: 'bufnum', phase: 'phase', loop: '1'}}],
+            ['phaseKr', {name: 'phaseKr', type: 'A2K',       rate: 'kr', inputs: {in: 'phase'}}],
+            ['tick',    {name: 'tick',    type: 'Impulse',   rate: 'kr', inputs: {freq: '200', phase: '0'}}],
+            ['reply',   {name: 'reply',   type: 'SendTrig',  rate: 'kr', inputs: {in: 'tick', id: 'bufnum', value: 'phaseKr'}}],
         ]);
         recorderBytes = compileSynthDef(RECORDER_SYNTHDEF_NAME, {bus: 0, bufnum: 0}, specs);
     }
-    if (!recorderLoaded) {
-        oscService.sendSynthDef(RECORDER_SYNTHDEF_NAME, Uint8Array.from(recorderBytes));
-        recorderLoaded = true;
-    }
+    const bytes = recorderBytes;
+    recorderReady = (async () => {
+        oscService.sendSynthDef(RECORDER_SYNTHDEF_NAME, Uint8Array.from(bytes));
+        await new Promise<void>(resolve => setTimeout(resolve, RECORDER_LOAD_DELAY_MS));
+    })();
+    return recorderReady;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────
@@ -85,6 +110,7 @@ export class ScTest extends ScElement<ScTestItem, TestState> {
     private _dirty = false;
 
     private _subscription: {stream: BufferStream; handler: (samples: Float32Array) => void} | null = null;
+    private _activating = false;
     private _bufnum = 0;
     private _synthNodeId = 0;
 
@@ -160,41 +186,48 @@ export class ScTest extends ScElement<ScTestItem, TestState> {
     // ── Subscription lifecycle ────────────────────────────────────────────
 
     private async _activate() {
-        if (this._subscription) return;
+        // Re-entry guard: _onStateChange can fire again while we're awaiting
+        // the synthdef-load delay / stream open, before `_subscription` is
+        // populated — that would otherwise produce duplicate buffers + synths.
+        if (this._subscription || this._activating) return;
+        this._activating = true;
 
-        const sampleRate = rootApi.serverStatus.sampleRate;
-        if (sampleRate <= 0) return;
+        try {
+            const sampleRate = rootApi.serverStatus.sampleRate;
+            if (sampleRate <= 0) return;
 
-        ensureRecorderLoaded();
+            // Wait for /d_recv to reach scsynth and be processed before the
+            // /s_new below — otherwise scsynth sees "SynthDef not found".
+            await ensureRecorderLoaded();
 
-        // Allocate server-side bufnum + synth nodeId, send /b_alloc then /s_new
-        // targeting the parent group. Both messages go out on the same socket
-        // in order; scsynth processes them FIFO.
-        const bufnum = oscService.nextBufNum();
-        const nodeId = oscService.nextNodeId();
-        const groupId = this._parent?.runtime.nodeId ?? oscService.defaultGroupId();
-        oscService.send(bufAllocMessage(bufnum, TEST_FRAMES, 1));
-        oscService.send(newSynthMessage(RECORDER_SYNTHDEF_NAME, nodeId, 0, groupId, {
-            bus: this.bus,
-            bufnum,
-        }));
-        this._bufnum = bufnum;
-        this._synthNodeId = nodeId;
+            const bufnum = oscService.nextBufNum();
+            const nodeId = oscService.nextNodeId();
+            const groupId = this._parent?.runtime.nodeId ?? oscService.defaultGroupId();
+            oscService.send(bufAllocMessage(bufnum, TEST_FRAMES, 1));
+            oscService.send(newSynthMessage(RECORDER_SYNTHDEF_NAME, nodeId, 0, groupId, {
+                bus: this.bus,
+                bufnum,
+            }));
+            this._bufnum = bufnum;
+            this._synthNodeId = nodeId;
 
-        const {host, port} = optionsApi.scsynth;
-        const stream = createBufferStream({
-            bufnum,
-            frames: TEST_FRAMES,
-            chunk: TEST_CHUNK_SAMPLES,
-            sampleRate: Math.round(sampleRate),
-            scsynthAddr: `${host}:${port}`,
-        });
+            const {host, port} = optionsApi.scsynth;
+            const stream = createBufferStream({
+                bufnum,
+                frames: TEST_FRAMES,
+                chunk: TEST_CHUNK_SAMPLES,
+                sampleRate: Math.round(sampleRate),
+                scsynthAddr: `${host}:${port}`,
+            });
 
-        this._resetVisualState();
-        const handler = (samples: Float32Array) => this._onSamples(samples);
-        stream.on('message', handler);
-        await stream.open();
-        this._subscription = {stream, handler};
+            this._resetVisualState();
+            const handler = (samples: Float32Array) => this._onSamples(samples);
+            stream.on('message', handler);
+            await stream.open();
+            this._subscription = {stream, handler};
+        } finally {
+            this._activating = false;
+        }
     }
 
     private _deactivate() {
