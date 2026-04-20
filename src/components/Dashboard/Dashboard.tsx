@@ -94,7 +94,8 @@ export function Dashboard() {
             const value = isRunning ? 0 : 1;
             const node = runtimeApi.getById(item.i);
             if (node && isNode(node)) {
-                oscService.setNodeRun(node.runtime.nodeId, value, item.i);
+                oscService.setNodeRun(node.runtime.nodeId, value);
+                runtimeApi.setRunning({nodeId: item.i, value});
             }
         } : undefined;
 

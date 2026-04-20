@@ -18,7 +18,7 @@ import {
 } from './messages';
 import type {ScsynthOptions} from '@/types/stores';
 import {OSC_MESSAGES, OSC_REPLIES} from '@/constants/osc.ts';
-import {rootApi, optionsApi, runtimeApi} from '@/lib/stores/api';
+import {rootApi, optionsApi} from '@/lib/stores/api';
 import {logger} from '@/lib/logger';
 import {IS_TAURI} from '@/lib/env';
 import {TauriUdpPlugin} from './TauriUdpPlugin';
@@ -190,18 +190,7 @@ export class OscService {
     if (filtered.length === 1) {
       return this.osc.send(filtered[0]);
     } else if (filtered.length > 1) {
-      const bundle = new OSC.Bundle(filtered);
-      // Force the OSC "immediately" timetag (seconds=0, fractions=1 per spec)
-      // rather than letting osc-js default to Date.now(). `Bundle.timetag` is
-      // an `AtomicTimetag` wrapping a `Timetag`; writing `0,1` into the inner
-      // Timetag produces the immediate-execution sentinel. Without this,
-      // scsynth schedules the bundle at the encoded NTP timestamp — which is
-      // fine when the system clock is accurate, but any clock drift or
-      // osc-js conversion quirk pushes the execution into the future, and
-      // subsequent non-bundled commands that depend on the bundle's effects
-      // fail ("Group X not found" etc.).
-      bundle.timetag.value.seconds = 0;
-      bundle.timetag.value.fractions = 1;
+      const bundle = new OSC.Bundle(filtered, Date.now() + optionsApi.scsynth.msgLatencyMs);
       return this.osc.send(bundle);
     }
   }
@@ -236,59 +225,116 @@ export class OscService {
 
   // --- scsynth operations ---
 
-  createGroup(id: string, nodeId: number, groupId: number, run: boolean): void {
+  /** Register a one-shot listener on `address`; resolve as soon as an
+   *  incoming message there satisfies `match`. Rejects after replyTimeoutMs.
+   *  Listener must be registered BEFORE the `send()` that prompts the reply,
+   *  otherwise the reply can race in before we're listening. */
+  private once(
+      address: string,
+      match: (msg: InstanceType<typeof OSC.Message>) => boolean,
+  ): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      let subId: number | undefined;
+      const timer = globalThis.setTimeout(() => {
+        if (subId !== undefined) this.osc.off(address, subId);
+        reject(new Error(`OscService.once: timed out waiting for ${address}`));
+      }, optionsApi.scsynth.replyTimeoutMs);
+      subId = this.osc.on(address, (...args: unknown[]) => {
+        const msg = args[0] as InstanceType<typeof OSC.Message>;
+        if (!match(msg)) return;
+        if (subId !== undefined) this.osc.off(address, subId);
+        globalThis.clearTimeout(timer);
+        resolve();
+      });
+    });
+  }
+
+  async createGroup(nodeId: number, groupId: number, run: boolean): Promise<void> {
+    const replyArrived = this.once(
+        '/n_go',
+        msg => (msg.args as number[])[0] === nodeId,
+    );
     this.send(
         newGroupMessage(nodeId),
         nodeRunMessage(nodeId, run ? 1 : 0),
         groupTailMessage(groupId, -1),
     );
-    runtimeApi.newGroup({id, nodeId});
+    await replyArrived;
   }
 
-  freeGroup(id: string, nodeId: number): void {
+  async freeGroup(nodeId: number): Promise<void> {
+    const replyArrived = this.once(
+        '/n_end',
+        msg => (msg.args as number[])[0] === nodeId,
+    );
     this.send(
         groupFreeAllMessage(nodeId),
         freeNodeMessage(nodeId),
     );
-    runtimeApi.freeGroup({id});
+    await replyArrived;
   }
 
-  createSynth(id: string, name: string, nodeId: number, groupId: number, controls: Record<string, number>, run: boolean): void {
+  async createSynth(name: string, nodeId: number, groupId: number, controls: Record<string, number>, run: boolean): Promise<void> {
+    const replyArrived = this.once(
+        '/n_go',
+        msg => (msg.args as number[])[0] === nodeId,
+    );
     this.send(
         newSynthMessage(name, nodeId, 0, 0, controls),
         nodeRunMessage(nodeId, run ? 1 : 0),
         groupTailMessage(groupId, -1),
     );
-    runtimeApi.newSynth({id, nodeId});
+    await replyArrived;
   }
 
-  freeSynth(id: string, nodeId: number): void {
+  async freeSynth(nodeId: number): Promise<void> {
+    const replyArrived = this.once(
+        '/n_end',
+        msg => (msg.args as number[])[0] === nodeId,
+    );
     this.send(freeNodeMessage(nodeId));
-    runtimeApi.freeSynth({id});
+    await replyArrived;
   }
 
-  sendSynthDef(id: string, bytes: Uint8Array): void {
+  async sendSynthDef(bytes: Uint8Array): Promise<void> {
+    const replyArrived = this.once(
+        OSC_REPLIES.DONE,
+        msg => (msg.args as unknown[])[0] === OSC_MESSAGES.DEF_RECV,
+    );
     this.send(defRecvMessage(bytes));
-    runtimeApi.loadSynthdef({id});
+    await replyArrived;
   }
 
   setControl(nodeId: number, name: string, value: number): void {
     this.send(nodeSetMessage(nodeId, {[name]: value}));
   }
 
-  setNodeRun(nodeId: number, flag: number, id?: string): void {
+  setNodeRun(nodeId: number, flag: number): void {
     this.send(nodeRunMessage(nodeId, flag));
-    if (id) runtimeApi.setRunning({nodeId: id, value: flag});
   }
 
-  allocBuffer(id: string, bufnum: number, frames: number, channels: number): void {
+  async allocBuffer(bufnum: number, frames: number, channels: number): Promise<void> {
+    const replyArrived = this.once(
+        OSC_REPLIES.DONE,
+        msg => {
+          const args = msg.args as unknown[];
+          return args[0] === OSC_MESSAGES.BUF_ALLOC && args[1] === bufnum;
+        },
+    );
     this.send(bufAllocMessage(bufnum, frames, channels));
-    runtimeApi.allocBuffer({id, bufnum});
+    await replyArrived;
   }
 
-  freeBuffer(id: string, bufnum: number): void {
+  async freeBuffer(bufnum: number): Promise<void> {
+    const replyArrived = this.once(
+        OSC_REPLIES.DONE,
+        msg => {
+          const args = msg.args as unknown[];
+          return args[0] === OSC_MESSAGES.BUF_FREE && args[1] === bufnum;
+        },
+    );
     this.send(bufFreeMessage(bufnum));
-    runtimeApi.freeBuffer({id});
+    await replyArrived;
   }
 
   readBuffer(bufnum: number, start: number, count: number): void {

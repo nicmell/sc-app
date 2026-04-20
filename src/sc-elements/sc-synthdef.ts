@@ -3,6 +3,7 @@ import type {ScSynthDefItem} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
 import {isSynthDef} from '@/lib/utils/guards';
 import {oscService} from '@/lib/osc';
+import {runtimeApi} from '@/lib/stores/api';
 import {synthDefManager} from '@/lib/synthdef';
 import {ScElement} from './internal/sc-element.ts';
 
@@ -13,14 +14,15 @@ export class ScSynthDef extends ScElement<ScSynthDefItem, boolean> {
     return self != null && isSynthDef(self) && self.runtime.loaded;
   }
 
-  protected _sendCreate() {
+  protected async _sendCreate() {
     const bytes = synthDefManager.get(this.id);
     if (!bytes || bytes.length === 0) {
       console.warn(`<sc-synthdef id="${this.id}"> no compiled bytes found`);
       return;
     }
-    oscService.sendSynthDef(this.id, new Uint8Array(bytes));
     super._sendCreate();
+    await oscService.sendSynthDef(new Uint8Array(bytes));
+    runtimeApi.loadSynthdef({id: this.id});
   }
 
   render() {

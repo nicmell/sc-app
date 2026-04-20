@@ -8,7 +8,7 @@ import type {RuntimeState} from '@/types/stores';
 import {nodeContext, type NodeContext} from '../context.ts';
 import {ScElement} from './sc-element.ts';
 
-export abstract class ScNode<T extends ScNodeItem = ScNodeItem> extends ScElement<T, T | undefined> {
+export abstract class ScNode<T extends ScNodeItem = ScNodeItem, S = T | undefined> extends ScElement<T, S> {
     static properties = {
         name: {type: String, reflect: true},
         run: {type: Boolean, reflect: true},
@@ -26,12 +26,24 @@ export abstract class ScNode<T extends ScNodeItem = ScNodeItem> extends ScElemen
     }
 
     protected updated() {
-        this._provider.setValue(this._state, true);
+        this._provider.setValue(this._contextValue(), true);
     }
 
-    getState(state: RuntimeState): T | undefined {
+    getState(state: RuntimeState): S {
         const el = state.nodes[this.id];
-        return el && isNode(el) ? el as T : undefined;
+        return (el && isNode(el) ? el as T : undefined) as S;
+    }
+
+    /** The `ScNodeItem` to publish to child context-consumers. Subclasses
+     *  with a richer `_state` shape override this to return just the item. */
+    protected _contextValue(): NodeContext {
+        return this._state as unknown as NodeContext;
+    }
+
+    /** The node item backing `_state`. Subclasses with a richer state shape
+     *  override this to extract the item from their state object. */
+    protected _nodeItem(): T | undefined {
+        return this._state as unknown as T | undefined;
     }
 
     protected get groupId(): number {
@@ -39,8 +51,9 @@ export abstract class ScNode<T extends ScNodeItem = ScNodeItem> extends ScElemen
     }
 
     getControls(): Record<string, number> {
+        const item = this._nodeItem();
         return Object.fromEntries(
-            (this._state?.children ?? [])
+            (item?.children ?? [])
                 .filter((c): c is ScControlItem => isControl(c))
                 .map(c => {
                     if (c.runtime.targets) {

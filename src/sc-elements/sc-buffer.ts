@@ -111,15 +111,17 @@ export class ScBuffer extends ScElement<ScBufferItem, BufferState> {
         super._onStateChange(prev, next);
     }
 
-    protected _sendCreate() {
-        oscService.allocBuffer(this.id, this.bufnum, this.frames, this.channels);
+    protected async _sendCreate() {
         super._sendCreate();
+        await oscService.allocBuffer(this.bufnum, this.frames, this.channels);
+        runtimeApi.allocBuffer({id: this.id, bufnum: this.bufnum});
     }
 
-    protected _sendDestroy() {
-        this._closeStream();
-        oscService.freeBuffer(this.id, this.bufnum);
+    protected async _sendDestroy() {
         super._sendDestroy();
+        this._closeStream();
+        await oscService.freeBuffer(this.bufnum);
+        runtimeApi.freeBuffer({id: this.id});
     }
 
     private async _openStream(): Promise<void> {

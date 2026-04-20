@@ -5,36 +5,33 @@ import {isNode, isTest} from '@/lib/utils/guards';
 import {compileSynthDef} from '@/lib/synthdef';
 import {createBufferStream, type BufferStream} from '@/lib/buffers';
 import {oscService} from '@/lib/osc';
-import {bufAllocMessage, bufFreeMessage, freeNodeMessage, newSynthMessage} from '@/lib/osc/messages';
 import {optionsApi, rootApi} from '@/lib/stores/api';
 import {ScElement} from './internal/sc-element.ts';
 
 // ── Shared recorder synthdef ──────────────────────────────────────────────
 
 const RECORDER_SYNTHDEF_NAME = '__sc_test_rec__';
-const RECORDER_LOAD_DELAY_MS = 100;
 let recorderBytes: number[] | null = null;
-let recorderReady: Promise<void> | null = null;
 
 /**
- * Build + send the self-contained recorder synthdef. Uses `Phasor.ar` to
- * drive `BufWr.ar` (instead of `RecordBuf.ar`) so the write head position
- * is explicit and can be reported to the client via `SendTrig.kr`, tagged
- * with `bufnum`. The Rust reader picks those /tr messages up and anchors
- * its read positions safely behind the actual write head — eliminating the
- * "read straddles writer" artefact that plain cyclic polling is vulnerable to.
+ * Build (once) and send the self-contained recorder synthdef. Uses
+ * `Phasor.ar` to drive `BufWr.ar` (instead of `RecordBuf.ar`) so the write
+ * head position is explicit and can be reported to the client via
+ * `SendTrig.kr`, tagged with `bufnum`. The Rust reader picks those /tr
+ * messages up and anchors its read positions safely behind the actual
+ * write head — eliminating the "read straddles writer" artefact that
+ * plain cyclic polling is vulnerable to.
  *
- * The Phasor's `end` is hardcoded to `TEST_FRAMES` since the recorder always
- * allocates a private buffer of that exact size.
+ * The Phasor's `end` is hardcoded to `TEST_FRAMES` since the recorder
+ * always allocates a private buffer of that exact size.
  *
- * Returns a promise that resolves once scsynth has had enough time to
- * process `/d_recv`. Callers MUST await this before issuing `/s_new` —
- * Tauri commands run concurrently on the Rust side, so a large `/d_recv`
- * blob can arrive at scsynth AFTER a subsequent small `/s_new` if we just
- * fire them both synchronously.
+ * Compiled bytes are cached module-wide (compilation is deterministic),
+ * but `/d_recv` is re-sent on every activation so we never assume scsynth
+ * retained the synthdef across a server restart, a client reconnect, or
+ * an earlier failure. `/d_recv` is idempotent on scsynth — duplicates
+ * just replace the existing def — so the extra traffic is harmless.
  */
-function ensureRecorderLoaded(): Promise<void> {
-    if (recorderReady) return recorderReady;
+function sendRecorderSynthdef(): Promise<void> {
     if (!recorderBytes) {
         const specs = new Map<string, UGenSpec>([
             ['read',    {name: 'read',    type: 'In',        rate: 'ar', inputs: {bus: 'bus', numChannels: '1'}}],
@@ -46,12 +43,7 @@ function ensureRecorderLoaded(): Promise<void> {
         ]);
         recorderBytes = compileSynthDef(RECORDER_SYNTHDEF_NAME, {bus: 0, bufnum: 0}, specs);
     }
-    const bytes = recorderBytes;
-    recorderReady = (async () => {
-        oscService.sendSynthDef(RECORDER_SYNTHDEF_NAME, Uint8Array.from(bytes));
-        await new Promise<void>(resolve => setTimeout(resolve, RECORDER_LOAD_DELAY_MS));
-    })();
-    return recorderReady;
+    return oscService.sendSynthDef(Uint8Array.from(recorderBytes));
 }
 
 // ── Component ─────────────────────────────────────────────────────────────
@@ -198,17 +190,23 @@ export class ScTest extends ScElement<ScTestItem, TestState> {
 
             // Wait for /d_recv to reach scsynth and be processed before the
             // /s_new below — otherwise scsynth sees "SynthDef not found".
-            await ensureRecorderLoaded();
+            await sendRecorderSynthdef();
 
             const bufnum = oscService.nextBufNum();
             const nodeId = oscService.nextNodeId();
             const groupId = this._parent?.runtime.nodeId ?? oscService.defaultGroupId();
-            oscService.send(bufAllocMessage(bufnum, TEST_FRAMES, 1));
-            oscService.send(newSynthMessage(RECORDER_SYNTHDEF_NAME, nodeId, 0, groupId, {
+
+            // Private buffer + recorder synth: allocBuffer and createSynth
+            // both await scsynth confirmation, so the BufferStream opened
+            // below can safely start polling /b_getn immediately. We don't
+            // dispatch any runtimeApi.* action — these server-side resources
+            // are outside the plugin element tree.
+            await oscService.allocBuffer(bufnum, TEST_FRAMES, 1);
+            this._bufnum = bufnum;
+            await oscService.createSynth(RECORDER_SYNTHDEF_NAME, nodeId, groupId, {
                 bus: this.bus,
                 bufnum,
-            }));
-            this._bufnum = bufnum;
+            }, true);
             this._synthNodeId = nodeId;
 
             const {host, port} = optionsApi.scsynth;
@@ -237,11 +235,11 @@ export class ScTest extends ScElement<ScTestItem, TestState> {
             this._subscription = null;
         }
         if (this._synthNodeId > 0) {
-            oscService.send(freeNodeMessage(this._synthNodeId));
+            void oscService.freeSynth(this._synthNodeId);
             this._synthNodeId = 0;
         }
         if (this._bufnum > 0) {
-            oscService.send(bufFreeMessage(this._bufnum));
+            void oscService.freeBuffer(this._bufnum);
             this._bufnum = 0;
         }
         this._resetVisualState();
