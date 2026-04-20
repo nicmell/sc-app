@@ -276,7 +276,7 @@ ScElement<T, S>          Base class: store subscription, _state, _runtime, _onSt
 |---------|---------------|----------|
 | `sc-plugin` | — | Plugin root. Loads HTML, parses tree, creates group on server |
 | `sc-group` | name | Group container. Sends `/g_new` on parent enabled, `/g_freeAll` + `/n_free` on destroy |
-| `sc-synth` | name, bind | Synth instance. Sends `/s_new` on parent enabled, `/n_free` on destroy |
+| `sc-synth` | name, bind | Synth instance. Defers `/s_new` via `_onStateChange` until `depsReady` flips true — parent loaded, target synthdef (by `bind` name) loaded, and every buffer referenced by a child `sc-control`'s `runtime.targets` loaded. Sends `/n_free` on destroy. |
 | `sc-synthdef` | name | SynthDef template. Compiles and sends `/d_recv` when parent loaded |
 | `sc-control` | name, value, bind | Control parameter. Sends `/n_set` on value change when `enabled` and parent has nodeId |
 | `sc-var` | name, value, bind | State variable. No OSC. Supports bind expressions |
@@ -292,7 +292,7 @@ ScElement<T, S>          Base class: store subscription, _state, _runtime, _onSt
 | `sc-buffer` | name, frames, channels, chunks | Allocates a server-side buffer. `bufnum` assigned automatically via `oscService.nextBufNum()`. `chunks` (default 4) controls how the Rust reader splits each buffer cycle into `/b_getn` reads: higher values reduce the probability of a read straddling the server-side write head (see Waveform streaming §). |
 | `sc-waveform` | bind, width, height, window (s), size | In-memory waveform track. On record, subscribes to the bound `sc-buffer`'s shared `SampleStream` (via `bufferManager.getBuffer`) and appends each polled tick to a Float32Array on the component. No file, no download. On stop, the captured samples stay in memory as the frozen view. Horizontal drag pans; mouse wheel zooms (centered at cursor). |
 | `sc-scope` | bind, width, height, color | Real-time oscilloscope. Subscribes to the bound `sc-buffer`'s shared `SampleStream` as soon as the buffer is ready, maintains a rolling window of the most recent `max(width × 4, 512)` samples, and renders a trigger-aligned waveform via rAF. Retina-scaled; shows a "no signal" overlay until the peak exceeds 0.01. |
-| `sc-test` | bus, channels, width, height, color | Self-contained oscilloscope. On activation, sends `/d_recv` for a private recorder synthdef (compiled once per session), `/b_alloc` for a private 8192-frame buffer, `/s_new` for a `RecordBuf`-based recorder targeted at the parent group. Plugin author writes audio to the bus via `Out.ar`; sc-test handles buffer + synth lifecycle itself and draws the stream with the same trigger-aligned rendering as sc-scope. Activates/deactivates based on the parent chain's `run` state. |
+| `sc-test` | bus, channels, width, height, color | Self-contained oscilloscope. On activation, sends `/d_recv` for a private recorder synthdef (bytes cached module-wide; `/d_recv` re-sent every activation so scsynth restarts are transparent), `/b_alloc` for a private 8192-frame buffer (`chunks=4`), `/s_new` for a `Phasor + BufWr` recorder that also runs `SendTrig` emitting `/tr` with the current write phase — the Rust reader uses those `/tr` as anchors and parks its `/b_getn` reads safely behind the writer's head (phase-tracked mode, see NOTES.md §3). Plugin author writes audio to the bus via `Out.ar`; sc-test handles buffer + synth lifecycle itself and draws the stream with the same trigger-aligned rendering as sc-scope. Activates/deactivates based on the parent chain's `run` state. |
 
 Internal components in `sc-elements/internal/`:
 - `sc-element.ts` — Abstract base for all sc-elements. Store subscription, `_state`, `_runtime`, `_onStateChange(prev, next)`, `_sendCreate`/`_sendDestroy`, parent context consumer
@@ -388,7 +388,7 @@ This means nodes can see:
 - `<sc-buffer name="..." frames="..." channels="..." chunks="..."/>` — allocates a server-side buffer. `chunks` (default 4) sets the number of `/b_getn` reads per buffer cycle; raise to 8 or 16 to reduce the chance of a read straddling the write head for scope-style consumers
 - `<sc-waveform bind="bufferName" window="..." width="..." height="..."/>` — in-memory waveform viewer with record/stop. The plugin's synthdef must drive the bound buffer with `<sc-ugen type="RecordBuf">`; sc-waveform polls via `/b_getn` and keeps samples on the component only — no file is written
 - `<sc-scope bind="bufferName" width="..." height="..." color="..."/>` — real-time oscilloscope. Same plugin-side contract as sc-waveform (`RecordBuf` filling the buffer); sc-scope auto-starts when the buffer is allocated
-- `<sc-test bus="..." channels="..." width="..." height="..." color="..."/>` — self-contained oscilloscope. Plugin author just outputs audio to the bus via `Out.ar`; sc-test compiles its own recorder synthdef, allocates its own buffer, and spawns its own RecordBuf synth internally. No `sc-buffer` or `RecordBuf` in the plugin markup
+- `<sc-test bus="..." channels="..." width="..." height="..." color="..."/>` — self-contained oscilloscope. Plugin author just outputs audio to the bus via `Out.ar`; sc-test compiles its own `Phasor + BufWr + SendTrig` recorder synthdef (phase-tracked — the Rust reader locks onto the writer's head via `/tr`, eliminating the wall-clock-seam problem that `sc-scope` is still vulnerable to), allocates its own buffer, and spawns its own recorder synth internally. No `sc-buffer` or `BufWr` in the plugin markup
 
 ## OSC Communication (`src/lib/osc/`)
 
@@ -396,6 +396,28 @@ This means nodes can see:
 - `TauriUdpPlugin.ts` — osc-js plugin adapter wrapping `TauriDatagramSocket` (Tauri mode only)
 - `TauriDatagramSocket.ts` — Bridges to Tauri `udp_bind`/`udp_send`/`udp_close` commands (Tauri mode only)
 - `messages.ts` — OSC message factories: `/status`, `/s_new`, `/g_new`, `/n_set`, `/n_run`, `/n_free`, `/d_recv`, `/b_alloc`, `/b_free`, etc.
+
+### Reply-driven lifecycle (OscService → runtime store)
+
+Methods on `OscService` that create or free server-side state — `createGroup`, `freeGroup`, `createSynth`, `freeSynth`, `sendSynthDef`, `allocBuffer`, `freeBuffer` — register a one-shot listener on the matching scsynth reply **before** calling `send()`, and resolve their returned `Promise<void>` only once the reply arrives. Callers (sc-group, sc-synth, sc-buffer, sc-synthdef, sc-test) dispatch the corresponding `runtimeApi.*` store action *after* awaiting, so `runtime.loaded` flips **after** scsynth confirms, never before.
+
+Reply map (see `OscService.once()`):
+
+| Send | scsynth reply | Filter |
+|---|---|---|
+| `/d_recv` | `/done '/d_recv'` | `args[0] === '/d_recv'` |
+| `/b_alloc` | `/done '/b_alloc' bufnum` | `args[0]+args[1]` |
+| `/b_free` | `/done '/b_free' bufnum` | `args[0]+args[1]` |
+| `/g_new` | `/n_go nodeId …` | `args[0] === nodeId` |
+| `/s_new` | `/n_go nodeId …` | `args[0] === nodeId` |
+| `/n_free` | `/n_end nodeId …` | `args[0] === nodeId` |
+
+Node-lifecycle replies (`/n_go`, `/n_end`) require `/notify 1` to be active; `OscService` sends it automatically on connect.
+
+**Consequences:**
+- Children gated on `parent.runtime.loaded` via the context-consumer callback in `ScElement` naturally wait — that flag flips only after server confirmation.
+- `ScSynth` additionally tracks a reactive `depsReady` state (parent loaded + target synthdef loaded + every bound buffer loaded) and fires `/s_new` from `_onStateChange` when it flips true. This eliminates `SynthDef not found` / `Buffer not allocated` / `Group not found` at scsynth without any explicit barrier.
+- `sc-test` does **not** dispatch `runtimeApi.*` — its recorder synth and buffer live outside the plugin element tree.
 
 ## Waveform streaming (`src/lib/buffers/BufferManager.ts`, `src-tauri/src/ipc/buffer.rs`, `src-tauri/src/server/buffer_ws.rs`)
 
@@ -416,6 +438,15 @@ The probability of that ever happening is `≈ 1 / chunks` (the seam zone is `ch
 Each displayed shot in `sc-scope` / `sc-waveform` corresponds to one `/b_getn` response, so smaller `chunk_size` = fewer audio samples per drawn frame. Balance by raising `frames` as you raise `chunks`: `frames = 16384 chunks = 8` keeps `chunk_size = 2048` (same shot size as `frames=8192 chunks=4`) while halving the seam probability. The cost of larger `frames` is higher phase-offset lag worst-case (`frames / sampleRate`), but for a visual scope/waveform that's invisible.
 
 **Recommended starting point**: `frames=16384 chunks=8 channels=1` for scope-style use.
+
+**Phase-tracked mode (sc-test).** `sc-test`'s private recorder synthdef uses `Phasor.ar + BufWr.ar + SendTrig.kr` to broadcast its current write phase at 200 Hz. The Rust reader in `src-tauri/src/ipc/buffer.rs::spawn_reader` listens for `/tr`, tracks wraps to produce a monotonic `writer_virtual` counter, and keeps `/b_getn` reads parked exactly `safety_samples = min(2 × chunk, frames/2)` samples behind the writer — so the seam probability is eliminated, not just reduced. The reader re-anchors on every `/tr` to absorb wall-clock-vs-DSP drift.
+
+Sizing constraints specific to phase-tracked mode:
+- `chunks ≥ 4` is required. The `safety_samples` clamp (`min(2 × chunk, frames/2)`) collapses at `chunks < 4`: with `chunks=2`, `safety = chunk` — the read window ends exactly at the writer's head, so any positive drift straddles.
+- `chunk_size ∈ [256, 4096]` samples. Smaller chunks burn OSC bandwidth (more `/b_getn` round-trips); larger ones add latency and starve the scope of refresh events.
+- `frames ≥ 4 × chunk_size`. This keeps the safety clamp out of play and leaves the design margin (`safety − chunk = chunk`) intact.
+
+At heartbeat, `spawn_reader` logs `gap` (writer-reader distance, should ≈ `safety_samples`) and `requested` vs `received` (sample accounting — must stay bounded, never diverge). See NOTES.md §3 for the full design + remaining limitations.
 
 ```xml
 <sc-buffer name="rec" frames="16384" chunks="8" channels="1"/>
