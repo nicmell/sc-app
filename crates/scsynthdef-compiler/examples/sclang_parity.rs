@@ -6,7 +6,7 @@
 //!
 //! Fixtures are defined inline below as Rust builders. Each fixture's SC
 //! source lives alongside this example at
-//! `crates/scsynthdef-compiler/fixtures/<name>.scd`.
+//! `crates/scsynthdef-compiler/examples/fixtures/<name>.scd`.
 //!
 //! If `sclang` is not on `$PATH`, the run is skipped with a clear message
 //! (exit code 0).
@@ -226,7 +226,9 @@ fn dump_diff_context(rust: &[u8], sclang: &[u8], offset: usize) {
 }
 
 fn fixtures_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures")
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("examples")
+        .join("fixtures")
 }
 
 // ── Main loop ────────────────────────────────────────────────────────────
