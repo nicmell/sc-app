@@ -1,6 +1,7 @@
 mod buffer_ws;
 mod ws_bridge;
 
+use crate::clock::ClockService;
 use crate::ipc::buffer::BufferStreamState;
 use crate::{config, plugin};
 use bytes::Bytes;
@@ -20,6 +21,7 @@ struct AppState {
     data_dir: PathBuf,
     scsynth_addr: String,
     buffer_streams: Arc<BufferStreamState>,
+    clock: Arc<ClockService>,
 }
 
 pub fn serve(context: tauri::Context, port: u16, scsynth_addr: String) {
@@ -41,11 +43,22 @@ async fn run(
     port: u16,
     scsynth_addr: String,
 ) -> Result<(), String> {
+    // Start the shared clock service eagerly with a default 48 kHz. If the
+    // actual scsynth runs at a different rate the <100 ms between /tr
+    // re-anchors keeps the extrapolation error well inside the safety band;
+    // we don't need to plumb the real rate in until beat-level consumers
+    // arrive in a later phase.
+    let clock = Arc::new(ClockService::new());
+    if let Err(e) = clock.start(&scsynth_addr, 48_000).await {
+        eprintln!("Clock start failed: {e}");
+    }
+
     let state = Arc::new(AppState {
         context,
         data_dir,
         scsynth_addr,
         buffer_streams: Arc::new(BufferStreamState::new()),
+        clock,
     });
 
     let addr: SocketAddr = format!("0.0.0.0:{port}")
@@ -105,6 +118,7 @@ async fn handle_request(
                     bufnum,
                     &state.scsynth_addr,
                     state.buffer_streams.clone(),
+                    state.clock.clone(),
                 ));
             }
         }

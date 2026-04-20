@@ -1,6 +1,7 @@
 import {html, css} from 'lit';
 import type {ScTestItem, UGenSpec} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
+import {PHASE_BUS, SHARED_FRAMES} from '@/constants/osc';
 import {compileSynthDef} from '@/lib/synthdef';
 import {createBufferStream, type BufferStream} from '@/lib/buffers';
 import {oscService} from '@/lib/osc';
@@ -13,16 +14,15 @@ const RECORDER_SYNTHDEF_NAME = '__sc_test_rec__';
 let recorderBytes: number[] | null = null;
 
 /**
- * Build (once) and send the self-contained recorder synthdef. Uses
- * `Phasor.ar` to drive `BufWr.ar` (instead of `RecordBuf.ar`) so the write
- * head position is explicit and can be reported to the client via
- * `SendTrig.kr`, tagged with `bufnum`. The Rust reader picks those /tr
- * messages up and anchors its read positions safely behind the actual
- * write head — eliminating the "read straddles writer" artefact that
- * plain cyclic polling is vulnerable to.
+ * Build (once) and send the sc-test recorder synthdef. The recorder reads
+ * audio from the scoped bus and phase from the shared `PHASE_BUS` that the
+ * app-wide `__global_clock__` broadcaster (see `src/lib/clock/globalClock.ts`)
+ * writes to. Three UGens — no Phasor, no SendTrig — because the clock synth
+ * owns both, and every phase-tracked recorder in the app shares its output.
  *
- * The Phasor's `end` is hardcoded to `TEST_FRAMES` since the recorder
- * always allocates a private buffer of that exact size.
+ * All phase-tracked buffers must have `frames === SHARED_FRAMES`; the
+ * broadcaster's Phasor wraps at that value and `BufWr` would write out of
+ * bounds otherwise.
  *
  * Compiled bytes are cached module-wide (compilation is deterministic),
  * but `/d_recv` is re-sent on every activation so we never assume scsynth
@@ -33,24 +33,29 @@ let recorderBytes: number[] | null = null;
 function sendRecorderSynthdef(): Promise<void> {
     if (!recorderBytes) {
         const specs = new Map<string, UGenSpec>([
-            ['read',    {name: 'read',    type: 'In',        rate: 'ar', inputs: {bus: 'bus', numChannels: '1'}}],
-            ['phase',   {name: 'phase',   type: 'Phasor',    rate: 'ar', inputs: {trig: '0', rate: '1', start: '0', end: String(TEST_FRAMES), resetPos: '0'}}],
-            ['write',   {name: 'write',   type: 'BufWr',     rate: 'ar', inputs: {inputArray: 'read', bufnum: 'bufnum', phase: 'phase', loop: '1'}}],
-            ['phaseKr', {name: 'phaseKr', type: 'A2K',       rate: 'kr', inputs: {in: 'phase'}}],
-            ['tick',    {name: 'tick',    type: 'Impulse',   rate: 'kr', inputs: {freq: '200', phase: '0'}}],
-            ['reply',   {name: 'reply',   type: 'SendTrig',  rate: 'kr', inputs: {in: 'tick', id: 'bufnum', value: 'phaseKr'}}],
+            ['audio', {name: 'audio', type: 'In',    rate: 'ar',
+                       inputs: {bus: 'bus',      numChannels: '1'}}],
+            ['phase', {name: 'phase', type: 'In',    rate: 'ar',
+                       inputs: {bus: 'phaseBus', numChannels: '1'}}],
+            ['write', {name: 'write', type: 'BufWr', rate: 'ar',
+                       inputs: {inputArray: 'audio', bufnum: 'bufnum',
+                                phase: 'phase', loop: '1'}}],
         ]);
-        recorderBytes = compileSynthDef(RECORDER_SYNTHDEF_NAME, {bus: 0, bufnum: 0}, specs);
+        recorderBytes = compileSynthDef(
+            RECORDER_SYNTHDEF_NAME,
+            {bus: 0, bufnum: 0, phaseBus: 0},
+            specs,
+        );
     }
     return oscService.sendSynthDef(Uint8Array.from(recorderBytes));
 }
 
 // ── Component ─────────────────────────────────────────────────────────────
 
-/** Generous buffer sizing: `frames = chunks × chunk`, 8192 frames split into
- *  4 × 2048 keeps the reader-head inside a 50%-wide safe zone relative to
- *  the writer head — the in-read "kink" artefact we were hunting. */
-const TEST_FRAMES = 8192;
+/** sc-test's buffer size MUST equal SHARED_FRAMES — the global Phasor wraps
+ *  at that value. `chunks = 4` → safety = `2 × chunk = frames/2`, comfortably
+ *  inside the clamp. */
+const TEST_FRAMES = SHARED_FRAMES;
 const TEST_CHUNKS = 4;
 const TEST_CHUNK_SAMPLES = TEST_FRAMES / TEST_CHUNKS;
 
@@ -181,6 +186,7 @@ export class ScTest extends ScElement<ScTestItem, undefined> {
             await oscService.createSynth(RECORDER_SYNTHDEF_NAME, nodeId, groupId, {
                 bus: this.bus,
                 bufnum,
+                phaseBus: PHASE_BUS,
             }, true);
             this._synthNodeId = nodeId;
 
@@ -191,6 +197,10 @@ export class ScTest extends ScElement<ScTestItem, undefined> {
                 chunk: TEST_CHUNK_SAMPLES,
                 sampleRate: Math.round(sampleRate),
                 scsynthAddr: `${host}:${port}`,
+                // Anchor /b_getn to the shared ClockService, not wall-clock:
+                // the recorder synthdef reads PHASE_BUS, so its write head
+                // follows the global clock's Phasor.
+                phaseTracked: true,
             });
 
             this._resetVisualState();

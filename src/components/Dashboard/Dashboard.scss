@@ -47,6 +47,11 @@ $footer-height: 42px;
   }
 }
 
+@keyframes clock-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.3; }
+}
+
 .dashboard-grid-wrapper {
   position: relative;
   height: calc(100% - $footer-height - $header-height);

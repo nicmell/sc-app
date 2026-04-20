@@ -1,3 +1,4 @@
+use crate::clock::ClockService;
 use crate::ipc::buffer::{BufferStreamState, WsSink};
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
@@ -14,6 +15,7 @@ pub fn handle_ws_upgrade(
     bufnum: i32,
     scsynth_addr: &str,
     state: Arc<BufferStreamState>,
+    clock: Arc<ClockService>,
 ) -> Response<Full<Bytes>> {
     let key = match req.headers().get("sec-websocket-key") {
         Some(k) => k.as_bytes().to_vec(),
@@ -31,7 +33,7 @@ pub fn handle_ws_upgrade(
 
     tokio::spawn(async move {
         match hyper::upgrade::on(req).await {
-            Ok(upgraded) => handle_ws_connection(upgraded, bufnum, addr, state).await,
+            Ok(upgraded) => handle_ws_connection(upgraded, bufnum, addr, state, clock).await,
             Err(e) => eprintln!("Buffer WS upgrade error: {e}"),
         }
     });
@@ -50,6 +52,7 @@ async fn handle_ws_connection(
     bufnum: i32,
     scsynth_addr: String,
     state: Arc<BufferStreamState>,
+    clock: Arc<ClockService>,
 ) {
     let ws = tokio_tungstenite::WebSocketStream::from_raw_socket(
         TokioIo::new(upgraded),
@@ -60,16 +63,21 @@ async fn handle_ws_connection(
 
     let (mut ws_sink, mut ws_stream) = ws.split();
 
-    // Wait for initial config frame:
-    // [bufnum i32 LE, chunk i32 LE, frames i32 LE, sampleRate i32 LE].
+    // Config frame layout (20 bytes, all i32 LE):
+    //   [0..4]   bufnum            (must match the URL-derived `bufnum`)
+    //   [4..8]   chunk
+    //   [8..12]  frames
+    //   [12..16] sampleRate
+    //   [16..20] phaseTracked      (0 = wall-clock, 1 = clocked)
     let config = match ws_stream.next().await {
-        Some(Ok(Message::Binary(data))) if data.len() >= 16 => data,
+        Some(Ok(Message::Binary(data))) if data.len() >= 20 => data,
         _ => return,
     };
     let client_bufnum = i32::from_le_bytes(config[0..4].try_into().unwrap());
     let chunk = i32::from_le_bytes(config[4..8].try_into().unwrap());
     let frames = i32::from_le_bytes(config[8..12].try_into().unwrap());
     let sample_rate = i32::from_le_bytes(config[12..16].try_into().unwrap());
+    let phase_tracked = i32::from_le_bytes(config[16..20].try_into().unwrap()) != 0;
 
     if client_bufnum != bufnum {
         eprintln!("Buffer WS: bufnum mismatch (url {bufnum}, config {client_bufnum})");
@@ -78,8 +86,17 @@ async fn handle_ws_connection(
 
     let (tx, mut rx) = mpsc::channel::<Message>(4);
     let sink = Box::new(WsSink { tx });
+    let clock_opt = if phase_tracked { Some(clock) } else { None };
     let sub_id = match state
-        .subscribe(bufnum, frames, chunk, sample_rate, &scsynth_addr, sink)
+        .subscribe(
+            bufnum,
+            frames,
+            chunk,
+            sample_rate,
+            &scsynth_addr,
+            clock_opt,
+            sink,
+        )
         .await
     {
         Ok(id) => id,

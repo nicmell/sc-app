@@ -24,6 +24,7 @@ import {IS_TAURI} from '@/lib/env';
 import {TauriUdpPlugin} from './TauriUdpPlugin';
 
 import {ConnectionStatus, DEFAULT_CLIENT_ID} from '@/constants/osc';
+import {startGlobalClock, stopGlobalClock} from '@/lib/clock/globalClock';
 
 export class OscService {
   private osc: InstanceType<typeof OSC>;
@@ -50,7 +51,10 @@ export class OscService {
       this.stopPolling();
       rootApi.clearClient();
       rootApi.setConnectionStatus(ConnectionStatus.DISCONNECTED);
-      logger.log('Disconnected.')
+      logger.log('Disconnected.');
+      // Fire-and-forget — socket is closing anyway; the Rust ClockService
+      // resets its own state on the next `clock_start`.
+      void this.tearDownClock();
     });
     this.osc.on('error', (err: unknown) => {
       logger.log(`Error: ${err}`);
@@ -95,6 +99,7 @@ export class OscService {
     if (this.status() === ConnectionStatus.CONNECTING && this.isReady()) {
       rootApi.setConnectionStatus(ConnectionStatus.CONNECTED);
       logger.log('Connected.');
+      void this.postConnect();
     }
     this.logMessage(msg);
   }
@@ -113,6 +118,54 @@ export class OscService {
         statusMessage(),
         versionMessage()
     )
+  }
+
+  /** Fires once per connect, when status flips to CONNECTED (client id,
+   *  sample rate, and server version all known). Starts the Rust clock
+   *  service listener (Tauri only — serve mode owns the clock server-side)
+   *  and spawns the broadcaster synth at the head of the default group.
+   *
+   *  The two steps are in independent try/catch blocks so a failure in
+   *  one doesn't prevent the other: starting the Rust listener without a
+   *  broadcaster leaves readers in `Waiting`, but is recoverable; spawning
+   *  the broadcaster without the listener still lets /tr reach the frontend
+   *  (unused today, but the architectural separation is clean). */
+  private async postConnect(): Promise<void> {
+    console.log('[clock] postConnect: starting Rust ClockService');
+    if (IS_TAURI) {
+      try {
+        const {invoke} = await import('@tauri-apps/api/core');
+        const {host, port} = optionsApi.scsynth;
+        await invoke('clock_start', {
+          scsynthAddr: `${host}:${port}`,
+          // scsynth reports sampleRate as a double (e.g. 48000.279 — its
+          // measured rate, not the nominal). Round for i32 on the Rust side.
+          sampleRate: Math.round(rootApi.serverStatus.sampleRate),
+        });
+        console.log('[clock] Rust ClockService started');
+      } catch (e) {
+        console.error('[clock] clock_start failed:', e);
+        logger.log(`clock_start failed: ${e}`);
+      }
+    }
+    try {
+      console.log('[clock] spawning broadcaster synth on scsynth');
+      await startGlobalClock(this.defaultGroupId());
+      console.log('[clock] broadcaster synth running');
+    } catch (e) {
+      console.error('[clock] startGlobalClock failed:', e);
+      logger.log(`startGlobalClock failed: ${e}`);
+    }
+  }
+
+  private async tearDownClock(): Promise<void> {
+    try { await stopGlobalClock(); } catch { /* socket already closed */ }
+    if (IS_TAURI) {
+      try {
+        const {invoke} = await import('@tauri-apps/api/core');
+        await invoke('clock_stop');
+      } catch { /* Rust service already gone */ }
+    }
   }
 
   getOptions(): ScsynthOptions {
@@ -293,6 +346,18 @@ export class OscService {
         msg => (msg.args as number[])[0] === nodeId,
     );
     this.send(freeNodeMessage(nodeId));
+    await replyArrived;
+  }
+
+  /** Spawn a synth at the HEAD of `groupId` (addAction=0, targetId=groupId).
+   *  Required for the global clock broadcaster so its `Out.ar(PHASE_BUS)`
+   *  runs before any consumer BufWr each block. */
+  async createSynthAtHead(name: string, nodeId: number, groupId: number, controls: Record<string, number>): Promise<void> {
+    const replyArrived = this.once(
+        '/n_go',
+        msg => (msg.args as number[])[0] === nodeId,
+    );
+    this.send(newSynthMessage(name, nodeId, 0, groupId, controls));
     await replyArrived;
   }
 

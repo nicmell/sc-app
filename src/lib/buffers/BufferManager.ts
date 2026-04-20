@@ -16,6 +16,12 @@ export interface BufferStreamConfig {
     chunk: number;
     sampleRate: number;
     scsynthAddr: string;
+    /** `true` if the buffer's writer synth reads `PHASE_BUS` (sc-test's
+     *  shared-clock recorder). The Rust reader then anchors its `/b_getn`
+     *  target to `ClockService.samples_now()` instead of wall-clock.
+     *  Plain `sc-buffer + RecordBuf` writers (sc-scope, sc-waveform) leave
+     *  this `false`/omitted. */
+    phaseTracked?: boolean;
 }
 
 /**
@@ -24,6 +30,7 @@ export interface BufferStreamConfig {
  * creates a private recorder synth + buffer pair).
  */
 export function createBufferStream(cfg: BufferStreamConfig): SampleStream {
+    const phaseTracked = cfg.phaseTracked ?? false;
     const adapter: SampleStreamAdapter = IS_TAURI
         ? new TauriSampleStreamAdapter({
             start: async (channel) => {
@@ -34,6 +41,7 @@ export function createBufferStream(cfg: BufferStreamConfig): SampleStream {
                     chunk: cfg.chunk,
                     sampleRate: cfg.sampleRate,
                     scsynthAddr: cfg.scsynthAddr,
+                    phaseTracked,
                     channel,
                 });
             },
@@ -45,12 +53,15 @@ export function createBufferStream(cfg: BufferStreamConfig): SampleStream {
         : new WebSocketSampleStreamAdapter({
             path: `/buffer/${cfg.bufnum}`,
             onOpen: (ws) => {
-                const header = new ArrayBuffer(16);
+                // Header layout matches server/buffer_ws.rs: 20 bytes, all i32
+                // LE — bufnum, chunk, frames, sampleRate, phaseTracked (0/1).
+                const header = new ArrayBuffer(20);
                 const view = new DataView(header);
                 view.setInt32(0, cfg.bufnum, true);
                 view.setInt32(4, cfg.chunk, true);
                 view.setInt32(8, cfg.frames, true);
                 view.setInt32(12, cfg.sampleRate, true);
+                view.setInt32(16, phaseTracked ? 1 : 0, true);
                 ws.send(header);
             },
         });

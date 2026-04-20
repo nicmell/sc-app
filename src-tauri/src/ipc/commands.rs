@@ -1,6 +1,8 @@
 use super::buffer::{BufferStreamState, SubId, TauriChannelSink};
 use super::udp::UdpState;
+use crate::clock::{ClockService, ClockState};
 use crate::plugin;
+use std::sync::Arc;
 use tauri::ipc::Channel;
 use tauri::{Emitter, Manager, State, UriSchemeContext, Window};
 
@@ -64,6 +66,30 @@ pub async fn udp_close(state: State<'_, UdpState>) -> Result<(), String> {
     state.close().await
 }
 
+// --- Global clock lifecycle ---
+
+#[tauri::command]
+pub async fn clock_start(
+    scsynth_addr: String,
+    sample_rate: i32,
+    state: State<'_, Arc<ClockService>>,
+) -> Result<(), String> {
+    state.start(&scsynth_addr, sample_rate).await
+}
+
+#[tauri::command]
+pub async fn clock_stop(state: State<'_, Arc<ClockService>>) -> Result<(), String> {
+    state.stop().await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn clock_state(state: State<'_, Arc<ClockService>>) -> Result<ClockState, String> {
+    Ok(state.state().await)
+}
+
+// --- Buffer subscriptions ---
+
 #[tauri::command]
 pub async fn buffer_subscribe(
     bufnum: i32,
@@ -71,12 +97,27 @@ pub async fn buffer_subscribe(
     chunk: i32,
     sample_rate: i32,
     scsynth_addr: String,
+    phase_tracked: bool,
     channel: Channel<Vec<f32>>,
+    clock: State<'_, Arc<ClockService>>,
     state: State<'_, BufferStreamState>,
 ) -> Result<SubId, String> {
     let sink = Box::new(TauriChannelSink { channel });
+    let clock_opt = if phase_tracked {
+        Some(clock.inner().clone())
+    } else {
+        None
+    };
     state
-        .subscribe(bufnum, frames, chunk, sample_rate, &scsynth_addr, sink)
+        .subscribe(
+            bufnum,
+            frames,
+            chunk,
+            sample_rate,
+            &scsynth_addr,
+            clock_opt,
+            sink,
+        )
         .await
 }
 
