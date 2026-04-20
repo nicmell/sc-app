@@ -94,12 +94,26 @@ export interface SynthDefJson {
 // SynthDef
 // ---------------------------------------------------------------------------
 
+interface ControlGroup {
+  ugen: UGen;
+  outputCount: number;
+}
+
 export class SynthDef implements SynthDefContext {
   readonly name: string;
   private readonly nodes: UGen[] = [];
   private readonly params: ParamInfo[] = [];
   private constants: number[] = [];
   private constantMap = new Map<number, number>();
+
+  /** All kr params funnel into one shared `Control` UGen, created lazily
+   *  on the first `addControl(_, _, Control)` call. Matches sclang. */
+  private controlGroup: ControlGroup | null = null;
+  /** Same, for ar params via `AudioControl`. */
+  private audioControlGroup: ControlGroup | null = null;
+  /** Rate of the most recent `addControl` call — used to enforce that
+   *  params of a given rate stay contiguous in the params table. */
+  private lastParamRate: Rate | null = null;
 
   /**
    * Build a SynthDef by executing `fn` in a graph-building context.
@@ -125,14 +139,48 @@ export class SynthDef implements SynthDefContext {
     this.nodes.push(ugen);
   }
 
-  addControl(name: string, defaultValue: number, rate: Rate): UGen {
+  addControl(name: string, defaultValue: number, rate: Rate): UGenInput {
     if (this.params.some((p) => p.name === name)) {
       throw new Error(`Duplicate control name: "${name}"`);
     }
-    const index = this.params.length;
-    this.params.push({ name, defaultValue, index });
-    const className = rate === R.Audio ? 'AudioControl' : 'Control';
-    return new UGen(className, rate, [], 1, index);
+
+    // Each rate's params must be contiguous in the params table, because a
+    // grouped Control / AudioControl's `specialIndex + outputSlot` indexes
+    // back into that table. Interleaving is rejected; no real caller does it.
+    const isAudio = rate === R.Audio;
+    const alreadyHasThisRate = isAudio
+      ? this.audioControlGroup !== null
+      : this.controlGroup !== null;
+    if (
+      alreadyHasThisRate &&
+      this.lastParamRate !== null &&
+      (this.lastParamRate === R.Audio) !== isAudio
+    ) {
+      throw new Error(
+        `addControl("${name}"): rate-interleaved controls are not supported — ` +
+          `group all kr params, then all ar params`,
+      );
+    }
+
+    const paramIndex = this.params.length;
+    this.params.push({ name, defaultValue, index: paramIndex });
+    this.lastParamRate = rate;
+
+    const group = isAudio ? this.audioControlGroup : this.controlGroup;
+    if (group === null) {
+      const className = isAudio ? 'AudioControl' : 'Control';
+      // Creating the UGen pushes it onto this SynthDef via addUGen() (through
+      // the currentContext stack).
+      const ugen = new UGen(className, rate, [], 1, paramIndex);
+      const fresh: ControlGroup = { ugen, outputCount: 1 };
+      if (isAudio) this.audioControlGroup = fresh;
+      else this.controlGroup = fresh;
+      return new UGenOutput(ugen, 0);
+    }
+    const slot = group.outputCount;
+    group.ugen.numOutputs = slot + 1;
+    group.outputCount = slot + 1;
+    return new UGenOutput(group.ugen, slot);
   }
 
   // -- Internal helpers -----------------------------------------------------

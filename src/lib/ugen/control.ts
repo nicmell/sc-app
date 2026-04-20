@@ -1,4 +1,4 @@
-import { type UGen, Rate, currentContext } from './ugen';
+import { type UGenInput, Rate, currentContext } from './ugen';
 import type { Rate as RateType } from './ugen';
 
 /**
@@ -7,7 +7,8 @@ import type { Rate as RateType } from './ugen';
  * @param name         Parameter name exposed to scsynth.
  * @param defaultValue Initial value (default 0).
  * @param rate         Calculation rate (default Control / kr).
- * @returns A UGen whose output is the parameter's current value at runtime.
+ * @returns A `UGenInput` resolving to the parameter's output slot on the
+ *          SynthDef's shared Control / AudioControl UGen.
  *
  * @example
  * ```ts
@@ -19,7 +20,7 @@ export function control(
   name: string,
   defaultValue: number = 0,
   rate: RateType = Rate.Control,
-): UGen {
+): UGenInput {
   const ctx = currentContext();
   if (!ctx) {
     throw new Error('control() must be called inside a synthDef() function');

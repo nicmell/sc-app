@@ -58,10 +58,12 @@ const OP_TABLES: Record<string, Record<string, number>> = {
 
 class UGenGraphBuilder {
   private ugenMap = new Map<string, UGen>();
-  private controlMap = new Map<string, UGen>();
+  private controlMap = new Map<string, UGenInput>();
 
   constructor(params: Record<string, number>) {
     for (const [name, value] of Object.entries(params)) {
+      // `control()` returns a `UGenInput` (specifically a `UGenOutput` that
+      // points at a slot on the SynthDef's shared grouped-Control UGen).
       this.controlMap.set(name, control(name, value));
     }
   }

@@ -47,6 +47,12 @@ struct ParamInfo {
     default_value: f32,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ControlGroup {
+    node_index: u32,
+    output_count: u32,
+}
+
 /// A SynthDef being built. Add controls and UGens, then encode to SCgf v2
 /// bytes with [`SynthDef::to_bytes`] or to a structured JSON form with
 /// [`SynthDef::to_json`].
@@ -55,6 +61,17 @@ pub struct SynthDef {
     name: String,
     nodes: Vec<Node>,
     params: Vec<ParamInfo>,
+    /// All kr parameters funnel into a single `Control` UGen, matching
+    /// sclang's convention. Created lazily on the first `add_control(_, _,
+    /// Control)` call.
+    control_group: Option<ControlGroup>,
+    /// Same, for ar parameters via `AudioControl`.
+    audio_control_group: Option<ControlGroup>,
+    /// Rate of the most recent `add_control` call — used to enforce that
+    /// params of a given rate stay contiguous in the params table (a
+    /// requirement for `special_index + output_slot` to map back to a valid
+    /// params index).
+    last_param_rate: Option<Rate>,
 }
 
 impl SynthDef {
@@ -63,6 +80,9 @@ impl SynthDef {
             name: name.into(),
             nodes: Vec::new(),
             params: Vec::new(),
+            control_group: None,
+            audio_control_group: None,
+            last_param_rate: None,
         }
     }
 
@@ -70,40 +90,103 @@ impl SynthDef {
         &self.name
     }
 
-    /// Add a named control (parameter). The returned index can be used as an
-    /// [`UGenInput::UGen`] input to wire this parameter into the graph.
+    /// Add a named control (parameter). The returned [`UGenInput`] can be
+    /// used directly as an input to other UGens; it resolves to the right
+    /// output slot of the rate-grouped `Control` / `AudioControl` UGen.
     ///
-    /// Each call emits a Control/AudioControl UGen with `special_index` equal
-    /// to the parameter's position — mirroring the TS compiler's output.
+    /// Matches sclang's convention: all kr params share a single `Control`
+    /// UGen (one output per param); ar params likewise share a single
+    /// `AudioControl` UGen.
+    ///
+    /// Returns [`CompileError::DuplicateParam`] on repeated names, and errors
+    /// if the caller interleaves rates in a way that would put a group's
+    /// params non-contiguously in the params table (no real call site in
+    /// this repo does that).
     pub fn add_control(
         &mut self,
         name: impl Into<String>,
         default_value: f32,
         rate: Rate,
-    ) -> Result<u32, CompileError> {
+    ) -> Result<UGenInput, CompileError> {
         let name = name.into();
         if self.params.iter().any(|p| p.name == name) {
             return Err(CompileError::DuplicateParam(name));
         }
-        let param_idx = self.params.len() as i16;
+
+        // Contiguity guard: once we've moved on to a different rate, we can't
+        // append to the earlier rate's group without splitting the params
+        // table.
+        let is_audio = rate == Rate::Audio;
+        let already_has_this_rate = if is_audio {
+            self.audio_control_group.is_some()
+        } else {
+            self.control_group.is_some()
+        };
+        if already_has_this_rate
+            && self.last_param_rate.map_or(false, |r| (r == Rate::Audio) != is_audio)
+        {
+            return Err(CompileError::DuplicateParam(format!(
+                "{name}: rate-interleaved controls are not supported — group all kr params, then all ar params"
+            )));
+        }
+
+        let param_index = self.params.len() as u32;
         self.params.push(ParamInfo {
             name,
             default_value,
         });
-        let class_name = if rate == Rate::Audio {
-            "AudioControl"
+        self.last_param_rate = Some(rate);
+
+        // Pick the matching group; create on first call, otherwise grow.
+        if is_audio {
+            Self::grow_group(
+                &mut self.nodes,
+                &mut self.audio_control_group,
+                "AudioControl",
+                Rate::Audio,
+                param_index,
+            )
         } else {
-            "Control"
-        };
-        let node_idx = self.nodes.len() as u32;
-        self.nodes.push(Node {
-            class_name: class_name.to_string(),
-            rate,
-            inputs: Vec::new(),
-            num_outputs: 1,
-            special_index: param_idx,
-        });
-        Ok(node_idx)
+            Self::grow_group(
+                &mut self.nodes,
+                &mut self.control_group,
+                "Control",
+                Rate::Control,
+                param_index,
+            )
+        }
+    }
+
+    fn grow_group(
+        nodes: &mut Vec<Node>,
+        group: &mut Option<ControlGroup>,
+        class_name: &str,
+        rate: Rate,
+        param_index: u32,
+    ) -> Result<UGenInput, CompileError> {
+        match group {
+            Some(g) => {
+                let slot = g.output_count;
+                g.output_count += 1;
+                nodes[g.node_index as usize].num_outputs = g.output_count;
+                Ok(UGenInput::UGenOutput(g.node_index, slot))
+            }
+            None => {
+                let node_index = nodes.len() as u32;
+                nodes.push(Node {
+                    class_name: class_name.to_string(),
+                    rate,
+                    inputs: Vec::new(),
+                    num_outputs: 1,
+                    special_index: param_index as i16,
+                });
+                *group = Some(ControlGroup {
+                    node_index,
+                    output_count: 1,
+                });
+                Ok(UGenInput::UGenOutput(node_index, 0))
+            }
+        }
     }
 
     /// Add a UGen node. Returns its index in the node list.

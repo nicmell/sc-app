@@ -331,20 +331,22 @@ fn circular_reference_errors() {
 /// refs.
 #[test]
 fn synthdef_json_round_trip() {
+    // Two kr controls → one grouped Control UGen. `add_control` returns a
+    // `UGenInput` that already encodes (controlUGen, outputSlot).
     let mut def = SynthDef::new("roundtrip");
     let freq = def.add_control("freq", 440.0, Rate::Control).unwrap();
     let amp = def.add_control("amp", 0.5, Rate::Control).unwrap();
     let sin = def.add_ugen(
         "SinOsc",
         Rate::Audio,
-        vec![UGenInput::UGen(freq), UGenInput::Constant(0.0)],
+        vec![freq, UGenInput::Constant(0.0)],
         1,
         0,
     );
     let scaled = def.add_ugen(
         "BinaryOpUGen",
         Rate::Audio,
-        vec![UGenInput::UGen(sin), UGenInput::UGen(amp)],
+        vec![UGenInput::UGen(sin), amp],
         1,
         2, // *
     );
@@ -375,7 +377,7 @@ fn synthdef_json_serializes_and_parses() {
     def.add_ugen(
         "SinOsc",
         Rate::Audio,
-        vec![UGenInput::UGen(f), UGenInput::Constant(0.0)],
+        vec![f, UGenInput::Constant(0.0)],
         1,
         0,
     );
@@ -424,6 +426,129 @@ fn ugenspec_json_round_trip() {
     let a = compile_synthdef("x", &[], &specs).unwrap();
     let b = compile_synthdef("x", &[], &parsed).unwrap();
     assert_eq!(a, b, "round-tripped specs produce identical bytes");
+}
+
+/// Two kr params must emit a **single** `Control` UGen with `num_outputs=2`
+/// and `special_index=0` — matching sclang's grouped-Control convention.
+#[test]
+fn two_kr_controls_produce_one_grouped_control_ugen() {
+    let specs = vec![
+        UGenSpec {
+            name: "osc".into(),
+            ugen_type: "SinOsc".into(),
+            rate: "ar".into(),
+            inputs: [("freq", "freq"), ("phase", "0")]
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        },
+        UGenSpec {
+            name: "scaled".into(),
+            ugen_type: "BinaryOpUGen".into(),
+            rate: "ar".into(),
+            inputs: [("a", "osc"), ("b", "amp"), ("op", "*")]
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        },
+        UGenSpec {
+            name: "out".into(),
+            ugen_type: "Out".into(),
+            rate: "ar".into(),
+            inputs: [("bus", "0"), ("channelsArray", "scaled")]
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        },
+    ];
+    let params = vec![("freq".to_string(), 440.0f32), ("amp".to_string(), 0.5f32)];
+    let bytes = compile_synthdef("grouped", &params, &specs).expect("compile");
+
+    // Walk the header enough to read the ugen list structurally.
+    let mut r = scanner::Reader::new(&bytes);
+    assert_eq!(r.i32(), 0x53436766);
+    assert_eq!(r.i32(), 2);
+    assert_eq!(r.i16(), 1);
+    assert_eq!(r.pstring(), "grouped");
+    let nconst = r.i32();
+    for _ in 0..nconst {
+        r.f32();
+    }
+    let nparams = r.i32();
+    for _ in 0..nparams {
+        r.f32();
+    }
+    let nnames = r.i32();
+    for _ in 0..nnames {
+        r.pstring();
+        r.i32();
+    }
+    let nugens = r.i32();
+    assert_eq!(nugens, 4, "expected [Control(grouped), SinOsc, BinaryOpUGen, Out]");
+
+    // First UGen must be the grouped Control with num_outputs=2,
+    // special_index=0.
+    assert_eq!(r.pstring(), "Control");
+    assert_eq!(r.i8(), Rate::Control.as_i8());
+    assert_eq!(r.i32(), 0, "Control has no inputs");
+    assert_eq!(r.i32(), 2, "Control num_outputs = number of kr params");
+    assert_eq!(r.i16(), 0, "Control special_index = 0 (first param offset)");
+    assert_eq!(r.i8(), Rate::Control.as_i8(), "output 0 rate");
+    assert_eq!(r.i8(), Rate::Control.as_i8(), "output 1 rate");
+
+    // SinOsc's freq input → Control output 0 (ugen 0, output 0); phase → const 0.0.
+    assert_eq!(r.pstring(), "SinOsc");
+    assert_eq!(r.i8(), Rate::Audio.as_i8());
+    assert_eq!(r.i32(), 2); // ninputs
+    assert_eq!(r.i32(), 1); // noutputs
+    assert_eq!(r.i16(), 0);
+    // freq → Control@0
+    assert_eq!(r.i32(), 0);
+    assert_eq!(r.i32(), 0);
+    // phase → constant index 0 (0.0 is the only constant)
+    assert_eq!(r.i32(), -1);
+    assert_eq!(r.i32(), 0);
+    assert_eq!(r.i8(), Rate::Audio.as_i8());
+
+    // BinaryOpUGen (*) — a: SinOsc@0 (ugen 1, output 0); b: Control@1 (ugen 0, output 1).
+    assert_eq!(r.pstring(), "BinaryOpUGen");
+    assert_eq!(r.i8(), Rate::Audio.as_i8());
+    assert_eq!(r.i32(), 2);
+    assert_eq!(r.i32(), 1);
+    assert_eq!(r.i16(), 2); // * specialIndex
+    assert_eq!(r.i32(), 1);
+    assert_eq!(r.i32(), 0);
+    assert_eq!(r.i32(), 0);
+    assert_eq!(r.i32(), 1);
+}
+
+mod scanner {
+    pub struct Reader<'a> {
+        buf: &'a [u8],
+        pos: usize,
+    }
+    impl<'a> Reader<'a> {
+        pub fn new(buf: &'a [u8]) -> Self { Self { buf, pos: 0 } }
+        pub fn i8(&mut self) -> i8 { let v = self.buf[self.pos] as i8; self.pos += 1; v }
+        pub fn i16(&mut self) -> i16 {
+            let v = i16::from_be_bytes(self.buf[self.pos..self.pos + 2].try_into().unwrap());
+            self.pos += 2; v
+        }
+        pub fn i32(&mut self) -> i32 {
+            let v = i32::from_be_bytes(self.buf[self.pos..self.pos + 4].try_into().unwrap());
+            self.pos += 4; v
+        }
+        pub fn f32(&mut self) -> f32 {
+            let v = f32::from_be_bytes(self.buf[self.pos..self.pos + 4].try_into().unwrap());
+            self.pos += 4; v
+        }
+        pub fn pstring(&mut self) -> String {
+            let len = self.buf[self.pos] as usize;
+            self.pos += 1;
+            let s = std::str::from_utf8(&self.buf[self.pos..self.pos + len]).unwrap().to_string();
+            self.pos += len; s
+        }
+    }
 }
 
 /// Missing required input (null default) surfaces as MissingInput.

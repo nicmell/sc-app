@@ -71,11 +71,13 @@ pub fn compile_synthdef(
 
     let mut def = SynthDef::new(name);
 
-    // Controls first — order matches `params` slice.
-    let mut control_map: HashMap<String, u32> = HashMap::new();
+    // Controls first — order matches `params` slice. `add_control` returns a
+    // `UGenInput` that already encodes the right (grouped-Control ugen,
+    // output-slot) pair, so we just stash it by name.
+    let mut control_map: HashMap<String, UGenInput> = HashMap::new();
     for (pname, value) in params {
-        let idx = def.add_control(pname.clone(), *value, Rate::Control)?;
-        control_map.insert(pname.clone(), idx);
+        let handle = def.add_control(pname.clone(), *value, Rate::Control)?;
+        control_map.insert(pname.clone(), handle);
     }
 
     // Build a name → spec index lookup over `specs`.
@@ -140,7 +142,7 @@ fn resolve_standard_inputs(
     spec: &UGenSpec,
     entry: &crate::registry::UGenRegistryEntry,
     ugen_map: &HashMap<String, u32>,
-    control_map: &HashMap<String, u32>,
+    control_map: &HashMap<String, UGenInput>,
 ) -> Result<Vec<UGenInput>, CompileError> {
     let mut result: Vec<UGenInput> = Vec::new();
     let mut array_inputs: Vec<UGenInput> = Vec::new();
@@ -196,7 +198,7 @@ fn find_matching_input<'a>(
 fn resolve_input(
     value: &str,
     ugen_map: &HashMap<String, u32>,
-    control_map: &HashMap<String, u32>,
+    control_map: &HashMap<String, UGenInput>,
 ) -> Result<UGenInput, CompileError> {
     if !value.is_empty() {
         if let Ok(n) = value.parse::<f32>() {
@@ -220,8 +222,8 @@ fn resolve_input(
     if let Some(&idx) = ugen_map.get(value) {
         return Ok(UGenInput::UGen(idx));
     }
-    if let Some(&idx) = control_map.get(value) {
-        return Ok(UGenInput::UGen(idx));
+    if let Some(&handle) = control_map.get(value) {
+        return Ok(handle);
     }
     Err(CompileError::UnresolvedInput(value.to_string()))
 }

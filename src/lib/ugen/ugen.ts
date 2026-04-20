@@ -23,13 +23,20 @@ export class UGen {
   /** Position in the SynthDef's node list. Set by SynthDef.addUGen(). */
   synthIndex = -1;
 
+  // `numOutputs` is intentionally mutable: `SynthDef.addControl` grows the
+  // shared Control / AudioControl UGen in place as each kr / ar parameter is
+  // declared (matching sclang's grouped-Control convention). No other caller
+  // should mutate this.
+  numOutputs: number;
+
   constructor(
     readonly className: string,
     readonly rate: Rate,
     readonly inputs: UGenInput[],
-    readonly numOutputs: number,
+    numOutputs: number,
     readonly specialIndex: number = 0,
   ) {
+    this.numOutputs = numOutputs;
     const ctx = currentContext();
     if (!ctx) {
       throw new Error(
@@ -56,7 +63,7 @@ export class UGen {
 
 export interface SynthDefContext {
   addUGen(ugen: UGen): void;
-  addControl(name: string, defaultValue: number, rate: Rate): UGen;
+  addControl(name: string, defaultValue: number, rate: Rate): UGenInput;
 }
 
 const ctxStack: SynthDefContext[] = [];
