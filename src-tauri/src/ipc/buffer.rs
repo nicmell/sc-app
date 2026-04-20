@@ -205,6 +205,15 @@ fn spawn_reader(
         let mut last_phase: Option<i64> = None;
         let mut wrap_count: i64 = 0;
         let mut tr_count: u64 = 0;
+        // Timestamp of the most recent /tr. Used to detect the writer being
+        // paused (e.g. user hits Stop on the plugin or the whole default
+        // group): if /tr stops arriving, we know Phasor has stopped
+        // advancing, which means the buffer is frozen at stale audio from
+        // before the pause. Rather than let reads surface that stale data,
+        // we flip the reader into "silence" mode: push zeros directly to
+        // the sinks each tick, skip /b_getn entirely, and reset the anchor
+        // so the next /tr re-enters phase-tracked mode from scratch.
+        let mut last_tr_time: Option<Instant> = None;
         // Accounting for the heartbeat diagnostic:
         //   samples_requested = sum of `delta` across every /b_getn we sent
         //   samples_received  = total floats delivered in /b_setn replies
@@ -218,16 +227,61 @@ fn spawn_reader(
         // a heartbeat at ~1 Hz instead of drowning in phase updates. Set to 0
         // to silence — useful to flip on/off during diagnosis.
         const TR_LOG_EVERY: u64 = 200;
+        // Hold off on any /b_getn until either (a) the first /tr arrives and
+        // anchors us into phase-tracked mode, or (b) this grace elapses and
+        // we fall back to wall-clock. Prevents the one-shot "flash" at
+        // activation, where a wall-clock tick at T=16 ms would otherwise
+        // issue a read straddling the writer's head before the /tr that
+        // would have anchored us even lands. For sources that never emit
+        // /tr (plain sc-buffer + RecordBuf), this just adds ~100 ms of
+        // startup latency, which is invisible in a visual scope.
+        const ANCHOR_GRACE_MS: u64 = 100;
+        // If no /tr has arrived for this long (while we previously had an
+        // anchor), treat the writer as paused and switch to silence mode.
+        // SendTrig fires every 5 ms at 200 Hz, so 100 ms is ~20 missed
+        // triggers — well beyond scheduler jitter.
+        const TR_SILENCE_MS: u64 = 100;
 
         loop {
             tokio::select! {
                 _ = interval.tick() => {
-                    let target = if let Some((anchor_samples, anchor_time)) = writer_anchor {
-                        let elapsed_secs = anchor_time.elapsed().as_secs_f64();
-                        anchor_samples + (elapsed_secs * sr as f64) as i64 - safety_samples
-                    } else {
-                        let elapsed_ms = start_time.elapsed().as_millis() as i64;
-                        (elapsed_ms * sr) / 1000
+                    // If we had an anchor but /tr has stopped arriving, the
+                    // writer is paused. Push zeros directly to the sinks so
+                    // the scope draws a zero line instead of whatever stale
+                    // audio is still in the buffer; skip the /b_getn block
+                    // entirely. Reset anchor state so the next /tr triggers
+                    // a fresh anchor (samples_issued re-snapped to
+                    // phase - safety from scratch).
+                    let silent = match last_tr_time {
+                        Some(t) => t.elapsed().as_millis() as u64 > TR_SILENCE_MS,
+                        None => false,
+                    };
+                    if silent {
+                        let zeros = vec![0.0_f32; chunk.max(1) as usize];
+                        let mut guard = sinks.lock().await;
+                        guard.retain(|_, sink| sink.send(&zeros));
+                        if guard.is_empty() {
+                            break;
+                        }
+                        writer_anchor = None;
+                        last_phase = None;
+                        wrap_count = 0;
+                        continue;
+                    }
+                    let target = match writer_anchor {
+                        Some((anchor_samples, anchor_time)) => {
+                            let elapsed_secs = anchor_time.elapsed().as_secs_f64();
+                            anchor_samples + (elapsed_secs * sr as f64) as i64 - safety_samples
+                        }
+                        None => {
+                            let elapsed_ms = start_time.elapsed().as_millis() as u64;
+                            if elapsed_ms < ANCHOR_GRACE_MS {
+                                // Within grace — stay silent, wait for /tr
+                                // or grace expiry.
+                                continue;
+                            }
+                            ((elapsed_ms as i64) * sr) / 1000
+                        }
                     };
                     while samples_issued < target {
                         let pos_mod = ((samples_issued % frames_i64) + frames_i64) % frames_i64;
@@ -286,6 +340,7 @@ fn spawn_reader(
                             // the reader for `frames / sr` seconds.
                             if let Some(phase) = extract_tr_phase(&packet, bufnum) {
                                 let phase_i = phase as i64;
+                                last_tr_time = Some(Instant::now());
                                 // Detect Phasor wrap: phase jumped backward by
                                 // more than half the buffer. Bump wrap_count so
                                 // `writer_virtual` stays monotonic across
