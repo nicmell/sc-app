@@ -175,6 +175,7 @@ fn spawn_reader(
         if let Ok(bytes) = encoder::encode(&OscPacket::Message(notify)) {
             let _ = sock.send(&bytes).await;
         }
+        eprintln!("reader[buf {bufnum}] started; /notify 1 sent, awaiting /tr");
 
         let mut interval = tokio::time::interval(Duration::from_millis(16));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -192,8 +193,31 @@ fn spawn_reader(
 
         // Set when we first hear a /tr reply with id == bufnum, switching
         // the reader into phase-tracked mode. `anchor.0` is the writer's
-        // phase (samples) at anchor time.
+        // **unwrapped** virtual phase (cumulative samples written) at
+        // anchor time — in the same coordinate system as `samples_issued`.
         let mut writer_anchor: Option<(i64, Instant)> = None;
+        // Phasor reports its buffer-position phase in [0, frames); we unwrap
+        // it to a monotonic counter by tracking each time it falls backward
+        // (a wrap). Without this, re-anchoring on every /tr would snap
+        // `anchor_samples` back to ~0 after each wrap while `samples_issued`
+        // keeps growing — target drops far below samples_issued and the
+        // reader stops issuing /b_getn.
+        let mut last_phase: Option<i64> = None;
+        let mut wrap_count: i64 = 0;
+        let mut tr_count: u64 = 0;
+        // Accounting for the heartbeat diagnostic:
+        //   samples_requested = sum of `delta` across every /b_getn we sent
+        //   samples_received  = total floats delivered in /b_setn replies
+        //   reads_issued      = total /b_getn count
+        // At steady state, `requested == received` (localhost has no drops);
+        // any persistent gap points at UDP loss or decode mismatch.
+        let mut samples_requested: i64 = 0;
+        let mut samples_received: i64 = 0;
+        let mut reads_issued: u64 = 0;
+        // SendTrig fires at 200 Hz; log one in every 200 so the console gets
+        // a heartbeat at ~1 Hz instead of drowning in phase updates. Set to 0
+        // to silence — useful to flip on/off during diagnosis.
+        const TR_LOG_EVERY: u64 = 200;
 
         loop {
             tokio::select! {
@@ -225,6 +249,8 @@ fn spawn_reader(
                             let _ = sock.send(&bytes).await;
                         }
                         samples_issued += delta as i64;
+                        samples_requested += delta as i64;
+                        reads_issued += 1;
                     }
                 }
                 r = sock.recv(&mut buf) => {
@@ -236,6 +262,7 @@ fn spawn_reader(
                             let mut samples = Vec::new();
                             walk_b_setn(&packet, bufnum, &mut samples);
                             if !samples.is_empty() {
+                                samples_received += samples.len() as i64;
                                 let mut guard = sinks.lock().await;
                                 guard.retain(|_, sink| sink.send(&samples));
                                 if guard.is_empty() {
@@ -259,10 +286,38 @@ fn spawn_reader(
                             // the reader for `frames / sr` seconds.
                             if let Some(phase) = extract_tr_phase(&packet, bufnum) {
                                 let phase_i = phase as i64;
-                                if writer_anchor.is_none() {
-                                    samples_issued = phase_i - safety_samples;
+                                // Detect Phasor wrap: phase jumped backward by
+                                // more than half the buffer. Bump wrap_count so
+                                // `writer_virtual` stays monotonic across
+                                // cycles.
+                                if let Some(lp) = last_phase {
+                                    if phase_i + frames_i64 / 2 < lp {
+                                        wrap_count += 1;
+                                    }
                                 }
-                                writer_anchor = Some((phase_i, Instant::now()));
+                                last_phase = Some(phase_i);
+                                let writer_virtual = phase_i + wrap_count * frames_i64;
+
+                                if writer_anchor.is_none() {
+                                    samples_issued = writer_virtual - safety_samples;
+                                    eprintln!(
+                                        "reader[buf {bufnum}] first /tr; anchor virtual={writer_virtual} samples_issued={samples_issued} safety={safety_samples}"
+                                    );
+                                }
+                                writer_anchor = Some((writer_virtual, Instant::now()));
+                                tr_count += 1;
+                                if TR_LOG_EVERY > 0 && tr_count % TR_LOG_EVERY == 0 {
+                                    // Writer_virtual == extrapolated writer
+                                    // position right now (we just anchored).
+                                    // `gap` is how far the writer is ahead of
+                                    // the reader — expected value is
+                                    // `safety_samples` ± one chunk.
+                                    let gap = writer_virtual - samples_issued;
+                                    let in_flight = samples_requested - samples_received;
+                                    eprintln!(
+                                        "reader[buf {bufnum}] /tr heartbeat: count={tr_count} virtual={writer_virtual} phase={phase_i} wraps={wrap_count} gap={gap} (expect ~{safety_samples}) requested={samples_requested} received={samples_received} in_flight={in_flight} reads={reads_issued}"
+                                    );
+                                }
                             }
                         }
                         Err(_) => break,
