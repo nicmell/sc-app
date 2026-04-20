@@ -1,0 +1,299 @@
+[
+  {
+    "name": "Convolution",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "kernel",
+        null
+      ],
+      [
+        "framesize",
+        512
+      ]
+    ],
+    "doc": "Strict convolution of two continuously changing inputs. Also see convolution2 for a cheaper CPU cost alternative for the case of a fixed kernel which can be changed with a trigger message. See Steven W Smith, The Scientist and Engineer's Guide to Digital Signal Processing: chapter 18: http:// www.dspguide.com/ch18.htm",
+    "argDocs": {
+      "in": "processing target",
+      "kernel": "processing kernel.",
+      "framesize": "size of FFT frame, must be a power of two"
+    }
+  },
+  {
+    "name": "Convolution2",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "kernel",
+        null
+      ],
+      [
+        "trigger",
+        null
+      ],
+      [
+        "framesize",
+        512
+      ]
+    ],
+    "doc": "Strict convolution with fixed kernel which can be updated using a trigger signal. See Steven W Smith, The Scientist and Engineer's Guide to Digital Signal Processing: chapter 18: http:// www.dspguide.com/ch18.htm",
+    "argDocs": {
+      "in": "processing target",
+      "kernel": "buffer index for the fixed kernel, may be modulated in combination with the trigger",
+      "trigger": "update the kernel on a change from <= 0 to > 0",
+      "framesize": "size of FFT frame, must be a power of two. Convolution uses twice this number internally, maximum value you can give this argument is 2^16 = 65536. Note that it gets progressively more expensive to run for higher powers! 512, 1024, 2048, 4096 standard."
+    }
+  },
+  {
+    "name": "Convolution2L",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "kernel",
+        null
+      ],
+      [
+        "trigger",
+        null
+      ],
+      [
+        "framesize",
+        512
+      ],
+      [
+        "crossfade",
+        1
+      ]
+    ],
+    "doc": "Strict convolution with fixed kernel which can be updated using a trigger signal. There is a linear crossfade between the buffers upon change. See Steven W Smith, The Scientist and Engineer's Guide to Digital Signal Processing: chapter 18: http://www.dspguide.com/ch18.htm",
+    "argDocs": {
+      "in": "processing target",
+      "kernel": "buffer index for the fixed kernel, may be modulated in combination with the trigger",
+      "trigger": "update the kernel on a change from <= 0 to > 0",
+      "framesize": "size of FFT frame, must be a power of two. Convolution uses twice this number internally, maximum value you can give this argument is 2^16=65536. Note that it gets progressively more expensive to run for higher powers! 512, 1024, 2048, 4096 standard.",
+      "crossfade": "The number of periods over which a crossfade is made. The default is 1. This must be an integer."
+    }
+  },
+  {
+    "name": "Convolution3",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "kernel",
+        null
+      ],
+      [
+        "trigger",
+        0
+      ],
+      [
+        "framesize",
+        512
+      ]
+    ],
+    "doc": "Strict convolution with fixed kernel which can be updated using a trigger signal. The convolution is performed in the time domain, which is highly inefficient, and probably only useful for either very short kernel sizes, or for control rate signals.",
+    "argDocs": {
+      "in": "processing target",
+      "kernel": "buffer index for the fixed kernel, may be modulated in combination with the trigger",
+      "trigger": "update the kernel on a change from <= 0 to > 0",
+      "framesize": "size of FFT frame, does not have to be a power of two."
+    }
+  },
+  {
+    "name": "PV_ConformalMap",
+    "rates": [
+      "kr"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ],
+      [
+        "areal",
+        0
+      ],
+      [
+        "aimag",
+        0
+      ]
+    ],
+    "doc": "Applies the conformal mapping z -> (z-a)/(1-za*) to the phase vocoder bins z with a given by the real and imag inputs to the UGen. i.e., makes a transformation of the complex plane so the output is full of phase vocoder artifacts but may be musically fun. Usually keep |a|<1 but you can of course try bigger values to make it really noisy. a=0 should give back the input mostly unperturbed. See http://mathworld.wolfram.com/ConformalMapping.html",
+    "argDocs": {
+      "buffer": "buffer number of buffer to act on, passed in through a chain (see examples below).",
+      "areal": "real part of a.",
+      "aimag": "imaginary part of a."
+    }
+  },
+  {
+    "name": "PV_HainsworthFoote",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ],
+      [
+        "proph",
+        0
+      ],
+      [
+        "propf",
+        0
+      ],
+      [
+        "threshold",
+        1
+      ],
+      [
+        "waitTime",
+        0.04
+      ]
+    ],
+    "doc": "FFT onset detector based on work described in: Hainsworth, S. (2003) Techniques for the Automated Analysis of Musical Audio. PhD, University of Cambridge engineering dept. See especially p128. The Hainsworth metric is a modification of the Kullback Liebler distance. The onset detector has general ability to spot spectral change, so may have some ability to track chord changes aside from obvious transient jolts, but there's no guarantee it won't be confused by frequency modulation artifacts. Hainsworth metric on it's own gives good results but Foote might be useful in some situations: experimental.",
+    "argDocs": {
+      "buffer": "FFT buffer to read from",
+      "proph": "What strength of detection signal from Hainsworth metric to use.",
+      "propf": "What strength of detection signal from Foote metric to use. The Foote metric is normalised to [0.0,1.0]",
+      "threshold": "Threshold hold level for allowing a detection",
+      "waitTime": "If triggered, minimum wait until a further frame can cause another spot (useful to stop multiple detects on heavy signals)"
+    }
+  },
+  {
+    "name": "PV_JensenAndersen",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "buffer",
+        null
+      ],
+      [
+        "propsc",
+        0.25
+      ],
+      [
+        "prophfe",
+        0.25
+      ],
+      [
+        "prophfc",
+        0.25
+      ],
+      [
+        "propsf",
+        0.25
+      ],
+      [
+        "threshold",
+        1
+      ],
+      [
+        "waitTime",
+        0.04
+      ]
+    ],
+    "doc": "FFT feature detector for onset detection based on work described in: Jensen,K. & Andersen, T. H. (2003). Real-time Beat Estimation Using Feature Extraction. In Proceedings of the Computer Music Modeling and Retrieval Symposium, Lecture Notes in Computer Science. Springer Verlag. First order derivatives of the features are taken. Threshold may need to be set low to pick up on changes.",
+    "argDocs": {
+      "buffer": "FFT buffer to read from.",
+      "propsc": "Proportion of spectral centroid feature.",
+      "prophfe": "Proportion of high frequency energy feature.",
+      "prophfc": "Proportion of high frequency content feature.",
+      "propsf": "Proportion of spectral flux feature.",
+      "threshold": "Threshold level for allowing a detection",
+      "waitTime": "If triggered, minimum wait until a further frame can cause another spot (useful to stop multiple detects on heavy signals)"
+    }
+  },
+  {
+    "name": "RunningSum",
+    "rates": [
+      "ar",
+      "kr"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "numsamp",
+        40
+      ]
+    ],
+    "doc": "A running sum over a user specified number of samples, useful for running RMS power windowing.",
+    "argDocs": {
+      "in": "Input signal",
+      "numsamp": "How many samples to take the running sum over (initialisation time only, not modulatable."
+    }
+  },
+  {
+    "name": "StereoConvolution2L",
+    "rates": [
+      "ar"
+    ],
+    "defaults": [
+      [
+        "in",
+        null
+      ],
+      [
+        "kernelL",
+        null
+      ],
+      [
+        "kernelR",
+        null
+      ],
+      [
+        "trigger",
+        null
+      ],
+      [
+        "framesize",
+        512
+      ],
+      [
+        "crossfade",
+        1
+      ]
+    ],
+    "numOutputs": 2,
+    "doc": "Strict convolution with fixed kernel which can be updated using a trigger signal. There is a linear crossfade between the buffers upon change. Like convolution2L, but convolves with two buffers and outputs a stereo signal. This saves one FFT transformation per period, as compared to using two copies of convolution2L. Useful applications could include stereo reverberation or HRTF convolution. See Steven W Smith, The Scientist and Engineer's Guide to Digital Signal Processing: chapter 18: http://www.dspguide.com/ch18.htm",
+    "argDocs": {
+      "in": "processing target",
+      "kernelL": "buffer index for the fixed kernel of the left channel, may be modulated in combination with the trigger",
+      "kernelR": "buffer index for the fixed kernel of the right channel, may be modulated in combination with the trigger",
+      "trigger": "update the kernel on a change from <= 0 to > 0",
+      "framesize": "size of FFT frame, must be a power of two. Convolution uses twice this number internally, maximum value you can give this argument is 2^16=65536. Note that it gets progressively more expensive to run for higher powers! 512, 1024, 2048, 4096 standard.",
+      "crossfade": "The number of periods over which a crossfade is made. This must be an integer."
+    }
+  }
+]

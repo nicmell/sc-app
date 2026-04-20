@@ -11,7 +11,10 @@ import { fileURLToPath } from 'url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CACHE_DIR = join(ROOT, 'scripts', 'tmp', 'overtone-ugens');
-const OUTPUT_DIR = join(ROOT, 'src', 'assets', 'ugens');
+const OUTPUT_DIRS = [
+  join(ROOT, 'src', 'assets', 'ugens'),
+  join(ROOT, 'crates', 'scsynthdef-compiler', 'assets', 'ugens'),
+];
 
 const BASE_URL = 'https://raw.githubusercontent.com/overtone/overtone/master/src/overtone/sc/machinery/ugen/metadata';
 
@@ -251,16 +254,19 @@ async function main() {
     total++;
   }
 
-  // Write JSON files
-  mkdirSync(OUTPUT_DIR, { recursive: true });
+  // Write JSON files to every output directory (frontend + Rust crate).
+  for (const dir of OUTPUT_DIRS) mkdirSync(dir, { recursive: true });
   for (const [file, ugens] of byFile) {
     ugens.sort((a, b) => a.name.localeCompare(b.name));
-    const outPath = join(OUTPUT_DIR, `${file}.json`);
-    writeFileSync(outPath, JSON.stringify(ugens, null, 2) + '\n');
+    const body = JSON.stringify(ugens, null, 2) + '\n';
+    for (const dir of OUTPUT_DIRS) {
+      writeFileSync(join(dir, `${file}.json`), body);
+    }
     console.log(`  ${file}.json: ${ugens.length} UGens`);
   }
 
-  console.log(`\nWritten ${total} UGens across ${byFile.size} files to src/assets/ugens/`);
+  console.log(`\nWritten ${total} UGens across ${byFile.size} files to:`);
+  for (const dir of OUTPUT_DIRS) console.log(`  - ${dir}`);
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
