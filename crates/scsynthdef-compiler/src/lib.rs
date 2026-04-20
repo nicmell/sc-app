@@ -20,5 +20,6 @@ pub use operators::{binary_op_index, unary_op_index};
 pub use rate::Rate;
 pub use registry::{lookup_ugen, UGenRegistryEntry};
 pub use synthdef::{
-    InputSpec, OutputSpec, ParamName, Parameters, SynthDef, SynthDefJson, UGenInput, UGenJson,
+    parse_scgf, InputSpec, OutputSpec, ParamName, Parameters, SynthDef, SynthDefJson, UGenInput,
+    UGenJson,
 };

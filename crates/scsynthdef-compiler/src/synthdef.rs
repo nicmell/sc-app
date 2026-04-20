@@ -326,6 +326,14 @@ impl SynthDef {
         })
     }
 
+    /// Reconstruct a `SynthDef` from its SCgf v2 binary form.
+    ///
+    /// `to_bytes() → from_bytes() → to_bytes()` round-trips byte-for-byte.
+    pub fn from_bytes(bytes: &[u8]) -> Result<SynthDef, CompileError> {
+        let j = parse_scgf(bytes)?;
+        SynthDef::from_json(&j)
+    }
+
     /// Reconstruct a `SynthDef` from its JSON representation.
     ///
     /// `to_json() → from_json() → to_bytes()` round-trips byte-for-byte against
@@ -519,6 +527,158 @@ fn resolve_input_spec(input: &UGenInput, constant_map: &[(f32, u32)]) -> InputSp
             ugen_index: *i as i32,
             output_index: *o,
         },
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SCgf v2 reader — parses bytes into the structured `SynthDefJson` form.
+// ---------------------------------------------------------------------------
+
+/// Parse SCgf v2 binary bytes into the structured [`SynthDefJson`] shape.
+///
+/// Errors with [`CompileError::InvalidScgf`] on bad magic, unsupported
+/// version, or a truncated buffer.
+pub fn parse_scgf(bytes: &[u8]) -> Result<SynthDefJson, CompileError> {
+    let mut r = ByteReader { buf: bytes, pos: 0 };
+    let magic = r.i32()?;
+    if magic != 0x5343_6766 {
+        return Err(CompileError::InvalidScgf(format!("bad magic: {magic:#x}")));
+    }
+    let version = r.i32()?;
+    if version != 2 {
+        return Err(CompileError::InvalidScgf(format!(
+            "unsupported version: {version}"
+        )));
+    }
+    let n_defs = r.i16()?;
+    if n_defs != 1 {
+        return Err(CompileError::InvalidScgf(format!(
+            "expected 1 synthdef, got {n_defs}"
+        )));
+    }
+    let name = r.pstring()?;
+
+    let nconst = r.i32()?;
+    let mut constants = Vec::with_capacity(nconst.max(0) as usize);
+    for _ in 0..nconst {
+        constants.push(r.f32()?);
+    }
+
+    let nparam_vals = r.i32()?;
+    let mut values = Vec::with_capacity(nparam_vals.max(0) as usize);
+    for _ in 0..nparam_vals {
+        values.push(r.f32()?);
+    }
+
+    let nparam_names = r.i32()?;
+    let mut names = Vec::with_capacity(nparam_names.max(0) as usize);
+    for _ in 0..nparam_names {
+        let nm = r.pstring()?;
+        let idx = r.i32()?;
+        names.push(ParamName {
+            name: nm,
+            index: idx as u32,
+        });
+    }
+
+    let nugens = r.i32()?;
+    let mut ugens = Vec::with_capacity(nugens.max(0) as usize);
+    for _ in 0..nugens {
+        let class_name = r.pstring()?;
+        let rate = r.i8()?;
+        let ninputs = r.i32()?;
+        let nouts = r.i32()?;
+        let special_index = r.i16()?;
+        let mut inputs = Vec::with_capacity(ninputs.max(0) as usize);
+        for _ in 0..ninputs {
+            let u = r.i32()?;
+            let o = r.i32()?;
+            inputs.push(InputSpec {
+                ugen_index: u,
+                output_index: o as u32,
+            });
+        }
+        let mut outputs = Vec::with_capacity(nouts.max(0) as usize);
+        for _ in 0..nouts {
+            outputs.push(OutputSpec { rate: r.i8()? });
+        }
+        ugens.push(UGenJson {
+            class_name,
+            rate,
+            num_inputs: ninputs as u32,
+            num_outputs: nouts as u32,
+            special_index,
+            inputs,
+            outputs,
+        });
+    }
+
+    // The trailing `i16` variants terminator is read but ignored — we don't
+    // model variants in the library.
+    Ok(SynthDefJson {
+        name,
+        constants,
+        parameters: Parameters { values, names },
+        ugens,
+        variants: Vec::new(),
+    })
+}
+
+struct ByteReader<'a> {
+    buf: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> ByteReader<'a> {
+    fn need(&self, n: usize) -> Result<(), CompileError> {
+        if self.pos + n > self.buf.len() {
+            Err(CompileError::InvalidScgf(format!(
+                "truncated: need {n} bytes at offset {}",
+                self.pos
+            )))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn i8(&mut self) -> Result<i8, CompileError> {
+        self.need(1)?;
+        let v = self.buf[self.pos] as i8;
+        self.pos += 1;
+        Ok(v)
+    }
+
+    fn i16(&mut self) -> Result<i16, CompileError> {
+        self.need(2)?;
+        let v = i16::from_be_bytes(self.buf[self.pos..self.pos + 2].try_into().unwrap());
+        self.pos += 2;
+        Ok(v)
+    }
+
+    fn i32(&mut self) -> Result<i32, CompileError> {
+        self.need(4)?;
+        let v = i32::from_be_bytes(self.buf[self.pos..self.pos + 4].try_into().unwrap());
+        self.pos += 4;
+        Ok(v)
+    }
+
+    fn f32(&mut self) -> Result<f32, CompileError> {
+        self.need(4)?;
+        let v = f32::from_be_bytes(self.buf[self.pos..self.pos + 4].try_into().unwrap());
+        self.pos += 4;
+        Ok(v)
+    }
+
+    fn pstring(&mut self) -> Result<String, CompileError> {
+        self.need(1)?;
+        let len = self.buf[self.pos] as usize;
+        self.pos += 1;
+        self.need(len)?;
+        let s = std::str::from_utf8(&self.buf[self.pos..self.pos + len])
+            .map_err(|e| CompileError::InvalidScgf(e.to_string()))?
+            .to_string();
+        self.pos += len;
+        Ok(s)
     }
 }
 

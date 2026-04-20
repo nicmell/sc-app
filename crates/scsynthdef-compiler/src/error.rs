@@ -69,4 +69,7 @@ pub enum CompileError {
 
     #[error("Invalid JSON: {0}")]
     Json(#[from] serde_json::Error),
+
+    #[error("Invalid SCgf: {0}")]
+    InvalidScgf(String),
 }

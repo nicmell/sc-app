@@ -1,37 +1,157 @@
-//! Parity harness: compile each fixture in `crates/scsynthdef-compiler/fixtures/`
-//! with both our Rust compiler and `sclang`, byte-diff the results.
+//! Parity harness: compile each fixture with our Rust compiler and with
+//! sclang, byte-diff the results.
 //!
 //! Usage:
 //!     cargo run --example sclang_parity
 //!
+//! Fixtures are defined inline below as Rust builders. Each fixture's SC
+//! source lives alongside this example at
+//! `crates/scsynthdef-compiler/fixtures/<name>.scd`.
+//!
 //! If `sclang` is not on `$PATH`, the run is skipped with a clear message
 //! (exit code 0).
-//!
-//! Expected outcome today:
-//! - `sine` (1 param): byte-identical.
-//! - `sc_test_recorder` (3 params): diverges on Control encoding. sclang groups
-//!   all kr controls into a single Control UGen with N outputs, while our
-//!   compiler emits one Control UGen per param (matching the TS compiler's
-//!   convention). Harness reports the divergence honestly.
-//! - `global_clock_phase` (0 params): should match apart from unrelated
-//!   differences in UGen ordering (sclang may reorder for topological
-//!   efficiency).
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
-use serde::Deserialize;
+use scsynthdef_compiler::{compile_synthdef, SynthDef, UGenSpec};
 
-use scsynthdef_compiler::{compile_synthdef, UGenSpec};
+// ── Fixture definitions ──────────────────────────────────────────────────
+//
+// Constants mirrored from src/constants/osc.ts — keep in sync by hand.
+const PHASE_BUS: i32 = 1000;
+const SHARED_FRAMES: i32 = 8192;
+const CLOCK_TRIGGER_ID: i32 = 4242;
 
-#[derive(Debug, Deserialize)]
-struct FixtureSpec {
-    name: String,
-    #[serde(default)]
-    params: Vec<(String, f32)>,
-    specs: Vec<UGenSpec>,
+struct Fixture {
+    /// Used both as the SynthDef name and to find `fixtures/<name>.scd`.
+    name: &'static str,
+    build: fn() -> Result<Vec<u8>, Box<dyn std::error::Error>>,
 }
+
+fn inputs<const N: usize>(pairs: [(&str, &str); N]) -> BTreeMap<String, String> {
+    pairs
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect()
+}
+
+fn spec(name: &str, ty: &str, rate: &str, inputs_map: BTreeMap<String, String>) -> UGenSpec {
+    UGenSpec {
+        name: name.to_string(),
+        ugen_type: ty.to_string(),
+        rate: rate.to_string(),
+        inputs: inputs_map,
+    }
+}
+
+/// Exemplar: `SinOsc.ar(freq) → Out.ar(0, …)` with one kr param.
+fn fixture_sine() -> Fixture {
+    Fixture {
+        name: "sine",
+        build: || {
+            let params = vec![("freq".to_string(), 440.0_f32)];
+            let specs = vec![
+                spec("osc", "SinOsc", "ar", inputs([("freq", "freq"), ("phase", "0")])),
+                spec("out", "Out", "ar", inputs([("bus", "0"), ("channelsArray", "osc")])),
+            ];
+            Ok(compile_synthdef("sine", &params, &specs)?)
+        },
+    }
+}
+
+/// Mirrors `src/sc-elements/sc-test.ts` — `In + In + BufWr` with three kr params.
+fn fixture_sc_test_recorder() -> Fixture {
+    Fixture {
+        name: "sc_test_recorder",
+        build: || {
+            let params = vec![
+                ("bus".to_string(), 0.0_f32),
+                ("bufnum".to_string(), 0.0_f32),
+                ("phaseBus".to_string(), 0.0_f32),
+            ];
+            let specs = vec![
+                spec("audio", "In", "ar", inputs([("bus", "bus"), ("numChannels", "1")])),
+                spec("phase", "In", "ar", inputs([("bus", "phaseBus"), ("numChannels", "1")])),
+                spec(
+                    "write",
+                    "BufWr",
+                    "ar",
+                    inputs([
+                        ("inputArray", "audio"),
+                        ("bufnum", "bufnum"),
+                        ("phase", "phase"),
+                        ("loop", "1"),
+                    ]),
+                ),
+            ];
+            Ok(compile_synthdef("__sc_test_rec__", &params, &specs)?)
+        },
+    }
+}
+
+/// Mirrors `src/lib/clock/globalClock.ts` — `Phasor + Out + A2K + Impulse +
+/// SendTrig` with zero params.
+fn fixture_global_clock_phase() -> Fixture {
+    Fixture {
+        name: "global_clock_phase",
+        build: || {
+            let specs = vec![
+                spec(
+                    "phase",
+                    "Phasor",
+                    "ar",
+                    inputs([
+                        ("trig", "0"),
+                        ("rate", "1"),
+                        ("start", "0"),
+                        ("end", &SHARED_FRAMES.to_string()),
+                        ("resetPos", "0"),
+                    ]),
+                ),
+                spec(
+                    "out",
+                    "Out",
+                    "ar",
+                    inputs([
+                        ("bus", &PHASE_BUS.to_string()),
+                        ("channelsArray", "phase"),
+                    ]),
+                ),
+                spec("pkr", "A2K", "kr", inputs([("in", "phase")])),
+                spec(
+                    "tick",
+                    "Impulse",
+                    "kr",
+                    inputs([("freq", "10"), ("phase", "0")]),
+                ),
+                spec(
+                    "reply",
+                    "SendTrig",
+                    "kr",
+                    inputs([
+                        ("in", "tick"),
+                        ("id", &CLOCK_TRIGGER_ID.to_string()),
+                        ("value", "pkr"),
+                    ]),
+                ),
+            ];
+            Ok(compile_synthdef("__global_clock__", &[], &specs)?)
+        },
+    }
+}
+
+fn fixtures() -> [Fixture; 3] {
+    [
+        fixture_global_clock_phase(),
+        fixture_sc_test_recorder(),
+        fixture_sine(),
+    ]
+}
+
+// ── sclang invocation ────────────────────────────────────────────────────
 
 fn sclang_available() -> bool {
     Command::new("sclang")
@@ -43,30 +163,25 @@ fn sclang_available() -> bool {
         .unwrap_or(false)
 }
 
-fn rust_bytes(spec: &FixtureSpec) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    Ok(compile_synthdef(&spec.name, &spec.params, &spec.specs)?)
-}
-
 fn sclang_bytes(
-    fixture_dir: &Path,
-    spec: &FixtureSpec,
+    scd_path: &Path,
+    synthdef_name: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    // Copy the .scd into a fresh tempdir and run sclang there; the script's
+    // Copy the .scd into a fresh tempdir and run sclang there — the script's
     // `thisProcess.nowExecutingPath.dirname` resolves to the tempdir, so the
-    // .scsyndef lands next to the script.
-    let src = fixture_dir.join("sclang.scd");
+    // compiled `<name>.scsyndef` lands next to the script.
     let tmp = std::env::temp_dir().join(format!(
         "sclang_parity_{}_{}",
-        spec.name,
+        synthdef_name,
         std::process::id()
     ));
     let _ = fs::remove_dir_all(&tmp);
     fs::create_dir_all(&tmp)?;
     let script = tmp.join("sclang.scd");
-    fs::copy(&src, &script)?;
+    fs::copy(scd_path, &script)?;
 
     let output = Command::new("sclang").arg(&script).output()?;
-    let def_path = tmp.join(format!("{}.scsyndef", spec.name));
+    let def_path = tmp.join(format!("{synthdef_name}.scsyndef"));
     if !def_path.exists() {
         eprintln!(
             "    sclang did not produce {:?}\n    stdout:\n{}\n    stderr:\n{}",
@@ -80,6 +195,8 @@ fn sclang_bytes(
     let _ = fs::remove_dir_all(&tmp);
     Ok(bytes)
 }
+
+// ── Diff helpers ─────────────────────────────────────────────────────────
 
 fn find_mismatch(a: &[u8], b: &[u8]) -> Option<usize> {
     for (i, (x, y)) in a.iter().zip(b.iter()).enumerate() {
@@ -108,58 +225,41 @@ fn dump_diff_context(rust: &[u8], sclang: &[u8], offset: usize) {
     println!("{}", hex_line("sclang", sclang, start, window));
 }
 
-fn print_header() {
-    println!("sclang parity harness");
-    println!("=====================");
+fn fixtures_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures")
 }
 
-fn fixture_dirs() -> Result<Vec<PathBuf>, std::io::Error> {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let root = Path::new(manifest_dir).join("fixtures");
-    let mut dirs = Vec::new();
-    for entry in fs::read_dir(&root)? {
-        let entry = entry?;
-        if entry.file_type()?.is_dir() && entry.path().join("spec.json").exists() {
-            dirs.push(entry.path());
-        }
-    }
-    dirs.sort();
-    Ok(dirs)
-}
+// ── Main loop ────────────────────────────────────────────────────────────
 
 fn run() -> Result<ExitCode, Box<dyn std::error::Error>> {
-    print_header();
+    println!("sclang parity harness");
+    println!("=====================");
 
     if !sclang_available() {
         println!("sclang not installed — skipped");
         return Ok(ExitCode::SUCCESS);
     }
 
-    let dirs = fixture_dirs()?;
-    if dirs.is_empty() {
-        println!("no fixtures found — run `node scripts/dump_synthdef_fixtures.mjs` first");
-        return Ok(ExitCode::FAILURE);
-    }
-
+    let dir = fixtures_dir();
     let mut mismatches = 0usize;
 
-    for dir in dirs {
-        let fixture_name = dir.file_name().unwrap().to_string_lossy().into_owned();
-        println!("\n▸ {}", fixture_name);
+    for fx in fixtures() {
+        println!("\n▸ {}", fx.name);
+        let scd_path = dir.join(format!("{}.scd", fx.name));
+        if !scd_path.exists() {
+            println!("  (missing {}.scd — skipped)", fx.name);
+            mismatches += 1;
+            continue;
+        }
 
-        let raw = fs::read_to_string(dir.join("spec.json"))?;
-        let spec: FixtureSpec = serde_json::from_str(&raw)?;
+        let rust = (fx.build)()?;
 
-        let rust = match rust_bytes(&spec) {
-            Ok(b) => b,
-            Err(e) => {
-                println!("  rust: compile failed: {e}");
-                mismatches += 1;
-                continue;
-            }
-        };
+        // sclang uses the SynthDef's own name (not the fixture file name) to
+        // find the emitted `.scsyndef`. Grab that from the Rust-compiled
+        // bytes to avoid hand-maintaining a second name.
+        let synthdef_name = SynthDef::from_bytes(&rust)?.name().to_string();
 
-        let sclang = match sclang_bytes(&dir, &spec) {
+        let sclang = match sclang_bytes(&scd_path, &synthdef_name) {
             Ok(b) => b,
             Err(e) => {
                 println!("  sclang: {e}");
@@ -184,41 +284,36 @@ fn run() -> Result<ExitCode, Box<dyn std::error::Error>> {
             dump_diff_context(&rust, &sclang, off);
         }
 
-        // Parse both byte streams into SynthDefJson for a structural summary.
-        let rust_json = scgf_reader::parse(&rust).ok();
-        match scgf_reader::parse(&sclang) {
+        // Structural summary using the library's SCgf reader.
+        let rust_json = SynthDef::from_bytes(&rust).ok().and_then(|d| d.to_json().ok());
+        match SynthDef::from_bytes(&sclang).and_then(|d| d.to_json()) {
             Ok(sclang_json) => {
-                println!("  ── structural summary ──");
-                println!(
-                    "    rust   : {} ugens, {} constants, {} params",
-                    rust_json.as_ref().map(|j| j.ugens.len()).unwrap_or(0),
-                    rust_json.as_ref().map(|j| j.constants.len()).unwrap_or(0),
-                    rust_json
-                        .as_ref()
-                        .map(|j| j.parameters.names.len())
-                        .unwrap_or(0),
-                );
-                println!(
-                    "    sclang : {} ugens, {} constants, {} params",
-                    sclang_json.ugens.len(),
-                    sclang_json.constants.len(),
-                    sclang_json.parameters.names.len(),
-                );
-                let ugens_line = |j: &scsynthdef_compiler::SynthDefJson| {
+                let names = |j: &scsynthdef_compiler::SynthDefJson| {
                     j.ugens
                         .iter()
                         .map(|u| u.class_name.as_str())
                         .collect::<Vec<_>>()
                         .join(", ")
                 };
+                println!("  ── structural summary ──");
                 if let Some(j) = &rust_json {
-                    println!("    rust   ugens: {}", ugens_line(j));
+                    println!(
+                        "    rust   : {} ugens, {} constants, {} params",
+                        j.ugens.len(),
+                        j.constants.len(),
+                        j.parameters.names.len()
+                    );
+                    println!("    rust   ugens: {}", names(j));
                 }
-                println!("    sclang ugens: {}", ugens_line(&sclang_json));
+                println!(
+                    "    sclang : {} ugens, {} constants, {} params",
+                    sclang_json.ugens.len(),
+                    sclang_json.constants.len(),
+                    sclang_json.parameters.names.len()
+                );
+                println!("    sclang ugens: {}", names(&sclang_json));
             }
-            Err(e) => {
-                println!("  (could not parse sclang bytes for structural diff: {e})");
-            }
+            Err(e) => println!("  (could not parse sclang bytes: {e})"),
         }
     }
 
@@ -241,144 +336,3 @@ fn main() -> ExitCode {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Minimal SCgf v2 reader, used only to produce a structural diff when bytes
-// differ. It builds a `SynthDefJson` compatible with the crate's own.
-// ---------------------------------------------------------------------------
-
-mod scgf_reader {
-    use scsynthdef_compiler::{
-        InputSpec, OutputSpec, ParamName, Parameters, SynthDefJson, UGenJson,
-    };
-
-    pub fn parse(bytes: &[u8]) -> Result<SynthDefJson, String> {
-        let mut r = Reader { buf: bytes, pos: 0 };
-        let magic = r.i32()?;
-        if magic != 0x5343_6766 {
-            return Err(format!("bad magic: {:#x}", magic));
-        }
-        let version = r.i32()?;
-        if version != 2 {
-            return Err(format!("unsupported version: {}", version));
-        }
-        let n_defs = r.i16()?;
-        if n_defs != 1 {
-            return Err(format!("expected 1 synthdef, got {}", n_defs));
-        }
-        let name = r.pstring()?;
-        let nconst = r.i32()?;
-        let mut constants = Vec::with_capacity(nconst.max(0) as usize);
-        for _ in 0..nconst {
-            constants.push(r.f32()?);
-        }
-        let nparams = r.i32()?;
-        let mut values = Vec::with_capacity(nparams.max(0) as usize);
-        for _ in 0..nparams {
-            values.push(r.f32()?);
-        }
-        let nnames = r.i32()?;
-        let mut names = Vec::with_capacity(nnames.max(0) as usize);
-        for _ in 0..nnames {
-            let nm = r.pstring()?;
-            let idx = r.i32()?;
-            names.push(ParamName {
-                name: nm,
-                index: idx as u32,
-            });
-        }
-        let nugens = r.i32()?;
-        let mut ugens = Vec::with_capacity(nugens.max(0) as usize);
-        for _ in 0..nugens {
-            let class_name = r.pstring()?;
-            let rate = r.i8()?;
-            let ninputs = r.i32()?;
-            let nouts = r.i32()?;
-            let special_index = r.i16()?;
-            let mut inputs = Vec::with_capacity(ninputs.max(0) as usize);
-            for _ in 0..ninputs {
-                let u = r.i32()?;
-                let o = r.i32()?;
-                inputs.push(InputSpec {
-                    ugen_index: u,
-                    output_index: o as u32,
-                });
-            }
-            let mut outputs = Vec::with_capacity(nouts.max(0) as usize);
-            for _ in 0..nouts {
-                outputs.push(OutputSpec { rate: r.i8()? });
-            }
-            ugens.push(UGenJson {
-                class_name,
-                rate,
-                num_inputs: ninputs as u32,
-                num_outputs: nouts as u32,
-                special_index,
-                inputs,
-                outputs,
-            });
-        }
-        // variants — ignored.
-        Ok(SynthDefJson {
-            name,
-            constants,
-            parameters: Parameters { values, names },
-            ugens,
-            variants: Vec::new(),
-        })
-    }
-
-    struct Reader<'a> {
-        buf: &'a [u8],
-        pos: usize,
-    }
-
-    impl<'a> Reader<'a> {
-        fn need(&self, n: usize) -> Result<(), String> {
-            if self.pos + n > self.buf.len() {
-                Err(format!(
-                    "truncated: need {} bytes at offset {}",
-                    n, self.pos
-                ))
-            } else {
-                Ok(())
-            }
-        }
-        fn i8(&mut self) -> Result<i8, String> {
-            self.need(1)?;
-            let v = self.buf[self.pos] as i8;
-            self.pos += 1;
-            Ok(v)
-        }
-        fn i16(&mut self) -> Result<i16, String> {
-            self.need(2)?;
-            let v = i16::from_be_bytes(self.buf[self.pos..self.pos + 2].try_into().unwrap());
-            self.pos += 2;
-            Ok(v)
-        }
-        fn i32(&mut self) -> Result<i32, String> {
-            self.need(4)?;
-            let v = i32::from_be_bytes(self.buf[self.pos..self.pos + 4].try_into().unwrap());
-            self.pos += 4;
-            Ok(v)
-        }
-        fn f32(&mut self) -> Result<f32, String> {
-            self.need(4)?;
-            let v = f32::from_be_bytes(self.buf[self.pos..self.pos + 4].try_into().unwrap());
-            self.pos += 4;
-            Ok(v)
-        }
-        fn pstring(&mut self) -> Result<String, String> {
-            self.need(1)?;
-            let len = self.buf[self.pos] as usize;
-            self.pos += 1;
-            self.need(len)?;
-            let s = std::str::from_utf8(&self.buf[self.pos..self.pos + len])
-                .map_err(|e| e.to_string())?
-                .to_string();
-            self.pos += len;
-            Ok(s)
-        }
-    }
-}
-

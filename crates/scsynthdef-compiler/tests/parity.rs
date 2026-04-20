@@ -369,6 +369,43 @@ fn synthdef_json_round_trip() {
     );
 }
 
+/// `to_bytes → from_bytes → to_bytes` is byte-identical to the original
+/// `to_bytes`. Exercises the library's SCgf parser end-to-end.
+#[test]
+fn synthdef_bytes_round_trip() {
+    let mut def = SynthDef::new("bytes_roundtrip");
+    let freq = def.add_control("freq", 220.0, Rate::Control).unwrap();
+    let amp = def.add_control("amp", 0.8, Rate::Control).unwrap();
+    let sin = def.add_ugen(
+        "SinOsc",
+        Rate::Audio,
+        vec![freq, UGenInput::Constant(0.0)],
+        1,
+        0,
+    );
+    let scaled = def.add_ugen(
+        "BinaryOpUGen",
+        Rate::Audio,
+        vec![UGenInput::UGen(sin), amp],
+        1,
+        2, // *
+    );
+    def.add_ugen(
+        "Out",
+        Rate::Audio,
+        vec![UGenInput::Constant(0.0), UGenInput::UGen(scaled)],
+        0,
+        0,
+    );
+
+    let a = def.to_bytes().expect("encode");
+    let b = SynthDef::from_bytes(&a)
+        .expect("parse")
+        .to_bytes()
+        .expect("re-encode");
+    assert_eq!(a, b, "bytes round-trip must be identical");
+}
+
 /// `SynthDefJson` survives a pass through serde_json as pretty-printed text.
 #[test]
 fn synthdef_json_serializes_and_parses() {

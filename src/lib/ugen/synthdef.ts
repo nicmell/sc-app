@@ -116,12 +116,14 @@ export class SynthDef implements SynthDefContext {
   private lastParamRate: Rate | null = null;
 
   /**
-   * Build a SynthDef by executing `fn` in a graph-building context.
-   * All UGen / control() calls inside `fn` are captured into this definition.
+   * Build a SynthDef either by executing `fn` inside a graph-building context
+   * (traditional path), or — when `fn` is omitted — as an empty shell that
+   * the static `fromJson` / `fromBytes` factories then populate.
    */
-  constructor(name: string, fn: () => void) {
+  constructor(name: string, fn?: () => void) {
     if (!name) throw new Error('SynthDef name must not be empty');
     this.name = name;
+    if (fn === undefined) return;
     pushContext(this);
     try {
       fn();
@@ -130,6 +132,69 @@ export class SynthDef implements SynthDefContext {
     }
     this.collectConstants();
     this.validate();
+  }
+
+  // -- Round-trip factories -------------------------------------------------
+
+  /**
+   * Reconstruct a `SynthDef` from its structured JSON representation. The
+   * inverse of `toJson()`.
+   */
+  static fromJson(j: SynthDefJson): SynthDef {
+    const def = new SynthDef(j.name);
+
+    // Params come from the JSON's `names` + `values` sections.
+    for (const n of j.parameters.names) {
+      const defaultValue = j.parameters.values[n.index];
+      if (defaultValue === undefined) {
+        throw new Error(`SynthDef.fromJson: param "${n.name}" index out of range`);
+      }
+      def.params.push({ name: n.name, defaultValue, index: n.index });
+    }
+
+    // Push the def onto the context stack so UGen constructors auto-append
+    // (via `ctx.addUGen(this)`). Inputs referencing earlier UGens look them
+    // up on `def.nodes`, which is populated incrementally.
+    pushContext(def);
+    try {
+      for (const u of j.ugens) {
+        const inputs: UGenInput[] = u.inputs.map((i) => {
+          if (i.ugenIndex < 0) {
+            const c = j.constants[i.outputIndex];
+            if (c === undefined) {
+              throw new Error(
+                `SynthDef.fromJson: constant index ${i.outputIndex} out of range`,
+              );
+            }
+            return c;
+          }
+          return new UGenOutput(def.nodes[i.ugenIndex], i.outputIndex);
+        });
+        // Constructor calls `ctx.addUGen(this)` which pushes onto def.nodes
+        // with the right synthIndex — no manual push needed.
+        new UGen(
+          u.className,
+          u.rate as Rate,
+          inputs,
+          u.numOutputs,
+          u.specialIndex,
+        );
+      }
+    } finally {
+      popContext();
+    }
+
+    def.collectConstants();
+    def.validate();
+    return def;
+  }
+
+  /**
+   * Reconstruct a `SynthDef` from its SCgf v2 binary form. The inverse of
+   * `toBytes()`.
+   */
+  static fromBytes(bytes: Uint8Array): SynthDef {
+    return SynthDef.fromJson(parseScgf(bytes));
   }
 
   // -- SynthDefContext implementation ---------------------------------------
@@ -348,4 +413,110 @@ export class SynthDef implements SynthDefContext {
  */
 export function synthDef(name: string, fn: () => void): SynthDef {
   return new SynthDef(name, fn);
+}
+
+// ---------------------------------------------------------------------------
+// SCgf v2 reader
+// ---------------------------------------------------------------------------
+
+class ByteReader {
+  private view: DataView;
+  private pos = 0;
+
+  constructor(private buf: Uint8Array) {
+    this.view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  }
+
+  private need(n: number) {
+    if (this.pos + n > this.buf.byteLength) {
+      throw new Error(
+        `parseScgf: truncated buffer — need ${n} bytes at offset ${this.pos}`,
+      );
+    }
+  }
+
+  int8() { this.need(1); const v = this.view.getInt8(this.pos); this.pos += 1; return v; }
+  int16() { this.need(2); const v = this.view.getInt16(this.pos); this.pos += 2; return v; }
+  int32() { this.need(4); const v = this.view.getInt32(this.pos); this.pos += 4; return v; }
+  float32() { this.need(4); const v = this.view.getFloat32(this.pos); this.pos += 4; return v; }
+
+  pstring(): string {
+    this.need(1);
+    const len = this.view.getUint8(this.pos);
+    this.pos += 1;
+    this.need(len);
+    const chars = new Array<string>(len);
+    for (let i = 0; i < len; i++) {
+      chars[i] = String.fromCharCode(this.view.getUint8(this.pos + i));
+    }
+    this.pos += len;
+    return chars.join('');
+  }
+}
+
+/**
+ * Parse SCgf v2 binary bytes into the structured [`SynthDefJson`] shape.
+ * Mirrors the Rust `parse_scgf` helper.
+ */
+export function parseScgf(bytes: Uint8Array): SynthDefJson {
+  const r = new ByteReader(bytes);
+
+  const magic = r.int32();
+  if (magic !== 0x53436766) {
+    throw new Error(`parseScgf: bad magic 0x${magic.toString(16)}`);
+  }
+  const version = r.int32();
+  if (version !== 2) {
+    throw new Error(`parseScgf: unsupported version ${version}`);
+  }
+  const nDefs = r.int16();
+  if (nDefs !== 1) {
+    throw new Error(`parseScgf: expected 1 synthdef, got ${nDefs}`);
+  }
+
+  const name = r.pstring();
+
+  const nConst = r.int32();
+  const constants: number[] = [];
+  for (let i = 0; i < nConst; i++) constants.push(r.float32());
+
+  const nParamVals = r.int32();
+  const values: number[] = [];
+  for (let i = 0; i < nParamVals; i++) values.push(r.float32());
+
+  const nParamNames = r.int32();
+  const names: { name: string; index: number }[] = [];
+  for (let i = 0; i < nParamNames; i++) {
+    const nm = r.pstring();
+    const idx = r.int32();
+    names.push({ name: nm, index: idx });
+  }
+
+  const nUgens = r.int32();
+  const ugens: SynthDefJson['ugens'] = [];
+  for (let i = 0; i < nUgens; i++) {
+    const className = r.pstring();
+    const rate = r.int8();
+    const nInputs = r.int32();
+    const nOutputs = r.int32();
+    const specialIndex = r.int16();
+    const inputs: { ugenIndex: number; outputIndex: number }[] = [];
+    for (let j = 0; j < nInputs; j++) {
+      inputs.push({ ugenIndex: r.int32(), outputIndex: r.int32() });
+    }
+    const outputs: { rate: number }[] = [];
+    for (let j = 0; j < nOutputs; j++) {
+      outputs.push({ rate: r.int8() });
+    }
+    ugens.push({ className, rate, numInputs: nInputs, numOutputs: nOutputs, specialIndex, inputs, outputs });
+  }
+
+  // Trailing variants terminator: read but ignored.
+  return {
+    name,
+    constants,
+    parameters: { values, names },
+    ugens,
+    variants: [],
+  };
 }
