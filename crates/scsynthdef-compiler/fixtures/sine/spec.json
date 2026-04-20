@@ -1,0 +1,29 @@
+{
+  "name": "sine",
+  "params": [
+    [
+      "freq",
+      440
+    ]
+  ],
+  "specs": [
+    {
+      "name": "osc",
+      "type": "SinOsc",
+      "rate": "ar",
+      "inputs": {
+        "freq": "freq",
+        "phase": "0"
+      }
+    },
+    {
+      "name": "out",
+      "type": "Out",
+      "rate": "ar",
+      "inputs": {
+        "bus": "0",
+        "channelsArray": "osc"
+      }
+    }
+  ]
+}

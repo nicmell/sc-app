@@ -7,7 +7,9 @@
 
 use std::collections::BTreeMap;
 
-use scsynthdef_compiler::{compile_synthdef, Rate, SynthDef, UGenInput, UGenSpec};
+use scsynthdef_compiler::{
+    compile_synthdef, dump_specs_json, parse_specs_json, Rate, SynthDef, UGenInput, UGenSpec,
+};
 
 /// Reader that chews through SCgf v2 bytes sequentially.
 struct Reader<'a> {
@@ -322,6 +324,106 @@ fn circular_reference_errors() {
     let err = compile_synthdef("circ", &[], &specs).unwrap_err();
     let msg = err.to_string();
     assert!(msg.contains("Circular"), "expected circular error, got: {msg}");
+}
+
+/// `to_json → from_json → to_bytes` is byte-identical to the original
+/// `to_bytes`. Exercises constants dedup, param encoding, and multi-output
+/// refs.
+#[test]
+fn synthdef_json_round_trip() {
+    let mut def = SynthDef::new("roundtrip");
+    let freq = def.add_control("freq", 440.0, Rate::Control).unwrap();
+    let amp = def.add_control("amp", 0.5, Rate::Control).unwrap();
+    let sin = def.add_ugen(
+        "SinOsc",
+        Rate::Audio,
+        vec![UGenInput::UGen(freq), UGenInput::Constant(0.0)],
+        1,
+        0,
+    );
+    let scaled = def.add_ugen(
+        "BinaryOpUGen",
+        Rate::Audio,
+        vec![UGenInput::UGen(sin), UGenInput::UGen(amp)],
+        1,
+        2, // *
+    );
+    def.add_ugen(
+        "Out",
+        Rate::Audio,
+        vec![UGenInput::Constant(0.0), UGenInput::UGen(scaled)],
+        0,
+        0,
+    );
+
+    let original_bytes = def.to_bytes().expect("encode");
+    let json = def.to_json().expect("to_json");
+    let reconstructed = SynthDef::from_json(&json).expect("from_json");
+    let round_trip_bytes = reconstructed.to_bytes().expect("encode reconstructed");
+
+    assert_eq!(
+        original_bytes, round_trip_bytes,
+        "round-tripped bytes must match original"
+    );
+}
+
+/// `SynthDefJson` survives a pass through serde_json as pretty-printed text.
+#[test]
+fn synthdef_json_serializes_and_parses() {
+    let mut def = SynthDef::new("json_string");
+    let f = def.add_control("freq", 220.0, Rate::Control).unwrap();
+    def.add_ugen(
+        "SinOsc",
+        Rate::Audio,
+        vec![UGenInput::UGen(f), UGenInput::Constant(0.0)],
+        1,
+        0,
+    );
+
+    let json = def.to_json().unwrap();
+    let s = serde_json::to_string_pretty(&json).unwrap();
+    assert!(s.contains("\"SinOsc\""));
+    assert!(s.contains("\"freq\""));
+    // camelCase field names line up with the TS shape.
+    assert!(s.contains("\"className\""));
+    assert!(s.contains("\"numInputs\""));
+
+    let parsed: scsynthdef_compiler::SynthDefJson = serde_json::from_str(&s).unwrap();
+    assert_eq!(parsed.name, "json_string");
+    assert_eq!(parsed.parameters.values, vec![220.0]);
+}
+
+/// `UGenSpec` JSON helpers round-trip a spec vector through a string, and
+/// the resulting bytes from both match.
+#[test]
+fn ugenspec_json_round_trip() {
+    let specs = vec![
+        UGenSpec {
+            name: "osc".into(),
+            ugen_type: "SinOsc".into(),
+            rate: "ar".into(),
+            inputs: [("freq", "440"), ("phase", "0")]
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        },
+        UGenSpec {
+            name: "out".into(),
+            ugen_type: "Out".into(),
+            rate: "ar".into(),
+            inputs: [("bus", "0"), ("channelsArray", "osc")]
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        },
+    ];
+
+    let s = dump_specs_json(&specs).unwrap();
+    let parsed = parse_specs_json(&s).unwrap();
+
+    let a = compile_synthdef("x", &[], &specs).unwrap();
+    let b = compile_synthdef("x", &[], &parsed).unwrap();
+    assert_eq!(a, b, "round-tripped specs produce identical bytes");
 }
 
 /// Missing required input (null default) surfaces as MissingInput.

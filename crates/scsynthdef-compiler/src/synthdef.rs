@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::{CompileError, Rate};
 
 /// Input to a UGen: a constant, the default output of another UGen, or a
@@ -46,7 +48,8 @@ struct ParamInfo {
 }
 
 /// A SynthDef being built. Add controls and UGens, then encode to SCgf v2
-/// bytes with [`SynthDef::to_bytes`].
+/// bytes with [`SynthDef::to_bytes`] or to a structured JSON form with
+/// [`SynthDef::to_json`].
 #[derive(Debug, Clone)]
 pub struct SynthDef {
     name: String,
@@ -171,25 +174,9 @@ impl SynthDef {
             w.i16(node.special_index);
 
             for input in &node.inputs {
-                match input {
-                    UGenInput::Constant(v) => {
-                        let idx = constant_map
-                            .iter()
-                            .find(|(k, _)| k.to_bits() == v.to_bits())
-                            .map(|(_, i)| *i)
-                            .expect("constant not collected");
-                        w.i32(-1);
-                        w.i32(idx as i32);
-                    }
-                    UGenInput::UGen(ugen_idx) => {
-                        w.i32(*ugen_idx as i32);
-                        w.i32(0);
-                    }
-                    UGenInput::UGenOutput(ugen_idx, out_idx) => {
-                        w.i32(*ugen_idx as i32);
-                        w.i32(*out_idx as i32);
-                    }
-                }
+                let spec = resolve_input_spec(input, &constant_map);
+                w.i32(spec.ugen_index);
+                w.i32(spec.output_index as i32);
             }
 
             for _ in 0..node.num_outputs {
@@ -201,6 +188,120 @@ impl SynthDef {
         w.i16(0);
 
         Ok(w.finish())
+    }
+
+    /// Structured JSON representation mirroring the SCgf binary layout.
+    ///
+    /// Useful for inspection, debugging, and cross-tool comparison (the field
+    /// names line up with the TS `SynthDefJson` in `src/lib/ugen/synthdef.ts`
+    /// via `#[serde(rename_all = "camelCase")]` on the field types).
+    pub fn to_json(&self) -> Result<SynthDefJson, CompileError> {
+        if self.name.is_empty() {
+            return Err(CompileError::EmptyName);
+        }
+        self.validate()?;
+
+        let (constants, constant_map) = self.collect_constants();
+
+        let ugens = self
+            .nodes
+            .iter()
+            .map(|n| UGenJson {
+                class_name: n.class_name.clone(),
+                rate: n.rate.as_i8(),
+                num_inputs: n.inputs.len() as u32,
+                num_outputs: n.num_outputs,
+                special_index: n.special_index,
+                inputs: n
+                    .inputs
+                    .iter()
+                    .map(|i| resolve_input_spec(i, &constant_map))
+                    .collect(),
+                outputs: (0..n.num_outputs)
+                    .map(|_| OutputSpec { rate: n.rate.as_i8() })
+                    .collect(),
+            })
+            .collect();
+
+        Ok(SynthDefJson {
+            name: self.name.clone(),
+            constants,
+            parameters: Parameters {
+                values: self.params.iter().map(|p| p.default_value).collect(),
+                names: self
+                    .params
+                    .iter()
+                    .enumerate()
+                    .map(|(i, p)| ParamName {
+                        name: p.name.clone(),
+                        index: i as u32,
+                    })
+                    .collect(),
+            },
+            ugens,
+            variants: Vec::new(),
+        })
+    }
+
+    /// Reconstruct a `SynthDef` from its JSON representation.
+    ///
+    /// `to_json() → from_json() → to_bytes()` round-trips byte-for-byte against
+    /// `to_bytes()` on the original.
+    pub fn from_json(j: &SynthDefJson) -> Result<SynthDef, CompileError> {
+        let mut def = SynthDef::new(&j.name);
+
+        // The JSON's ugen list already contains Control/AudioControl nodes at
+        // their exact positions, so we don't use `add_control` (which would
+        // push another Control node). We rebuild `params` separately and
+        // append every ugen — Control and otherwise — directly.
+        for name in &j.parameters.names {
+            let idx = name.index as usize;
+            let default = j
+                .parameters
+                .values
+                .get(idx)
+                .copied()
+                .ok_or_else(|| CompileError::UnknownUGenId(name.name.clone()))?;
+            def.params.push(ParamInfo {
+                name: name.name.clone(),
+                default_value: default,
+            });
+        }
+
+        for u in &j.ugens {
+            let rate = match u.rate {
+                0 => Rate::Scalar,
+                1 => Rate::Control,
+                2 => Rate::Audio,
+                other => return Err(CompileError::UnknownRate(other.to_string())),
+            };
+            let inputs = u
+                .inputs
+                .iter()
+                .map(|i| {
+                    if i.ugen_index < 0 {
+                        let c_idx = i.output_index as usize;
+                        let c = j
+                            .constants
+                            .get(c_idx)
+                            .copied()
+                            .ok_or_else(|| CompileError::UGenIndexOutOfRange(c_idx as u32))?;
+                        Ok(UGenInput::Constant(c))
+                    } else {
+                        Ok(UGenInput::UGenOutput(i.ugen_index as u32, i.output_index))
+                    }
+                })
+                .collect::<Result<Vec<_>, CompileError>>()?;
+            def.nodes.push(Node {
+                class_name: u.class_name.clone(),
+                rate,
+                inputs,
+                num_outputs: u.num_outputs,
+                special_index: u.special_index,
+            });
+        }
+
+        Ok(def)
     }
 
     fn validate(&self) -> Result<(), CompileError> {
@@ -256,7 +357,86 @@ impl SynthDef {
         }
         (list, map)
     }
+}
 
+// ---------------------------------------------------------------------------
+// Structured JSON representation — mirrors TS `SynthDefJson` field-for-field.
+// ---------------------------------------------------------------------------
+
+/// JSON view of a compiled SynthDef. Shape matches TS `SynthDefJson` in
+/// `src/lib/ugen/synthdef.ts` (via camelCase field renames).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SynthDefJson {
+    pub name: String,
+    pub constants: Vec<f32>,
+    pub parameters: Parameters,
+    pub ugens: Vec<UGenJson>,
+    /// Always empty — the SCgf v2 format reserves a variants section, but we
+    /// never emit variants.
+    pub variants: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Parameters {
+    pub values: Vec<f32>,
+    pub names: Vec<ParamName>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParamName {
+    pub name: String,
+    pub index: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UGenJson {
+    pub class_name: String,
+    pub rate: i8,
+    pub num_inputs: u32,
+    pub num_outputs: u32,
+    pub special_index: i16,
+    pub inputs: Vec<InputSpec>,
+    pub outputs: Vec<OutputSpec>,
+}
+
+/// Wire-format input reference. `ugen_index == -1` means the value is a
+/// constant at `output_index` in the constants table.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InputSpec {
+    pub ugen_index: i32,
+    pub output_index: u32,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct OutputSpec {
+    pub rate: i8,
+}
+
+fn resolve_input_spec(input: &UGenInput, constant_map: &[(f32, u32)]) -> InputSpec {
+    match input {
+        UGenInput::Constant(v) => {
+            let idx = constant_map
+                .iter()
+                .find(|(k, _)| k.to_bits() == v.to_bits())
+                .map(|(_, i)| *i)
+                .expect("constant not collected");
+            InputSpec {
+                ugen_index: -1,
+                output_index: idx,
+            }
+        }
+        UGenInput::UGen(i) => InputSpec {
+            ugen_index: *i as i32,
+            output_index: 0,
+        },
+        UGenInput::UGenOutput(i, o) => InputSpec {
+            ugen_index: *i as i32,
+            output_index: *o,
+        },
+    }
 }
 
 // ---------------------------------------------------------------------------

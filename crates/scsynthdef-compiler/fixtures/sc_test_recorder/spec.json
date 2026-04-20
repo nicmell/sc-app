@@ -1,0 +1,48 @@
+{
+  "name": "__sc_test_rec__",
+  "params": [
+    [
+      "bus",
+      0
+    ],
+    [
+      "bufnum",
+      0
+    ],
+    [
+      "phaseBus",
+      0
+    ]
+  ],
+  "specs": [
+    {
+      "name": "audio",
+      "type": "In",
+      "rate": "ar",
+      "inputs": {
+        "bus": "bus",
+        "numChannels": "1"
+      }
+    },
+    {
+      "name": "phase",
+      "type": "In",
+      "rate": "ar",
+      "inputs": {
+        "bus": "phaseBus",
+        "numChannels": "1"
+      }
+    },
+    {
+      "name": "write",
+      "type": "BufWr",
+      "rate": "ar",
+      "inputs": {
+        "inputArray": "audio",
+        "bufnum": "bufnum",
+        "phase": "phase",
+        "loop": "1"
+      }
+    }
+  ]
+}

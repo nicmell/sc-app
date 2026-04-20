@@ -40,6 +40,18 @@ pub struct UGenSpec {
     pub inputs: BTreeMap<String, String>,
 }
 
+/// Parse a JSON string into a `Vec<UGenSpec>`. Thin wrapper around
+/// `serde_json::from_str` for caller ergonomics.
+pub fn parse_specs_json(s: &str) -> Result<Vec<UGenSpec>, serde_json::Error> {
+    serde_json::from_str(s)
+}
+
+/// Serialize a slice of `UGenSpec` to a JSON string. Thin wrapper around
+/// `serde_json::to_string_pretty`.
+pub fn dump_specs_json(specs: &[UGenSpec]) -> Result<String, serde_json::Error> {
+    serde_json::to_string_pretty(specs)
+}
+
 /// Compile an HTML-parsed spec map into SCgf v2 binary bytes.
 ///
 /// `params` and `specs` are ordered slices so the caller controls param
