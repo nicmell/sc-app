@@ -14,6 +14,11 @@
     <sc-control name="freq" value="440"/>
     <sc-control name="amp" value="0.3"/>
     <sc-control name="waveform" value="0"/>
+    <!-- Gate control: 1 = audible (default), 0 = silent. The sc-checkbox
+         below toggles this instead of using sc-run, so the tone synth keeps
+         running (scope still gets its shared-clock anchor) but its output
+         bus gets multiplied by zero when unchecked. -->
+    <sc-control name="mute" value="1"/>
     <sc-ugen name="sine" type="SinOsc">
         <sc-control name="freq" bind="freq"/>
     </sc-ugen>
@@ -38,9 +43,13 @@
         <sc-control name="a" bind="wave"/>
         <sc-control name="b" bind="amp"/>
     </sc-ugen>
+    <sc-ugen name="gated" type="BinaryOpUGen" op="*">
+        <sc-control name="a" bind="vol"/>
+        <sc-control name="b" bind="mute"/>
+    </sc-ugen>
     <sc-ugen name="out" type="Out">
         <sc-control name="bus" value="0"/>
-        <sc-control name="channelsArray" bind="vol"/>
+        <sc-control name="channelsArray" bind="gated"/>
     </sc-ugen>
 </sc-synthdef>
 
@@ -48,11 +57,12 @@
     <sc-control name="freq" value="440"/>
     <sc-control name="amp" value="0.3"/>
     <sc-control name="waveform" value="0"/>
+    <sc-control name="mute" value="1"/>
 </sc-synth>
 
 <div style="display: flex; flex-direction: column; gap: 8px; padding: 4px; font-family: system-ui, sans-serif; font-size: 13px; color: var(--color-text, #e0e0e0);">
     <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-        <sc-run size="20"/>
+        <sc-checkbox bind="s1.mute" width="20" height="20"/>
         <sc-select bind="s1.waveform">
             <sc-option value="0" label="Sine"/>
             <sc-option value="1" label="Saw"/>
