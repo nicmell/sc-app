@@ -17,12 +17,18 @@
     <sc-ugen name="sine" type="SinOsc">
         <sc-control name="freq" bind="freq"/>
     </sc-ugen>
-    <sc-ugen name="saw" type="Saw">
+    <sc-ugen name="saw" type="LFSaw">
         <sc-control name="freq" bind="freq"/>
     </sc-ugen>
-    <sc-ugen name="square" type="Pulse">
+    <!-- LFPulse is unipolar (0..1), so rescale to ±1 via `x * 2 - 1`. -->
+    <sc-ugen name="pulse_raw" type="LFPulse">
         <sc-control name="freq" bind="freq"/>
         <sc-control name="width" value="0.5"/>
+    </sc-ugen>
+    <sc-ugen name="square" type="MulAdd">
+        <sc-control name="in" bind="pulse_raw"/>
+        <sc-control name="mul" value="2"/>
+        <sc-control name="add" value="-1"/>
     </sc-ugen>
     <sc-ugen name="wave" type="Select">
         <sc-control name="which" bind="waveform"/>

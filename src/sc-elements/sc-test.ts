@@ -1,7 +1,6 @@
 import {html, css} from 'lit';
 import type {ScTestItem, UGenSpec} from '@/types/parsers';
 import type {RuntimeState} from '@/types/stores';
-import {isNode, isTest} from '@/lib/utils/guards';
 import {compileSynthDef} from '@/lib/synthdef';
 import {createBufferStream, type BufferStream} from '@/lib/buffers';
 import {oscService} from '@/lib/osc';
@@ -48,10 +47,6 @@ function sendRecorderSynthdef(): Promise<void> {
 
 // ── Component ─────────────────────────────────────────────────────────────
 
-interface TestState {
-    parentRunning: boolean;
-}
-
 /** Generous buffer sizing: `frames = chunks × chunk`, 8192 frames split into
  *  4 × 2048 keeps the reader-head inside a 50%-wide safe zone relative to
  *  the writer head — the in-read "kink" artefact we were hunting. */
@@ -72,7 +67,7 @@ const SHOT_SAMPLES = TEST_CHUNK_SAMPLES;
  * `sc-scope`, but the plugin author doesn't touch buffers or RecordBuf at all
  * — just wires audio out to the bus.
  */
-export class ScTest extends ScElement<ScTestItem, TestState> {
+export class ScTest extends ScElement<ScTestItem, undefined> {
     static properties = {
         bus: {type: Number},
         channels: {type: Number},
@@ -109,11 +104,9 @@ export class ScTest extends ScElement<ScTestItem, TestState> {
     private _display: Float32Array = new Float32Array(SHOT_SAMPLES);
     private _shot: Float32Array = new Float32Array(SHOT_SAMPLES);
     private _fillPos = 0;
-    private _hasSignal = false;
 
     private _lineColor = '';
     private _borderColor = '';
-    private _textColor = '';
 
     constructor() {
         super();
@@ -124,22 +117,8 @@ export class ScTest extends ScElement<ScTestItem, TestState> {
         this.color = '';
     }
 
-    getState(state: RuntimeState): TestState {
-        const self = state.nodes[this.id];
-        if (!self || !isTest(self)) return {parentRunning: false};
-        // Walk ancestors upward; if any NodeRuntime along the chain has run=0,
-        // the audio graph above sc-test is paused and our recorder synth
-        // should not be active either.
-        let id = self.runtime.parentId;
-        while (id) {
-            const node = state.nodes[id];
-            if (!node) return {parentRunning: false};
-            if (isNode(node)) {
-                if (!node.runtime.loaded || !node.runtime.run) return {parentRunning: false};
-            }
-            id = node.runtime.parentId;
-        }
-        return {parentRunning: true};
+    getState(_state: RuntimeState): undefined {
+        return undefined;
     }
 
     protected _sendCreate() {
@@ -147,23 +126,12 @@ export class ScTest extends ScElement<ScTestItem, TestState> {
         const styles = getComputedStyle(this);
         this._lineColor = this.color || styles.getPropertyValue('--color-primary').trim() || '#00ff00';
         this._borderColor = styles.getPropertyValue('--color-border').trim() || '#555';
-        this._textColor = styles.getPropertyValue('--color-text').trim() || '#e0e0e0';
-        if (this._state?.parentRunning) void this._activate();
+        void this._activate();
     }
 
     protected _sendDestroy() {
         this._deactivate();
         super._sendDestroy();
-    }
-
-    protected _onStateChange(prev: TestState, next: TestState): void {
-        const wasRunning = !!prev && prev.parentRunning;
-        if (next.parentRunning && !wasRunning) {
-            void this._activate();
-        } else if (!next.parentRunning && wasRunning) {
-            this._deactivate();
-        }
-        super._onStateChange(prev, next);
     }
 
     disconnectedCallback() {
@@ -178,9 +146,10 @@ export class ScTest extends ScElement<ScTestItem, TestState> {
     // ── Subscription lifecycle ────────────────────────────────────────────
 
     private async _activate() {
-        // Re-entry guard: _onStateChange can fire again while we're awaiting
-        // the synthdef-load delay / stream open, before `_subscription` is
-        // populated — that would otherwise produce duplicate buffers + synths.
+        // Re-entry guard: parent-context churn can fire `_sendCreate` again
+        // while we're awaiting the synthdef load / stream open, before
+        // `_subscription` is populated — that would otherwise produce
+        // duplicate buffers + synths.
         if (this._subscription || this._activating) return;
         this._activating = true;
 
@@ -194,6 +163,12 @@ export class ScTest extends ScElement<ScTestItem, TestState> {
 
             const bufnum = oscService.nextBufNum();
             const nodeId = oscService.nextNodeId();
+            // Spawn the recorder into the plugin's parent group. When either
+            // the plugin group or the default group is paused from the UI,
+            // scsynth pauses the recorder alongside it — /tr stops firing
+            // and the Rust reader flips into "silence" mode, pushing zeros
+            // to the sink so the scope draws a clean zero line instead of
+            // the stale buffer. See `spawn_reader`'s `TR_SILENCE_MS` path.
             const groupId = this._parent?.runtime.nodeId ?? oscService.defaultGroupId();
 
             // Private buffer + recorder synth: allocBuffer and createSynth
@@ -247,7 +222,6 @@ export class ScTest extends ScElement<ScTestItem, TestState> {
 
     private _resetVisualState() {
         this._fillPos = 0;
-        this._hasSignal = false;
         this._dirty = true;
     }
 
@@ -267,19 +241,9 @@ export class ScTest extends ScElement<ScTestItem, TestState> {
                 this._display = done;
                 this._fillPos = 0;
                 this._dirty = true;
-                this._detectSignal(done);
             }
             rem = rem.subarray(take);
         }
-    }
-
-    private _detectSignal(shot: Float32Array) {
-        let peak = 0;
-        for (let i = 0; i < shot.length; i++) {
-            const v = Math.abs(shot[i]);
-            if (v > peak) peak = v;
-        }
-        this._hasSignal = peak > 0.01;
     }
 
     // ── Draw loop ─────────────────────────────────────────────────────────
@@ -328,16 +292,6 @@ export class ScTest extends ScElement<ScTestItem, TestState> {
         ctx.moveTo(0, h / 2);
         ctx.lineTo(w, h / 2);
         ctx.stroke();
-
-        if (!this._hasSignal || samples.length === 0) {
-            ctx.fillStyle = this._textColor;
-            ctx.globalAlpha = 0.4;
-            ctx.font = '11px system-ui, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText(samples.length === 0 ? 'waiting...' : 'no signal', w / 2, h / 2 - 8);
-            ctx.globalAlpha = 1;
-            return;
-        }
 
         const quarter = samples.length >> 2;
         let trigger = 0;
