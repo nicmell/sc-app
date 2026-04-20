@@ -339,25 +339,25 @@ The Rust-side stream library is a real ongoing cost. The MVP six (Value/Seq/Rand
 
 ---
 
-## 3. Buffer-stream phase-tracking (WIP — current attempt doesn't work)
+## 3. Buffer-stream phase-tracking
 
-Captured 2026-04-19. Records an incomplete investigation: the code landed in this commit is partially implemented but the end-to-end scope in `test-plugin` still fails at runtime. Preserved as a starting point, not as a shipped feature.
+Captured 2026-04-19, updated 2026-04-20. The plumbing end-to-end now works — `test-plugin` runs, `sc-test` activates, `/tr` is emitted — but the result is only *partially* clean: seams are noticeably mitigated, not eliminated.
 
-### 3.1 Why this work started
+### 3.1 Why this work exists
 
-The buffer-polling design has an inherent "seam zone": reader and writer advance on independent clocks (tokio wall-clock vs scsynth DSP), their phase offset is set at startup and is effectively random, and when that offset puts the writer's head *inside* a single `/b_getn` read range, scsynth returns a batch that is half from cycle N and half from cycle N−1. This shows up as a mid-frame kink in sc-scope and an audio click in anything that treats the batches as a recording.
+The buffer-polling design has an inherent "seam zone": reader (tokio wall-clock) and writer (scsynth DSP) advance on independent clocks with a phase offset fixed at startup; when that offset puts the writer's head *inside* a single `/b_getn` read range, the returned batch interleaves samples from two buffer cycles. This renders as a mid-frame kink in `sc-scope` and an audio click in anything that treats the batch as a recording.
 
-Widening `chunks` (the `/b_getn` count per buffer cycle) reduces the probability of this to `≈ 1 / chunks` but doesn't eliminate it. `chunks=8` with `frames=16384` (current scope-plugin default) makes it infrequent enough for visual scope use; for sample-accurate recording it's insufficient. The only principled fix is for the reader to *know where the writer is* and position its reads safely behind the write head.
+Widening `chunks` brings the probability down to `≈ 1 / chunks`, but doesn't eliminate it. For `sc-scope`-class visual use the `chunks=8, frames=16384` default is enough; sample-accurate recording needs the reader to *know* where the writer is and stay consistently behind it.
 
-### 3.2 Intended design
+### 3.2 Current implementation
 
-**Writer synthdef** (instead of plain `RecordBuf`):
+**Writer synthdef** (compiled once per sc-test component):
 
 ```
-In.ar(bus, 1)        → sig
-Phasor.ar(0, 1, 0, frames)   → phase
-BufWr.ar(sig, bufnum, phase, loop=1)
-A2K.kr(phase)        → phaseKr
+In.ar(bus, 1)                      → sig
+Phasor.ar(0, 1, 0, TEST_FRAMES)    → phase
+BufWr.ar(sig, bufnum, phase, 1)
+A2K.kr(phase)                      → phaseKr
 SendTrig.kr(Impulse.kr(200), bufnum, phaseKr)
 ```
 
@@ -368,48 +368,49 @@ SendTrig.kr(Impulse.kr(200), bufnum, phaseKr)
 ```
 On socket startup: send /notify 1 so scsynth broadcasts /tr to this socket.
 On each /tr with triggerID == bufnum:
-    if first one: anchor = (phase, Instant::now()); samples_issued = phase - safety.
-In tick loop:
+    first arrival: samples_issued = phase - safety   (no positive wrap — pos_mod handles
+                                                      negatives correctly)
+    every arrival: writer_anchor = (phase, Instant::now())
+In tick loop (16 ms):
     if anchor: target = anchor_phase + elapsed_since_anchor * sr - safety_samples
-    else:      target = elapsed_since_reader_start * sr         (wall-clock fallback)
+    else:      target = elapsed_since_reader_start * sr                (wall-clock fallback)
     issue /b_getn in chunk-sized increments until samples_issued >= target
 ```
 
-`safety_samples = 2 × chunk` keeps the reader consistently that many samples behind the writer's current head. Any `/b_getn` range `[R, R + chunk]` ends `chunk` samples before the write head → no straddle, ever.
+`safety_samples = min(2 × chunk, frames / 2)` keeps the reader that many samples behind the writer.
 
-**Plugin-author contract**: nothing changes for users of the plain `sc-buffer` + `RecordBuf` path (it stays in wall-clock mode and works as before). `sc-test` flips into phase-tracked mode automatically because its auto-generated synthdef emits `/tr`.
+**Plugin-author contract**: the plain `sc-buffer` + `RecordBuf` path stays in wall-clock mode. `sc-test` flips into phase-tracked mode automatically because its synthdef emits `/tr`.
 
-### 3.3 What was implemented (present in the repo, not working end-to-end)
+### 3.3 What was fixed (2026-04-20)
 
-1. **`src-tauri/src/ipc/buffer.rs::spawn_reader`** — on first `/tr` with matching bufnum, set a `(phase, Instant)` anchor and reposition `samples_issued = phase − safety_samples`; thereafter `target` is computed from the anchor. Falls back to wall-clock when no `/tr` ever arrives. `/notify 1` sent on socket connect. New `extract_tr_phase` helper alongside renamed `walk_b_setn`.
-2. **`src/sc-elements/sc-test.ts`** — recorder synthdef upgraded to the `In + Phasor + BufWr + A2K + Impulse + SendTrig` chain above. `ensureRecorderLoaded()` returns a `Promise<void>` that waits ~100 ms after `/d_recv` before resolving (works around Tauri's per-command concurrency, which was letting small `/s_new` packets overtake the large `/d_recv` blob). `_activate` has an `_activating` reentry guard.
-3. **`src/lib/osc/OscService.ts`** — bundle timetag overridden to the OSC "immediately" sentinel (`seconds=0, fractions=1`) instead of `Date.now() + msgLatency`. Addresses a separate issue where the produced timetag was observed to land hundreds of days in the future (suspected clock / osc-js conversion quirk), causing scsynth to schedule the `/g_new` bundles for the future and break any unbundled command that depended on them.
+Three classes of problem showed up during integration and have been resolved — the code below works end-to-end now:
 
-### 3.4 Why it's not working yet
+1. **OSC reply-driven dispatch**. `OscService` methods for `/g_new`, `/s_new`, `/d_recv`, `/b_alloc` etc. now register a one-shot listener on the matching reply (`/n_go`, `/done`, ...) **before** calling `send()`, and dispatch the `runtimeApi.*` store action only once the reply arrives. Store-`loaded` flags flip *after* scsynth confirms, so children gated on `parent.runtime.loaded` no longer race ahead.
+2. **`sc-synth` deps-ready gating**. `ScSynth` tracks a reactive `depsReady` state (parent loaded + target synthdef loaded + every buffer referenced by child `sc-control` `targets` loaded). `/s_new` is deferred in `_onStateChange` until that flag flips true — so `/s_new "foo"` never arrives before `/d_recv foo` has been acknowledged, and `bufnum` substitutions never point at unallocated buffers.
+3. **sc-test synthdef cache invalidation**. The module-level `recorderReady` Promise cached `/d_recv` completion across sessions, so after scsynth restarts the cached resolved Promise made `ensureRecorderLoaded` skip re-sending. Dropped the cross-activation cache — compiled bytes are still cached (deterministic) but `/d_recv` is re-sent on every `_activate`. `/d_recv` is idempotent on scsynth, so the duplicate traffic is harmless.
 
-Observed symptom at last test (2026-04-19): scsynth log still shows `FAILURE IN SERVER /s_new Group 1001 not found` and `FAILURE IN SERVER /b_getn index out of range`, even with the three fixes above.
+### 3.4 What still isn't perfect
 
-Live hypotheses, roughly ordered by likelihood:
+Even with the plumbing correct, the reader is not seam-free. Known reasons, in decreasing order of concern:
 
-1. **`/tr` routing to the reader socket is not what we assumed.** The SC source's `SendDoneToAllNotified` idiom made it sound like `/tr` broadcasts to every `/notify`-ed client, but some SC versions / client-ID configurations may route only to the creating client. If the recorder synth is owned by the frontend's main socket, the reader's separate socket might never see the `/tr`. Symptom would be "phase anchor never sets" — reader stays in wall-clock mode and the same seam issue comes back, but crucially without the "Group not found" errors we're actually seeing. So this may not be the full story.
-2. **The "Group not found" is pre-existing and independent of phase-tracking.** The trace shows `/g_new 1001` bundled vs `/s_new target 1001` un-bundled, and even with the immediate-timetag fix something is making scsynth evaluate the unbundled command before the bundled one. May be a bundle-vs-direct dispatch ordering rule inside scsynth that we haven't pinned down.
-3. **`/b_alloc` is async; `/s_new` and `/b_getn` race ahead.** Scsynth's `/b_alloc` schedules allocation on a non-RT thread. Without chaining via completion-message, subsequent commands can hit "buffer not yet allocated" mid-flight. The trace's `/b_getn index out of range` is consistent with this.
-4. **Bundle immediate-timetag override is not round-tripping.** We set `bundle.timetag.value.seconds = 0; fractions = 1` after construction — if osc-js captures a copy of the timetag at bundle construction (before our override), the encoded bytes still carry the original future timestamp. Worth verifying by dumping packed bytes.
+1. **Safety budget is marginal for small buffers.** `safety_samples` is clamped to `frames / 2`. For `frames=2048, chunks=2, chunk=1024` (a test configuration), that clamps safety to `1 × chunk`. The read `[writer_pos - chunk, writer_pos]` ends exactly at the writer's head — any positive drift overtakes. `frames ≥ 4 × chunk` is the practical floor; the default `frames=8192, chunks=4` respects it (`safety = 2 × chunk < frames/2`).
+2. **`/tr` routing to the reader socket is not fully verified.** SC's `SendDoneToAllNotified` is supposed to broadcast to every `/notify`-ed client, so our reader — which `/notify 1`s on startup — should receive `/tr`. But depending on SC version and client-ID configuration, routing may favour the synth-creator socket. No runtime log confirms anchor is actually being set in practice; adding an `eprintln!` on first anchor would close this loop.
+3. **Scsynth's `dumpOSC 1` is incoming-only** (`OscService` configures level 1 on connect). `/tr` is outgoing, so its absence from the console tells you nothing. Verifying `/tr` flow requires setting `dumpOSC 2` manually from sclang, or logging reader-side receipt.
 
-### 3.5 Alternative designs that would sidestep the routing concerns
+### 3.5 Possible optimisations
 
-1. **Reader-owned synth creation.** Have the Rust reader itself send `/d_recv` + `/b_alloc` + `/s_new` for the recorder — all from its own UDP socket. scsynth then sees that socket as the synth's owner, and `SendTrig`'s `/tr` routes unambiguously back to the reader regardless of `/notify` semantics. `sc-test` reduces to "ask the reader to scope bus N" via a Tauri command. Biggest refactor but cleanest; probably the right end-state.
-2. **Control-bus polling instead of `/tr`.** Publish the phase on a control bus (`Out.kr(phaseBus, A2K.kr(phase))`), have the reader `/c_get phaseBus` every ~100 ms. `/c_set` replies go to the `/c_get` sender's socket — no broadcasting, no client-ID confusion. Slightly more OSC traffic (10 Hz vs 200 Hz, but roundtrips); architecturally independent of `/notify`.
-3. **Completion-message chaining.** `/d_recv` and `/b_alloc` both accept completion-messages. Fire `/d_recv bytes [/b_alloc [/s_new]]` nested and let scsynth do the sequencing. Robust to async latency, client-side timing irrelevant. Requires extending `defRecvMessage` / `bufAllocMessage` to accept completion args (raw OSC bytes).
+Ordered by cost/impact:
 
-My recommendation if this is picked back up: **option 1 (reader-owned synth)**. It makes the `/tr` routing question moot and is the design the Rust reader would eventually need to grow into anyway (so the same code path can back a future headless `sc-app record` CLI command).
+1. **Log anchor events.** Trivial — add `eprintln!("reader[{bufnum}] anchored at phase {phase}")` on the first successful `extract_tr_phase`. Turns "is phase tracking engaged?" from guesswork into a single-line check. (~5 LOC.)
+2. **Auto-bump `dumpOSC` to level 2 during development.** Option flag, or replace the `1` default in `OscService`'s `open` handler. Trade-off: louder logs. (~1 LOC.)
+3. **Enforce `frames ≥ 4 × chunk` at component level.** `sc-buffer` / `sc-test` could validate or auto-round `frames` up. Prevents the "tiny-buffer safety collapse" footgun. (~10 LOC.)
+4. **Reader-owned synth creation** (NOTES §3.6 option 1 below). Biggest refactor, but makes `/tr` routing deterministic — scsynth sees the reader's socket as the synth's creator, so `SendTrig` delivery is unambiguous. Same code path eventually backs a headless `sc-app record` CLI.
+5. **Control-bus polling instead of `/tr`.** `Out.kr(phaseBus, A2K.kr(phase))`, reader `/c_get phaseBus` every ~100 ms. `/c_set` replies route to the `/c_get` sender's socket — no broadcast, no client-ID confusion. Lower anchor rate, higher bandwidth per anchor. Independent of `/notify` semantics.
+6. **Completion-message chaining on `/d_recv` and `/b_alloc`**. Fire `/d_recv bytes [/b_alloc [/s_new]]` nested; scsynth does the sequencing internally. Redundant now that §3.3.1 handles it client-side, but more robust to drop/reorder at the UDP layer.
 
-### 3.6 Files touched in the WIP commit
+### 3.6 Files involved
 
-- `src-tauri/src/ipc/buffer.rs` — phase-tracked reader path, `/notify 1` on connect, `extract_tr_phase`, renamed walker.
-- `src/sc-elements/sc-test.ts` — `SendTrig`-emitting synthdef, promise-based `ensureRecorderLoaded`, `_activating` guard.
-- `src/lib/osc/OscService.ts` — immediate-timetag override for bundles.
-
-### 3.7 Minimal reproduction
-
-Load `test-plugin` native (`yarn tauri dev`), enable `dumpOSC 2` on scsynth. The trace ends with `FAILURE IN SERVER /s_new SynthDef not found`, `Group 1001 not found`, `/b_getn index out of range`. Even if a pre-existing plugin (scope-plugin) works visually, test-plugin does not — suggesting the problem is specific to how sc-test's lifecycle interacts with scsynth, not the phase-tracking concept itself.
+- `src-tauri/src/ipc/buffer.rs` — phase-tracked reader, `/notify 1` on socket connect, `extract_tr_phase`, `walk_b_setn`. Re-anchors on every `/tr`; drops the wrap-to-positive on initial `samples_issued` positioning.
+- `src/sc-elements/sc-test.ts` — `SendTrig`-emitting synthdef; `sendRecorderSynthdef()` re-sends `/d_recv` every activation.
+- `src/lib/osc/OscService.ts` — `once(address, match)` helper; async create/free methods await their matching scsynth reply before dispatching.
+- `src/sc-elements/sc-synth.ts` — reactive `depsReady` state, `/s_new` fired from `_onStateChange` only once synthdef + bound buffers are loaded.

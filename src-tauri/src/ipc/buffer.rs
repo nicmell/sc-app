@@ -243,19 +243,26 @@ fn spawn_reader(
                                 }
                             }
 
-                            // /tr phase updates — on first arrival, lock the
-                            // reader into phase-tracked mode. Reposition
-                            // `samples_issued` to be `safety_samples` behind
-                            // the writer's head so the next tick's reads are
-                            // guaranteed not to straddle it.
-                            if writer_anchor.is_none() {
-                                if let Some(phase) = extract_tr_phase(&packet, bufnum) {
-                                    let phase_i = phase as i64;
-                                    writer_anchor = Some((phase_i, Instant::now()));
-                                    let mut start = phase_i - safety_samples;
-                                    while start < 0 { start += frames_i64; }
-                                    samples_issued = start;
+                            // /tr phase updates — re-anchor on every arrival.
+                            // Wall-clock extrapolation drifts against the DSP
+                            // clock (tens of ppm) so a single anchor slowly
+                            // eats into the safety margin; refreshing on each
+                            // `/tr` keeps the reader pinned at
+                            // `safety_samples` behind the writer's head.
+                            //
+                            // On the FIRST anchor, also snap `samples_issued`
+                            // to `phase - safety` (in the same linear counter
+                            // as `target`). Do NOT wrap to positive — the
+                            // `pos_mod` step below handles negative counters,
+                            // and wrapping here would put `samples_issued`
+                            // `frames` samples ahead of `target` and stall
+                            // the reader for `frames / sr` seconds.
+                            if let Some(phase) = extract_tr_phase(&packet, bufnum) {
+                                let phase_i = phase as i64;
+                                if writer_anchor.is_none() {
+                                    samples_issued = phase_i - safety_samples;
                                 }
+                                writer_anchor = Some((phase_i, Instant::now()));
                             }
                         }
                         Err(_) => break,
