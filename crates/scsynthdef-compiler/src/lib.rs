@@ -9,6 +9,7 @@ mod operators;
 mod rate;
 mod registry;
 mod synthdef;
+mod ugens;
 
 #[cfg(feature = "wasm")]
 mod wasm;

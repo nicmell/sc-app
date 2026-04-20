@@ -133,7 +133,7 @@ fn resolve_standard_inputs(
     let mut result: Vec<UGenInput> = Vec::new();
     let mut array_inputs: Vec<UGenInput> = Vec::new();
 
-    for (def_name, def_value) in &entry.defaults {
+    for &(def_name, def_value) in entry.defaults {
         if def_name == "numChannels" {
             continue;
         }
@@ -149,12 +149,12 @@ fn resolve_standard_inputs(
                 }
             }
             None => match def_value {
-                Some(v) => result.push(UGenInput::Constant(*v)),
+                Some(v) => result.push(UGenInput::Constant(v)),
                 None => {
                     return Err(CompileError::MissingInput {
                         name: spec.name.clone(),
                         class: spec.ugen_type.clone(),
-                        param: def_name.clone(),
+                        param: def_name.to_string(),
                     });
                 }
             },

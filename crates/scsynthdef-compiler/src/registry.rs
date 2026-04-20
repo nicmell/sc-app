@@ -1,112 +1,73 @@
-use std::collections::HashMap;
-use std::sync::OnceLock;
+use crate::{ugens, Rate};
 
-use serde::Deserialize;
-
-use crate::Rate;
-
-/// One UGen's registry entry — the data the compiler needs to resolve inputs
-/// and determine output count. This is the Rust analogue of `UGenSpec` in
-/// `src/lib/ugen/registry.ts`.
-#[derive(Debug, Clone)]
+/// One UGen's registry entry — every field preserved verbatim from the
+/// curated JSON specs in `src/assets/ugens/*.json`. All payloads are
+/// `'static` references, so entries are `const`-constructible and live
+/// directly in the binary.
+///
+/// Reugens by `scripts/generate_ugens_rust.mjs` into the private
+/// `ugens` sibling module (one `.rs` per JSON category).
+#[derive(Debug, Clone, Copy)]
 pub struct UGenRegistryEntry {
-    pub name: String,
-    pub rates: Vec<Rate>,
-    /// Declared parameter order (name, optional default). Matches SC's wire
+    pub name: &'static str,
+    pub rates: &'static [Rate],
+    /// Declared parameter order `(name, optional default)`. Matches SC's wire
     /// order with the usual caveat that `channelsArray` / `inputArray` are
     /// reordered to the end of the input list at compile time.
-    pub defaults: Vec<(String, Option<f32>)>,
-    /// Output count. Scsynth treats `None` as 1.
+    pub defaults: &'static [(&'static str, Option<f32>)],
+    /// Output count. `None` means the JSON didn't specify it, and scsynth
+    /// treats that as 1.
     pub num_outputs: Option<u32>,
-}
-
-#[derive(Debug, Deserialize)]
-struct JsonUGen {
-    name: String,
-    rates: Vec<String>,
-    defaults: Vec<(String, Option<f32>)>,
-    #[serde(default, rename = "numOutputs")]
-    num_outputs: Option<u32>,
-    // extends / summary / doc / argDocs / signalRange are ignored — inheritance
-    // is already materialized by `scripts/generate_ugen_db.mjs`.
-}
-
-macro_rules! bundled_ugens {
-    ($($name:literal),* $(,)?) => {
-        &[$(
-            ($name, include_str!(concat!("../assets/ugens/", $name, ".json"))),
-        )*]
-    };
-}
-
-const UGEN_JSON_FILES: &[(&str, &str)] = bundled_ugens!(
-    "basicops",
-    "beq_suite",
-    "buf_io",
-    "chaos",
-    "compander",
-    "delay",
-    "demand",
-    "envgen",
-    "ff_osc",
-    "fft",
-    "fft2",
-    "filter",
-    "grain",
-    "info",
-    "input",
-    "io",
-    "line",
-    "machine_listening",
-    "misc",
-    "noise",
-    "osc",
-    "pan",
-    "random",
-    "trig",
-);
-
-static REGISTRY: OnceLock<HashMap<String, UGenRegistryEntry>> = OnceLock::new();
-
-fn registry() -> &'static HashMap<String, UGenRegistryEntry> {
-    REGISTRY.get_or_init(build_registry)
-}
-
-fn build_registry() -> HashMap<String, UGenRegistryEntry> {
-    let mut map = HashMap::new();
-    for (file, json) in UGEN_JSON_FILES {
-        let entries: Vec<JsonUGen> = serde_json::from_str(json)
-            .unwrap_or_else(|e| panic!("invalid UGen JSON {}.json: {}", file, e));
-        for e in entries {
-            let rates: Vec<Rate> = e.rates.iter().filter_map(|r| Rate::parse(r)).collect();
-            map.insert(
-                e.name.clone(),
-                UGenRegistryEntry {
-                    name: e.name,
-                    rates,
-                    defaults: e.defaults,
-                    num_outputs: e.num_outputs,
-                },
-            );
-        }
-    }
-    map
+    /// Parent UGen name when this entry inherits args/rates via Overtone's
+    /// `:extends`. Retained for documentation; inheritance is already
+    /// materialized into `rates` / `defaults` / `num_outputs`.
+    pub extends: Option<&'static str>,
+    pub summary: Option<&'static str>,
+    pub doc: Option<&'static str>,
+    pub signal_range: Option<&'static str>,
+    /// Per-argument documentation, sorted by argument name.
+    pub arg_docs: &'static [(&'static str, &'static str)],
 }
 
 /// Look up a UGen by its class name (e.g. `"SinOsc"`). Returns `None` if the
 /// UGen isn't in the bundled registry.
 pub fn lookup_ugen(name: &str) -> Option<&'static UGenRegistryEntry> {
-    registry().get(name)
+    // Each per-category slice is independently sorted, so binary-search each
+    // until one yields a hit. 24 slices × ~O(log 32) ≈ 120 comparisons
+    // worst-case — still cheap and avoids concatenating into one slice.
+    for slice in ugens::ALL_SLICES {
+        if let Ok(i) = slice.binary_search_by(|e| e.name.cmp(name)) {
+            return Some(&slice[i]);
+        }
+    }
+    None
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn total_entries() -> usize {
+        ugens::ALL_SLICES.iter().map(|s| s.len()).sum()
+    }
+
     #[test]
     fn registry_populated() {
-        // Sanity check — the generation script emits ~367 UGens.
-        assert!(registry().len() > 300);
+        assert!(total_entries() > 300);
+    }
+
+    #[test]
+    fn every_slice_is_sorted_by_name() {
+        for slice in ugens::ALL_SLICES {
+            for pair in slice.windows(2) {
+                assert!(
+                    pair[0].name < pair[1].name,
+                    "slice not sorted: {} >= {}",
+                    pair[0].name,
+                    pair[1].name,
+                );
+            }
+        }
     }
 
     #[test]
@@ -128,7 +89,7 @@ mod tests {
     #[test]
     fn sinosc_has_freq_default_440() {
         let entry = lookup_ugen("SinOsc").expect("SinOsc in registry");
-        let freq = entry.defaults.iter().find(|(n, _)| n == "freq").unwrap();
+        let freq = entry.defaults.iter().find(|(n, _)| *n == "freq").unwrap();
         assert_eq!(freq.1, Some(440.0));
     }
 }
