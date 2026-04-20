@@ -5,7 +5,7 @@
 
 use wasm_bindgen::prelude::*;
 
-use crate::{compile_synthdef, UGenSpec};
+use crate::{compile_synthdef, ugens_by_category, UGenSpec};
 
 /// Compile a SynthDef from JSON inputs.
 ///
@@ -23,4 +23,25 @@ pub fn compile_synthdef_wasm(
         serde_json::from_str(specs_json).map_err(|e| JsError::new(&e.to_string()))?;
 
     compile_synthdef(name, &params, &specs).map_err(|e| JsError::new(&e.to_string()))
+}
+
+/// Return the full bundled UGen registry as JSON, grouped by source-file
+/// category. Shape:
+///
+/// ```json
+/// [
+///   ["basicops", [ { "name": "BinaryOpUGen", "rates": [...], ... }, ... ]],
+///   ["beq_suite", [ ... ]],
+///   ...
+/// ]
+/// ```
+#[wasm_bindgen(js_name = ugenRegistryJson)]
+pub fn ugen_registry_json() -> Result<String, JsError> {
+    // Flatten the `&'static` structure into an owned Vec so serde handles it
+    // without any lifetime gymnastics.
+    let grouped: Vec<(String, Vec<&_>)> = ugens_by_category()
+        .iter()
+        .map(|(cat, slice)| (cat.to_string(), slice.iter().collect()))
+        .collect();
+    serde_json::to_string(&grouped).map_err(|e| JsError::new(&e.to_string()))
 }

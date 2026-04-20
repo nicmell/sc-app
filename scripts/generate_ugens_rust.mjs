@@ -107,7 +107,7 @@ function emitCategoryFile(ugens) {
 function emitModFile(categories) {
   const sorted = [...categories].sort();
   const modDecls = sorted.map((c) => `pub(crate) mod ${c};`);
-  const slices = sorted.map((c) => `    ${c}::UGENS,`);
+  const slices = sorted.map((c) => `    ("${c}", ${c}::UGENS),`);
   return [
     GENERATED_HEADER,
     'use crate::registry::UGenRegistryEntry;',
@@ -116,8 +116,8 @@ function emitModFile(categories) {
     '',
     '/// Every registry entry, grouped by the JSON source file it came from.',
     '/// Each inner slice is sorted by UGen name so `lookup_ugen` can binary',
-    '/// search per slice.',
-    'pub(crate) const ALL_SLICES: &[&[UGenRegistryEntry]] = &[',
+    '/// search per slice. The first tuple element is the category name.',
+    'pub(crate) const ALL_SLICES: &[(&str, &[UGenRegistryEntry])] = &[',
     ...slices,
     '];',
     '',

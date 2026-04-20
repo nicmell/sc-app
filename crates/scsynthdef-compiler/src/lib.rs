@@ -18,7 +18,7 @@ pub use compile::{compile_synthdef, dump_specs_json, parse_specs_json, UGenSpec}
 pub use error::CompileError;
 pub use operators::{binary_op_index, unary_op_index};
 pub use rate::Rate;
-pub use registry::{lookup_ugen, UGenRegistryEntry};
+pub use registry::{lookup_ugen, ugens_by_category, UGenRegistryEntry};
 pub use synthdef::{
     parse_scgf, InputSpec, OutputSpec, ParamName, Parameters, SynthDef, SynthDefJson, UGenInput,
     UGenJson,

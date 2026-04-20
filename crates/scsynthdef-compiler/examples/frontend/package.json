@@ -1,0 +1,16 @@
+{
+  "name": "scsynthdef-compiler-ugens-browser",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Browser-side documentation viewer for the UGens bundled with scsynthdef-compiler. Loads the wasm-pack build and renders every UGen's metadata.",
+  "scripts": {
+    "build:wasm": "cd ../.. && wasm-pack build --target web --features wasm && rm -rf examples/frontend/pkg && cp -R pkg examples/frontend/pkg && rm -rf pkg",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^6"
+  }
+}
