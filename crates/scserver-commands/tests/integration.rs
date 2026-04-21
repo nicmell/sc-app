@@ -71,6 +71,20 @@ fn b_alloc_builds() {
     assert_eq!(msg.args.len(), 3);
 }
 
+/// Parity check: the OSC wire format is deterministic per the spec, so
+/// hand-computed reference bytes must match our rosc-backed encoder.
+#[test]
+fn status_matches_osc_wire_format() {
+    // "/status" address (8 bytes, null-padded to 4-byte align) + ","
+    // type tag (4 bytes) + no args.
+    let expected: &[u8] = &[
+        0x2f, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x00, // "/status\0"
+        0x2c, 0x00, 0x00, 0x00, // ",\0\0\0"
+    ];
+    let actual = Status::new().encode().unwrap();
+    assert_eq!(actual, expected);
+}
+
 #[test]
 fn status_reply_round_trip_via_wire() {
     // Simulate the server-side status.reply wire bytes.

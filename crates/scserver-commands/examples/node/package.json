@@ -1,0 +1,17 @@
+{
+  "name": "scserver-commands-node",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Smoke test for the jco-transpiled scserver-commands component.",
+  "scripts": {
+    "build:wasm": "cd ../.. && cargo component build --release --features component --target wasm32-wasip1 && jco transpile ../../target/wasm32-wasip1/release/scserver_commands.wasm -o examples/node/pkg",
+    "roundtrip": "tsx roundtrip.ts"
+  },
+  "devDependencies": {
+    "@bytecodealliance/jco": "^1",
+    "@types/node": "^22",
+    "tsx": "^4",
+    "typescript": "^5"
+  }
+}

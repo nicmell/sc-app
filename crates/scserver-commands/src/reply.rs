@@ -16,6 +16,7 @@
 //! ```
 
 use rosc::OscType;
+use serde::Serialize;
 
 use crate::{CommandError, ServerMessage};
 
@@ -58,7 +59,7 @@ pub enum ServerReply {
 /// Shared arg layout for `/n_go`, `/n_end`, `/n_on`, `/n_off`, `/n_move`,
 /// `/n_info`. The last two fields are only present when the node is a
 /// group.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct NodeInfo {
     pub node_id: i32,
     pub parent_id: i32,
@@ -70,7 +71,7 @@ pub struct NodeInfo {
     pub tail_node: Option<i32>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct StatusReply {
     pub unused: i32,
     pub num_ugens: i32,
