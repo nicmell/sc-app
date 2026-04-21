@@ -144,9 +144,11 @@ function ugenFunction(entry) {
   const defaults = entry.defaults || [];
   const argDocs = entry.argDocs || {};
 
-  // Build params: def (borrow), rate, then one per non-numChannels arg.
-  // numChannels is u32 (separate from ugen-input).
-  const params = ['def: borrow<synth-def>', 'rate: rate'];
+  // Build params: def (borrow), ugen-rate (the calc rate — renamed from
+  // `rate` because some UGens like GrainBuf have their own `rate` arg),
+  // then one per non-numChannels arg. numChannels is u32 (separate from
+  // ugen-input).
+  const params = ['def: borrow<synth-def>', 'ugen-rate: rate'];
   const argNotes = [];
   for (const [name, _def] of defaults) {
     const id = witIdent(name);

@@ -77,9 +77,9 @@ interface ugens {
     /// 
     /// Args:
     /// - `%in`: input signal
-    a2-k: func(def: borrow<synth-def>, rate: rate, %in: ugen-input) -> ugen-input;
+    a2-k: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input) -> ugen-input;
 
-    apf: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, freq: ugen-input, radius: ugen-input) -> ugen-input;
+    apf: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, freq: ugen-input, radius: ugen-input) -> ugen-input;
 
     /// all pass delay line, cubic interpolation
     /// 
@@ -91,7 +91,7 @@ interface ugens {
     /// - `decay-time`: time for the echoes to decay by 60 decibels. If this
     /// time is negative then the feedback coefficient will be negative, thus
     /// emphasizing only odd harmonics at an octave lower.
-    allpass-c: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, max-delay-time: ugen-input, delay-time: ugen-input, decay-time: ugen-input) -> ugen-input;
+    allpass-c: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, max-delay-time: ugen-input, delay-time: ugen-input, decay-time: ugen-input) -> ugen-input;
 
     /// all pass delay line, linear interpolation
     /// 
@@ -103,7 +103,7 @@ interface ugens {
     /// - `decay-time`: time for the echoes to decay by 60 decibels. If this
     /// time is negative then the feedback coefficient will be negative, thus
     /// emphasizing only odd harmonics at an octave lower.
-    allpass-l: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, max-delay-time: ugen-input, delay-time: ugen-input, decay-time: ugen-input) -> ugen-input;
+    allpass-l: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, max-delay-time: ugen-input, delay-time: ugen-input, decay-time: ugen-input) -> ugen-input;
 
     /// all pass delay line, no interpolation. See also AllpassC which uses
     /// cubic interpolation, and AllpassL which uses linear interpolation. Cubic
@@ -118,7 +118,7 @@ interface ugens {
     /// - `decay-time`: time for the echoes to decay by 60 decibels. If this
     /// time is negative then the feedback coefficient will be negative, thus
     /// emphasizing only odd harmonics at an octave lower.
-    allpass-n: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, max-delay-time: ugen-input, delay-time: ugen-input, decay-time: ugen-input) -> ugen-input;
+    allpass-n: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, max-delay-time: ugen-input, delay-time: ugen-input, decay-time: ugen-input) -> ugen-input;
 
     /// Basic psychoacoustic amplitude compensation." , :rates #{:ir :ar :kr}
     /// :check (when-ar (first-input-ar "freq must be audio rate")) :doc
@@ -139,7 +139,7 @@ interface ugens {
     /// - `root`: Root freq relative to which the curve is calculated (usually
     /// lowest freq)
     /// - `exp`: Exponent: how steep the curve decreases for increasing freq
-    amp-comp: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, root: ugen-input, exp: ugen-input) -> ugen-input;
+    amp-comp: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, root: ugen-input, exp: ugen-input) -> ugen-input;
 
     /// Basic psychoacoustic amplitude compensation (ANSI A-weighting curve).
     /// 
@@ -157,7 +157,7 @@ interface ugens {
     /// - `min-amp`: Amplitude at the minimum point of the curve (around 2512
     /// Hz)
     /// - `root-amp`: Amplitude at the root frequency.
-    amp-comp-a: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, root: ugen-input, min-amp: ugen-input, root-amp: ugen-input) -> ugen-input;
+    amp-comp-a: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, root: ugen-input, min-amp: ugen-input, root-amp: ugen-input) -> ugen-input;
 
     /// Amplitude follower
     /// 
@@ -167,7 +167,7 @@ interface ugens {
     /// - `%in`: input signal
     /// - `attack-time`: 60dB convergence time for following attacks
     /// - `release-time`: 60dB convergence time for following decays
-    amplitude: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, attack-time: ugen-input, release-time: ugen-input) -> ugen-input;
+    amplitude: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, attack-time: ugen-input, release-time: ugen-input) -> ugen-input;
 
     /// All pass filter based on the Second Order Section (SOS) biquad UGen
     /// 
@@ -175,7 +175,7 @@ interface ugens {
     /// - `%in`: input signal to be processed.
     /// - `freq`: center frequency.
     /// - `rq`: the reciprocal of Q. bandwidth / cutoffFreq.
-    b-all-pass: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, freq: ugen-input, rq: ugen-input) -> ugen-input;
+    b-all-pass: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, freq: ugen-input, rq: ugen-input) -> ugen-input;
 
     /// Band pass filter based on the Second Order Section (SOS) biquad UGen
     /// 
@@ -183,7 +183,7 @@ interface ugens {
     /// - `%in`: input signal to be processed
     /// - `freq`: center frequency
     /// - `bw`: the bandwidth in octaves between -3 dB frequencies
-    b-band-pass: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, freq: ugen-input, bw: ugen-input) -> ugen-input;
+    b-band-pass: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, freq: ugen-input, bw: ugen-input) -> ugen-input;
 
     /// Band reject filter based on the Second Order Section (SOS) biquad UGen
     /// 
@@ -191,7 +191,7 @@ interface ugens {
     /// - `%in`: input signal to be processed
     /// - `freq`: center frequency
     /// - `bw`: the bandwidth in octaves between -3 dB frequencies
-    b-band-stop: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, freq: ugen-input, bw: ugen-input) -> ugen-input;
+    b-band-stop: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, freq: ugen-input, bw: ugen-input) -> ugen-input;
 
     /// 12db/oct rolloff - 2nd order resonant Hi Pass Filter based on the Second
     /// Order Section (SOS) biquad UGen.
@@ -200,7 +200,7 @@ interface ugens {
     /// - `%in`: input signal to be processed
     /// - `freq`: cutoff frequency
     /// - `rq`: the reciprocal of Q. bandwidth / cutoffFreq
-    b-hi-pass: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, freq: ugen-input, rq: ugen-input) -> ugen-input;
+    b-hi-pass: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, freq: ugen-input, rq: ugen-input) -> ugen-input;
 
     /// Hi shelfbased on the Second Order Section (SOS) biquad UGen
     /// 
@@ -213,7 +213,7 @@ interface ugens {
     /// remains proportional to S for all other values for a fixed
     /// freq/SampleRate.ir and db.
     /// - `db`: gain. boost/cut the center frequency in dBs
-    b-hi-shelf: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, freq: ugen-input, rs: ugen-input, db: ugen-input) -> ugen-input;
+    b-hi-shelf: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, freq: ugen-input, rs: ugen-input, db: ugen-input) -> ugen-input;
 
     /// 12db/oct rolloff - 2nd order resonant Low Pass Filter based on the
     /// Second Order Section (SOS) biquad UGen
@@ -222,7 +222,7 @@ interface ugens {
     /// - `%in`: input signal to be processed
     /// - `freq`: cutoff frequency
     /// - `rq`: the reciprocal of Q. bandwidth / cutoffFreq
-    b-low-pass: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, freq: ugen-input, rq: ugen-input) -> ugen-input;
+    b-low-pass: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, freq: ugen-input, rq: ugen-input) -> ugen-input;
 
     /// Low shelf based on the Second Order Section (SOS) biquad UGen
     /// 
@@ -235,7 +235,7 @@ interface ugens {
     /// remains proportional to S for all other values for a fixed
     /// freq/SampleRate.ir and db.
     /// - `db`: gain. boost/cut the center frequency in dBs
-    b-low-shelf: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, freq: ugen-input, rs: ugen-input, db: ugen-input) -> ugen-input;
+    b-low-shelf: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, freq: ugen-input, rs: ugen-input, db: ugen-input) -> ugen-input;
 
     /// second order Butterworth bandpass filter
     /// 
@@ -250,11 +250,11 @@ interface ugens {
     /// - `%in`: input signal to be processed
     /// - `freq`: centre frequency in Hertz
     /// - `rq`: the reciprocal of Q. bandwidth / cutoffFreq
-    bpf: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, freq: ugen-input, rq: ugen-input) -> ugen-input;
+    bpf: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, freq: ugen-input, rq: ugen-input) -> ugen-input;
 
     /// two zero fixed midpass which cuts out 0 Hz and the Nyquist frequency.
     /// Implements the formula: out(i) = 0.5 * (in(i) - in(i-2))
-    bpz2: func(def: borrow<synth-def>, rate: rate, %in: ugen-input) -> ugen-input;
+    bpz2: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input) -> ugen-input;
 
     /// Parametric equalizer based on the Second Order Section (SOS) biquad UGen
     /// 
@@ -263,7 +263,7 @@ interface ugens {
     /// - `freq`: center frequency
     /// - `rq`: the reciprocal of Q. bandwidth / cutoffFreq
     /// - `db`: boost/cut the center frequency (in dBs)
-    b-peak-eq: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, freq: ugen-input, rq: ugen-input, db: ugen-input) -> ugen-input;
+    b-peak-eq: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, freq: ugen-input, rq: ugen-input, db: ugen-input) -> ugen-input;
 
     /// second order Butterworth band reject filter
     /// 
@@ -278,12 +278,12 @@ interface ugens {
     /// - `%in`: input signal to be processed
     /// - `freq`: centre frequency in Hertz
     /// - `rq`: the reciprocal of Q. bandwidth / cutoffFreq
-    brf: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, freq: ugen-input, rq: ugen-input) -> ugen-input;
+    brf: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, freq: ugen-input, rq: ugen-input) -> ugen-input;
 
     /// two zero fixed midcut which cuts out frequencies around 1/2 of the
     /// Nyquist frequency. Implements the formula: out(i) = 0.5 * (in(i) +
     /// in(i-2))
-    brz2: func(def: borrow<synth-def>, rate: rate, %in: ugen-input) -> ugen-input;
+    brz2: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input) -> ugen-input;
 
     /// Equal power panning balances two channels; by panning, you are favouring
     /// one or other channel in the mix, and the other loses power. The middle
@@ -296,7 +296,7 @@ interface ugens {
     /// - `right`: channel 2 of input stereo signal
     /// - `pos`: pan position, -1 is left, +1 is right
     /// - `level`: a control rate level input.
-    balance2: func(def: borrow<synth-def>, rate: rate, left: ugen-input, right: ugen-input, pos: ugen-input, level: ugen-input) -> ugen-input;
+    balance2: func(def: borrow<synth-def>, ugen-rate: rate, left: ugen-input, right: ugen-input, pos: ugen-input, level: ugen-input) -> ugen-input;
 
     /// models the path of a bouncing object that is reflected by a vibrating
     /// surface
@@ -306,7 +306,7 @@ interface ugens {
     /// - `g`: gravity
     /// - `damp`: damping on impact
     /// - `friction`: proximity from which on attraction to surface starts
-    ball: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, g: ugen-input, damp: ugen-input, friction: ugen-input) -> ugen-input;
+    ball: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, g: ugen-input, damp: ugen-input, friction: ugen-input) -> ugen-input;
 
     /// Autocorrelation based beat tracker" , :rates #{:kr} :num-outs 4 :doc
     /// "The underlying model assumes 4/4, but it should work on any isochronous
@@ -349,7 +349,7 @@ interface ugens {
     /// its current periodicity and continue from the current phase. Whilst it
     /// updates the model's phase and period, this is not reflected in the
     /// output until lock goes back below 0.5.
-    beat-track: func(def: borrow<synth-def>, rate: rate, chain: ugen-input, lock: ugen-input) -> ugen-input;
+    beat-track: func(def: borrow<synth-def>, ugen-rate: rate, chain: ugen-input, lock: ugen-input) -> ugen-input;
 
     /// Template matching beat tracker. This beat tracker is based on
     /// exhaustively testing particular template patterns against feature
@@ -393,7 +393,7 @@ interface ugens {
     /// window) or otherwise a bufnum from 0 upwards for passing an array of 120
     /// individual tempo weights; tempi go from 60 to 179 bpm in steps of one
     /// bpm, so you must have a buffer of 120 values.
-    beat-track2: func(def: borrow<synth-def>, rate: rate, busindex: ugen-input, numfeatures: ugen-input, windowsize: ugen-input, phaseaccuracy: ugen-input, lock: ugen-input, weightingscheme: ugen-input) -> ugen-input;
+    beat-track2: func(def: borrow<synth-def>, ugen-rate: rate, busindex: ugen-input, numfeatures: ugen-input, windowsize: ugen-input, phaseaccuracy: ugen-input, lock: ugen-input, weightingscheme: ugen-input) -> ugen-input;
 
     /// Encode a two channel signal to two dimensional ambisonic B-format. This
     /// puts two channels at opposite poles of a 2D ambisonic field. This is one
@@ -406,7 +406,7 @@ interface ugens {
     /// - `azimuth`: position around the circle from -1 to +1. -1 is behind,
     /// -0.5 is left, 0 is forward, +0.5 is right, +1 is behind.
     /// - `gain`: amplitude control
-    bi-pan-b2: func(def: borrow<synth-def>, rate: rate, in-a: ugen-input, in-b: ugen-input, azimuth: ugen-input, gain: ugen-input) -> ugen-input;
+    bi-pan-b2: func(def: borrow<synth-def>, ugen-rate: rate, in-a: ugen-input, in-b: ugen-input, azimuth: ugen-input, gain: ugen-input) -> ugen-input;
 
     /// Band Limited Impulse generator. All harmonics have equal amplitude. This
     /// is the equivalent of buzz in MusicN languages. WARNING: This waveform in
@@ -423,7 +423,7 @@ interface ugens {
     /// - `freq`: Frequency in Hertz (control rate)
     /// - `numharm`: Number of harmonics. This may be lowered internally if it
     /// would cause aliasing.
-    blip: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, numharm: ugen-input) -> ugen-input;
+    blip: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, numharm: ugen-input) -> ugen-input;
 
     /// Noise whose spectrum falls off in power by 6 dB per octave.
     /// 
@@ -431,7 +431,7 @@ interface ugens {
     /// Also useful for simulating wind or sea effects, for producing breath
     /// effects in wind instrument timbres or for producing the typical trance
     /// leads.
-    brown-noise: func(def: borrow<synth-def>, rate: rate) -> ugen-input;
+    brown-noise: func(def: borrow<synth-def>, ugen-rate: rate) -> ugen-input;
 
     /// buffer based all pass delay line with cubic interpolation
     /// 
@@ -442,7 +442,7 @@ interface ugens {
     /// - `decay-time`: time for the echoes to decay by 60 decibels. If this
     /// time is negative then the feedback coefficient will be negative, thus
     /// emphasizing only odd harmonics at an octave lower.
-    buf-allpass-c: func(def: borrow<synth-def>, rate: rate, buf: ugen-input, %in: ugen-input, delay-time: ugen-input, decay-time: ugen-input) -> ugen-input;
+    buf-allpass-c: func(def: borrow<synth-def>, ugen-rate: rate, buf: ugen-input, %in: ugen-input, delay-time: ugen-input, decay-time: ugen-input) -> ugen-input;
 
     /// buffer based all pass delay line with linear interpolation
     /// 
@@ -453,7 +453,7 @@ interface ugens {
     /// - `decay-time`: time for the echoes to decay by 60 decibels. If this
     /// time is negative then the feedback coefficient will be negative, thus
     /// emphasizing only odd harmonics at an octave lower.
-    buf-allpass-l: func(def: borrow<synth-def>, rate: rate, buf: ugen-input, %in: ugen-input, delay-time: ugen-input, decay-time: ugen-input) -> ugen-input;
+    buf-allpass-l: func(def: borrow<synth-def>, ugen-rate: rate, buf: ugen-input, %in: ugen-input, delay-time: ugen-input, decay-time: ugen-input) -> ugen-input;
 
     /// buffer based all pass delay line with no interpolation. See also
     /// BufAllpassC which uses cubic interpolation, and BufAllpassL which uses
@@ -467,13 +467,13 @@ interface ugens {
     /// - `decay-time`: time for the echoes to decay by 60 decibels. If this
     /// time is negative then the feedback coefficient will be negative, thus
     /// emphasizing only odd harmonics at an octave lower.
-    buf-allpass-n: func(def: borrow<synth-def>, rate: rate, buf: ugen-input, %in: ugen-input, delay-time: ugen-input, decay-time: ugen-input) -> ugen-input;
+    buf-allpass-n: func(def: borrow<synth-def>, ugen-rate: rate, buf: ugen-input, %in: ugen-input, delay-time: ugen-input, decay-time: ugen-input) -> ugen-input;
 
     /// current number of channels of soundfile in buffer
     /// 
     /// Args:
     /// - `buf`: a buffer
-    buf-channels: func(def: borrow<synth-def>, rate: rate, buf: ugen-input) -> ugen-input;
+    buf-channels: func(def: borrow<synth-def>, ugen-rate: rate, buf: ugen-input) -> ugen-input;
 
     /// buffer based comb delay line with cubic interpolation
     /// 
@@ -484,7 +484,7 @@ interface ugens {
     /// - `decay-time`: time for the echoes to decay by 60 decibels. If this
     /// time is negative then the feedback coefficient will be negative, thus
     /// emphasizing only odd harmonics at an octave lower.
-    buf-comb-c: func(def: borrow<synth-def>, rate: rate, buf: ugen-input, %in: ugen-input, delay-time: ugen-input, decay-time: ugen-input) -> ugen-input;
+    buf-comb-c: func(def: borrow<synth-def>, ugen-rate: rate, buf: ugen-input, %in: ugen-input, delay-time: ugen-input, decay-time: ugen-input) -> ugen-input;
 
     /// buffer based comb delay line with linear interpolation
     /// 
@@ -495,7 +495,7 @@ interface ugens {
     /// - `decay-time`: time for the echoes to decay by 60 decibels. If this
     /// time is negative then the feedback coefficient will be negative, thus
     /// emphasizing only odd harmonics at an octave lower.
-    buf-comb-l: func(def: borrow<synth-def>, rate: rate, buf: ugen-input, %in: ugen-input, delay-time: ugen-input, decay-time: ugen-input) -> ugen-input;
+    buf-comb-l: func(def: borrow<synth-def>, ugen-rate: rate, buf: ugen-input, %in: ugen-input, delay-time: ugen-input, decay-time: ugen-input) -> ugen-input;
 
     /// buffer based comb delay line with no interpolation. See also [BufCombL]
     /// which uses linear interpolation, and BufCombC which uses cubic
@@ -509,7 +509,7 @@ interface ugens {
     /// - `decay-time`: time for the echoes to decay by 60 decibels. If this
     /// time is negative then the feedback coefficient will be negative, thus
     /// emphasizing only odd harmonics at an octave lower.
-    buf-comb-n: func(def: borrow<synth-def>, rate: rate, buf: ugen-input, %in: ugen-input, delay-time: ugen-input, decay-time: ugen-input) -> ugen-input;
+    buf-comb-n: func(def: borrow<synth-def>, ugen-rate: rate, buf: ugen-input, %in: ugen-input, delay-time: ugen-input, decay-time: ugen-input) -> ugen-input;
 
     /// buffer based simple delay line with cubic interpolation
     /// 
@@ -517,7 +517,7 @@ interface ugens {
     /// - `buf`: buffer number
     /// - `%in`: the input signal
     /// - `delay-time`: delay time in seconds
-    buf-delay-c: func(def: borrow<synth-def>, rate: rate, buf: ugen-input, %in: ugen-input, delay-time: ugen-input) -> ugen-input;
+    buf-delay-c: func(def: borrow<synth-def>, ugen-rate: rate, buf: ugen-input, %in: ugen-input, delay-time: ugen-input) -> ugen-input;
 
     /// buffer based simple delay line with linear interpolation
     /// 
@@ -525,7 +525,7 @@ interface ugens {
     /// - `buf`: buffer number
     /// - `%in`: the input signal
     /// - `delay-time`: delay time in seconds
-    buf-delay-l: func(def: borrow<synth-def>, rate: rate, buf: ugen-input, %in: ugen-input, delay-time: ugen-input) -> ugen-input;
+    buf-delay-l: func(def: borrow<synth-def>, ugen-rate: rate, buf: ugen-input, %in: ugen-input, delay-time: ugen-input) -> ugen-input;
 
     /// buffer based simple delay line with no interpolation. See also BufDelayL
     /// which uses linear interpolation, and BufDelayC which uses cubic
@@ -536,26 +536,26 @@ interface ugens {
     /// - `buf`: buffer number
     /// - `%in`: the input signal
     /// - `delay-time`: delay time in seconds
-    buf-delay-n: func(def: borrow<synth-def>, rate: rate, buf: ugen-input, %in: ugen-input, delay-time: ugen-input) -> ugen-input;
+    buf-delay-n: func(def: borrow<synth-def>, ugen-rate: rate, buf: ugen-input, %in: ugen-input, delay-time: ugen-input) -> ugen-input;
 
     /// returns the current duration of a buffer in seconds.
     /// 
     /// Args:
     /// - `buf`: a buffer
-    buf-dur: func(def: borrow<synth-def>, rate: rate, buf: ugen-input) -> ugen-input;
+    buf-dur: func(def: borrow<synth-def>, ugen-rate: rate, buf: ugen-input) -> ugen-input;
 
     /// returns the current number of allocated frames i.e. the size of the
     /// buffer. This is the equivalent of Clojure's count on a seq.
     /// 
     /// Args:
     /// - `buf`: a buffer
-    buf-frames: func(def: borrow<synth-def>, rate: rate, buf: ugen-input) -> ugen-input;
+    buf-frames: func(def: borrow<synth-def>, ugen-rate: rate, buf: ugen-input) -> ugen-input;
 
     /// returns a ratio by which the playback of a buffer is to be scaled
     /// 
     /// Args:
     /// - `buf`: a buffer
-    buf-rate-scale: func(def: borrow<synth-def>, rate: rate, buf: ugen-input) -> ugen-input;
+    buf-rate-scale: func(def: borrow<synth-def>, ugen-rate: rate, buf: ugen-input) -> ugen-input;
 
     /// Read the contents of a buffer at a specified index
     /// 
@@ -574,19 +574,19 @@ interface ugens {
     /// - `loop`: 1 means true, 0 means false. This is modulatable.
     /// - `interpolation`: 1 means no interpolation, 2 is linear, 4 is cubic
     /// interpolation
-    buf-rd: func(def: borrow<synth-def>, rate: rate, num-channels: u32, bufnum: ugen-input, phase: ugen-input, loop: ugen-input, interpolation: ugen-input) -> ugen-input;
+    buf-rd: func(def: borrow<synth-def>, ugen-rate: rate, num-channels: u32, bufnum: ugen-input, phase: ugen-input, loop: ugen-input, interpolation: ugen-input) -> ugen-input;
 
     /// returns the buffers current sample rate
     /// 
     /// Args:
     /// - `buf`: a buffer
-    buf-sample-rate: func(def: borrow<synth-def>, rate: rate, buf: ugen-input) -> ugen-input;
+    buf-sample-rate: func(def: borrow<synth-def>, ugen-rate: rate, buf: ugen-input) -> ugen-input;
 
     /// current number of samples allocated in the buffer
     /// 
     /// Args:
     /// - `buf`: a buffer
-    buf-samples: func(def: borrow<synth-def>, rate: rate, buf: ugen-input) -> ugen-input;
+    buf-samples: func(def: borrow<synth-def>, ugen-rate: rate, buf: ugen-input) -> ugen-input;
 
     /// writes to a buffer at a given index. Note, buf-wr (in difference to
     /// buf-rd) does not do multichannel expansion, because input is an array.
@@ -596,7 +596,7 @@ interface ugens {
     /// - `bufnum`: the index of the buffer to use
     /// - `phase`: modulatable index into the buffer (has to be audio rate).
     /// - `loop`: 1 means true, 0 means false. This is modulatable
-    buf-wr: func(def: borrow<synth-def>, rate: rate, input-array: list<ugen-input>, bufnum: ugen-input, phase: ugen-input, loop: ugen-input) -> ugen-input;
+    buf-wr: func(def: borrow<synth-def>, ugen-rate: rate, input-array: list<ugen-input>, bufnum: ugen-input, phase: ugen-input, loop: ugen-input) -> ugen-input;
 
     /// Chorusing wavetable lookup oscillator. Produces sum of two signals at
     /// (freq +/- (beats / 2)). Due to summing, the peak amplitude is twice that
@@ -606,7 +606,7 @@ interface ugens {
     /// - `bufnum`: The number of a buffer filled in wavetable format
     /// - `freq`: Frequency in Hertz
     /// - `beats`: Beat frequency in Hertz
-    c-osc: func(def: borrow<synth-def>, rate: rate, bufnum: ugen-input, freq: ugen-input, beats: ugen-input) -> ugen-input;
+    c-osc: func(def: borrow<synth-def>, ugen-rate: rate, bufnum: ugen-input, freq: ugen-input, beats: ugen-input) -> ugen-input;
 
     /// test for infinity, not-a-number, and denormals. If one of these is
     /// found, it posts a warning. Its output is as follows: 0 = a normal float,
@@ -618,9 +618,9 @@ interface ugens {
     /// - `post`: One of three post modes: 0 = no posting; 1 = post a line for
     /// every bad value; 2 = post a line only when the floating-point
     /// classification changes (e.g., normal -> NaN and vice versa)
-    check-bad-values: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, id: ugen-input, post: ugen-input) -> ugen-input;
+    check-bad-values: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, id: ugen-input, post: ugen-input) -> ugen-input;
 
-    clear-buf: func(def: borrow<synth-def>, rate: rate, buf: ugen-input) -> ugen-input;
+    clear-buf: func(def: borrow<synth-def>, ugen-rate: rate, buf: ugen-input) -> ugen-input;
 
     /// Clip a signal outside given thresholds.
     /// 
@@ -631,7 +631,7 @@ interface ugens {
     /// - `%in`: The signal to be clipped
     /// - `lo`: Low threshold of clipping. Must be less then hi
     /// - `hi`: High threshold of clipping. Must be greater then lo
-    clip: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, lo: ugen-input, hi: ugen-input) -> ugen-input;
+    clip: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, lo: ugen-input, hi: ugen-input) -> ugen-input;
 
     /// Noise whose values are either -1 or 1.
     /// 
@@ -640,7 +640,7 @@ interface ugens {
     /// Also useful for simulating wind or sea effects, for producing breath
     /// effects in wind instrument timbres or for producing the typical trance
     /// leads.
-    clip-noise: func(def: borrow<synth-def>, rate: rate) -> ugen-input;
+    clip-noise: func(def: borrow<synth-def>, ugen-rate: rate) -> ugen-input;
 
     /// When it receives a trigger, it tosses a coin, and either passes the
     /// trigger or doesn't.
@@ -649,7 +649,7 @@ interface ugens {
     /// - `prob`: Value between 0 and 1 determines probability of either
     /// possibilities
     /// - `trig`: Trigger signal
-    coin-gate: func(def: borrow<synth-def>, rate: rate, prob: ugen-input, trig: ugen-input) -> ugen-input;
+    coin-gate: func(def: borrow<synth-def>, ugen-rate: rate, prob: ugen-input, trig: ugen-input) -> ugen-input;
 
     /// comb delay line, cubic interpolation
     /// 
@@ -661,7 +661,7 @@ interface ugens {
     /// - `decay-time`: time for the echoes to decay by 60 decibels. If this
     /// time is negative then the feedback coefficient will be negative, thus
     /// emphasizing only odd harmonics at an octave lower.
-    comb-c: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, max-delay-time: ugen-input, delay-time: ugen-input, decay-time: ugen-input) -> ugen-input;
+    comb-c: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, max-delay-time: ugen-input, delay-time: ugen-input, decay-time: ugen-input) -> ugen-input;
 
     /// comb delay line, linear interpolation
     /// 
@@ -673,7 +673,7 @@ interface ugens {
     /// - `decay-time`: time for the echoes to decay by 60 decibels. If this
     /// time is negative then the feedback coefficient will be negative, thus
     /// emphasizing only odd harmonics at an octave lower.
-    comb-l: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, max-delay-time: ugen-input, delay-time: ugen-input, decay-time: ugen-input) -> ugen-input;
+    comb-l: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, max-delay-time: ugen-input, delay-time: ugen-input, decay-time: ugen-input) -> ugen-input;
 
     /// comb delay line, no interpolation. See also CombL which uses linear
     /// interpolation, and CombC which uses cubic interpolation. Cubic
@@ -688,7 +688,7 @@ interface ugens {
     /// - `decay-time`: time for the echoes to decay by 60 decibels. If this
     /// time is negative then the feedback coefficient will be negative, thus
     /// emphasizing only odd harmonics at an octave lower.
-    comb-n: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, max-delay-time: ugen-input, delay-time: ugen-input, decay-time: ugen-input) -> ugen-input;
+    comb-n: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, max-delay-time: ugen-input, delay-time: ugen-input, decay-time: ugen-input) -> ugen-input;
 
     /// General purpose hard-knee dynamic range processor.
     /// 
@@ -737,13 +737,13 @@ interface ugens {
     /// released. Usually a bit longer than clamp-time; if both times are too
     /// short, you can get some (possibly unwanted) artifacts. Also known as the
     /// time of the release phase.
-    compander: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, control: ugen-input, thresh: ugen-input, slope-below: ugen-input, slope-above: ugen-input, clamp-time: ugen-input, relax-time: ugen-input) -> ugen-input;
+    compander: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, control: ugen-input, thresh: ugen-input, slope-below: ugen-input, slope-above: ugen-input, clamp-time: ugen-input, relax-time: ugen-input) -> ugen-input;
 
     /// returns the current control rate block duration of the server in seconds
-    control-dur: func(def: borrow<synth-def>, rate: rate) -> ugen-input;
+    control-dur: func(def: borrow<synth-def>, ugen-rate: rate) -> ugen-input;
 
     /// returns the current control rate of the server
-    control-rate: func(def: borrow<synth-def>, rate: rate) -> ugen-input;
+    control-rate: func(def: borrow<synth-def>, ugen-rate: rate) -> ugen-input;
 
     /// Strict convolution of two continuously changing inputs. Also see
     /// convolution2 for a cheaper CPU cost alternative for the case of a fixed
@@ -755,7 +755,7 @@ interface ugens {
     /// - `%in`: processing target
     /// - `kernel`: processing kernel.
     /// - `framesize`: size of FFT frame, must be a power of two
-    convolution: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, kernel: ugen-input, framesize: ugen-input) -> ugen-input;
+    convolution: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, kernel: ugen-input, framesize: ugen-input) -> ugen-input;
 
     /// Strict convolution with fixed kernel which can be updated using a
     /// trigger signal. See Steven W Smith, The Scientist and Engineer's Guide
@@ -771,7 +771,7 @@ interface ugens {
     /// uses twice this number internally, maximum value you can give this
     /// argument is 2^16 = 65536. Note that it gets progressively more expensive
     /// to run for higher powers! 512, 1024, 2048, 4096 standard.
-    convolution2: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, kernel: ugen-input, trigger: ugen-input, framesize: ugen-input) -> ugen-input;
+    convolution2: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, kernel: ugen-input, trigger: ugen-input, framesize: ugen-input) -> ugen-input;
 
     /// Strict convolution with fixed kernel which can be updated using a
     /// trigger signal. There is a linear crossfade between the buffers upon
@@ -789,7 +789,7 @@ interface ugens {
     /// to run for higher powers! 512, 1024, 2048, 4096 standard.
     /// - `crossfade`: The number of periods over which a crossfade is made. The
     /// default is 1. This must be an integer.
-    convolution2-l: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, kernel: ugen-input, trigger: ugen-input, framesize: ugen-input, crossfade: ugen-input) -> ugen-input;
+    convolution2-l: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, kernel: ugen-input, trigger: ugen-input, framesize: ugen-input, crossfade: ugen-input) -> ugen-input;
 
     /// Strict convolution with fixed kernel which can be updated using a
     /// trigger signal. The convolution is performed in the time domain, which
@@ -802,7 +802,7 @@ interface ugens {
     /// combination with the trigger
     /// - `trigger`: update the kernel on a change from <= 0 to > 0
     /// - `framesize`: size of FFT frame, does not have to be a power of two.
-    convolution3: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, kernel: ugen-input, trigger: ugen-input, framesize: ugen-input) -> ugen-input;
+    convolution3: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, kernel: ugen-input, trigger: ugen-input, framesize: ugen-input) -> ugen-input;
 
     /// Chaotic noise generator
     /// 
@@ -814,7 +814,7 @@ interface ugens {
     /// Args:
     /// - `chaos-param`: a parameter of the chaotic function with useful values
     /// from just below 1.0 to just above 2.0. Towards 2.0 the sound crackles.
-    crackle: func(def: borrow<synth-def>, rate: rate, chaos-param: ugen-input) -> ugen-input;
+    crackle: func(def: borrow<synth-def>, ugen-rate: rate, chaos-param: ugen-input) -> ugen-input;
 
     /// a linear-interpolating (cusp map chaotic) sound generator based on the
     /// difference equation: xn+1 = a - b*sqrt(|xn|)
@@ -824,7 +824,7 @@ interface ugens {
     /// - `a`: first coefficient
     /// - `b`: 2nd coefficient
     /// - `xi`: initial value of x
-    cusp-l: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, a: ugen-input, b: ugen-input, xi: ugen-input) -> ugen-input;
+    cusp-l: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, a: ugen-input, b: ugen-input, xi: ugen-input) -> ugen-input;
 
     /// a non-interpolating (cusp map chaotic) sound generator based on the
     /// difference equation: xn+1 = a - b*sqrt(|xn|)
@@ -834,21 +834,21 @@ interface ugens {
     /// - `a`: first coefficient
     /// - `b`: 2nd coefficient
     /// - `xi`: initial value of x
-    cusp-n: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, a: ugen-input, b: ugen-input, xi: ugen-input) -> ugen-input;
+    cusp-n: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, a: ugen-input, b: ugen-input, xi: ugen-input) -> ugen-input;
 
     /// outputs the initial value you give it.
     /// 
     /// Args:
     /// - `%in`: constant value to output, cannot be modulated, set at
     /// initialisation time
-    dc: func(def: borrow<synth-def>, rate: rate, %in: ugen-input) -> ugen-input;
+    dc: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input) -> ugen-input;
 
     /// This ugen has been internalised for scserver compatibility. Please use
     /// the dbrown cgen instead.
     /// 
     /// Args:
     /// - `length`: Default: positive infinity
-    dbrown: func(def: borrow<synth-def>, rate: rate, length: ugen-input, lo: ugen-input, hi: ugen-input, step: ugen-input) -> ugen-input;
+    dbrown: func(def: borrow<synth-def>, ugen-rate: rate, length: ugen-input, lo: ugen-input, hi: ugen-input, step: ugen-input) -> ugen-input;
 
     /// Read values from a buffer on demand, using phase (index) value that is
     /// also pulled on demand. All inputs can be either demand ugen or any other
@@ -859,11 +859,11 @@ interface ugens {
     /// - `phase`: index into the buffer
     /// - `loop`: when phase exceeds number of frames in buffer, loops when set
     /// to 1
-    dbufrd: func(def: borrow<synth-def>, rate: rate, bufnum: ugen-input, phase: ugen-input, loop: ugen-input) -> ugen-input;
+    dbufrd: func(def: borrow<synth-def>, ugen-rate: rate, bufnum: ugen-input, phase: ugen-input, loop: ugen-input) -> ugen-input;
 
     /// This ugen has been internalised for scserver compatibility. Please use
     /// the dbufwr cgen instead.
-    dbufwr: func(def: borrow<synth-def>, rate: rate, bufnum: ugen-input, phase: ugen-input, input: ugen-input, loop: ugen-input) -> ugen-input;
+    dbufwr: func(def: borrow<synth-def>, ugen-rate: rate, bufnum: ugen-input, phase: ugen-input, input: ugen-input, loop: ugen-input) -> ugen-input;
 
     /// triggered exponential decay.
     /// 
@@ -876,7 +876,7 @@ interface ugens {
     /// Args:
     /// - `%in`: input signal
     /// - `decay-time`: 60 dB decay time in seconds
-    decay: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, decay-time: ugen-input) -> ugen-input;
+    decay: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, decay-time: ugen-input) -> ugen-input;
 
     /// triggered exponential attack and exponential decay. Decay has a very
     /// sharp attack and can produce clicks. Decay2 rounds off the attack by
@@ -888,7 +888,7 @@ interface ugens {
     /// - `%in`: input signal
     /// - `attack-time`: 60 dB attack time in seconds.
     /// - `decay-time`: 60 dB decay time in seconds.
-    decay2: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, attack-time: ugen-input, decay-time: ugen-input) -> ugen-input;
+    decay2: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, attack-time: ugen-input, decay-time: ugen-input) -> ugen-input;
 
     /// 2D Ambisonic B-format decoder. Decode a two dimensional ambisonic
     /// B-format signal to a set of speakers in a regular polygon. The outputs
@@ -904,7 +904,7 @@ interface ugens {
     /// The first speaker will be directly in front. Should be 0.5 if the front
     /// bisects a side of the polygon. Then the first speaker will be the one
     /// left of center. Default is 0.5.
-    decode-b2: func(def: borrow<synth-def>, rate: rate, num-channels: u32, w: ugen-input, x: ugen-input, y: ugen-input, orientation: ugen-input) -> ugen-input;
+    decode-b2: func(def: borrow<synth-def>, ugen-rate: rate, num-channels: u32, w: ugen-input, x: ugen-input, y: ugen-input, orientation: ugen-input) -> ugen-input;
 
     /// the input signal value is truncated to an integer value and used as an
     /// index into an octave repeating table of note values (indices wrap around
@@ -916,7 +916,7 @@ interface ugens {
     /// - `%in`: The input signal.
     /// - `octave`: The number of steps per octave in the scale. The default is
     /// 12.
-    degree-to-key: func(def: borrow<synth-def>, rate: rate, bufnum: ugen-input, %in: ugen-input, octave: ugen-input) -> ugen-input;
+    degree-to-key: func(def: borrow<synth-def>, ugen-rate: rate, bufnum: ugen-input, %in: ugen-input, octave: ugen-input) -> ugen-input;
 
     /// Tap a delay line from a del-tap-wr UGen
     /// 
@@ -928,7 +928,7 @@ interface ugens {
     /// - `delay`: A delay time in seconds.
     /// - `interp`: the kind of interpolation to be used. 1 is none, 2 is
     /// linear, 4 is cubic.
-    del-tap-rd: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input, phase: ugen-input, delay: ugen-input, interp: ugen-input) -> ugen-input;
+    del-tap-rd: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input, phase: ugen-input, delay: ugen-input, interp: ugen-input) -> ugen-input;
 
     /// Tap a delay line from a del-tap-wr UGen
     /// 
@@ -936,7 +936,7 @@ interface ugens {
     /// - `buffer`: the buffer to write signal into. Max delay time is based on
     /// buffer size.
     /// - `%in`: the signal to write to the buffer.
-    del-tap-wr: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input, %in: ugen-input) -> ugen-input;
+    del-tap-wr: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input, %in: ugen-input) -> ugen-input;
 
     /// delay input signal by one frame of samples. Note: for audio-rate signals
     /// the delay is 1 audio frame, and for control-rate signals the delay is 1
@@ -944,13 +944,13 @@ interface ugens {
     /// 
     /// Args:
     /// - `%in`: input to be delayed.
-    delay1: func(def: borrow<synth-def>, rate: rate, %in: ugen-input) -> ugen-input;
+    delay1: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input) -> ugen-input;
 
     /// delay input signal by two frames of samples
     /// 
     /// Args:
     /// - `%in`: input to be delayed.
-    delay2: func(def: borrow<synth-def>, rate: rate, %in: ugen-input) -> ugen-input;
+    delay2: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input) -> ugen-input;
 
     /// simple delay line, cubic interpolation.
     /// 
@@ -959,7 +959,7 @@ interface ugens {
     /// - `max-delay-time`: the maximum delay time in seconds. Used to
     /// initialize the delay buffer size
     /// - `delay-time`: delay time in seconds
-    delay-c: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, max-delay-time: ugen-input, delay-time: ugen-input) -> ugen-input;
+    delay-c: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, max-delay-time: ugen-input, delay-time: ugen-input) -> ugen-input;
 
     /// simple delay line, linear interpolation.
     /// 
@@ -968,7 +968,7 @@ interface ugens {
     /// - `max-delay-time`: the maximum delay time in seconds. Used to
     /// initialize the delay buffer size
     /// - `delay-time`: delay time in seconds
-    delay-l: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, max-delay-time: ugen-input, delay-time: ugen-input) -> ugen-input;
+    delay-l: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, max-delay-time: ugen-input, delay-time: ugen-input) -> ugen-input;
 
     /// simple delay line, no interpolation. See also DelayL which uses linear
     /// interpolation, and DelayC which uses cubic interpolation. Cubic
@@ -980,7 +980,7 @@ interface ugens {
     /// - `max-delay-time`: the maximum delay time in seconds. Used to
     /// initialize the delay buffer size
     /// - `delay-time`: delay time in seconds
-    delay-n: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, max-delay-time: ugen-input, delay-time: ugen-input) -> ugen-input;
+    delay-n: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, max-delay-time: ugen-input, delay-time: ugen-input) -> ugen-input;
 
     /// On every trigger it demands the next value from each of the demand ugens
     /// passed as args. Used to pull values from the other demand rate ugens. By
@@ -994,7 +994,7 @@ interface ugens {
     /// from non-positive to positive.
     /// - `reset`: Resets the list of ugens when triggered.
     /// - `demand-ugens`: list of demand rate ugens
-    demand: func(def: borrow<synth-def>, rate: rate, trig: ugen-input, reset: ugen-input, demand-ugens: ugen-input) -> ugen-input;
+    demand: func(def: borrow<synth-def>, ugen-rate: rate, trig: ugen-input, reset: ugen-input, demand-ugens: ugen-input) -> ugen-input;
 
     /// Plays back break point envelope contours (levels, times, shapes) given
     /// by demand ugens. The next values are called when the next node is
@@ -1022,10 +1022,10 @@ interface ugens {
     /// - `level-bias`: demand ugen returning level offset values
     /// - `time-scale`: demand ugen returning time scaling values
     /// - `action`: Default: NO-ACTION
-    demand-env-gen: func(def: borrow<synth-def>, rate: rate, level: ugen-input, dur: ugen-input, shape: ugen-input, curve: ugen-input, gate: ugen-input, reset: ugen-input, level-scale: ugen-input, level-bias: ugen-input, time-scale: ugen-input, action: ugen-input) -> ugen-input;
+    demand-env-gen: func(def: borrow<synth-def>, ugen-rate: rate, level: ugen-input, dur: ugen-input, shape: ugen-input, curve: ugen-input, gate: ugen-input, reset: ugen-input, level-scale: ugen-input, level-bias: ugen-input, time-scale: ugen-input, action: ugen-input) -> ugen-input;
 
     /// search a buffer for a value
-    detect-index: func(def: borrow<synth-def>, rate: rate, bufnum: ugen-input, %in: ugen-input) -> ugen-input;
+    detect-index: func(def: borrow<synth-def>, ugen-rate: rate, bufnum: ugen-input, %in: ugen-input) -> ugen-input;
 
     /// If the signal input starts with silence at the beginning of the synth's
     /// duration, then DetectSilence will wait indefinitely until the first
@@ -1039,21 +1039,21 @@ interface ugens {
     /// below thresh before this triggers. The default is 0.1 seconds
     /// - `action`: the action to perform when silence is detected. Default:
     /// NO-ACTION
-    detect-silence: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, amp: ugen-input, time: ugen-input, action: ugen-input) -> ugen-input;
+    detect-silence: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, amp: ugen-input, time: ugen-input, action: ugen-input) -> ugen-input;
 
     /// This ugen has been internalised for scserver compatibility. Please use
     /// the dgeom cgen instead.
     /// 
     /// Args:
     /// - `length`: Default: positive infinity
-    dgeom: func(def: borrow<synth-def>, rate: rate, length: ugen-input, start: ugen-input, grow: ugen-input) -> ugen-input;
+    dgeom: func(def: borrow<synth-def>, ugen-rate: rate, length: ugen-input, start: ugen-input, grow: ugen-input) -> ugen-input;
 
     /// This ugen has been internalised for scserver compatibility. Please use
     /// the dibrown cgen instead.
     /// 
     /// Args:
     /// - `length`: Default: positive infinity
-    dibrown: func(def: borrow<synth-def>, rate: rate, length: ugen-input, lo: ugen-input, hi: ugen-input, step: ugen-input) -> ugen-input;
+    dibrown: func(def: borrow<synth-def>, ugen-rate: rate, length: ugen-input, lo: ugen-input, hi: ugen-input, step: ugen-input) -> ugen-input;
 
     /// stream audio in from disk file
     /// 
@@ -1065,7 +1065,7 @@ interface ugens {
     /// - `num-channels`: Number of channels in the incoming audio.
     /// - `bufnum`: id of buffer
     /// - `loop`: Soundfile will loop if 1 otherwise not.
-    disk-in: func(def: borrow<synth-def>, rate: rate, num-channels: u32, bufnum: ugen-input, loop: ugen-input) -> ugen-input;
+    disk-in: func(def: borrow<synth-def>, ugen-rate: rate, num-channels: u32, bufnum: ugen-input, loop: ugen-input) -> ugen-input;
 
     /// stream audio out to disk file
     /// 
@@ -1078,22 +1078,22 @@ interface ugens {
     /// - `bufnum`: the number of the buffer to write to (prepared with
     /// /b-write)
     /// - `channels-array`: the Array of channels to write to the file.
-    disk-out: func(def: borrow<synth-def>, rate: rate, bufnum: ugen-input, channels-array: list<ugen-input>) -> ugen-input;
+    disk-out: func(def: borrow<synth-def>, ugen-rate: rate, bufnum: ugen-input, channels-array: list<ugen-input>) -> ugen-input;
 
     /// This ugen has been internalised for scserver compatibility. Please use
     /// the diwhite cgen instead.
     /// 
     /// Args:
     /// - `length`: Default: positive infinity
-    diwhite: func(def: borrow<synth-def>, rate: rate, length: ugen-input, lo: ugen-input, hi: ugen-input) -> ugen-input;
+    diwhite: func(def: borrow<synth-def>, ugen-rate: rate, length: ugen-input, lo: ugen-input, hi: ugen-input) -> ugen-input;
 
-    donce: func(def: borrow<synth-def>, rate: rate, %in: ugen-input) -> ugen-input;
+    donce: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input) -> ugen-input;
 
     /// Outputs a one when the src ugen (typically an envelope) has finished
     /// 
     /// Args:
     /// - `src`: ugen to monitor
-    done: func(def: borrow<synth-def>, rate: rate, src: ugen-input) -> ugen-input;
+    done: func(def: borrow<synth-def>, ugen-rate: rate, src: ugen-input) -> ugen-input;
 
     /// Print the value of an input demand ugen. The print-out is in the form:
     /// label: value block offset: offset. WARNING: Printing values from the
@@ -1106,7 +1106,7 @@ interface ugens {
     /// client (similar to send-trig)
     /// - `label`: a label string
     /// - `run`: activation switch 0 or 1 (can be a demand ugen)
-    dpoll: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, trig-id: ugen-input, label: ugen-input, run: ugen-input) -> ugen-input;
+    dpoll: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, trig-id: ugen-input, label: ugen-input, run: ugen-input) -> ugen-input;
 
     /// Demand rate random sequence generator. Generate a random ordering of an
     /// input sequence.
@@ -1114,7 +1114,7 @@ interface ugens {
     /// Args:
     /// - `%list`: array of values or other ugens
     /// - `num-repeats`: number of repeats
-    drand: func(def: borrow<synth-def>, rate: rate, %list: ugen-input, num-repeats: ugen-input) -> ugen-input;
+    drand: func(def: borrow<synth-def>, ugen-rate: rate, %list: ugen-input, num-repeats: ugen-input) -> ugen-input;
 
     /// Demand rate sequence generator. Outputs a sequence of values, possibly
     /// repeating multiple times. Use INF as a repeat val to create an endless
@@ -1123,7 +1123,7 @@ interface ugens {
     /// Args:
     /// - `%list`: array of values or other ugens
     /// - `num-repeats`: number of repeats
-    dseq: func(def: borrow<synth-def>, rate: rate, %list: ugen-input, num-repeats: ugen-input) -> ugen-input;
+    dseq: func(def: borrow<synth-def>, ugen-rate: rate, %list: ugen-input, num-repeats: ugen-input) -> ugen-input;
 
     /// Demand rate sequence generator. Generates a sequence of values like
     /// dseq, except outputs only count total values, rather than repeating.
@@ -1131,14 +1131,14 @@ interface ugens {
     /// Args:
     /// - `%list`: array of values or other ugens
     /// - `count`: number of values to return
-    dser: func(def: borrow<synth-def>, rate: rate, %list: ugen-input, count: ugen-input) -> ugen-input;
+    dser: func(def: borrow<synth-def>, ugen-rate: rate, %list: ugen-input, count: ugen-input) -> ugen-input;
 
     /// This ugen has been internalised for scserver compatibility. Please use
     /// the dseries cgen instead.
     /// 
     /// Args:
     /// - `length`: Default: positive infinity.
-    dseries: func(def: borrow<synth-def>, rate: rate, length: ugen-input, start: ugen-input, step: ugen-input) -> ugen-input;
+    dseries: func(def: borrow<synth-def>, ugen-rate: rate, length: ugen-input, start: ugen-input, step: ugen-input) -> ugen-input;
 
     /// Demand rate random sequence generator. Shuffle a sequence once and then
     /// output it one or more times.
@@ -1146,7 +1146,7 @@ interface ugens {
     /// Args:
     /// - `%list`: array of values or other ugens
     /// - `num-repeats`: number of repeats
-    dshuf: func(def: borrow<synth-def>, rate: rate, %list: ugen-input, num-repeats: ugen-input) -> ugen-input;
+    dshuf: func(def: borrow<synth-def>, ugen-rate: rate, %list: ugen-input, num-repeats: ugen-input) -> ugen-input;
 
     /// Replicates input values n times on demand. Both inputs can be demand
     /// rate ugens.
@@ -1154,7 +1154,7 @@ interface ugens {
     /// Args:
     /// - `num-repeats`: number of repeats (can be a demand ugen)
     /// - `%in`: input ugen
-    dstutter: func(def: borrow<synth-def>, rate: rate, num-repeats: ugen-input, %in: ugen-input) -> ugen-input;
+    dstutter: func(def: borrow<synth-def>, ugen-rate: rate, num-repeats: ugen-input, %in: ugen-input) -> ugen-input;
 
     /// A demand rate switch. In difference to Dswitch1, Dswitch embeds all
     /// items of an input demand ugen first before looking up the next index.
@@ -1162,7 +1162,7 @@ interface ugens {
     /// Args:
     /// - `%list`: array of values or other ugens
     /// - `index`: which of the inputs to return
-    dswitch: func(def: borrow<synth-def>, rate: rate, %list: ugen-input, index: ugen-input) -> ugen-input;
+    dswitch: func(def: borrow<synth-def>, ugen-rate: rate, %list: ugen-input, index: ugen-input) -> ugen-input;
 
     /// A demand rate switch that can be used to select one of multiple demand
     /// rate inputs.
@@ -1170,33 +1170,33 @@ interface ugens {
     /// Args:
     /// - `%list`: array of values or other ugens
     /// - `index`: which of the inputs to return
-    dswitch1: func(def: borrow<synth-def>, rate: rate, %list: ugen-input, index: ugen-input) -> ugen-input;
+    dswitch1: func(def: borrow<synth-def>, ugen-rate: rate, %list: ugen-input, index: ugen-input) -> ugen-input;
 
     /// Generates random impulses from 0 to +1.
     /// 
     /// Args:
     /// - `density`: average number of impulses per second
-    dust: func(def: borrow<synth-def>, rate: rate, density: ugen-input) -> ugen-input;
+    dust: func(def: borrow<synth-def>, ugen-rate: rate, density: ugen-input) -> ugen-input;
 
     /// Generates random impulses from -1 to +1.
     /// 
     /// Args:
     /// - `density`: average number of impulses per second.
-    dust2: func(def: borrow<synth-def>, rate: rate, density: ugen-input) -> ugen-input;
+    dust2: func(def: borrow<synth-def>, ugen-rate: rate, density: ugen-input) -> ugen-input;
 
     /// This ugen has been internalised for scserver compatibility. Please use
     /// the duty cgen instead.
     /// 
     /// Args:
     /// - `action`: Default: NO-ACTION
-    duty: func(def: borrow<synth-def>, rate: rate, dur: ugen-input, reset: ugen-input, action: ugen-input, level: ugen-input) -> ugen-input;
+    duty: func(def: borrow<synth-def>, ugen-rate: rate, dur: ugen-input, reset: ugen-input, action: ugen-input, level: ugen-input) -> ugen-input;
 
     /// This ugen has been internalised for scserver compatibility. Please use
     /// the dwhite cgen instead.
     /// 
     /// Args:
     /// - `length`: Default: positive infinity
-    dwhite: func(def: borrow<synth-def>, rate: rate, length: ugen-input, lo: ugen-input, hi: ugen-input) -> ugen-input;
+    dwhite: func(def: borrow<synth-def>, ugen-rate: rate, length: ugen-input, lo: ugen-input, hi: ugen-input) -> ugen-input;
 
     /// Demand rate random sequence generator. Generate a random ordering of the
     /// given sequence without repeating any element until all elements have
@@ -1205,7 +1205,7 @@ interface ugens {
     /// Args:
     /// - `%list`: array of values or other ugens
     /// - `num-repeats`: number of repeats
-    dxrand: func(def: borrow<synth-def>, rate: rate, %list: ugen-input, num-repeats: ugen-input) -> ugen-input;
+    dxrand: func(def: borrow<synth-def>, ugen-rate: rate, %list: ugen-input, num-repeats: ugen-input) -> ugen-input;
 
     /// envelope generator, interpolates across a path of control points over
     /// time, see the overtone.sc.envelope functions to generate the control
@@ -1233,7 +1233,7 @@ interface ugens {
     /// - `action`: an integer representing an action to be executed when the
     /// env is finished playing. This can be used to free the enclosing synth,
     /// etc.
-    env-gen: func(def: borrow<synth-def>, rate: rate, envelope: ugen-input, gate: ugen-input, level-scale: ugen-input, level-bias: ugen-input, time-scale: ugen-input, action: ugen-input) -> ugen-input;
+    env-gen: func(def: borrow<synth-def>, ugen-rate: rate, envelope: ugen-input, gate: ugen-input, level-scale: ugen-input, level-bias: ugen-input, time-scale: ugen-input, action: ugen-input) -> ugen-input;
 
     /// Generates a single random float value in an exponential distributions
     /// from lo to hi.
@@ -1241,7 +1241,7 @@ interface ugens {
     /// Args:
     /// - `lo`: Minimum value of generated float
     /// - `hi`: Maximum value of generated float
-    exp-rand: func(def: borrow<synth-def>, rate: rate, lo: ugen-input, hi: ugen-input) -> ugen-input;
+    exp-rand: func(def: borrow<synth-def>, ugen-rate: rate, lo: ugen-input, hi: ugen-input) -> ugen-input;
 
     /// a cubic-interpolating feedback sine with chaotic phase indexing sound
     /// generator. This uses a linear congruential function to drive the phase
@@ -1256,7 +1256,7 @@ interface ugens {
     /// - `c`: phase increment amount
     /// - `xi`: initial value of x
     /// - `yi`: initial value of y
-    fb-sine-c: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, im: ugen-input, fb: ugen-input, a: ugen-input, c: ugen-input, xi: ugen-input, yi: ugen-input) -> ugen-input;
+    fb-sine-c: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, im: ugen-input, fb: ugen-input, a: ugen-input, c: ugen-input, xi: ugen-input, yi: ugen-input) -> ugen-input;
 
     /// a linear-interpolating feedback sine with chaotic phase indexing sound
     /// generator. This uses a linear congruential function to drive the phase
@@ -1271,7 +1271,7 @@ interface ugens {
     /// - `c`: phase increment amount
     /// - `xi`: initial value of x
     /// - `yi`: initial value of y
-    fb-sine-l: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, im: ugen-input, fb: ugen-input, a: ugen-input, c: ugen-input, xi: ugen-input, yi: ugen-input) -> ugen-input;
+    fb-sine-l: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, im: ugen-input, fb: ugen-input, a: ugen-input, c: ugen-input, xi: ugen-input, yi: ugen-input) -> ugen-input;
 
     /// a non-interpolating feedback sine with chaotic phase indexing sound
     /// generator. This uses a linear congruential function to drive the phase
@@ -1286,7 +1286,7 @@ interface ugens {
     /// - `c`: phase increment amount
     /// - `xi`: initial value of x
     /// - `yi`: initial value of y
-    fb-sine-n: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, im: ugen-input, fb: ugen-input, a: ugen-input, c: ugen-input, xi: ugen-input, yi: ugen-input) -> ugen-input;
+    fb-sine-n: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, im: ugen-input, fb: ugen-input, a: ugen-input, c: ugen-input, xi: ugen-input, yi: ugen-input) -> ugen-input;
 
     /// fast fourier transform, converts input data from the time to the
     /// frequency domain and stores the result in a buffer (audio waveform ->
@@ -1319,7 +1319,7 @@ interface ugens {
     /// window size smaller than the actual buffer size (e.g. window size 1024
     /// with buffer size 2048). Both values must still be a power of two. Leave
     /// this at its default of zero for no zero-padding.
-    fft: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input, %in: ugen-input, hop: ugen-input, wintype: ugen-input, active: ugen-input, winsize: ugen-input) -> ugen-input;
+    fft: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input, %in: ugen-input, hop: ugen-input, wintype: ugen-input, active: ugen-input, winsize: ugen-input) -> ugen-input;
 
     /// Outputs the necessary signal for FFT chains, without doing an FFT on a
     /// signal
@@ -1329,7 +1329,7 @@ interface ugens {
     /// - `hop`: the hop size for timing triggers
     /// - `polar`: a flag. If 0.0, the buffer will be prepared for complex data,
     /// if > 0.0, polar data is set up.
-    fft-trigger: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input, hop: ugen-input, polar: ugen-input) -> ugen-input;
+    fft-trigger: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input, hop: ugen-input, polar: ugen-input) -> ugen-input;
 
     /// first order filter section. Formula is equivalent to: out(i) = (a0 *
     /// in(i)) + (a1 * in(i-1)) + (b1 * out(i-1))
@@ -1339,7 +1339,7 @@ interface ugens {
     /// - `a0`: first coefficient
     /// - `a1`: second coefficient
     /// - `b1`: third coefficient
-    fos: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, a0: ugen-input, a1: ugen-input, b1: ugen-input) -> ugen-input;
+    fos: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, a0: ugen-input, a1: ugen-input, b1: ugen-input) -> ugen-input;
 
     /// Very fast sine wave generator (2 PowerPC instructions per output
     /// sample!) implemented using a ringing filter. This generates a much
@@ -1353,7 +1353,7 @@ interface ugens {
     /// Args:
     /// - `freq`: frequency in Hertz
     /// - `iphase`: phase offset or modulator in radians
-    f-sin-osc: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, iphase: ugen-input) -> ugen-input;
+    f-sin-osc: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, iphase: ugen-input) -> ugen-input;
 
     /// Fold a signal outside given thresholds.
     /// 
@@ -1365,7 +1365,7 @@ interface ugens {
     /// - `%in`: input signal
     /// - `lo`: low threshold
     /// - `hi`: high threshold
-    fold: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, lo: ugen-input, hi: ugen-input) -> ugen-input;
+    fold: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, lo: ugen-input, hi: ugen-input) -> ugen-input;
 
     /// Generates a set of harmonics around a formant frequency at a given
     /// fundamental frequency. The frequency inputs are read at control rate
@@ -1377,7 +1377,7 @@ interface ugens {
     /// - `formfreq`: Formant frequency in Hertz (control rate)
     /// - `bwfreq`: Pulse width frequency in Hertz. Controls the bandwidth of
     /// the formant (control rate)
-    formant: func(def: borrow<synth-def>, rate: rate, fundfreq: ugen-input, formfreq: ugen-input, bwfreq: ugen-input) -> ugen-input;
+    formant: func(def: borrow<synth-def>, ugen-rate: rate, fundfreq: ugen-input, formfreq: ugen-input, bwfreq: ugen-input) -> ugen-input;
 
     /// a resonant filter whose impulse response is like that of a sine wave
     /// with a Decay2 envelope over it. The great advantage to this filter over
@@ -1391,27 +1391,27 @@ interface ugens {
     /// - `freq`: resonant frequency in Hertz
     /// - `attack-time`: 60 dB attack time in seconds
     /// - `decay-time`: 60 dB decay time in seconds
-    formlet: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, freq: ugen-input, attack-time: ugen-input, decay-time: ugen-input) -> ugen-input;
+    formlet: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, freq: ugen-input, attack-time: ugen-input, decay-time: ugen-input) -> ugen-input;
 
     /// Free the specified node when triggered
     /// 
     /// Args:
     /// - `trig`: when triggered, frees node
     /// - `id`: node to be freed
-    free: func(def: borrow<synth-def>, rate: rate, trig: ugen-input, id: ugen-input) -> ugen-input;
+    free: func(def: borrow<synth-def>, ugen-rate: rate, trig: ugen-input, id: ugen-input) -> ugen-input;
 
     /// Free the enclosing synth when triggered
     /// 
     /// Args:
     /// - `%in`: input signal
-    free-self: func(def: borrow<synth-def>, rate: rate, %in: ugen-input) -> ugen-input;
+    free-self: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input) -> ugen-input;
 
     /// Free the enclosing synth when the src ugen finishes (e.g. env-gen,
     /// play-buf, linen...)
     /// 
     /// Args:
     /// - `src`: the ugen to check for done
-    free-self-when-done: func(def: borrow<synth-def>, rate: rate, src: ugen-input) -> ugen-input;
+    free-self-when-done: func(def: borrow<synth-def>, ugen-rate: rate, src: ugen-input) -> ugen-input;
 
     /// A reverb coded from experiments with faust. Valid parameter range from 0
     /// to 1. Values outside this range are clipped by the UGen.
@@ -1421,7 +1421,7 @@ interface ugens {
     /// - `mix`: Dry/wet balance. range 0..1
     /// - `room`: Room size. rage 0..1
     /// - `damp`: Reverb HF damp. range 0..1
-    free-verb: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, mix: ugen-input, room: ugen-input, damp: ugen-input) -> ugen-input;
+    free-verb: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, mix: ugen-input, room: ugen-input, damp: ugen-input) -> ugen-input;
 
     /// A two-channel reverb coded from experiments with faust. Valid parameter
     /// range from 0 to 1. Values outside this range are clipped by the UGen.
@@ -1432,7 +1432,7 @@ interface ugens {
     /// - `mix`: Dry/wet balance. range 0..1
     /// - `room`: Room size. rage 0..1
     /// - `damp`: Reverb HF damp. range 0..1
-    free-verb2: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, in2: ugen-input, mix: ugen-input, room: ugen-input, damp: ugen-input) -> ugen-input;
+    free-verb2: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, in2: ugen-input, mix: ugen-input, room: ugen-input, damp: ugen-input) -> ugen-input;
 
     /// FreqShift implements single sideband amplitude modulation, also known as
     /// frequency shifting, but not to be confused with pitch shifting.
@@ -1443,7 +1443,7 @@ interface ugens {
     /// - `%in`: The signal to process
     /// - `freq`: Amount of shift in cycles per second
     /// - `phase`: Phase of the frequency shift (0 - 2pi)
-    freq-shift: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, freq: ugen-input, phase: ugen-input) -> ugen-input;
+    freq-shift: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, freq: ugen-input, phase: ugen-input) -> ugen-input;
 
     /// A two-channel reverb UGen, based on the \"GVerb\" LADSPA effect by
     /// Juhana Sadeharju (kouhia at nic.funet.fi). WARNING - in the current
@@ -1463,7 +1463,7 @@ interface ugens {
     /// - `earlyreflevel`: amount of early reflection level
     /// - `taillevel`: amount of tail level
     /// - `maxroomsize`: to set the size of the delay lines.
-    g-verb: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, roomsize: ugen-input, revtime: ugen-input, damping: ugen-input, inputbw: ugen-input, spread: ugen-input, drylevel: ugen-input, earlyreflevel: ugen-input, taillevel: ugen-input, maxroomsize: ugen-input) -> ugen-input;
+    g-verb: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, roomsize: ugen-input, revtime: ugen-input, damping: ugen-input, inputbw: ugen-input, spread: ugen-input, drylevel: ugen-input, earlyreflevel: ugen-input, taillevel: ugen-input, maxroomsize: ugen-input) -> ugen-input;
 
     /// Gate or hold
     /// 
@@ -1473,7 +1473,7 @@ interface ugens {
     /// - `%in`: Input signal.
     /// - `trig`: Trigger. Trigger can be any signal. A trigger happens when the
     /// signal changes from non-positive to positive.
-    gate: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, trig: ugen-input) -> ugen-input;
+    gate: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, trig: ugen-input) -> ugen-input;
 
     /// A linear-interpolating (gingerbreadman map chaotic) sound generator
     /// based on the difference equations: xn+1 = 1 - yn + |xn| yn+1 = xn
@@ -1482,7 +1482,7 @@ interface ugens {
     /// - `freq`: iteration frequency in Hz
     /// - `xi`: initial value of x
     /// - `yi`: initial value of y
-    gbman-l: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, xi: ugen-input, yi: ugen-input) -> ugen-input;
+    gbman-l: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, xi: ugen-input, yi: ugen-input) -> ugen-input;
 
     /// A non-interpolating (gingerbreadman map chaotic) sound generator based
     /// on the difference equations: xn+1 = 1 - yn + |xn| yn+1 = xn
@@ -1491,7 +1491,7 @@ interface ugens {
     /// - `freq`: iteration frequency in Hz
     /// - `xi`: initial value of x
     /// - `yi`: initial value of y
-    gbman-n: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, xi: ugen-input, yi: ugen-input) -> ugen-input;
+    gbman-n: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, xi: ugen-input, yi: ugen-input) -> ugen-input;
 
     /// An implementation of the dynamic stochastic synthesis generator
     /// conceived by Iannis Xenakis and described in Formalized Music (1992,
@@ -1534,7 +1534,7 @@ interface ugens {
     /// cycle of the oscillator, though the oscillator's period will constantly
     /// change due to the duration distribution.
     /// - `knum`: Current number of utilised control points, allows modulation.
-    gendy1: func(def: borrow<synth-def>, rate: rate, ampdist: ugen-input, durdist: ugen-input, adparam: ugen-input, ddparam: ugen-input, minfreq: ugen-input, maxfreq: ugen-input, ampscale: ugen-input, durscale: ugen-input, init-cps: ugen-input, knum: ugen-input) -> ugen-input;
+    gendy1: func(def: borrow<synth-def>, ugen-rate: rate, ampdist: ugen-input, durdist: ugen-input, adparam: ugen-input, ddparam: ugen-input, minfreq: ugen-input, maxfreq: ugen-input, ampscale: ugen-input, durscale: ugen-input, init-cps: ugen-input, knum: ugen-input) -> ugen-input;
 
     /// See gendy1 help file for background. This variant of GENDYN is closer to
     /// that presented in Hoffmann, Peter. (2000) The New GENDYN Program.
@@ -1574,7 +1574,7 @@ interface ugens {
     /// - `a`: parameter for Lehmer random number generator perturbed by Xenakis
     /// as in ((old*a)+c)%1.0
     /// - `c`: parameter for Lehmer random number generator perturbed by Xenakis
-    gendy2: func(def: borrow<synth-def>, rate: rate, ampdist: ugen-input, durdist: ugen-input, adparam: ugen-input, ddparam: ugen-input, minfreq: ugen-input, maxfreq: ugen-input, ampscale: ugen-input, durscale: ugen-input, init-cps: ugen-input, knum: ugen-input, a: ugen-input, c: ugen-input) -> ugen-input;
+    gendy2: func(def: borrow<synth-def>, ugen-rate: rate, ampdist: ugen-input, durdist: ugen-input, adparam: ugen-input, ddparam: ugen-input, minfreq: ugen-input, maxfreq: ugen-input, ampscale: ugen-input, durscale: ugen-input, init-cps: ugen-input, knum: ugen-input, a: ugen-input, c: ugen-input) -> ugen-input;
 
     /// See Gendy1 help file for background. This variant of GENDYN normalises
     /// the durations in each period to force oscillation at the desired pitch.
@@ -1610,7 +1610,7 @@ interface ugens {
     /// cycle of the oscillator, though the oscillator's period will constantly
     /// change due to the duration distribution.
     /// - `knum`: Current number of utilised control points, allows modulation.
-    gendy3: func(def: borrow<synth-def>, rate: rate, ampdist: ugen-input, durdist: ugen-input, adparam: ugen-input, ddparam: ugen-input, freq: ugen-input, ampscale: ugen-input, durscale: ugen-input, init-cps: ugen-input, knum: ugen-input) -> ugen-input;
+    gendy3: func(def: borrow<synth-def>, ugen-rate: rate, ampdist: ugen-input, durdist: ugen-input, adparam: ugen-input, ddparam: ugen-input, freq: ugen-input, ampscale: ugen-input, durscale: ugen-input, init-cps: ugen-input, knum: ugen-input) -> ugen-input;
 
     /// Granular synthesis with sound stored in a buffer
     /// 
@@ -1636,7 +1636,7 @@ interface ugens {
     /// - `max-grains`: the maximum number of overlapping grains that can be
     /// used at a given time. This value is set at the UGens init time and can't
     /// be modified. This can be set lower for more efficient use of memory.
-    grain-buf: func(def: borrow<synth-def>, rate: rate, num-channels: u32, trigger: ugen-input, dur: ugen-input, sndbuf: ugen-input, rate: ugen-input, pos: ugen-input, interp: ugen-input, pan: ugen-input, envbufnum: ugen-input, max-grains: ugen-input) -> ugen-input;
+    grain-buf: func(def: borrow<synth-def>, ugen-rate: rate, num-channels: u32, trigger: ugen-input, dur: ugen-input, sndbuf: ugen-input, rate: ugen-input, pos: ugen-input, interp: ugen-input, pan: ugen-input, envbufnum: ugen-input, max-grains: ugen-input) -> ugen-input;
 
     /// Granular synthesis with frequency modulated sine tones
     /// 
@@ -1657,7 +1657,7 @@ interface ugens {
     /// - `max-grains`: the maximum number of overlapping grains that can be
     /// used at a given time. This value is set at the UGens init time and can't
     /// be modified. This can be set lower for more efficient use of memory.
-    grain-fm: func(def: borrow<synth-def>, rate: rate, num-channels: u32, trigger: ugen-input, dur: ugen-input, car-freq: ugen-input, mod-freq: ugen-input, index: ugen-input, pan: ugen-input, envbufnum: ugen-input, max-grains: ugen-input) -> ugen-input;
+    grain-fm: func(def: borrow<synth-def>, ugen-rate: rate, num-channels: u32, trigger: ugen-input, dur: ugen-input, car-freq: ugen-input, mod-freq: ugen-input, index: ugen-input, pan: ugen-input, envbufnum: ugen-input, max-grains: ugen-input) -> ugen-input;
 
     /// Granulate an input signal
     /// 
@@ -1676,7 +1676,7 @@ interface ugens {
     /// - `max-grains`: the maximum number of overlapping grains that can be
     /// used at a given time. This value is set at the UGens init time and can't
     /// be modified. This can be set lower for more efficient use of memory.
-    grain-in: func(def: borrow<synth-def>, rate: rate, num-channels: u32, trigger: ugen-input, dur: ugen-input, %in: ugen-input, pan: ugen-input, envbufnum: ugen-input, max-grains: ugen-input) -> ugen-input;
+    grain-in: func(def: borrow<synth-def>, ugen-rate: rate, num-channels: u32, trigger: ugen-input, dur: ugen-input, %in: ugen-input, pan: ugen-input, envbufnum: ugen-input, max-grains: ugen-input) -> ugen-input;
 
     /// Granular synthesis with sine tones
     /// 
@@ -1695,7 +1695,7 @@ interface ugens {
     /// - `max-grains`: the maximum number of overlapping grains that can be
     /// used at a given time. This value is set at the UGens init time and can't
     /// be modified. This can be set lower for more efficient use of memory.
-    grain-sin: func(def: borrow<synth-def>, rate: rate, num-channels: u32, trigger: ugen-input, dur: ugen-input, freq: ugen-input, pan: ugen-input, envbufnum: ugen-input, max-grains: ugen-input) -> ugen-input;
+    grain-sin: func(def: borrow<synth-def>, ugen-rate: rate, num-channels: u32, trigger: ugen-input, dur: ugen-input, freq: ugen-input, pan: ugen-input, envbufnum: ugen-input, max-grains: ugen-input) -> ugen-input;
 
     /// Random impulses from -1 to +1 given a density
     /// 
@@ -1706,7 +1706,7 @@ interface ugens {
     /// sounds such as snares and hand claps. Also useful for simulating wind or
     /// sea effects, for producing breath effects in wind instrument timbres or
     /// for producing the typical trance leads.
-    gray-noise: func(def: borrow<synth-def>, rate: rate) -> ugen-input;
+    gray-noise: func(def: borrow<synth-def>, ugen-rate: rate) -> ugen-input;
 
     /// second order high pass filter
     /// 
@@ -1721,15 +1721,15 @@ interface ugens {
     /// Args:
     /// - `%in`: input signal to be processed
     /// - `freq`: cutoff frequency
-    hpf: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, freq: ugen-input) -> ugen-input;
+    hpf: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, freq: ugen-input) -> ugen-input;
 
     /// two point difference filter. Implements the formula: out(i) = 0.5 *
     /// (in(i) - in(i-1))
-    hpz1: func(def: borrow<synth-def>, rate: rate, %in: ugen-input) -> ugen-input;
+    hpz1: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input) -> ugen-input;
 
     /// two zero fixed highpass. Implements the formula: out(i) = 0.25 * (in(i)
     /// - (2*in(i-1)) + in(i-2))
-    hpz2: func(def: borrow<synth-def>, rate: rate, %in: ugen-input) -> ugen-input;
+    hpz2: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input) -> ugen-input;
 
     /// Returns a unique output value from zero to one for each input value
     /// according to a hash function. The same input value will always produce
@@ -1737,7 +1737,7 @@ interface ugens {
     /// 
     /// Args:
     /// - `%in`: input signal
-    hasher: func(def: borrow<synth-def>, rate: rate, %in: ugen-input) -> ugen-input;
+    hasher: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input) -> ugen-input;
 
     /// a cubic-interpolating (henon map chaotic) sound generator based on the
     /// difference equation: x[n+2] = 1 - a*(x[n+1]^)2 + bx[n]. This equation
@@ -1750,7 +1750,7 @@ interface ugens {
     /// - `b`: 2nd coefficient
     /// - `x0`: initial value of x
     /// - `x1`: second value of x
-    henon-c: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, a: ugen-input, b: ugen-input, x0: ugen-input, x1: ugen-input) -> ugen-input;
+    henon-c: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, a: ugen-input, b: ugen-input, x0: ugen-input, x1: ugen-input) -> ugen-input;
 
     /// a linear-interpolating (henon map chaotic) sound generator based on the
     /// difference equation: x[n+2] = 1 - a*(x[n+1]^)2 + bx[n]. This equation
@@ -1763,7 +1763,7 @@ interface ugens {
     /// - `b`: 2nd coefficient
     /// - `x0`: initial value of x
     /// - `x1`: second value of x
-    henon-l: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, a: ugen-input, b: ugen-input, x0: ugen-input, x1: ugen-input) -> ugen-input;
+    henon-l: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, a: ugen-input, b: ugen-input, x0: ugen-input, x1: ugen-input) -> ugen-input;
 
     /// a non-interpolating (henon map chaotic) sound generator based on the
     /// difference equation: x[n+2] = 1 - a*(x[n+1]^)2 + bx[n]. This equation
@@ -1776,14 +1776,14 @@ interface ugens {
     /// - `b`: 2nd coefficient
     /// - `x0`: initial value of x
     /// - `x1`: second value of x
-    henon-n: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, a: ugen-input, b: ugen-input, x0: ugen-input, x1: ugen-input) -> ugen-input;
+    henon-n: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, a: ugen-input, b: ugen-input, x0: ugen-input, x1: ugen-input) -> ugen-input;
 
-    hilbert: func(def: borrow<synth-def>, rate: rate, %in: ugen-input) -> ugen-input;
+    hilbert: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input) -> ugen-input;
 
     /// Args:
     /// - `ienvelope`: an InterplEnv (this is static for the life of the UGen)
     /// - `index`: a point to access within the InterplEnv
-    i-env-gen: func(def: borrow<synth-def>, rate: rate, ienvelope: ugen-input, index: ugen-input) -> ugen-input;
+    i-env-gen: func(def: borrow<synth-def>, ugen-rate: rate, ienvelope: ugen-input, index: ugen-input) -> ugen-input;
 
     /// inverse fast fourier transform, converts buffer data from frequency
     /// domain to time domain The IFFT UGen converts the FFT data in-place (in
@@ -1799,7 +1799,7 @@ interface ugens {
     /// is for Hann windowing, typically recommended for analysis work.
     /// - `winsize`: can be used to account for zero-padding, in the same way as
     /// the FFT UGen.
-    ifft: func(def: borrow<synth-def>, rate: rate, chain: ugen-input, wintype: ugen-input, winsize: ugen-input) -> ugen-input;
+    ifft: func(def: borrow<synth-def>, ugen-rate: rate, chain: ugen-input, wintype: ugen-input, winsize: ugen-input) -> ugen-input;
 
     /// Generates a single random integer value in uniform distribution from lo
     /// to hi
@@ -1807,7 +1807,7 @@ interface ugens {
     /// Args:
     /// - `lo`: Minimum value of generated integer
     /// - `hi`: Maximum value of generated integer
-    i-rand: func(def: borrow<synth-def>, rate: rate, lo: ugen-input, hi: ugen-input) -> ugen-input;
+    i-rand: func(def: borrow<synth-def>, ugen-rate: rate, lo: ugen-input, hi: ugen-input) -> ugen-input;
 
     /// non band limited impulse oscillator. Outputs a single 1 every freq
     /// cycles per second and 0 the rest of the time.
@@ -1815,7 +1815,7 @@ interface ugens {
     /// Args:
     /// - `freq`: Frequency in Hertz
     /// - `phase`: Phase offset in cycles ( 0..1 )
-    impulse: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, phase: ugen-input) -> ugen-input;
+    impulse: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, phase: ugen-input) -> ugen-input;
 
     /// Read a signal from a bus.
     /// 
@@ -1834,7 +1834,7 @@ interface ugens {
     /// - `num-channels`: the number of channels (i.e. adjacent buses) to read
     /// in. The default is 1. You cannot modulate this number by assigning it to
     /// an argument in a SynthDef.
-    %in: func(def: borrow<synth-def>, rate: rate, bus: ugen-input, num-channels: u32) -> ugen-input;
+    %in: func(def: borrow<synth-def>, ugen-rate: rate, bus: ugen-input, num-channels: u32) -> ugen-input;
 
     /// read signal from a bus with a current or one cycle old timestamp
     /// 
@@ -1874,7 +1874,7 @@ interface ugens {
     /// - `num-channels`: the number of channels (i.e. adjacent buses) to read
     /// in. The default is 1. You cannot modulate this number by assigning it to
     /// an argument in a SynthDef.
-    in-feedback: func(def: borrow<synth-def>, rate: rate, bus: ugen-input, num-channels: u32) -> ugen-input;
+    in-feedback: func(def: borrow<synth-def>, ugen-rate: rate, bus: ugen-input, num-channels: u32) -> ugen-input;
 
     /// Tests if a signal is within a given range
     /// 
@@ -1885,7 +1885,7 @@ interface ugens {
     /// - `%in`: input signal
     /// - `lo`: low threshold
     /// - `hi`: high threshold
-    in-range: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, lo: ugen-input, hi: ugen-input) -> ugen-input;
+    in-range: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, lo: ugen-input, hi: ugen-input) -> ugen-input;
 
     /// Test if a point is within a given rectangle.
     /// 
@@ -1895,7 +1895,7 @@ interface ugens {
     /// Args:
     /// - `x`: X component signal
     /// - `y`: Y component signal
-    in-rect: func(def: borrow<synth-def>, rate: rate, x: ugen-input, y: ugen-input, left: ugen-input, top: ugen-input, right: ugen-input, bottom: ugen-input) -> ugen-input;
+    in-rect: func(def: borrow<synth-def>, ugen-rate: rate, x: ugen-input, y: ugen-input, left: ugen-input, top: ugen-input, right: ugen-input, bottom: ugen-input) -> ugen-input;
 
     /// generates a trigger any time the bus is set
     /// 
@@ -1908,15 +1908,15 @@ interface ugens {
     /// - `num-channels`: the number of channels (i.e. adjacent buses) to read
     /// in. The default is 1. You cannot modulate this number by assigning it to
     /// an argument in a SynthDef.
-    in-trig: func(def: borrow<synth-def>, rate: rate, bus: ugen-input, num-channels: u32) -> ugen-input;
+    in-trig: func(def: borrow<synth-def>, ugen-rate: rate, bus: ugen-input, num-channels: u32) -> ugen-input;
 
     /// the input signal value is truncated to an integer and used as an index
     /// into the table
-    index: func(def: borrow<synth-def>, rate: rate, bufnum: ugen-input, %in: ugen-input) -> ugen-input;
+    index: func(def: borrow<synth-def>, ugen-rate: rate, bufnum: ugen-input, %in: ugen-input) -> ugen-input;
 
     /// finds the (lowest) point in the buffer at which the input signal lies
     /// in-between the two values, and returns the index
-    index-in-between: func(def: borrow<synth-def>, rate: rate, bufnum: ugen-input, %in: ugen-input) -> ugen-input;
+    index-in-between: func(def: borrow<synth-def>, ugen-rate: rate, bufnum: ugen-input, %in: ugen-input) -> ugen-input;
 
     /// leaky integrator. Integrates an input signal with a leak. The formula
     /// implemented is: out(0) = in(0) + (coef * out(-1))
@@ -1924,13 +1924,13 @@ interface ugens {
     /// Args:
     /// - `%in`: input signal
     /// - `coef`: leak coefficient
-    integrator: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, coef: ugen-input) -> ugen-input;
+    integrator: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, coef: ugen-input) -> ugen-input;
 
     /// control rate to audio rate converter via linear interpolation.
     /// 
     /// Args:
     /// - `%in`: input signal
-    k2-a: func(def: borrow<synth-def>, rate: rate, %in: ugen-input) -> ugen-input;
+    k2-a: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input) -> ugen-input;
 
     /// Toggles between two values when a key on the keyboard is up or down.
     /// Note that this ugen does not prevent normal typing.
@@ -1940,7 +1940,7 @@ interface ugens {
     /// - `minval`: The value to output when the key is not pressed.
     /// - `maxval`: The value to output when the key is pressed.
     /// - `lag`: lag factor
-    key-state: func(def: borrow<synth-def>, rate: rate, keycode: ugen-input, minval: ugen-input, maxval: ugen-input, lag: ugen-input) -> ugen-input;
+    key-state: func(def: borrow<synth-def>, ugen-rate: rate, keycode: ugen-input, minval: ugen-input, maxval: ugen-input, lag: ugen-input) -> ugen-input;
 
     /// A (12TET major/minor) key tracker based on a pitch class profile of
     /// energy across FFT bins and matching this to templates for major and
@@ -1955,7 +1955,7 @@ interface ugens {
     /// - `chromaleak`: Each frame, the chroma values are set to the previous
     /// value multiplied by the chromadecay. 0.0 will start each frame afresh
     /// with no memory.
-    key-track: func(def: borrow<synth-def>, rate: rate, chain: ugen-input, keydecay: ugen-input, chromaleak: ugen-input) -> ugen-input;
+    key-track: func(def: borrow<synth-def>, ugen-rate: rate, chain: ugen-input, keydecay: ugen-input, chromaleak: ugen-input) -> ugen-input;
 
     /// Klang is a bank of fixed frequency sine oscillators. Klang is more
     /// efficient than creating individual oscillators but offers less
@@ -1971,7 +1971,7 @@ interface ugens {
     /// initialization time.
     /// - `freqoffset`: an offset added to all frequencies at initialization
     /// time.
-    klang: func(def: borrow<synth-def>, rate: rate, specs: ugen-input, freqscale: ugen-input, freqoffset: ugen-input) -> ugen-input;
+    klang: func(def: borrow<synth-def>, ugen-rate: rate, specs: ugen-input, freqscale: ugen-input, freqoffset: ugen-input) -> ugen-input;
 
     /// Klank is a bank of fixed frequency resonators which can be used to
     /// simulate the resonant modes of an object. Each mode is given a ring
@@ -1992,7 +1992,7 @@ interface ugens {
     /// time.
     /// - `decayscale`: a scale factor multiplied by all ring times at
     /// initialization time.
-    klank: func(def: borrow<synth-def>, rate: rate, specs: ugen-input, input: ugen-input, freqscale: ugen-input, freqoffset: ugen-input, decayscale: ugen-input) -> ugen-input;
+    klank: func(def: borrow<synth-def>, ugen-rate: rate, specs: ugen-input, input: ugen-input, freqscale: ugen-input, freqoffset: ugen-input, decayscale: ugen-input) -> ugen-input;
 
     /// Randomly generates the values -1 or +1 at a rate given by the nearest
     /// integer division of the sample rate by the freq argument. It is probably
@@ -2000,7 +2000,7 @@ interface ugens {
     /// 
     /// Args:
     /// - `freq`: approximate rate at which to generate random values.
-    lf-clip-noise: func(def: borrow<synth-def>, rate: rate, freq: ugen-input) -> ugen-input;
+    lf-clip-noise: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input) -> ugen-input;
 
     /// an oscillator outputting a sine like shape made of two cubic pieces
     /// 
@@ -2008,7 +2008,7 @@ interface ugens {
     /// - `freq`: Frequency in Hertz
     /// - `iphase`: Initial phase offset. For efficiency reasons this is a value
     /// ranging from 0 to 2.
-    lf-cub: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, iphase: ugen-input) -> ugen-input;
+    lf-cub: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, iphase: ugen-input) -> ugen-input;
 
     /// Like lf-clip-noise, it generates the values -1 or +1 at a rate given by
     /// the freq argument, with two differences: * no time quantization * fast
@@ -2020,7 +2020,7 @@ interface ugens {
     /// 
     /// Args:
     /// - `freq`: rate at which to generate random values.
-    lfd-clip-noise: func(def: borrow<synth-def>, rate: rate, freq: ugen-input) -> ugen-input;
+    lfd-clip-noise: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input) -> ugen-input;
 
     /// Like lf-noise0, it generates random values between -1 and 1 at a rate
     /// given by the freq argument, with two differences: p * no time
@@ -2032,7 +2032,7 @@ interface ugens {
     /// 
     /// Args:
     /// - `freq`: rate at which to generate random values.
-    lfd-noise0: func(def: borrow<synth-def>, rate: rate, freq: ugen-input) -> ugen-input;
+    lfd-noise0: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input) -> ugen-input;
 
     /// Like lf-noise1, it generates linearly interpolated random values between
     /// -1 and 1 at a rate given by the freq argument, with two differences: *
@@ -2044,7 +2044,7 @@ interface ugens {
     /// 
     /// Args:
     /// - `freq`: rate at which to generate random values.
-    lfd-noise1: func(def: borrow<synth-def>, rate: rate, freq: ugen-input) -> ugen-input;
+    lfd-noise1: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input) -> ugen-input;
 
     /// Similar to lf-noise2, it generates polynomially interpolated random
     /// values between -1 and 1 at a rate given by the freq argument, with 3
@@ -2057,7 +2057,7 @@ interface ugens {
     /// 
     /// Args:
     /// - `freq`: rate at which to generate random values.
-    lfd-noise3: func(def: borrow<synth-def>, rate: rate, freq: ugen-input) -> ugen-input;
+    lfd-noise3: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input) -> ugen-input;
 
     /// A non-band-limited gaussian function oscillator. Output ranges from
     /// minval to 1. LFGauss implements the formula: f(x) = exp(squared(x -
@@ -2074,21 +2074,21 @@ interface ugens {
     /// action after one cycle
     /// - `action`: Action to be evaluated after cycle completes. Default:
     /// NO-ACTION.
-    lf-gauss: func(def: borrow<synth-def>, rate: rate, duration: ugen-input, width: ugen-input, iphase: ugen-input, loop: ugen-input, action: ugen-input) -> ugen-input;
+    lf-gauss: func(def: borrow<synth-def>, ugen-rate: rate, duration: ugen-input, width: ugen-input, iphase: ugen-input, loop: ugen-input, action: ugen-input) -> ugen-input;
 
     /// Generates random values between -1 and 1 at a rate (the rate is not
     /// guaranteed but approximate)
     /// 
     /// Args:
     /// - `freq`: approximate rate at which to generate random values.
-    lf-noise0: func(def: borrow<synth-def>, rate: rate, freq: ugen-input) -> ugen-input;
+    lf-noise0: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input) -> ugen-input;
 
     /// Generates linearly interpolated random values between -1 and 1 at the
     /// supplied rate (the rate is not guaranteed but approximate).
     /// 
     /// Args:
     /// - `freq`: approximate rate at which to generate random values.
-    lf-noise1: func(def: borrow<synth-def>, rate: rate, freq: ugen-input) -> ugen-input;
+    lf-noise1: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input) -> ugen-input;
 
     /// Generates quadratically interpolated random values between -1 and 1 at
     /// the supplied rate (the rate is not guaranteed but approximate). Note:
@@ -2099,7 +2099,7 @@ interface ugens {
     /// 
     /// Args:
     /// - `freq`: approximate rate at which to generate random values.
-    lf-noise2: func(def: borrow<synth-def>, rate: rate, freq: ugen-input) -> ugen-input;
+    lf-noise2: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input) -> ugen-input;
 
     /// a non band-limited parabolic oscillator outputing a high of 1 and a low
     /// of zero.
@@ -2108,7 +2108,7 @@ interface ugens {
     /// - `freq`: Frequency in Hertz
     /// - `iphase`: Initial phase offset. For efficiency reasons this is a value
     /// ranging from 0 to 2.
-    lf-par: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, iphase: ugen-input) -> ugen-input;
+    lf-par: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, iphase: ugen-input) -> ugen-input;
 
     /// A non-band-limited pulse oscillator. Outputs a high value of one and a
     /// low value of zero.
@@ -2117,7 +2117,7 @@ interface ugens {
     /// - `freq`: Frequency in Hertz
     /// - `iphase`: Initial phase offset in cycles ( 0..1 )
     /// - `width`: Pulse width duty cycle from zero to one
-    lf-pulse: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, iphase: ugen-input, width: ugen-input) -> ugen-input;
+    lf-pulse: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, iphase: ugen-input, width: ugen-input) -> ugen-input;
 
     /// low freq (i.e. not band limited) sawtooth oscillator
     /// 
@@ -2125,7 +2125,7 @@ interface ugens {
     /// - `freq`: Frequency in Hertz
     /// - `iphase`: Initial phase offset. For efficiency reasons this is a value
     /// ranging from 0 to 2.
-    lf-saw: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, iphase: ugen-input) -> ugen-input;
+    lf-saw: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, iphase: ugen-input) -> ugen-input;
 
     /// a non-band-limited triangle oscillator
     /// 
@@ -2139,7 +2139,7 @@ interface ugens {
     /// - `freq`: Frequency in Hertz
     /// - `iphase`: Initial phase offset. For efficiency reasons this is a value
     /// ranging from 0 to 2.
-    lf-tri: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, iphase: ugen-input) -> ugen-input;
+    lf-tri: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, iphase: ugen-input) -> ugen-input;
 
     /// second order Butterworth low pass filter
     /// 
@@ -2153,15 +2153,15 @@ interface ugens {
     /// Args:
     /// - `%in`: input signal to be processed
     /// - `freq`: cutoff frequency
-    lpf: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, freq: ugen-input) -> ugen-input;
+    lpf: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, freq: ugen-input) -> ugen-input;
 
     /// two point average filter. Implements the formula: out(i) = 0.5 * (in(i)
     /// + in(i-1))
-    lpz1: func(def: borrow<synth-def>, rate: rate, %in: ugen-input) -> ugen-input;
+    lpz1: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input) -> ugen-input;
 
     /// two zero fixed lowpass. Implements the formula: out(i) = 0.25 * (in(i) +
     /// (2*in(i-1)) + in(i-2))
-    lpz2: func(def: borrow<synth-def>, rate: rate, %in: ugen-input) -> ugen-input;
+    lpz2: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input) -> ugen-input;
 
     /// exponential lag, useful for smoothing out control signals. This is
     /// essentially the same as OnePole except that instead of supplying the
@@ -2172,7 +2172,7 @@ interface ugens {
     /// Args:
     /// - `%in`: input signal
     /// - `lag-time`: 60 dB lag time in seconds
-    lag: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, lag-time: ugen-input) -> ugen-input;
+    lag: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, lag-time: ugen-input) -> ugen-input;
 
     /// equivalent to (lag (lag in time) time), resulting in a smoother
     /// transition. This saves on CPU as you only have to calculate the decay
@@ -2181,7 +2181,7 @@ interface ugens {
     /// Args:
     /// - `%in`: input signal
     /// - `lag-time`: 60 dB lag time in seconds
-    lag2: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, lag-time: ugen-input) -> ugen-input;
+    lag2: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, lag-time: ugen-input) -> ugen-input;
 
     /// equivalent to (lag-ud (lag-ud in up-t down-t) up-t down-t) thus
     /// resulting in a smoother transition. This saves on CPU as you only have
@@ -2192,7 +2192,7 @@ interface ugens {
     /// - `%in`: input signal
     /// - `lag-time-up`: 60 dB lag time in seconds for the upgoing signal
     /// - `lag-time-down`: 60 dB lag time in seconds for the downgoing signal
-    lag2-ud: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, lag-time-up: ugen-input, lag-time-down: ugen-input) -> ugen-input;
+    lag2-ud: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, lag-time-up: ugen-input, lag-time-down: ugen-input) -> ugen-input;
 
     /// lag3 is equivalent to (lag (lag (lag in time) time) time), thus
     /// resulting in a smoother transition. This saves on CPU as you only have
@@ -2202,7 +2202,7 @@ interface ugens {
     /// Args:
     /// - `%in`: input signal
     /// - `lag-time`: 60 dB lag time in seconds
-    lag3: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, lag-time: ugen-input) -> ugen-input;
+    lag3: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, lag-time: ugen-input) -> ugen-input;
 
     /// equivalent to (lag-ud (lag-ud (lag-ud (in up-t down-t) up-t down-t)
     /// up-t, down-t) thus resulting in a smoother transition. This saves on CPU
@@ -2213,7 +2213,7 @@ interface ugens {
     /// - `%in`: input signal
     /// - `lag-time-up`: 60 dB lag time in seconds for the upgoing signal
     /// - `lag-time-down`: 60 dB lag time in seconds for the downgoing signal
-    lag3-ud: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, lag-time-up: ugen-input, lag-time-down: ugen-input) -> ugen-input;
+    lag3-ud: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, lag-time-up: ugen-input, lag-time-down: ugen-input) -> ugen-input;
 
     /// Read a control signal from a bus with a lag.
     /// 
@@ -2224,7 +2224,7 @@ interface ugens {
     /// - `num-channels`: the number of channels (i.e. adjacent buses) to read
     /// in. Not modulatable.
     /// - `lag`: lag factor
-    lag-in: func(def: borrow<synth-def>, rate: rate, bus: ugen-input, num-channels: u32, lag: ugen-input) -> ugen-input;
+    lag-in: func(def: borrow<synth-def>, ugen-rate: rate, bus: ugen-input, num-channels: u32, lag: ugen-input) -> ugen-input;
 
     /// the same as Lag except that you can supply a different 60 dB time for
     /// when the signal goes up, from when the signal goes down
@@ -2233,7 +2233,7 @@ interface ugens {
     /// - `%in`: input signal
     /// - `lag-time-up`: 60 dB lag time in seconds for the upgoing signal
     /// - `lag-time-down`: 60 dB lag time in seconds for the downgoing signal
-    lag-ud: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, lag-time-up: ugen-input, lag-time-down: ugen-input) -> ugen-input;
+    lag-ud: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, lag-time-up: ugen-input, lag-time-down: ugen-input) -> ugen-input;
 
     /// Output the last value before the input changed
     /// 
@@ -2242,7 +2242,7 @@ interface ugens {
     /// Args:
     /// - `%in`: input signal
     /// - `diff`: difference threshold
-    last-value: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, diff: ugen-input) -> ugen-input;
+    last-value: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, diff: ugen-input) -> ugen-input;
 
     /// Sample and hold
     /// 
@@ -2252,7 +2252,7 @@ interface ugens {
     /// - `%in`: Input signal.
     /// - `trig`: Trigger. Trigger can be any signal. A trigger happens when the
     /// signal changes from non-positive to positive.
-    latch: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, trig: ugen-input) -> ugen-input;
+    latch: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, trig: ugen-input) -> ugen-input;
 
     /// a cubic-interpolating (latoocarfian chaotic) sound generator. Parameters
     /// a and b should be in the range from -3 to +3, and parameters c and d
@@ -2268,7 +2268,7 @@ interface ugens {
     /// - `d`: 4th coefficient
     /// - `xi`: initial value of x
     /// - `yi`: initial value of y
-    latoocarfian-c: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, a: ugen-input, b: ugen-input, c: ugen-input, d: ugen-input, xi: ugen-input, yi: ugen-input) -> ugen-input;
+    latoocarfian-c: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, a: ugen-input, b: ugen-input, c: ugen-input, d: ugen-input, xi: ugen-input, yi: ugen-input) -> ugen-input;
 
     /// a linear-interpolating (latoocarfian chaotic) sound generator.
     /// Parameters a and b should be in the range from -3 to +3, and parameters
@@ -2284,7 +2284,7 @@ interface ugens {
     /// - `d`: 4th coefficient
     /// - `xi`: initial value of x
     /// - `yi`: initial value of y
-    latoocarfian-l: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, a: ugen-input, b: ugen-input, c: ugen-input, d: ugen-input, xi: ugen-input, yi: ugen-input) -> ugen-input;
+    latoocarfian-l: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, a: ugen-input, b: ugen-input, c: ugen-input, d: ugen-input, xi: ugen-input, yi: ugen-input) -> ugen-input;
 
     /// a non-interpolating (latoocarfian chaotic) sound generator. Parameters a
     /// and b should be in the range from -3 to +3, and parameters c and d
@@ -2300,7 +2300,7 @@ interface ugens {
     /// - `d`: 4th coefficient
     /// - `xi`: initial value of x
     /// - `yi`: initial value of y
-    latoocarfian-n: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, a: ugen-input, b: ugen-input, c: ugen-input, d: ugen-input, xi: ugen-input, yi: ugen-input) -> ugen-input;
+    latoocarfian-n: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, a: ugen-input, b: ugen-input, c: ugen-input, d: ugen-input, xi: ugen-input, yi: ugen-input) -> ugen-input;
 
     /// removes a DC offset from signal. For example, a square wave contains
     /// prolonged sections of the cycle which are at +1 and -1 (the top and
@@ -2314,7 +2314,7 @@ interface ugens {
     /// - `coef`: leak coefficient. A value of 1 indicates no leakage and 0
     /// indicates high leakage - essentially the rate at which the offset will
     /// return back to 0
-    leak-dc: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, coef: ugen-input) -> ugen-input;
+    leak-dc: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, coef: ugen-input) -> ugen-input;
 
     /// Output least changed
     /// 
@@ -2323,7 +2323,7 @@ interface ugens {
     /// Args:
     /// - `a`: first input
     /// - `b`: second input
-    least-change: func(def: borrow<synth-def>, rate: rate, a: ugen-input, b: ugen-input) -> ugen-input;
+    least-change: func(def: borrow<synth-def>, ugen-rate: rate, a: ugen-input, b: ugen-input) -> ugen-input;
 
     /// Limits the input amplitude to the given level. Limiter will not
     /// overshoot like Compander will, but it needs to look ahead in the audio.
@@ -2337,7 +2337,7 @@ interface ugens {
     /// - `dur`: The buffer delay time. Shorter times will produce smaller
     /// delays and quicker transient response times, but may introduce amplitude
     /// modulation artifacts. (AKA lookAheadTime)
-    limiter: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, level: ugen-input, dur: ugen-input) -> ugen-input;
+    limiter: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, level: ugen-input, dur: ugen-input) -> ugen-input;
 
     /// a cubic-interpolating (linear congruential chaotic) sound generator. The
     /// output signal is automatically scaled to a range of [-1, 1].
@@ -2348,7 +2348,7 @@ interface ugens {
     /// - `c`: increment amount
     /// - `m`: modulus amount
     /// - `xi`: initial value of x
-    lin-cong-c: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, a: ugen-input, c: ugen-input, m: ugen-input, xi: ugen-input) -> ugen-input;
+    lin-cong-c: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, a: ugen-input, c: ugen-input, m: ugen-input, xi: ugen-input) -> ugen-input;
 
     /// a linear-interpolating (linear congruential chaotic) sound generator.
     /// The output signal is automatically scaled to a range of [-1, 1].
@@ -2359,7 +2359,7 @@ interface ugens {
     /// - `c`: increment amount
     /// - `m`: modulus amount
     /// - `xi`: initial value of x
-    lin-cong-l: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, a: ugen-input, c: ugen-input, m: ugen-input, xi: ugen-input) -> ugen-input;
+    lin-cong-l: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, a: ugen-input, c: ugen-input, m: ugen-input, xi: ugen-input) -> ugen-input;
 
     /// a non-interpolating (linear congruential chaotic) sound generator. The
     /// output signal is automatically scaled to a range of [-1, 1].
@@ -2370,7 +2370,7 @@ interface ugens {
     /// - `c`: increment amount
     /// - `m`: modulus amount
     /// - `xi`: initial value of x
-    lin-cong-n: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, a: ugen-input, c: ugen-input, m: ugen-input, xi: ugen-input) -> ugen-input;
+    lin-cong-n: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, a: ugen-input, c: ugen-input, m: ugen-input, xi: ugen-input) -> ugen-input;
 
     /// Map a linear range to an exponential range
     /// 
@@ -2383,7 +2383,7 @@ interface ugens {
     /// - `srchi`: Upper limit of input range
     /// - `dstlo`: Lower limit of output range
     /// - `dsthi`: Upper limit of output range
-    lin-exp: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, srclo: ugen-input, srchi: ugen-input, dstlo: ugen-input, dsthi: ugen-input) -> ugen-input;
+    lin-exp: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, srclo: ugen-input, srchi: ugen-input, dstlo: ugen-input, dsthi: ugen-input) -> ugen-input;
 
     /// Two channel (stereo) linear panner. This one sounds more like the Rhodes
     /// tremolo than Pan2.
@@ -2392,7 +2392,7 @@ interface ugens {
     /// - `%in`: input signal
     /// - `pos`: pan position, -1 is left, +1 is right
     /// - `level`: a control rate level input
-    lin-pan2: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, pos: ugen-input, level: ugen-input) -> ugen-input;
+    lin-pan2: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, pos: ugen-input, level: ugen-input) -> ugen-input;
 
     /// Generates a single random float value in linear distribution from lo to
     /// hi, skewed towards lo if minmax < 0, otherwise skewed towards hi.
@@ -2401,7 +2401,7 @@ interface ugens {
     /// - `lo`: Minimum value of generated float
     /// - `hi`: Maximum value of generated float
     /// - `minmax`: Skew direction (towards lo if negative otherwise hi)
-    lin-rand: func(def: borrow<synth-def>, rate: rate, lo: ugen-input, hi: ugen-input, minmax: ugen-input) -> ugen-input;
+    lin-rand: func(def: borrow<synth-def>, ugen-rate: rate, lo: ugen-input, hi: ugen-input, minmax: ugen-input) -> ugen-input;
 
     /// Two channel linear crossfader.
     /// 
@@ -2410,7 +2410,7 @@ interface ugens {
     /// - `in-b`: input signal B
     /// - `pan`: cross fade position from -1 to +1
     /// - `level`: a control rate level input
-    lin-x-fade2: func(def: borrow<synth-def>, rate: rate, in-a: ugen-input, in-b: ugen-input, pan: ugen-input, level: ugen-input) -> ugen-input;
+    lin-x-fade2: func(def: borrow<synth-def>, ugen-rate: rate, in-a: ugen-input, in-b: ugen-input, pan: ugen-input, level: ugen-input) -> ugen-input;
 
     /// Line generator.
     /// 
@@ -2422,7 +2422,7 @@ interface ugens {
     /// - `dur`: Duration in seconds
     /// - `action`: A done action to be evaluated when the line is completed.
     /// Default: NO-ACTION
-    line: func(def: borrow<synth-def>, rate: rate, start: ugen-input, end: ugen-input, dur: ugen-input, action: ugen-input) -> ugen-input;
+    line: func(def: borrow<synth-def>, ugen-rate: rate, start: ugen-input, end: ugen-input, dur: ugen-input, action: ugen-input) -> ugen-input;
 
     /// A linear envelope generator, rises to sus-level over attack-time seconds
     /// and after the gate goes non-positive falls over release-time to finally
@@ -2435,9 +2435,9 @@ interface ugens {
     /// - `release-time`: Time to fall from susLevel back to 0 after the gate
     /// has been triggered
     /// - `action`: done action
-    linen: func(def: borrow<synth-def>, rate: rate, gate: ugen-input, attack-time: ugen-input, sus-level: ugen-input, release-time: ugen-input, action: ugen-input) -> ugen-input;
+    linen: func(def: borrow<synth-def>, ugen-rate: rate, gate: ugen-input, attack-time: ugen-input, sus-level: ugen-input, release-time: ugen-input, action: ugen-input) -> ugen-input;
 
-    local-buf: func(def: borrow<synth-def>, rate: rate, num-channels: u32, num-frames: ugen-input) -> ugen-input;
+    local-buf: func(def: borrow<synth-def>, ugen-rate: rate, num-channels: u32, num-frames: ugen-input) -> ugen-input;
 
     /// defines buses that are local to the enclosing synth. These are like the
     /// global buses, but are more convenient if you want to implement a self
@@ -2448,7 +2448,7 @@ interface ugens {
     /// Args:
     /// - `num-channels`: the number of channels (i.e. adjacent buses) to read
     /// in. The default is 1. You cannot modulate this argument.
-    local-in: func(def: borrow<synth-def>, rate: rate, num-channels: u32) -> ugen-input;
+    local-in: func(def: borrow<synth-def>, ugen-rate: rate, num-channels: u32) -> ugen-input;
 
     /// write to buses local to a synth
     /// 
@@ -2461,7 +2461,7 @@ interface ugens {
     /// Args:
     /// - `channels-array`: an Array of channels or single output to write out.
     /// You cannot change the size of this once a SynthDef has been built.
-    local-out: func(def: borrow<synth-def>, rate: rate, channels-array: list<ugen-input>) -> ugen-input;
+    local-out: func(def: borrow<synth-def>, ugen-rate: rate, channels-array: list<ugen-input>) -> ugen-input;
 
     /// A noise generator based on the logistic map: y = chaos-param * y * (1.0
     /// - y) y will stay in the range of 0.0 to 1.0 for normal values of the
@@ -2476,7 +2476,7 @@ interface ugens {
     /// - `freq`: Frequency of calculation; if over the sampling rate, this is
     /// clamped to the sampling rate
     /// - `init`: Initial value of y (see equation below)
-    logistic: func(def: borrow<synth-def>, rate: rate, chaos-param: ugen-input, freq: ugen-input, init: ugen-input) -> ugen-input;
+    logistic: func(def: borrow<synth-def>, ugen-rate: rate, chaos-param: ugen-input, freq: ugen-input, init: ugen-input) -> ugen-input;
 
     /// lorenz chaotic generator. A strange attractor discovered by Edward N.
     /// Lorenz while studying mathematical models of the atmosphere. The time
@@ -2493,7 +2493,7 @@ interface ugens {
     /// - `xi`: initial value of x
     /// - `yi`: initial value of y
     /// - `zi`: initial value of z
-    lorenz-l: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, s: ugen-input, r: ugen-input, b: ugen-input, h: ugen-input, xi: ugen-input, yi: ugen-input, zi: ugen-input) -> ugen-input;
+    lorenz-l: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, s: ugen-input, r: ugen-input, b: ugen-input, h: ugen-input, xi: ugen-input, yi: ugen-input, zi: ugen-input) -> ugen-input;
 
     /// A perceptual loudness function which outputs loudness in sones; this is
     /// a variant of an MP3 perceptual model, summing excitation in ERB bands.
@@ -2512,13 +2512,13 @@ interface ugens {
     /// - `tmask`: Temporal masking param: the phon level let through in an ERB
     /// band is the maximum of the new measurement, and the previous minus tmask
     /// phons
-    loudness: func(def: borrow<synth-def>, rate: rate, chain: ugen-input, smask: ugen-input, tmask: ugen-input) -> ugen-input;
+    loudness: func(def: borrow<synth-def>, ugen-rate: rate, chain: ugen-input, smask: ugen-input, tmask: ugen-input) -> ugen-input;
 
     /// Args:
     /// - `chain`: Audio input to track, which has been pre-analysed by the FFT
     /// UGen
     /// - `numcoeff`: Number of coefficients, defaults to 13, maximum of 42
-    mfcc: func(def: borrow<synth-def>, rate: rate, chain: ugen-input, numcoeff: ugen-input) -> ugen-input;
+    mfcc: func(def: borrow<synth-def>, ugen-rate: rate, chain: ugen-input, numcoeff: ugen-input) -> ugen-input;
 
     /// Masks off bits in the mantissa of the floating point sample value. This
     /// introduces a quantization noise, but is less severe than linearly
@@ -2528,9 +2528,9 @@ interface ugens {
     /// - `%in`: input signal
     /// - `bits`: the number of mantissa bits to preserve. a number from 0 to
     /// 23.
-    mantissa-mask: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, bits: ugen-input) -> ugen-input;
+    mantissa-mask: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, bits: ugen-input) -> ugen-input;
 
-    max-local-bufs: func(def: borrow<synth-def>, rate: rate, num-local-bufs: ugen-input) -> ugen-input;
+    max-local-bufs: func(def: borrow<synth-def>, ugen-rate: rate, num-local-bufs: ugen-input) -> ugen-input;
 
     /// returns the median of the last length input points. This non linear
     /// filter is good at reducing impulse noise from a signal.
@@ -2539,7 +2539,7 @@ interface ugens {
     /// - `length`: number of input points in which to find the median. Must be
     /// an odd number from 1 to 31. If length is 1 then Median has no effect.
     /// - `%in`: Input signal to be processed
-    median: func(def: borrow<synth-def>, rate: rate, length: ugen-input, %in: ugen-input) -> ugen-input;
+    median: func(def: borrow<synth-def>, ugen-rate: rate, length: ugen-input, %in: ugen-input) -> ugen-input;
 
     /// attenuates or boosts a frequency band
     /// 
@@ -2549,7 +2549,7 @@ interface ugens {
     /// - `rq`: the reciprocal of Q. bandwidth / cutoffFreq
     /// - `db`: amount of boost (db > 0) or attenuation (db < 0) of the
     /// frequency band
-    mid-eq: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, freq: ugen-input, rq: ugen-input, db: ugen-input) -> ugen-input;
+    mid-eq: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, freq: ugen-input, rq: ugen-input, db: ugen-input) -> ugen-input;
 
     /// A digital implementation of the Moog VCF (filter).
     /// 
@@ -2559,7 +2559,7 @@ interface ugens {
     /// - `gain`: The filter resonance gain, between zero and 4
     /// - `reset`: When greater than zero, this will reset the state of the
     /// digital filters at the beginning of a computational block.
-    moog-ff: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, freq: ugen-input, gain: ugen-input, reset: ugen-input) -> ugen-input;
+    moog-ff: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, freq: ugen-input, gain: ugen-input, reset: ugen-input) -> ugen-input;
 
     /// Output most changed
     /// 
@@ -2568,7 +2568,7 @@ interface ugens {
     /// Args:
     /// - `a`: first input
     /// - `b`: second input
-    most-change: func(def: borrow<synth-def>, rate: rate, a: ugen-input, b: ugen-input) -> ugen-input;
+    most-change: func(def: borrow<synth-def>, ugen-rate: rate, a: ugen-input, b: ugen-input) -> ugen-input;
 
     /// toggles between two values when the left mouse button is up or down
     /// 
@@ -2576,7 +2576,7 @@ interface ugens {
     /// - `up`: value when the key is not pressed
     /// - `down`: value when the key is pressed
     /// - `lag`: lag factor
-    mouse-button: func(def: borrow<synth-def>, rate: rate, up: ugen-input, down: ugen-input, lag: ugen-input) -> ugen-input;
+    mouse-button: func(def: borrow<synth-def>, ugen-rate: rate, up: ugen-input, down: ugen-input, lag: ugen-input) -> ugen-input;
 
     /// maps the current mouse X coordinate to a value between min and max
     /// 
@@ -2586,7 +2586,7 @@ interface ugens {
     /// - `warp`: mapping curve - either LINEAR or EXPONENTIAL (LIN and EXP
     /// abbreviations are allowed). Default is LINEAR.
     /// - `lag`: lag factor to dezipper cursor movement.
-    mouse-x: func(def: borrow<synth-def>, rate: rate, min: ugen-input, max: ugen-input, warp: ugen-input, lag: ugen-input) -> ugen-input;
+    mouse-x: func(def: borrow<synth-def>, ugen-rate: rate, min: ugen-input, max: ugen-input, warp: ugen-input, lag: ugen-input) -> ugen-input;
 
     /// maps the current mouse Y coordinate to a value between min and max
     /// 
@@ -2596,7 +2596,7 @@ interface ugens {
     /// - `warp`: mapping curve - either LINEAR or EXPONENTIAL (LIN and EXP
     /// abbreviations are allowed). Default is LINEAR
     /// - `lag`: lag factor to smooth out cursor movement.
-    mouse-y: func(def: borrow<synth-def>, rate: rate, min: ugen-input, max: ugen-input, warp: ugen-input, lag: ugen-input) -> ugen-input;
+    mouse-y: func(def: borrow<synth-def>, ugen-rate: rate, min: ugen-input, max: ugen-input, warp: ugen-input, lag: ugen-input) -> ugen-input;
 
     /// Multiply the input source by mul then add the add value. Equivalent to,
     /// but more efficient than, (+ add (* mul in))
@@ -2605,7 +2605,7 @@ interface ugens {
     /// - `%in`: Input to modify
     /// - `mul`: Multiplier Value
     /// - `add`: Addition Value
-    mul-add: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, mul: ugen-input, add: ugen-input) -> ugen-input;
+    mul-add: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, mul: ugen-input, add: ugen-input) -> ugen-input;
 
     /// Generates a single random float value in a sum of n uniform
     /// distributions from lo to hi. n = 1 : uniform distribution - same as Rand
@@ -2616,7 +2616,7 @@ interface ugens {
     /// - `lo`: Minimum value of generated float
     /// - `hi`: Maximum value of generated float
     /// - `n`: Distribution choice
-    n-rand: func(def: borrow<synth-def>, rate: rate, lo: ugen-input, hi: ugen-input, n: ugen-input) -> ugen-input;
+    n-rand: func(def: borrow<synth-def>, ugen-rate: rate, lo: ugen-input, hi: ugen-input, n: ugen-input) -> ugen-input;
 
     /// flattens dynamics. Normalizes the input amplitude to the given level.
     /// Normalize will not overshoot like Compander will, but it needs to look
@@ -2630,28 +2630,28 @@ interface ugens {
     /// - `dur`: The buffer delay time. Shorter times will produce smaller
     /// delays and quicker transient response times, but may introduce amplitude
     /// modulation artifacts. (AKA lookAheadTime)
-    normalizer: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, level: ugen-input, dur: ugen-input) -> ugen-input;
+    normalizer: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, level: ugen-input, dur: ugen-input) -> ugen-input;
 
     /// returns the number of audio buses allocated on the server.
-    num-audio-buses: func(def: borrow<synth-def>, rate: rate) -> ugen-input;
+    num-audio-buses: func(def: borrow<synth-def>, ugen-rate: rate) -> ugen-input;
 
     /// returns the number of buffers allocated on the server
-    num-buffers: func(def: borrow<synth-def>, rate: rate) -> ugen-input;
+    num-buffers: func(def: borrow<synth-def>, ugen-rate: rate) -> ugen-input;
 
     /// returns the number of control buses allocated on the server
-    num-control-buses: func(def: borrow<synth-def>, rate: rate) -> ugen-input;
+    num-control-buses: func(def: borrow<synth-def>, ugen-rate: rate) -> ugen-input;
 
     /// returns the number of input buses allocated on the server. This is the
     /// number of hardware inputs provided by the host machine such as a mic.
-    num-input-buses: func(def: borrow<synth-def>, rate: rate) -> ugen-input;
+    num-input-buses: func(def: borrow<synth-def>, ugen-rate: rate) -> ugen-input;
 
     /// returns the number of output buses allocated on the server. This is the
     /// number of hardware outputs provided by the host machine such as left and
     /// right speakers.
-    num-output-buses: func(def: borrow<synth-def>, rate: rate) -> ugen-input;
+    num-output-buses: func(def: borrow<synth-def>, ugen-rate: rate) -> ugen-input;
 
     /// returns the number of currently running synths
-    num-running-synths: func(def: borrow<synth-def>, rate: rate) -> ugen-input;
+    num-running-synths: func(def: borrow<synth-def>, ugen-rate: rate) -> ugen-input;
 
     /// write signal to a bus with sample accurate timing
     /// 
@@ -2666,7 +2666,7 @@ interface ugens {
     /// written to the audio hardware.
     /// - `channels-array`: a list of signals or single output to write out. You
     /// cannot change the size of this once a synth has been defined.
-    offset-out: func(def: borrow<synth-def>, rate: rate, bus: ugen-input, channels-array: list<ugen-input>) -> ugen-input;
+    offset-out: func(def: borrow<synth-def>, ugen-rate: rate, bus: ugen-input, channels-array: list<ugen-input>) -> ugen-input;
 
     /// A one pole filter. Implements the formula: out(i) = ((1 - abs(coef)) *
     /// in(i)) + (coef * out(i-1))
@@ -2674,7 +2674,7 @@ interface ugens {
     /// Args:
     /// - `%in`: input signal to be processed
     /// - `coef`: feedback coefficient. Should be between -1 and +1
-    one-pole: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, coef: ugen-input) -> ugen-input;
+    one-pole: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, coef: ugen-input) -> ugen-input;
 
     /// A one zero filter. Implements the formula : out(i) = ((1 - abs(coef)) *
     /// in(i)) + (coef * in(i-1))
@@ -2685,7 +2685,7 @@ interface ugens {
     /// filter (see also lpz1), -0.5 makes a differentiator (see also hpz1), +1
     /// makes a single sample delay (see also delay1), -1 makes an inverted
     /// single sample delay.
-    one-zero: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, coef: ugen-input) -> ugen-input;
+    one-zero: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, coef: ugen-input) -> ugen-input;
 
     /// An onset detector for musical audio signals - detects the beginning of
     /// notes/drumbeats/etc. Outputs a control-rate trigger signal which is 1
@@ -2716,7 +2716,7 @@ interface ugens {
     /// detections, a brute-force way to prevent too many doubled detections.
     /// - `medianspan`: specifies the size (in FFT frames) of the median window
     /// used for smoothing the detection function before triggering.
-    onsets: func(def: borrow<synth-def>, rate: rate, chain: ugen-input, threshold: ugen-input, odftype: ugen-input, relaxtime: ugen-input, floor: ugen-input, mingap: ugen-input, medianspan: ugen-input, whtype: ugen-input, rawodf: ugen-input) -> ugen-input;
+    onsets: func(def: borrow<synth-def>, ugen-rate: rate, chain: ugen-input, threshold: ugen-input, odftype: ugen-input, relaxtime: ugen-input, floor: ugen-input, mingap: ugen-input, medianspan: ugen-input, whtype: ugen-input, rawodf: ugen-input) -> ugen-input;
 
     /// Linear interpolating wavetable lookup oscillator with frequency and
     /// phase modulation inputs. This oscillator requires a buffer to be filled
@@ -2732,7 +2732,7 @@ interface ugens {
     /// - `buffer`: Lookup buffer
     /// - `freq`: Frequency in Hertz
     /// - `phase`: Phase offset or modulator in radians
-    osc: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input, freq: ugen-input, phase: ugen-input) -> ugen-input;
+    osc: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input, freq: ugen-input, phase: ugen-input) -> ugen-input;
 
     /// write a signal to a bus, adding to previous contents.
     /// 
@@ -2748,7 +2748,7 @@ interface ugens {
     /// written to the audio hardware.
     /// - `channels-array`: a list of signals or single output to write out. You
     /// cannot change the size of this once a synth has been defined.
-    %out: func(def: borrow<synth-def>, rate: rate, bus: ugen-input, channels-array: list<ugen-input>) -> ugen-input;
+    %out: func(def: borrow<synth-def>, ugen-rate: rate, bus: ugen-input, channels-array: list<ugen-input>) -> ugen-input;
 
     /// Fixed frequency sine oscillator this ugen uses a very fast algorithm for
     /// generating a sine wave at a fixed frequency
@@ -2757,14 +2757,14 @@ interface ugens {
     /// - `freq`: frequency in cycles per second. Must be a scalar
     /// - `dur`: grain duration
     /// - `amp`: amplitude of grain
-    p-sin-grain: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, dur: ugen-input, amp: ugen-input) -> ugen-input;
+    p-sin-grain: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, dur: ugen-input, amp: ugen-input) -> ugen-input;
 
     /// complex addition: RealA + RealB, ImagA + ImagB
     /// 
     /// Args:
     /// - `buffer-a`: fft buffer A
     /// - `buffer-b`: fft buffer B
-    pv-add: func(def: borrow<synth-def>, rate: rate, buffer-a: ugen-input, buffer-b: ugen-input) -> ugen-input;
+    pv-add: func(def: borrow<synth-def>, ugen-rate: rate, buffer-a: ugen-input, buffer-b: ugen-input) -> ugen-input;
 
     /// randomizes the order of the bins. The trigger will select a new random
     /// ordering.
@@ -2775,7 +2775,7 @@ interface ugens {
     /// - `width`: a value from zero to one, indicating the maximum randomized
     /// distance of a bin from its original location in the spectrum.
     /// - `trig`: a trigger selects a new random ordering.
-    pv-bin-scramble: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input, wipe: ugen-input, width: ugen-input, trig: ugen-input) -> ugen-input;
+    pv-bin-scramble: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input, wipe: ugen-input, width: ugen-input, trig: ugen-input) -> ugen-input;
 
     /// shift and scale the positions of the bins. Can be used as a very crude
     /// frequency shifter/scaler.
@@ -2784,7 +2784,7 @@ interface ugens {
     /// - `buffer`: fft buffer.
     /// - `stretch`: scale bin location by factor.
     /// - `shift`: add an offset to bin position.
-    pv-bin-shift: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input, stretch: ugen-input, shift: ugen-input) -> ugen-input;
+    pv-bin-shift: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input, stretch: ugen-input, shift: ugen-input) -> ugen-input;
 
     /// copies low bins from one input and the high bins of the other
     /// 
@@ -2795,7 +2795,7 @@ interface ugens {
     /// the same as inA; if wipe > 0 then it begins replacing with bins from inB
     /// from the bottom up;if wipe < 0 then it begins replacing with bins from
     /// inB from the top down.
-    pv-bin-wipe: func(def: borrow<synth-def>, rate: rate, buffer-a: ugen-input, buffer-b: ugen-input, wipe: ugen-input) -> ugen-input;
+    pv-bin-wipe: func(def: borrow<synth-def>, ugen-rate: rate, buffer-a: ugen-input, buffer-b: ugen-input, wipe: ugen-input) -> ugen-input;
 
     /// clears bins above or below a cutoff point
     /// 
@@ -2805,7 +2805,7 @@ interface ugens {
     /// effect; if wipe > 0 then it acts like a high pass filter, clearing bins
     /// from the bottom up; if wipe < 0 then it acts like a low pass filter,
     /// clearing bins from the top down.
-    pv-brick-wall: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input, wipe: ugen-input) -> ugen-input;
+    pv-brick-wall: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input, wipe: ugen-input) -> ugen-input;
 
     /// Applies the conformal mapping z -> (z-a)/(1-za*) to the phase vocoder
     /// bins z with a given by the real and imag inputs to the UGen. i.e., makes
@@ -2820,7 +2820,7 @@ interface ugens {
     /// (see examples below).
     /// - `areal`: real part of a.
     /// - `aimag`: imaginary part of a.
-    pv-conformal-map: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input, areal: ugen-input, aimag: ugen-input) -> ugen-input;
+    pv-conformal-map: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input, areal: ugen-input, aimag: ugen-input) -> ugen-input;
 
     /// converts the FFT frames to their complex conjugate (i.e. reverses the
     /// sign of their imaginary part). This is not usually a useful audio effect
@@ -2829,7 +2829,7 @@ interface ugens {
     /// 
     /// Args:
     /// - `buffer`: fft buffer
-    pv-conj: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input) -> ugen-input;
+    pv-conj: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input) -> ugen-input;
 
     /// copies the spectral frame in bufferA to bufferB at that point in the
     /// chain of PV UGens. This allows for parallel processing of spectral data
@@ -2840,14 +2840,14 @@ interface ugens {
     /// Args:
     /// - `buffer-a`: source buffer
     /// - `buffer-b`: destination buffer
-    pv-copy: func(def: borrow<synth-def>, rate: rate, buffer-a: ugen-input, buffer-b: ugen-input) -> ugen-input;
+    pv-copy: func(def: borrow<synth-def>, ugen-rate: rate, buffer-a: ugen-input, buffer-b: ugen-input) -> ugen-input;
 
     /// combines magnitudes of first input and phases of the second input
     /// 
     /// Args:
     /// - `buffer-a`: fft buffer A
     /// - `buffer-b`: fft buffer B
-    pv-copy-phase: func(def: borrow<synth-def>, rate: rate, buffer-a: ugen-input, buffer-b: ugen-input) -> ugen-input;
+    pv-copy-phase: func(def: borrow<synth-def>, ugen-rate: rate, buffer-a: ugen-input, buffer-b: ugen-input) -> ugen-input;
 
     /// adds a different constant random phase shift to each bin. The trigger
     /// will select a new set of random phases.
@@ -2855,14 +2855,14 @@ interface ugens {
     /// Args:
     /// - `buffer`: fft buffer
     /// - `trig`: a trigger selects a new set of random values.
-    pv-diffuser: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input, trig: ugen-input) -> ugen-input;
+    pv-diffuser: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input, trig: ugen-input) -> ugen-input;
 
     /// complex division
     /// 
     /// Args:
     /// - `buffer-a`: fft buffer A
     /// - `buffer-b`: fft buffer B
-    pv-div: func(def: borrow<synth-def>, rate: rate, buffer-a: ugen-input, buffer-b: ugen-input) -> ugen-input;
+    pv-div: func(def: borrow<synth-def>, ugen-rate: rate, buffer-a: ugen-input, buffer-b: ugen-input) -> ugen-input;
 
     /// FFT onset detector based on work described in: Hainsworth, S. (2003)
     /// Techniques for the Automated Analysis of Musical Audio. PhD, University
@@ -2883,7 +2883,7 @@ interface ugens {
     /// - `threshold`: Threshold hold level for allowing a detection
     /// - `wait-time`: If triggered, minimum wait until a further frame can
     /// cause another spot (useful to stop multiple detects on heavy signals)
-    pv-hainsworth-foote: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input, proph: ugen-input, propf: ugen-input, threshold: ugen-input, wait-time: ugen-input) -> ugen-input;
+    pv-hainsworth-foote: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input, proph: ugen-input, propf: ugen-input, threshold: ugen-input, wait-time: ugen-input) -> ugen-input;
 
     /// FFT feature detector for onset detection based on work described in:
     /// Jensen,K. & Andersen, T. H. (2003). Real-time Beat Estimation Using
@@ -2901,7 +2901,7 @@ interface ugens {
     /// - `threshold`: Threshold level for allowing a detection
     /// - `wait-time`: If triggered, minimum wait until a further frame can
     /// cause another spot (useful to stop multiple detects on heavy signals)
-    pv-jensen-andersen: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input, propsc: ugen-input, prophfe: ugen-input, prophfc: ugen-input, propsf: ugen-input, threshold: ugen-input, wait-time: ugen-input) -> ugen-input;
+    pv-jensen-andersen: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input, propsc: ugen-input, prophfe: ugen-input, prophfc: ugen-input, propsf: ugen-input, threshold: ugen-input, wait-time: ugen-input) -> ugen-input;
 
     /// passes only bins whose magnitude is above a threshold and above their
     /// nearest neighbors
@@ -2909,28 +2909,28 @@ interface ugens {
     /// Args:
     /// - `buffer`: fft buffer
     /// - `threshold`: magnitude threshold.
-    pv-local-max: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input, threshold: ugen-input) -> ugen-input;
+    pv-local-max: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input, threshold: ugen-input) -> ugen-input;
 
     /// passes only bins whose magnitude is above a threshold
     /// 
     /// Args:
     /// - `buffer`: fft buffer
     /// - `threshold`: magnitude threshold.
-    pv-mag-above: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input, threshold: ugen-input) -> ugen-input;
+    pv-mag-above: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input, threshold: ugen-input) -> ugen-input;
 
     /// passes only bins whose magnitude is below a threshold
     /// 
     /// Args:
     /// - `buffer`: fft buffer
     /// - `threshold`: magnitude threshold.
-    pv-mag-below: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input, threshold: ugen-input) -> ugen-input;
+    pv-mag-below: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input, threshold: ugen-input) -> ugen-input;
 
     /// clips bin magnitudes to a maximum threshold
     /// 
     /// Args:
     /// - `buffer`: fft buffer
     /// - `threshold`: magnitude threshold.
-    pv-mag-clip: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input, threshold: ugen-input) -> ugen-input;
+    pv-mag-clip: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input, threshold: ugen-input) -> ugen-input;
 
     /// divides magnitudes of two inputs and keeps the phases of the first input
     /// 
@@ -2939,14 +2939,14 @@ interface ugens {
     /// - `buffer-b`: fft buffer B.
     /// - `zeroed`: number to use when bins are zeroed out, i.e. causing
     /// division by zero
-    pv-mag-div: func(def: borrow<synth-def>, rate: rate, buffer-a: ugen-input, buffer-b: ugen-input, zeroed: ugen-input) -> ugen-input;
+    pv-mag-div: func(def: borrow<synth-def>, ugen-rate: rate, buffer-a: ugen-input, buffer-b: ugen-input, zeroed: ugen-input) -> ugen-input;
 
     /// freezes magnitudes at current levels when freeze > 0
     /// 
     /// Args:
     /// - `buffer`: fft buffer
     /// - `freeze`: if freeze > 0 then magnitudes are frozen at current levels.
-    pv-mag-freeze: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input, freeze: ugen-input) -> ugen-input;
+    pv-mag-freeze: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input, freeze: ugen-input) -> ugen-input;
 
     /// multiplies magnitudes of two inputs and keeps the phases of the first
     /// input
@@ -2954,13 +2954,13 @@ interface ugens {
     /// Args:
     /// - `buffer-a`: fft buffer A
     /// - `buffer-b`: fft buffer B
-    pv-mag-mul: func(def: borrow<synth-def>, rate: rate, buffer-a: ugen-input, buffer-b: ugen-input) -> ugen-input;
+    pv-mag-mul: func(def: borrow<synth-def>, ugen-rate: rate, buffer-a: ugen-input, buffer-b: ugen-input) -> ugen-input;
 
     /// magnitudes are multiplied with noise
     /// 
     /// Args:
     /// - `buffer`: fft buffer
-    pv-mag-noise: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input) -> ugen-input;
+    pv-mag-noise: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input) -> ugen-input;
 
     /// shift and stretch the positions of only the magnitude of the bins. Can
     /// be used as a very crude frequency shifter/scaler.
@@ -2969,7 +2969,7 @@ interface ugens {
     /// - `buffer`: fft buffer.
     /// - `stretch`: scale bin location by factor.
     /// - `shift`: add an offset to bin position.
-    pv-mag-shift: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input, stretch: ugen-input, shift: ugen-input) -> ugen-input;
+    pv-mag-shift: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input, stretch: ugen-input, shift: ugen-input) -> ugen-input;
 
     /// average a bin's magnitude with its neighbors
     /// 
@@ -2977,28 +2977,28 @@ interface ugens {
     /// - `buffer`: fft buffer
     /// - `bins`: number of bins to average on each side of bin. As this number
     /// rises, so will CPU usage.
-    pv-mag-smear: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input, bins: ugen-input) -> ugen-input;
+    pv-mag-smear: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input, bins: ugen-input) -> ugen-input;
 
     /// squares the magnitudes and renormalizes to previous peak. This makes
     /// weak bins weaker.
     /// 
     /// Args:
     /// - `buffer`: fft buffer
-    pv-mag-squared: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input) -> ugen-input;
+    pv-mag-squared: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input) -> ugen-input;
 
     /// output copies bins with the maximum magnitude of the two inputs
     /// 
     /// Args:
     /// - `buffer-a`: fft buffer A
     /// - `buffer-b`: fft buffer B
-    pv-max: func(def: borrow<synth-def>, rate: rate, buffer-a: ugen-input, buffer-b: ugen-input) -> ugen-input;
+    pv-max: func(def: borrow<synth-def>, ugen-rate: rate, buffer-a: ugen-input, buffer-b: ugen-input) -> ugen-input;
 
     /// output copies bins with the minimum magnitude of the two inputs
     /// 
     /// Args:
     /// - `buffer-a`: fft buffer A
     /// - `buffer-b`: fft buffer B
-    pv-min: func(def: borrow<synth-def>, rate: rate, buffer-a: ugen-input, buffer-b: ugen-input) -> ugen-input;
+    pv-min: func(def: borrow<synth-def>, ugen-rate: rate, buffer-a: ugen-input, buffer-b: ugen-input) -> ugen-input;
 
     /// complex multiplication: (RealA * RealB) - (ImagA * ImagB) (ImagA *
     /// RealB) + (RealA * ImagB)
@@ -3006,26 +3006,26 @@ interface ugens {
     /// Args:
     /// - `buffer-a`: fft buffer A
     /// - `buffer-b`: fft buffer B
-    pv-mul: func(def: borrow<synth-def>, rate: rate, buffer-a: ugen-input, buffer-b: ugen-input) -> ugen-input;
+    pv-mul: func(def: borrow<synth-def>, ugen-rate: rate, buffer-a: ugen-input, buffer-b: ugen-input) -> ugen-input;
 
     /// shift phase of all bins
     /// 
     /// Args:
     /// - `buffer`: fft buffer
     /// - `shift`: phase shift in radians
-    pv-phase-shift: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input, shift: ugen-input) -> ugen-input;
+    pv-phase-shift: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input, shift: ugen-input) -> ugen-input;
 
     /// shift phase of all bins by 270 degrees
     /// 
     /// Args:
     /// - `buffer`: fft buffer
-    pv-phase-shift270: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input) -> ugen-input;
+    pv-phase-shift270: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input) -> ugen-input;
 
     /// shift phase of all bins by 90 degrees
     /// 
     /// Args:
     /// - `buffer`: fft buffer
-    pv-phase-shift90: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input) -> ugen-input;
+    pv-phase-shift90: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input) -> ugen-input;
 
     /// randomly clear bins
     /// 
@@ -3034,7 +3034,7 @@ interface ugens {
     /// - `wipe`: clears bins from input in a random order as wipe goes from 0
     /// to 1.
     /// - `trig`: a trigger selects a new random ordering.
-    pv-rand-comb: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input, wipe: ugen-input, trig: ugen-input) -> ugen-input;
+    pv-rand-comb: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input, wipe: ugen-input, trig: ugen-input) -> ugen-input;
 
     /// cross fades between two sounds by copying bins in a random order
     /// 
@@ -3044,7 +3044,7 @@ interface ugens {
     /// - `wipe`: copies bins from bufferB in a random order as wipe goes from 0
     /// to 1.
     /// - `trig`: a trigger selects a new random ordering.
-    pv-rand-wipe: func(def: borrow<synth-def>, rate: rate, buffer-a: ugen-input, buffer-b: ugen-input, wipe: ugen-input, trig: ugen-input) -> ugen-input;
+    pv-rand-wipe: func(def: borrow<synth-def>, ugen-rate: rate, buffer-a: ugen-input, buffer-b: ugen-input, wipe: ugen-input, trig: ugen-input) -> ugen-input;
 
     /// makes a series of gaps in a spectrum
     /// 
@@ -3053,7 +3053,7 @@ interface ugens {
     /// - `num-teeth`: number of teeth in the comb.
     /// - `phase`: starting phase of comb pulse.
     /// - `width`: pulse width of comb.
-    pv-rect-comb: func(def: borrow<synth-def>, rate: rate, buffer: ugen-input, num-teeth: ugen-input, phase: ugen-input, width: ugen-input) -> ugen-input;
+    pv-rect-comb: func(def: borrow<synth-def>, ugen-rate: rate, buffer: ugen-input, num-teeth: ugen-input, phase: ugen-input, width: ugen-input) -> ugen-input;
 
     /// alternates blocks of bins between the two inputs
     /// 
@@ -3063,7 +3063,7 @@ interface ugens {
     /// - `num-teeth`: number of teeth in the comb.
     /// - `phase`: starting phase of comb pulse.
     /// - `width`: pulse width of comb.
-    pv-rect-comb2: func(def: borrow<synth-def>, rate: rate, buffer-a: ugen-input, buffer-b: ugen-input, num-teeth: ugen-input, phase: ugen-input, width: ugen-input) -> ugen-input;
+    pv-rect-comb2: func(def: borrow<synth-def>, ugen-rate: rate, buffer-a: ugen-input, buffer-b: ugen-input, num-teeth: ugen-input, phase: ugen-input, width: ugen-input) -> ugen-input;
 
     /// Two channel (stereo) equal power panner.
     /// 
@@ -3071,7 +3071,7 @@ interface ugens {
     /// - `%in`: input signal
     /// - `pos`: pan position, -1 is left, +1 is right
     /// - `level`: a control rate level input
-    pan2: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, pos: ugen-input, level: ugen-input) -> ugen-input;
+    pan2: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, pos: ugen-input, level: ugen-input) -> ugen-input;
 
     /// Four channel equal power panner. Outputs are in order LeftFront,
     /// RightFront, LeftBack, RightBack.
@@ -3081,7 +3081,7 @@ interface ugens {
     /// - `xpos`: x pan position from -1 to +1 (left to right)
     /// - `ypos`: y pan position from -1 to +1 (back to front)
     /// - `level`: a control rate level input.
-    pan4: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, xpos: ugen-input, ypos: ugen-input, level: ugen-input) -> ugen-input;
+    pan4: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, xpos: ugen-input, ypos: ugen-input, level: ugen-input) -> ugen-input;
 
     /// Multichannel equal power panner.
     /// 
@@ -3104,7 +3104,7 @@ interface ugens {
     /// The first speaker will be directly in front. Should be 0.5 if the front
     /// bisects a side of the polygon. Then the first speaker will be the one
     /// left of center. Default is 0.5.
-    pan-az: func(def: borrow<synth-def>, rate: rate, num-channels: u32, %in: ugen-input, pos: ugen-input, level: ugen-input, width: ugen-input, orientation: ugen-input) -> ugen-input;
+    pan-az: func(def: borrow<synth-def>, ugen-rate: rate, num-channels: u32, %in: ugen-input, pos: ugen-input, level: ugen-input, width: ugen-input, orientation: ugen-input) -> ugen-input;
 
     /// Ambisonic B format panner. Output channels are in order W,X,Y,Z.
     /// 
@@ -3113,7 +3113,7 @@ interface ugens {
     /// - `azimuth`: in radians, -pi to +pi
     /// - `elevation`: in radians, -0.5pi to +0.5pi
     /// - `gain`: a control rate level input
-    pan-b: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, azimuth: ugen-input, elevation: ugen-input, gain: ugen-input) -> ugen-input;
+    pan-b: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, azimuth: ugen-input, elevation: ugen-input, gain: ugen-input) -> ugen-input;
 
     /// Encode a mono signal to two dimensional ambisonic B-format.
     /// 
@@ -3122,7 +3122,7 @@ interface ugens {
     /// - `azimuth`: position around the circle from -1 to +1. -1 is behind,
     /// -0.5 is left, 0 is forward, +0.5 is right, +1 is behind.
     /// - `gain`: amplitude control
-    pan-b2: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, azimuth: ugen-input, gain: ugen-input) -> ugen-input;
+    pan-b2: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, azimuth: ugen-input, gain: ugen-input) -> ugen-input;
 
     /// Partitioned convolution. Various additional buffers must be supplied.
     /// Mono impulse response only! If inputting multiple channels, you'll need
@@ -3140,27 +3140,27 @@ interface ugens {
     /// are at least two blocks per partition (to allow for amortisation)
     /// - `irbufnum`: Prepared buffer of spectra for each partition of the
     /// inpulse response
-    part-conv: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, fftsize: ugen-input, irbufnum: ugen-input) -> ugen-input;
+    part-conv: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, fftsize: ugen-input, irbufnum: ugen-input) -> ugen-input;
 
     /// Pause a specified node when triggered
     /// 
     /// Args:
     /// - `gate`: when gate is 0, node is paused, when 1 it runs
     /// - `id`: node to be paused
-    pause: func(def: borrow<synth-def>, rate: rate, gate: ugen-input, id: ugen-input) -> ugen-input;
+    pause: func(def: borrow<synth-def>, ugen-rate: rate, gate: ugen-input, id: ugen-input) -> ugen-input;
 
     /// Pause the enclosing synth when triggered
     /// 
     /// Args:
     /// - `%in`: input signal
-    pause-self: func(def: borrow<synth-def>, rate: rate, %in: ugen-input) -> ugen-input;
+    pause-self: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input) -> ugen-input;
 
     /// Pause the enclosing synth when the src ugen finishes (e.g. env-gen,
     /// play-buf, linen...)
     /// 
     /// Args:
     /// - `src`: the ugen to check for done
-    pause-self-when-done: func(def: borrow<synth-def>, rate: rate, src: ugen-input) -> ugen-input;
+    pause-self-when-done: func(def: borrow<synth-def>, ugen-rate: rate, src: ugen-input) -> ugen-input;
 
     /// Track peak signal amplitude
     /// 
@@ -3171,7 +3171,7 @@ interface ugens {
     /// - `trig`: Trigger. Trigger can be any signal. A trigger happens when the
     /// signal changes from non-positive to positive.
     /// - `reset`: Resets the counter to zero when triggered.
-    peak: func(def: borrow<synth-def>, rate: rate, trig: ugen-input, reset: ugen-input) -> ugen-input;
+    peak: func(def: borrow<synth-def>, ugen-rate: rate, trig: ugen-input, reset: ugen-input) -> ugen-input;
 
     /// Track peak signal amplitude
     /// 
@@ -3181,7 +3181,7 @@ interface ugens {
     /// Args:
     /// - `%in`: input signal.
     /// - `decay`: decay factor.
-    peak-follower: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, decay: ugen-input) -> ugen-input;
+    peak-follower: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, decay: ugen-input) -> ugen-input;
 
     /// Resettable linear ramp between two levels
     /// 
@@ -3199,7 +3199,7 @@ interface ugens {
     /// - `start`: Starting point of the ramp
     /// - `end`: End point of the ramp
     /// - `reset-pos`: The value to jump to upon receiving a trigger
-    phasor: func(def: borrow<synth-def>, rate: rate, trig: ugen-input, rate: ugen-input, start: ugen-input, end: ugen-input, reset-pos: ugen-input) -> ugen-input;
+    phasor: func(def: borrow<synth-def>, ugen-rate: rate, trig: ugen-input, rate: ugen-input, start: ugen-input, end: ugen-input, reset-pos: ugen-input) -> ugen-input;
 
     /// Noise whose spectrum falls off in power by 3 dB per octave.
     /// 
@@ -3208,7 +3208,7 @@ interface ugens {
     /// for simulating wind or sea effects, for producing breath effects in wind
     /// instrument timbres or for producing the typical trance leads. This
     /// version gives 8 octaves of pink noise.
-    pink-noise: func(def: borrow<synth-def>, rate: rate) -> ugen-input;
+    pink-noise: func(def: borrow<synth-def>, ugen-rate: rate) -> ugen-input;
 
     /// Autocorrelation pitch follower
     /// 
@@ -3244,7 +3244,7 @@ interface ugens {
     /// Helps reduce CPU overthead. Also reduces pitch resolution.
     /// - `clar`: Clarity measurement (purity of the pitched signal) if greater
     /// than 0.
-    pitch: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, init-freq: ugen-input, min-freq: ugen-input, max-freq: ugen-input, exec-freq: ugen-input, max-bins-per-octave: ugen-input, median: ugen-input, amp-threshold: ugen-input, peak-threshold: ugen-input, down-sample: ugen-input, clar: ugen-input) -> ugen-input;
+    pitch: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, init-freq: ugen-input, min-freq: ugen-input, max-freq: ugen-input, exec-freq: ugen-input, max-bins-per-octave: ugen-input, median: ugen-input, amp-threshold: ugen-input, peak-threshold: ugen-input, down-sample: ugen-input, clar: ugen-input) -> ugen-input;
 
     /// A time domain granular pitch shifter. Grains have a triangular amplitude
     /// envelope and an overlap of 4:1.
@@ -3261,7 +3261,7 @@ interface ugens {
     /// alleviate a hard comb filter effect due to uniform grain placement. It
     /// can also be an effect in itself. timeDispersion can be no larger than
     /// windowSize.
-    pitch-shift: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, window-size: ugen-input, pitch-ratio: ugen-input, pitch-dispersion: ugen-input, time-dispersion: ugen-input) -> ugen-input;
+    pitch-shift: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, window-size: ugen-input, pitch-ratio: ugen-input, pitch-dispersion: ugen-input, time-dispersion: ugen-input) -> ugen-input;
 
     /// Plays back a sample resident in a buffer
     /// 
@@ -3284,7 +3284,7 @@ interface ugens {
     /// - `action`: an integer representing an action to be executed when the
     /// buffer is finished playing. This can be used to free the enclosing
     /// synth. Action is only evaluated if loop is 0
-    play-buf: func(def: borrow<synth-def>, rate: rate, num-channels: u32, bufnum: ugen-input, rate: ugen-input, trigger: ugen-input, start-pos: ugen-input, loop: ugen-input, action: ugen-input) -> ugen-input;
+    play-buf: func(def: borrow<synth-def>, ugen-rate: rate, num-channels: u32, bufnum: ugen-input, rate: ugen-input, trigger: ugen-input, start-pos: ugen-input, loop: ugen-input, action: ugen-input) -> ugen-input;
 
     /// Implements the Karplus-Strong style of synthesis, where a delay line
     /// (normally starting with noise) is filtered and fed back on itself so
@@ -3301,7 +3301,7 @@ interface ugens {
     /// times emphasize odd partials.
     /// - `coef`: The coef of the internal OnePole filter. Values should be
     /// between -1 and +1 (larger values will be unstable... so be careful!).
-    pluck: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, trig: ugen-input, maxdelaytime: ugen-input, delaytime: ugen-input, decaytime: ugen-input, coef: ugen-input) -> ugen-input;
+    pluck: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, trig: ugen-input, maxdelaytime: ugen-input, delaytime: ugen-input, decaytime: ugen-input, coef: ugen-input) -> ugen-input;
 
     /// This ugen has been internalised for scserver compatibility. Please use
     /// the poll cgen instead.
@@ -3313,7 +3313,7 @@ interface ugens {
     /// - `label`: a string or symbol to be printed with the polled value
     /// - `trig-id`: if greater than 0, a '/tr' message is sent back to the
     /// client (similar to send-trig)
-    poll: func(def: borrow<synth-def>, rate: rate, trig: ugen-input, %in: ugen-input, label: ugen-input, trig-id: ugen-input) -> ugen-input;
+    poll: func(def: borrow<synth-def>, ugen-rate: rate, trig: ugen-input, %in: ugen-input, label: ugen-input, trig-id: ugen-input) -> ugen-input;
 
     /// band limited pulse wave generator with pulse width modulation.
     /// 
@@ -3329,7 +3329,7 @@ interface ugens {
     /// - `freq`: Frequency in Hertz (control rate)
     /// - `width`: Pulse width ratio from zero to one. 0.5 makes a square wave
     /// (control rate)
-    pulse: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, width: ugen-input) -> ugen-input;
+    pulse: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, width: ugen-input) -> ugen-input;
 
     /// Pulse counter
     /// 
@@ -3339,7 +3339,7 @@ interface ugens {
     /// - `trig`: Trigger. Trigger can be any signal. A trigger happens when the
     /// signal changes from non-positive to positive.
     /// - `reset`: Resets the counter to zero when triggered.
-    pulse-count: func(def: borrow<synth-def>, rate: rate, trig: ugen-input, reset: ugen-input) -> ugen-input;
+    pulse-count: func(def: borrow<synth-def>, ugen-rate: rate, trig: ugen-input, reset: ugen-input) -> ugen-input;
 
     /// Pulse divider
     /// 
@@ -3352,7 +3352,7 @@ interface ugens {
     /// - `start-val`: Starting value for the trigger count. This lets you start
     /// somewhere in the middle of a count, or if startCount is negative it adds
     /// that many counts to the first time the output is triggers.
-    pulse-divider: func(def: borrow<synth-def>, rate: rate, trig: ugen-input, div: ugen-input, start-val: ugen-input) -> ugen-input;
+    pulse-divider: func(def: borrow<synth-def>, ugen-rate: rate, trig: ugen-input, div: ugen-input, start-val: ugen-input) -> ugen-input;
 
     /// a cubic-interpolating (general quadratic map chaotic) sound generator
     /// based on the difference equation: xn+1 = axn2 + bxn + c
@@ -3363,7 +3363,7 @@ interface ugens {
     /// - `b`: 2nd coefficient
     /// - `c`: 3rd coefficient
     /// - `xi`: initial value of x
-    quad-c: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, a: ugen-input, b: ugen-input, c: ugen-input, xi: ugen-input) -> ugen-input;
+    quad-c: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, a: ugen-input, b: ugen-input, c: ugen-input, xi: ugen-input) -> ugen-input;
 
     /// a linear-interpolating (general quadratic map chaotic) sound generator
     /// based on the difference equation: xn+1 = axn2 + bxn + c
@@ -3374,7 +3374,7 @@ interface ugens {
     /// - `b`: 2nd coefficient
     /// - `c`: 3rd coefficient
     /// - `xi`: initial value of x
-    quad-l: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, a: ugen-input, b: ugen-input, c: ugen-input, xi: ugen-input) -> ugen-input;
+    quad-l: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, a: ugen-input, b: ugen-input, c: ugen-input, xi: ugen-input) -> ugen-input;
 
     /// a non-interpolating (general quadratic map chaotic) sound generator
     /// based on the difference equation: xn+1 = axn2 + bxn + c
@@ -3385,7 +3385,7 @@ interface ugens {
     /// - `b`: 2nd coefficient
     /// - `c`: 3rd coefficient
     /// - `xi`: initial value of x
-    quad-n: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, a: ugen-input, b: ugen-input, c: ugen-input, xi: ugen-input) -> ugen-input;
+    quad-n: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, a: ugen-input, b: ugen-input, c: ugen-input, xi: ugen-input) -> ugen-input;
 
     /// resonant high pass filter
     /// 
@@ -3407,7 +3407,7 @@ interface ugens {
     /// - `freq`: cutoff frequency
     /// - `rq`: the reciprocal of Q. bandwidth / cutoffFreq. A lower rq results
     /// in more resonance
-    rhpf: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, freq: ugen-input, rq: ugen-input) -> ugen-input;
+    rhpf: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, freq: ugen-input, rq: ugen-input) -> ugen-input;
 
     /// resonant low pass filter
     /// 
@@ -3428,9 +3428,9 @@ interface ugens {
     /// - `freq`: cutoff frequency
     /// - `rq`: the reciprocal of Q. bandwidth / cutoffFreq. A lower rq results
     /// in more resonance.
-    rlpf: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, freq: ugen-input, rq: ugen-input) -> ugen-input;
+    rlpf: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, freq: ugen-input, rq: ugen-input) -> ugen-input;
 
-    radians-per-sample: func(def: borrow<synth-def>, rate: rate) -> ugen-input;
+    radians-per-sample: func(def: borrow<synth-def>, ugen-rate: rate) -> ugen-input;
 
     /// similar to lag but with a linear rather than exponential lag, useful for
     /// smoothing out control signals
@@ -3438,9 +3438,9 @@ interface ugens {
     /// Args:
     /// - `%in`: input signal
     /// - `lag-time`: 60 dB lag time in seconds
-    ramp: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, lag-time: ugen-input) -> ugen-input;
+    ramp: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, lag-time: ugen-input) -> ugen-input;
 
-    rand: func(def: borrow<synth-def>, rate: rate, lo: ugen-input, hi: ugen-input) -> ugen-input;
+    rand: func(def: borrow<synth-def>, ugen-rate: rate, lo: ugen-input, hi: ugen-input) -> ugen-input;
 
     /// Choose which random number generator to use for this synth. All synths
     /// that use the same generator reproduce the same sequence of numbers when
@@ -3448,7 +3448,7 @@ interface ugens {
     /// 
     /// Args:
     /// - `seed`: Seed id
-    rand-id: func(def: borrow<synth-def>, rate: rate, seed: ugen-input) -> ugen-input;
+    rand-id: func(def: borrow<synth-def>, ugen-rate: rate, seed: ugen-input) -> ugen-input;
 
     /// When the trigger signal changes from nonpositive to positive, the
     /// synth's random generator seed is reset to the given value. All synths
@@ -3458,7 +3458,7 @@ interface ugens {
     /// Args:
     /// - `trig`: Trigger signal
     /// - `seed`: Seed value
-    rand-seed: func(def: borrow<synth-def>, rate: rate, trig: ugen-input, seed: ugen-input) -> ugen-input;
+    rand-seed: func(def: borrow<synth-def>, ugen-rate: rate, trig: ugen-input, seed: ugen-input) -> ugen-input;
 
     /// record a stream of values into a buffer. If recLevel is 1.0 and preLevel
     /// is 0.0 then the new input overwrites the old data. If they are both 1.0
@@ -3481,7 +3481,7 @@ interface ugens {
     /// - `action`: an integer representing an action to be executed when the
     /// buffer is finished playing. This can be used to free the enclosing
     /// synth. Action is only evaluated if loop is 0
-    record-buf: func(def: borrow<synth-def>, rate: rate, input-array: list<ugen-input>, bufnum: ugen-input, offset: ugen-input, rec-level: ugen-input, pre-level: ugen-input, run: ugen-input, loop: ugen-input, trigger: ugen-input, action: ugen-input) -> ugen-input;
+    record-buf: func(def: borrow<synth-def>, ugen-rate: rate, input-array: list<ugen-input>, bufnum: ugen-input, offset: ugen-input, rec-level: ugen-input, pre-level: ugen-input, run: ugen-input, loop: ugen-input, trigger: ugen-input, action: ugen-input) -> ugen-input;
 
     /// Send signal to a bus, overwriting previous contents.
     /// 
@@ -3495,7 +3495,7 @@ interface ugens {
     /// written to the audio hardware.
     /// - `channels-array`: a list of signals or single output to write out. You
     /// cannot change the size of this once a synth has been defined.
-    replace-out: func(def: borrow<synth-def>, rate: rate, bus: ugen-input, channels-array: list<ugen-input>) -> ugen-input;
+    replace-out: func(def: borrow<synth-def>, ugen-rate: rate, bus: ugen-input, channels-array: list<ugen-input>) -> ugen-input;
 
     /// A Note on Constant-Gain Digital Resonators,\" Computer Music Journal,
     /// vol 18, no. 4, pp. 8-10, Winter 1994.\" Computer Music Journal, vol 18,
@@ -3505,7 +3505,7 @@ interface ugens {
     /// - `%in`: input signal to be processed
     /// - `freq`: resonant frequency in Hertz
     /// - `bwr`: bandwidth ratio (reciprocal of Q). rq = bandwidth / centerFreq
-    resonz: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, freq: ugen-input, bwr: ugen-input) -> ugen-input;
+    resonz: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, freq: ugen-input, bwr: ugen-input) -> ugen-input;
 
     /// Ringz is the same as Resonz, except that instead of a resonance
     /// parameter, the bandwidth is specified in a 60dB ring decay time. One
@@ -3515,7 +3515,7 @@ interface ugens {
     /// - `%in`: input signal to be processed
     /// - `freq`: resonant frequency in Hertz
     /// - `decay-time`: the 60 dB decay time of the filter
-    ringz: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, freq: ugen-input, decay-time: ugen-input) -> ugen-input;
+    ringz: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, freq: ugen-input, decay-time: ugen-input) -> ugen-input;
 
     /// Rotate2 can be used for rotating an ambisonic B-format sound field
     /// around an axis. Rotate2 does an equal power rotation so it also works
@@ -3531,7 +3531,7 @@ interface ugens {
     /// - `y`: input signal
     /// - `pos`: angle to rotate around the circle from -1 to +1. -1 is 180
     /// degrees, -0.5 is left, 0 is forward, +0.5 is right, +1 is behind.
-    rotate2: func(def: borrow<synth-def>, rate: rate, x: ugen-input, y: ugen-input, pos: ugen-input) -> ugen-input;
+    rotate2: func(def: borrow<synth-def>, ugen-rate: rate, x: ugen-input, y: ugen-input, pos: ugen-input) -> ugen-input;
 
     /// Track maximum level
     /// 
@@ -3542,7 +3542,7 @@ interface ugens {
     /// - `%in`: Input signal.
     /// - `trig`: Trigger. Trigger can be any signal. A trigger happens when the
     /// signal changes from non-positive to positive.
-    running-max: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, trig: ugen-input) -> ugen-input;
+    running-max: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, trig: ugen-input) -> ugen-input;
 
     /// Track minimum level
     /// 
@@ -3553,7 +3553,7 @@ interface ugens {
     /// - `%in`: Input signal.
     /// - `trig`: Trigger. Trigger can be any signal. A trigger happens when the
     /// signal changes from non-positive to positive.
-    running-min: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, trig: ugen-input) -> ugen-input;
+    running-min: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, trig: ugen-input) -> ugen-input;
 
     /// A running sum over a user specified number of samples, useful for
     /// running RMS power windowing.
@@ -3562,7 +3562,7 @@ interface ugens {
     /// - `%in`: Input signal
     /// - `numsamp`: How many samples to take the running sum over
     /// (initialisation time only, not modulatable.
-    running-sum: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, numsamp: ugen-input) -> ugen-input;
+    running-sum: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, numsamp: ugen-input) -> ugen-input;
 
     /// second order filter section (biquad). Formula is equivalent to: out(i) =
     /// (a0 * in(i)) + (a1 * in(i-1)) + (a2 * in(i-2)) + (b1 * out(i-1)) + (b2 *
@@ -3575,13 +3575,13 @@ interface ugens {
     /// - `a2`: 3rd coefficient
     /// - `b1`: 4th coefficient
     /// - `b2`: 5th coefficient
-    sos: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, a0: ugen-input, a1: ugen-input, a2: ugen-input, b1: ugen-input, b2: ugen-input) -> ugen-input;
+    sos: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, a0: ugen-input, a1: ugen-input, a2: ugen-input, b1: ugen-input, b2: ugen-input) -> ugen-input;
 
     /// returns the current sample duration of the server in seconds
-    sample-dur: func(def: borrow<synth-def>, rate: rate) -> ugen-input;
+    sample-dur: func(def: borrow<synth-def>, ugen-rate: rate) -> ugen-input;
 
     /// returns the current sample rate
-    sample-rate: func(def: borrow<synth-def>, rate: rate) -> ugen-input;
+    sample-rate: func(def: borrow<synth-def>, ugen-rate: rate) -> ugen-input;
 
     /// band limited sawtooth wave generator
     /// 
@@ -3594,7 +3594,7 @@ interface ugens {
     /// 
     /// Args:
     /// - `freq`: Frequency in Hertz (control rate).
-    saw: func(def: borrow<synth-def>, rate: rate, freq: ugen-input) -> ugen-input;
+    saw: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input) -> ugen-input;
 
     /// Schmidt trigger
     /// 
@@ -3604,18 +3604,18 @@ interface ugens {
     /// - `%in`: input signal
     /// - `lo`: low threshold
     /// - `hi`: high threshold
-    schmidt: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, lo: ugen-input, hi: ugen-input) -> ugen-input;
+    schmidt: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, lo: ugen-input, hi: ugen-input) -> ugen-input;
 
-    scope-out: func(def: borrow<synth-def>, rate: rate, input-array: list<ugen-input>, bufnum: ugen-input) -> ugen-input;
+    scope-out: func(def: borrow<synth-def>, ugen-rate: rate, input-array: list<ugen-input>, bufnum: ugen-input) -> ugen-input;
 
-    scope-out2: func(def: borrow<synth-def>, rate: rate, input-array: list<ugen-input>, scope-num: ugen-input, max-frames: ugen-input, scope-frames: ugen-input) -> ugen-input;
+    scope-out2: func(def: borrow<synth-def>, ugen-rate: rate, input-array: list<ugen-input>, scope-num: ugen-input, max-frames: ugen-input, scope-frames: ugen-input) -> ugen-input;
 
     /// select the output signal from an array of inputs
     /// 
     /// Args:
     /// - `which`: Index of array to select
     /// - `channels-array`: List of ugens to choose from
-    select: func(def: borrow<synth-def>, rate: rate, which: ugen-input, channels-array: list<ugen-input>) -> ugen-input;
+    select: func(def: borrow<synth-def>, ugen-rate: rate, which: ugen-input, channels-array: list<ugen-input>) -> ugen-input;
 
     /// Send information via OSC to Overtone
     /// 
@@ -3634,7 +3634,7 @@ interface ugens {
     /// - `cmd-name`: A string or symbol, as a message name.
     /// - `values`: Array of ugens, or valid ugen inputs
     /// - `reply-id`: Integer id (similar to that used by send-trig)
-    send-reply: func(def: borrow<synth-def>, rate: rate, trig: ugen-input, cmd-name: ugen-input, values: ugen-input, reply-id: ugen-input) -> ugen-input;
+    send-reply: func(def: borrow<synth-def>, ugen-rate: rate, trig: ugen-input, cmd-name: ugen-input, values: ugen-input, reply-id: ugen-input) -> ugen-input;
 
     /// Send a /tr OSC message to Overtone
     /// 
@@ -3655,9 +3655,9 @@ interface ugens {
     /// using trig-id to genearate a unique id.
     /// - `value`: A ugen or float that will be polled at the time of trigger,
     /// and its value passed with the trigger message
-    send-trig: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, id: ugen-input, value: ugen-input) -> ugen-input;
+    send-trig: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, id: ugen-input, value: ugen-input) -> ugen-input;
 
-    set-buf: func(def: borrow<synth-def>, rate: rate, buf: ugen-input, values: ugen-input, offset: ugen-input) -> ugen-input;
+    set-buf: func(def: borrow<synth-def>, ugen-rate: rate, buf: ugen-input, values: ugen-input, offset: ugen-input) -> ugen-input;
 
     /// Set-reset flip flop
     /// 
@@ -3670,10 +3670,10 @@ interface ugens {
     /// - `trig`: Trigger. Trigger can be any signal. A trigger happens when the
     /// signal changes from non-positive to positive.
     /// - `reset`: Resets the counter to zero when triggered.
-    set-reset-ff: func(def: borrow<synth-def>, rate: rate, trig: ugen-input, reset: ugen-input) -> ugen-input;
+    set-reset-ff: func(def: borrow<synth-def>, ugen-rate: rate, trig: ugen-input, reset: ugen-input) -> ugen-input;
 
     /// performs waveshaping on the input signal by indexing into a table
-    shaper: func(def: borrow<synth-def>, rate: rate, bufnum: ugen-input, %in: ugen-input) -> ugen-input;
+    shaper: func(def: borrow<synth-def>, ugen-rate: rate, bufnum: ugen-input, %in: ugen-input) -> ugen-input;
 
     /// read from a shared control bus (internal dsp only)
     /// 
@@ -3687,7 +3687,7 @@ interface ugens {
     /// - `num-channels`: the number of channels (i.e. adjacent buses) to read
     /// in. The default is 1. You cannot modulate this number by assigning it to
     /// an argument in a SynthDef.
-    shared-in: func(def: borrow<synth-def>, rate: rate, bus: ugen-input, num-channels: u32) -> ugen-input;
+    shared-in: func(def: borrow<synth-def>, ugen-rate: rate, bus: ugen-input, num-channels: u32) -> ugen-input;
 
     /// Reads from a control bus shared between the internal server and the SC
     /// client. Control rate only. Reading from a shared control bus on the
@@ -3697,13 +3697,13 @@ interface ugens {
     /// - `bus`: the index of the shared control bus to read from
     /// - `channels-array`: an Array of channels or single output to write out.
     /// You cannot change the size of this once a SynthDef has been built.
-    shared-out: func(def: borrow<synth-def>, rate: rate, bus: ugen-input, channels-array: list<ugen-input>) -> ugen-input;
+    shared-out: func(def: borrow<synth-def>, ugen-rate: rate, bus: ugen-input, channels-array: list<ugen-input>) -> ugen-input;
 
     /// Continuously outputs 0
     /// 
     /// Args:
     /// - `num-channels`: Number of channels of silence.
-    silent: func(def: borrow<synth-def>, rate: rate, num-channels: u32) -> ugen-input;
+    silent: func(def: borrow<synth-def>, ugen-rate: rate, num-channels: u32) -> ugen-input;
 
     /// Sine table lookup oscillator
     /// 
@@ -3720,7 +3720,7 @@ interface ugens {
     /// Args:
     /// - `freq`: Frequency in Hertz
     /// - `phase`: Phase offset or modulator in radians
-    sin-osc: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, phase: ugen-input) -> ugen-input;
+    sin-osc: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, phase: ugen-input) -> ugen-input;
 
     /// Sine oscillator with phase modulation feedback
     /// 
@@ -3730,7 +3730,7 @@ interface ugens {
     /// Args:
     /// - `freq`: Frequency of oscillator
     /// - `feedback`: amplitude of phase feedback in radians
-    sin-osc-fb: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, feedback: ugen-input) -> ugen-input;
+    sin-osc-fb: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, feedback: ugen-input) -> ugen-input;
 
     /// Smooth the curve by limiting the slope of the input signal to up and dn
     /// 
@@ -3738,14 +3738,14 @@ interface ugens {
     /// - `%in`: input signal
     /// - `up`: maximum upward slope
     /// - `dn`: maximum downward slope
-    slew: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, up: ugen-input, dn: ugen-input) -> ugen-input;
+    slew: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, up: ugen-input, dn: ugen-input) -> ugen-input;
 
     /// Measures the rate of change per second of a signal. Formula implemented
     /// is: out[i] = (in[i] - in[i-1]) * sampling_rate
     /// 
     /// Args:
     /// - `%in`: input signal to measure
-    slope: func(def: borrow<synth-def>, rate: rate, %in: ugen-input) -> ugen-input;
+    slope: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input) -> ugen-input;
 
     /// Given an FFT chain, this measures the spectral centroid, which is the
     /// weighted mean frequency, or the centre of mass of the spectrum. (DC is
@@ -3754,7 +3754,7 @@ interface ugens {
     /// 
     /// Args:
     /// - `chain`: An FFT chain
-    spec-centroid: func(def: borrow<synth-def>, rate: rate, chain: ugen-input) -> ugen-input;
+    spec-centroid: func(def: borrow<synth-def>, ugen-rate: rate, chain: ugen-input) -> ugen-input;
 
     /// Given an FFT chain this calculates the Spectral Flatness measure,
     /// defined as a power spectrum's geometric mean divided by its arithmetic
@@ -3765,7 +3765,7 @@ interface ugens {
     /// 
     /// Args:
     /// - `chain`: An FFT chain
-    spec-flatness: func(def: borrow<synth-def>, rate: rate, chain: ugen-input) -> ugen-input;
+    spec-flatness: func(def: borrow<synth-def>, ugen-rate: rate, chain: ugen-input) -> ugen-input;
 
     /// Find a percentile of FFT magnitude spectrum" , :rates #{:kr} :doc "Given
     /// an FFT chain this calculates the cumulative distribution of the
@@ -3795,7 +3795,7 @@ interface ugens {
     /// - `fraction`: percentage of the spectral energy you which to find the
     /// frequency for
     /// - `interpolate`: Interpolation toggle - 0 off 1 on.
-    spec-pcile: func(def: borrow<synth-def>, rate: rate, chain: ugen-input, fraction: ugen-input, interpolate: ugen-input) -> ugen-input;
+    spec-pcile: func(def: borrow<synth-def>, ugen-rate: rate, chain: ugen-input, fraction: ugen-input, interpolate: ugen-input) -> ugen-input;
 
     /// Physical model of resonating spring
     /// 
@@ -3803,7 +3803,7 @@ interface ugens {
     /// - `%in`: Modulated input force
     /// - `spring`: Spring constant (incl. mass)
     /// - `damp`: Damping
-    spring: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, spring: ugen-input, damp: ugen-input) -> ugen-input;
+    spring: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, spring: ugen-input, damp: ugen-input) -> ugen-input;
 
     /// linear-interpolating standard map chaotic generator. The standard map is
     /// an area preserving map of a cylinder discovered by the plasma physicist
@@ -3814,7 +3814,7 @@ interface ugens {
     /// - `k`: perturbation amount
     /// - `xi`: initial value of x
     /// - `yi`: initial value of y
-    standard-l: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, k: ugen-input, xi: ugen-input, yi: ugen-input) -> ugen-input;
+    standard-l: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, k: ugen-input, xi: ugen-input, yi: ugen-input) -> ugen-input;
 
     /// standard map chaotic generator. The standard map is an area preserving
     /// map of a cylinder discovered by the plasma physicist Boris Chirikov.
@@ -3824,7 +3824,7 @@ interface ugens {
     /// - `k`: perturbation amount
     /// - `xi`: initial value of x
     /// - `yi`: initial value of y
-    standard-n: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, k: ugen-input, xi: ugen-input, yi: ugen-input) -> ugen-input;
+    standard-n: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, k: ugen-input, xi: ugen-input, yi: ugen-input) -> ugen-input;
 
     /// Pulse counter
     /// 
@@ -3840,7 +3840,7 @@ interface ugens {
     /// - `step`: step value each trigger. May be negative.
     /// - `resetval`: value to which the counter is reset when it receives a
     /// reset trigger.
-    stepper: func(def: borrow<synth-def>, rate: rate, trig: ugen-input, reset: ugen-input, min: ugen-input, max: ugen-input, step: ugen-input, resetval: ugen-input) -> ugen-input;
+    stepper: func(def: borrow<synth-def>, ugen-rate: rate, trig: ugen-input, reset: ugen-input, min: ugen-input, max: ugen-input, step: ugen-input, resetval: ugen-input) -> ugen-input;
 
     /// Strict convolution with fixed kernel which can be updated using a
     /// trigger signal. There is a linear crossfade between the buffers upon
@@ -3864,10 +3864,10 @@ interface ugens {
     /// to run for higher powers! 512, 1024, 2048, 4096 standard.
     /// - `crossfade`: The number of periods over which a crossfade is made.
     /// This must be an integer.
-    stereo-convolution2-l: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, kernel-l: ugen-input, kernel-r: ugen-input, trigger: ugen-input, framesize: ugen-input, crossfade: ugen-input) -> ugen-input;
+    stereo-convolution2-l: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, kernel-l: ugen-input, kernel-r: ugen-input, trigger: ugen-input, framesize: ugen-input, crossfade: ugen-input) -> ugen-input;
 
     /// offset from synth start within one sample
-    subsample-offset: func(def: borrow<synth-def>, rate: rate) -> ugen-input;
+    subsample-offset: func(def: borrow<synth-def>, ugen-rate: rate) -> ugen-input;
 
     /// Triggered linear ramp
     /// 
@@ -3877,7 +3877,7 @@ interface ugens {
     /// Args:
     /// - `trig`: trigger input
     /// - `rate`: rate in seconds
-    sweep: func(def: borrow<synth-def>, rate: rate, trig: ugen-input, rate: ugen-input) -> ugen-input;
+    sweep: func(def: borrow<synth-def>, ugen-rate: rate, trig: ugen-input, rate: ugen-input) -> ugen-input;
 
     /// hard sync sawtooth wave oscillator
     /// 
@@ -3890,7 +3890,7 @@ interface ugens {
     /// - `sync-freq`: Frequency of the fundamental.
     /// - `saw-freq`: Frequency of the slave synched sawtooth wave. saw-freq
     /// should always be greater than sync-freq.
-    sync-saw: func(def: borrow<synth-def>, rate: rate, sync-freq: ugen-input, saw-freq: ugen-input) -> ugen-input;
+    sync-saw: func(def: borrow<synth-def>, ugen-rate: rate, sync-freq: ugen-input, saw-freq: ugen-input) -> ugen-input;
 
     /// control rate trigger to audio rate trigger converter (maximally one per
     /// control period).
@@ -3898,14 +3898,14 @@ interface ugens {
     /// Args:
     /// - `%in`: input signal
     /// - `offset`: sample offset within control period
-    t2-a: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, offset: ugen-input) -> ugen-input;
+    t2-a: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, offset: ugen-input) -> ugen-input;
 
     /// audio rate trigger to control rate trigger converter. Uses the maxiumum
     /// trigger in the input during each control period.
     /// 
     /// Args:
     /// - `%in`: input signal
-    t2-k: func(def: borrow<synth-def>, rate: rate, %in: ugen-input) -> ugen-input;
+    t2-k: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input) -> ugen-input;
 
     /// models the impacts of a bouncing object that is reflected by a vibrating
     /// surface
@@ -3915,7 +3915,7 @@ interface ugens {
     /// - `g`: gravity
     /// - `damp`: damping on impact
     /// - `friction`: proximity from which on attraction to surface starts
-    t-ball: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, g: ugen-input, damp: ugen-input, friction: ugen-input) -> ugen-input;
+    t-ball: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, g: ugen-input, damp: ugen-input, friction: ugen-input) -> ugen-input;
 
     /// Trigger delay
     /// 
@@ -3924,14 +3924,14 @@ interface ugens {
     /// Args:
     /// - `trig`: input trigger signal.
     /// - `dur`: delay time in seconds.
-    t-delay: func(def: borrow<synth-def>, rate: rate, trig: ugen-input, dur: ugen-input) -> ugen-input;
+    t-delay: func(def: borrow<synth-def>, ugen-rate: rate, trig: ugen-input, dur: ugen-input) -> ugen-input;
 
     /// This ugen has been internalised for scserver compatibility. Please use
     /// the tduty cgen instead.
     /// 
     /// Args:
     /// - `action`: Default: NO-ACTION
-    t-duty: func(def: borrow<synth-def>, rate: rate, dur: ugen-input, reset: ugen-input, action: ugen-input, level: ugen-input, gap-first: ugen-input) -> ugen-input;
+    t-duty: func(def: borrow<synth-def>, ugen-rate: rate, dur: ugen-input, reset: ugen-input, action: ugen-input, level: ugen-input, gap-first: ugen-input) -> ugen-input;
 
     /// Generates a random float value in exponential distribution from lo to hi
     /// each time the trig signal changes from nonpositive to positive values lo
@@ -3941,7 +3941,7 @@ interface ugens {
     /// - `lo`: Minimum value of generated float
     /// - `hi`: Maximum value of generated float
     /// - `trig`: Trigger signal
-    t-exp-rand: func(def: borrow<synth-def>, rate: rate, lo: ugen-input, hi: ugen-input, trig: ugen-input) -> ugen-input;
+    t-exp-rand: func(def: borrow<synth-def>, ugen-rate: rate, lo: ugen-input, hi: ugen-input, trig: ugen-input) -> ugen-input;
 
     /// sample playback from a buffer with fine control for doing granular
     /// synthesis. Triggers generate grains from a single channel (mono) buffer.
@@ -3967,7 +3967,7 @@ interface ugens {
     /// - `amp`: amplitude of the grain.
     /// - `interp`: 1,2,or 4. Determines whether the grain uses (1) no
     /// interpolation, (2) linear interpolation, or (4) cubic interpolation.
-    t-grains: func(def: borrow<synth-def>, rate: rate, num-channels: u32, trigger: ugen-input, bufnum: ugen-input, rate: ugen-input, center-pos: ugen-input, dur: ugen-input, pan: ugen-input, amp: ugen-input, interp: ugen-input) -> ugen-input;
+    t-grains: func(def: borrow<synth-def>, ugen-rate: rate, num-channels: u32, trigger: ugen-input, bufnum: ugen-input, rate: ugen-input, center-pos: ugen-input, dur: ugen-input, pan: ugen-input, amp: ugen-input, interp: ugen-input) -> ugen-input;
 
     /// Generates a random integer value in uniform distribution from lo to hi
     /// each time the trig signal changes from nonpositive to positive values
@@ -3976,7 +3976,7 @@ interface ugens {
     /// - `lo`: Minimum value of generated integer
     /// - `hi`: Maximum value of generated integer
     /// - `trig`: Trigger signal
-    ti-rand: func(def: borrow<synth-def>, rate: rate, lo: ugen-input, hi: ugen-input, trig: ugen-input) -> ugen-input;
+    ti-rand: func(def: borrow<synth-def>, ugen-rate: rate, lo: ugen-input, hi: ugen-input, trig: ugen-input) -> ugen-input;
 
     /// Generates a random float value in uniform distribution from lo to hi
     /// each time the trig signal changes from nonpositive to positive values
@@ -3985,7 +3985,7 @@ interface ugens {
     /// - `lo`: Minimum value of generated float
     /// - `hi`: Maximum value of generated float
     /// - `trig`: Trigger signal
-    t-rand: func(def: borrow<synth-def>, rate: rate, lo: ugen-input, hi: ugen-input, trig: ugen-input) -> ugen-input;
+    t-rand: func(def: borrow<synth-def>, ugen-rate: rate, lo: ugen-input, hi: ugen-input, trig: ugen-input) -> ugen-input;
 
     /// Triggered window
     /// 
@@ -3999,7 +3999,7 @@ interface ugens {
     /// changes from non-positive to positive.
     /// - `channels-array`: list of probabilities
     /// - `normalize`: normalise flag - 0 off, 1 on
-    t-windex: func(def: borrow<synth-def>, rate: rate, trig: ugen-input, channels-array: list<ugen-input>, normalize: ugen-input) -> ugen-input;
+    t-windex: func(def: borrow<synth-def>, ugen-rate: rate, trig: ugen-input, channels-array: list<ugen-input>, normalize: ugen-input) -> ugen-input;
 
     /// Trigger timer
     /// 
@@ -4007,7 +4007,7 @@ interface ugens {
     /// 
     /// Args:
     /// - `trig`: trigger input
-    timer: func(def: borrow<synth-def>, rate: rate, trig: ugen-input) -> ugen-input;
+    timer: func(def: borrow<synth-def>, ugen-rate: rate, trig: ugen-input) -> ugen-input;
 
     /// Toggle flip flop
     /// 
@@ -4015,9 +4015,9 @@ interface ugens {
     /// 
     /// Args:
     /// - `trig`: trigger input
-    toggle-ff: func(def: borrow<synth-def>, rate: rate, trig: ugen-input) -> ugen-input;
+    toggle-ff: func(def: borrow<synth-def>, ugen-rate: rate, trig: ugen-input) -> ugen-input;
 
-    trapezoid: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, a: ugen-input, b: ugen-input, c: ugen-input, d: ugen-input) -> ugen-input;
+    trapezoid: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, a: ugen-input, b: ugen-input, c: ugen-input, d: ugen-input) -> ugen-input;
 
     /// Timed trigger
     /// 
@@ -4029,7 +4029,7 @@ interface ugens {
     /// - `trig`: trigger. Trigger can be any signal. A trigger happens when the
     /// signal changes from non-positive to positive.
     /// - `dur`: duration of the trigger output in seconds.
-    trig: func(def: borrow<synth-def>, rate: rate, trig: ugen-input, dur: ugen-input) -> ugen-input;
+    trig: func(def: borrow<synth-def>, ugen-rate: rate, trig: ugen-input, dur: ugen-input) -> ugen-input;
 
     /// Timed trigger
     /// 
@@ -4040,7 +4040,7 @@ interface ugens {
     /// - `trig`: trigger. Trigger can be any signal. A trigger happens when the
     /// signal changes from non-positive to positive.
     /// - `dur`: duration of the trigger output in seconds.
-    trig1: func(def: borrow<synth-def>, rate: rate, trig: ugen-input, dur: ugen-input) -> ugen-input;
+    trig1: func(def: borrow<synth-def>, ugen-rate: rate, trig: ugen-input, dur: ugen-input) -> ugen-input;
 
     /// a two pole filter. This provides lower level access to setting of pole
     /// location. For general purposes Resonz is better.
@@ -4049,7 +4049,7 @@ interface ugens {
     /// - `%in`: input signal to be processed
     /// - `freq`: frequency of pole angle
     /// - `radius`: radius of pole. Should be between 0 and +1
-    two-pole: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, freq: ugen-input, radius: ugen-input) -> ugen-input;
+    two-pole: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, freq: ugen-input, radius: ugen-input) -> ugen-input;
 
     /// a two zero filter
     /// 
@@ -4057,7 +4057,7 @@ interface ugens {
     /// - `%in`: input signal to be processed
     /// - `freq`: frequency of zero angle
     /// - `radius`: radius of zero
-    two-zero: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, freq: ugen-input, radius: ugen-input) -> ugen-input;
+    two-zero: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, freq: ugen-input, radius: ugen-input) -> ugen-input;
 
     /// stream in audio from a file (with variable rate)
     /// 
@@ -4073,7 +4073,7 @@ interface ugens {
     /// - `loop`: Soundfile will loop if 1 otherwise not.
     /// - `send-id`: send an osc message with this id and the file position each
     /// time the buffer is reloaded: ['/diskin', nodeID, sendID, frame]
-    v-disk-in: func(def: borrow<synth-def>, rate: rate, num-channels: u32, bufnum: ugen-input, rate: ugen-input, loop: ugen-input, send-id: ugen-input) -> ugen-input;
+    v-disk-in: func(def: borrow<synth-def>, ugen-rate: rate, num-channels: u32, bufnum: ugen-input, rate: ugen-input, loop: ugen-input, send-id: ugen-input) -> ugen-input;
 
     /// A wavetable lookup oscillator which can be swept smoothly across
     /// wavetables. All the wavetables must be allocated to the same size.
@@ -4088,7 +4088,7 @@ interface ugens {
     /// wavetable buffers of the same size.
     /// - `freq`: Frequency in Hertz
     /// - `phase`: Phase offset of modulator in radians
-    v-osc: func(def: borrow<synth-def>, rate: rate, bufpos: ugen-input, freq: ugen-input, phase: ugen-input) -> ugen-input;
+    v-osc: func(def: borrow<synth-def>, ugen-rate: rate, bufpos: ugen-input, freq: ugen-input, phase: ugen-input) -> ugen-input;
 
     /// Three variable wavetable oscillators. A wavetable lookup oscillator
     /// which can be swept smoothly across wavetables. All the wavetables must
@@ -4106,7 +4106,7 @@ interface ugens {
     /// - `freq1`: Frequency in Hertz of first oscillator
     /// - `freq2`: Frequency in Hertz of second oscillator
     /// - `freq3`: Frequency in Hertz of third oscillator
-    v-osc3: func(def: borrow<synth-def>, rate: rate, bufpos: ugen-input, freq1: ugen-input, freq2: ugen-input, freq3: ugen-input) -> ugen-input;
+    v-osc3: func(def: borrow<synth-def>, ugen-rate: rate, bufpos: ugen-input, freq1: ugen-input, freq2: ugen-input, freq3: ugen-input) -> ugen-input;
 
     /// a variable duty cycle saw wave oscillator
     /// 
@@ -4115,7 +4115,7 @@ interface ugens {
     /// - `iphase`: Initial phase offset in cycles ( 0..1 )
     /// - `width`: Duty cycle from zero to one. (0 = downward sawtooth, 0.5 =
     /// triangle, 1 = upward sawtooth)
-    var-saw: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, iphase: ugen-input, width: ugen-input) -> ugen-input;
+    var-saw: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, iphase: ugen-input, width: ugen-input) -> ugen-input;
 
     /// Models a slow frequency modulation.
     /// 
@@ -4153,7 +4153,7 @@ interface ugens {
     /// cycle.
     /// - `iphase`: Initial phase of vibrato modulation, allowing starting above
     /// or below the fundamental rather than on it.
-    vibrato: func(def: borrow<synth-def>, rate: rate, freq: ugen-input, rate: ugen-input, depth: ugen-input, delay: ugen-input, onset: ugen-input, rate-variation: ugen-input, depth-variation: ugen-input, iphase: ugen-input) -> ugen-input;
+    vibrato: func(def: borrow<synth-def>, ugen-rate: rate, freq: ugen-input, rate: ugen-input, depth: ugen-input, delay: ugen-input, onset: ugen-input, rate-variation: ugen-input, depth-variation: ugen-input, iphase: ugen-input) -> ugen-input;
 
     /// A granular time stretcher and pitchshifter. Inspired by Chad Kirby's
     /// SuperCollider2 Warp1 class, which was inspired by Richard Karpen's
@@ -4178,7 +4178,7 @@ interface ugens {
     /// - `interp`: the interpolation method used for pitchshifting grains. 1 =
     /// no interpolation. 2 = linear. 4 = cubic interpolation (more
     /// computationally intensive).
-    warp1: func(def: borrow<synth-def>, rate: rate, num-channels: u32, bufnum: ugen-input, pointer: ugen-input, freq-scale: ugen-input, window-size: ugen-input, envbufnum: ugen-input, overlaps: ugen-input, window-rand-ratio: ugen-input, interp: ugen-input) -> ugen-input;
+    warp1: func(def: borrow<synth-def>, ugen-rate: rate, num-channels: u32, bufnum: ugen-input, pointer: ugen-input, freq-scale: ugen-input, window-size: ugen-input, envbufnum: ugen-input, overlaps: ugen-input, window-rand-ratio: ugen-input, interp: ugen-input) -> ugen-input;
 
     /// Noise whose spectrum has equal power at all frequencies.
     /// 
@@ -4187,7 +4187,7 @@ interface ugens {
     /// as snares and hand claps. Also useful for simulating wind or sea
     /// effects, for producing breath effects in wind instrument timbres or for
     /// producing the typical trance leads.
-    white-noise: func(def: borrow<synth-def>, rate: rate) -> ugen-input;
+    white-noise: func(def: borrow<synth-def>, ugen-rate: rate) -> ugen-input;
 
     /// Wrap a signal outside given thresholds.
     /// 
@@ -4198,11 +4198,11 @@ interface ugens {
     /// - `%in`: input signal
     /// - `lo`: low threshold
     /// - `hi`: high threshold
-    wrap: func(def: borrow<synth-def>, rate: rate, %in: ugen-input, lo: ugen-input, hi: ugen-input) -> ugen-input;
+    wrap: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input, lo: ugen-input, hi: ugen-input) -> ugen-input;
 
     /// the input signal value is truncated to an integer value and used as an
     /// index into the table (out of range index values are wrapped)
-    wrap-index: func(def: borrow<synth-def>, rate: rate, bufnum: ugen-input, %in: ugen-input) -> ugen-input;
+    wrap-index: func(def: borrow<synth-def>, ugen-rate: rate, bufnum: ugen-input, %in: ugen-input) -> ugen-input;
 
     /// Equal power two channel cross fade
     /// 
@@ -4212,7 +4212,7 @@ interface ugens {
     /// - `pan`: Pan between the two input signals with -1 being inA only and 1
     /// being inB only with values between being a mix of the two.
     /// - `level`: Output level - 0 being silent and 1 being original volume
-    x-fade2: func(def: borrow<synth-def>, rate: rate, in-a: ugen-input, in-b: ugen-input, pan: ugen-input, level: ugen-input) -> ugen-input;
+    x-fade2: func(def: borrow<synth-def>, ugen-rate: rate, in-a: ugen-input, in-b: ugen-input, pan: ugen-input, level: ugen-input) -> ugen-input;
 
     /// Exponential line generator.
     /// 
@@ -4225,7 +4225,7 @@ interface ugens {
     /// - `dur`: Duration in seconds
     /// - `action`: A done action to be evaluated when the line is completed.
     /// Default: NO-ACTION
-    x-line: func(def: borrow<synth-def>, rate: rate, start: ugen-input, end: ugen-input, dur: ugen-input, action: ugen-input) -> ugen-input;
+    x-line: func(def: borrow<synth-def>, ugen-rate: rate, start: ugen-input, end: ugen-input, dur: ugen-input, action: ugen-input) -> ugen-input;
 
     /// write signal to a bus, crossfading with the existing content
     /// 
@@ -4239,7 +4239,7 @@ interface ugens {
     /// - `xfade`: crossfade level.
     /// - `channels-array`: an Array of channels or single output to write out.
     /// You cannot change the size of this once a SynthDef has been built.
-    x-out: func(def: borrow<synth-def>, rate: rate, bus: ugen-input, xfade: ugen-input, channels-array: list<ugen-input>) -> ugen-input;
+    x-out: func(def: borrow<synth-def>, ugen-rate: rate, bus: ugen-input, xfade: ugen-input, channels-array: list<ugen-input>) -> ugen-input;
 
     /// Zero crossing frequency follower
     /// 
@@ -4250,7 +4250,7 @@ interface ugens {
     /// 
     /// Args:
     /// - `%in`: input signal
-    zero-crossing: func(def: borrow<synth-def>, rate: rate, %in: ugen-input) -> ugen-input;
+    zero-crossing: func(def: borrow<synth-def>, ugen-rate: rate, %in: ugen-input) -> ugen-input;
 
 }
 
