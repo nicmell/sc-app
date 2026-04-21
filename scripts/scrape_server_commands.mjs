@@ -17,7 +17,7 @@
 //
 // Usage: node scripts/scrape_server_commands.mjs
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -235,9 +235,14 @@ function iterEntries(html) {
 function parseEntry(entry) {
   const { address, body, section } = entry;
 
-  // Description = concatenation of <p>…</p> blocks that come before the
-  // first <table>.
+  // Args table is the first <table> that sits BEFORE any <dl> block —
+  // tables inside a <dl> describe reply schemas (e.g. /status's
+  // /status.reply), not the command's own args.
   const tableStart = body.search(/<table\b/i);
+  const dlStart = body.search(/<dl\b/i);
+  const useTable =
+    tableStart !== -1 && (dlStart === -1 || tableStart < dlStart);
+
   const preTable = tableStart === -1 ? body : body.slice(0, tableStart);
   const descriptions = [];
   for (const m of preTable.matchAll(/<p>([\s\S]*?)(?=<\/?(?:p|dl|div|h2|h3|table)\b|$)/gi)) {
@@ -246,9 +251,8 @@ function parseEntry(entry) {
   }
   const description = descriptions.join(' ').trim();
 
-  // Args table is the first <table>.
   let args = [];
-  if (tableStart !== -1) {
+  if (useTable) {
     const ex = extractTable(body, tableStart);
     if (ex) args = parseArgsTable(ex.text);
   }
@@ -271,7 +275,12 @@ function parseEntry(entry) {
 
 async function main() {
   const html = await loadPage();
-  const entries = iterEntries(html).map(parseEntry);
+  const entries = iterEntries(html)
+    // Drop <h3> entries that are structural sub-headings (e.g.
+    // "Other Commands", "Wave Fill Commands") rather than real OSC
+    // addresses.
+    .filter((e) => e.address.startsWith('/'))
+    .map(parseEntry);
 
   // Group by category.
   const byCategory = new Map();
@@ -280,6 +289,7 @@ async function main() {
     byCategory.get(e.category).push(e);
   }
 
+  if (existsSync(OUT_DIR)) rmSync(OUT_DIR, { recursive: true, force: true });
   mkdirSync(OUT_DIR, { recursive: true });
   let total = 0;
   for (const [category, list] of [...byCategory.entries()].sort()) {

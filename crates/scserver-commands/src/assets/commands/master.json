@@ -108,26 +108,7 @@
     "section": "Top-Level Commands",
     "category": "master",
     "description": "Queries the amount of currently free real-time memory (in bytes).",
-    "args": [
-      {
-        "type": {
-          "alternatives": [
-            "int32"
-          ],
-          "raw": "int"
-        },
-        "doc": "Amount of free real-time memory (in bytes)."
-      },
-      {
-        "type": {
-          "alternatives": [
-            "int32"
-          ],
-          "raw": "int"
-        },
-        "doc": "Size of largest continuous block (in bytes)."
-      }
-    ],
+    "args": [],
     "asyncInfo": null
   },
   {
@@ -135,89 +116,7 @@
     "section": "Top-Level Commands",
     "category": "master",
     "description": "Query the status. Replies to sender with the following message:",
-    "args": [
-      {
-        "type": {
-          "alternatives": [
-            "int32"
-          ],
-          "raw": "int"
-        },
-        "doc": "1. unused."
-      },
-      {
-        "type": {
-          "alternatives": [
-            "int32"
-          ],
-          "raw": "int"
-        },
-        "doc": "number of unit generators."
-      },
-      {
-        "type": {
-          "alternatives": [
-            "int32"
-          ],
-          "raw": "int"
-        },
-        "doc": "number of synths."
-      },
-      {
-        "type": {
-          "alternatives": [
-            "int32"
-          ],
-          "raw": "int"
-        },
-        "doc": "number of groups."
-      },
-      {
-        "type": {
-          "alternatives": [
-            "int32"
-          ],
-          "raw": "int"
-        },
-        "doc": "number of loaded synth definitions."
-      },
-      {
-        "type": {
-          "alternatives": [
-            "float32"
-          ],
-          "raw": "float"
-        },
-        "doc": "average percent CPU usage for signal processing"
-      },
-      {
-        "type": {
-          "alternatives": [
-            "float32"
-          ],
-          "raw": "float"
-        },
-        "doc": "peak percent CPU usage for signal processing"
-      },
-      {
-        "type": {
-          "alternatives": [
-            "float64"
-          ],
-          "raw": "double"
-        },
-        "doc": "nominal sample rate"
-      },
-      {
-        "type": {
-          "alternatives": [
-            "float64"
-          ],
-          "raw": "double"
-        },
-        "doc": "actual sample rate"
-      }
-    ],
+    "args": [],
     "asyncInfo": null
   },
   {
@@ -243,62 +142,7 @@
     "section": "Top-Level Commands",
     "category": "master",
     "description": "Query the SuperCollider version. Replies to sender with the following message:",
-    "args": [
-      {
-        "type": {
-          "alternatives": [
-            "string"
-          ],
-          "raw": "string"
-        },
-        "doc": "Program name. May be \"scsynth\" or \"supernova\"."
-      },
-      {
-        "type": {
-          "alternatives": [
-            "int32"
-          ],
-          "raw": "int"
-        },
-        "doc": "Major version number. Equivalent to sclang's Main.scVersionMajor."
-      },
-      {
-        "type": {
-          "alternatives": [
-            "int32"
-          ],
-          "raw": "int"
-        },
-        "doc": "Minor version number. Equivalent to sclang's Main.scVersionMinor."
-      },
-      {
-        "type": {
-          "alternatives": [
-            "string"
-          ],
-          "raw": "string"
-        },
-        "doc": "Patch version name. Equivalent to the sclang code \".\" ++ Main.scVersionPatch ++ Main.scVersionTweak."
-      },
-      {
-        "type": {
-          "alternatives": [
-            "string"
-          ],
-          "raw": "string"
-        },
-        "doc": "Git branch or tag name."
-      },
-      {
-        "type": {
-          "alternatives": [
-            "string"
-          ],
-          "raw": "string"
-        },
-        "doc": "First seven hex digits of the commit hash."
-      }
-    ],
+    "args": [],
     "asyncInfo": null
   }
 ]
