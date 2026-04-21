@@ -1,0 +1,786 @@
+[
+  {
+    "address": "/b_alloc",
+    "section": "Buffer Commands",
+    "category": "buffer",
+    "description": "Allocate buffer space.",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "buffer number"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "number of frames"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "number of channels (optional. default = 1 channel)"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "blob"
+          ],
+          "raw": "bytes"
+        },
+        "doc": "an OSC message to execute upon completion. (optional)"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "float32"
+          ],
+          "raw": "float"
+        },
+        "doc": "the required sample rate (optional. default (or 0) = the server's sample rate)"
+      }
+    ],
+    "asyncInfo": "Replies to sender with /done /b_alloc bufNum when complete."
+  },
+  {
+    "address": "/b_allocRead",
+    "section": "Buffer Commands",
+    "category": "buffer",
+    "description": "Allocate buffer space and read a sound file.",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "buffer number"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "string"
+          ],
+          "raw": "string"
+        },
+        "doc": "path name of a sound file."
+      },
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "starting frame in file (optional. default = 0)"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "number of frames to read (optional. default = 0, see below)"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "blob"
+          ],
+          "raw": "bytes"
+        },
+        "doc": "an OSC message to execute upon completion. (optional)"
+      }
+    ],
+    "asyncInfo": "Replies to sender with /done /b_allocRead bufNum when complete."
+  },
+  {
+    "address": "/b_allocReadChannel",
+    "section": "Buffer Commands",
+    "category": "buffer",
+    "description": "Allocate buffer space and read channels from a sound file.",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "buffer number"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "string"
+          ],
+          "raw": "string"
+        },
+        "doc": "path name of a sound file"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "starting frame in file"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "number of frames to read"
+      },
+      {
+        "repeated": true,
+        "fields": [
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "source file channel index"
+          },
+          {
+            "type": {
+              "alternatives": [
+                "blob"
+              ],
+              "raw": "bytes"
+            },
+            "doc": "an OSC message to execute upon completion. (optional)"
+          }
+        ]
+      }
+    ],
+    "asyncInfo": "Replies to sender with /done /b_allocReadChannel bufNum when complete."
+  },
+  {
+    "address": "/b_close",
+    "section": "Buffer Commands",
+    "category": "buffer",
+    "description": "Close soundfile.",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "buffer number"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "blob"
+          ],
+          "raw": "bytes"
+        },
+        "doc": "an OSC message to execute upon completion. (optional)"
+      }
+    ],
+    "asyncInfo": "Replies to sender with /done /b_close bufNum when complete."
+  },
+  {
+    "address": "/b_fill",
+    "section": "Buffer Commands",
+    "category": "buffer",
+    "description": "Fill ranges of sample value(s).",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "buffer number"
+      },
+      {
+        "repeated": true,
+        "fields": [
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "sample starting index"
+          },
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "number of samples to fill (M)"
+          },
+          {
+            "type": {
+              "alternatives": [
+                "float32"
+              ],
+              "raw": "float"
+            },
+            "doc": "value"
+          }
+        ]
+      }
+    ],
+    "asyncInfo": null
+  },
+  {
+    "address": "/b_free",
+    "section": "Buffer Commands",
+    "category": "buffer",
+    "description": "Free buffer data.",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "buffer number"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "blob"
+          ],
+          "raw": "bytes"
+        },
+        "doc": "an OSC message to execute upon completion. (optional)"
+      }
+    ],
+    "asyncInfo": "Replies to sender with /done /b_free bufNum when complete."
+  },
+  {
+    "address": "/b_gen",
+    "section": "Buffer Commands",
+    "category": "buffer",
+    "description": "Call a command to fill a buffer.",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "buffer number"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "string"
+          ],
+          "raw": "string"
+        },
+        "doc": "command name"
+      },
+      {
+        "type": {
+          "alternatives": [],
+          "raw": "..."
+        },
+        "doc": "command arguments"
+      }
+    ],
+    "asyncInfo": "Replies to sender with /done /b_gen bufNum when complete."
+  },
+  {
+    "address": "/b_get",
+    "section": "Buffer Commands",
+    "category": "buffer",
+    "description": "Get sample value(s).",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "buffer number"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "a sample index"
+      }
+    ],
+    "asyncInfo": null
+  },
+  {
+    "address": "/b_getn",
+    "section": "Buffer Commands",
+    "category": "buffer",
+    "description": "Get ranges of sample value(s).",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "buffer number"
+      },
+      {
+        "repeated": true,
+        "fields": [
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "starting sample index"
+          },
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "number of sequential samples to get (M)"
+          }
+        ]
+      }
+    ],
+    "asyncInfo": null
+  },
+  {
+    "address": "/b_query",
+    "section": "Buffer Commands",
+    "category": "buffer",
+    "description": "Get buffer info.",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "buffer number(s)"
+      }
+    ],
+    "asyncInfo": null
+  },
+  {
+    "address": "/b_read",
+    "section": "Buffer Commands",
+    "category": "buffer",
+    "description": "Read sound file data into an existing buffer.",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "buffer number"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "string"
+          ],
+          "raw": "string"
+        },
+        "doc": "path name of a sound file."
+      },
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "starting frame in file (optional. default = 0)"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "number of frames to read (optional. default = -1, see below)"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "starting frame in buffer (optional. default = 0)"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "leave file open (optional. default = 0)"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "blob"
+          ],
+          "raw": "bytes"
+        },
+        "doc": "an OSC message to execute upon completion. (optional)"
+      }
+    ],
+    "asyncInfo": "Replies to sender with /done /b_read bufNum when complete."
+  },
+  {
+    "address": "/b_readChannel",
+    "section": "Buffer Commands",
+    "category": "buffer",
+    "description": "Read sound file channel data into an existing buffer.",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "buffer number"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "string"
+          ],
+          "raw": "string"
+        },
+        "doc": "path name of a sound file"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "starting frame in file"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "number of frames to read"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "starting frame in buffer"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "leave file open"
+      },
+      {
+        "repeated": true,
+        "fields": [
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "source file channel index"
+          },
+          {
+            "type": {
+              "alternatives": [
+                "blob"
+              ],
+              "raw": "bytes"
+            },
+            "doc": "completion message"
+          }
+        ]
+      }
+    ],
+    "asyncInfo": "Replies to sender with /done /b_readChannel bufNum when complete."
+  },
+  {
+    "address": "/b_set",
+    "section": "Buffer Commands",
+    "category": "buffer",
+    "description": "Set sample value(s).",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "buffer number"
+      },
+      {
+        "repeated": true,
+        "fields": [
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "a sample index"
+          },
+          {
+            "type": {
+              "alternatives": [
+                "float32"
+              ],
+              "raw": "float"
+            },
+            "doc": "a sample value"
+          }
+        ]
+      }
+    ],
+    "asyncInfo": null
+  },
+  {
+    "address": "/b_setn",
+    "section": "Buffer Commands",
+    "category": "buffer",
+    "description": "Set ranges of sample value(s).",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "buffer number"
+      },
+      {
+        "repeated": true,
+        "fields": [
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "sample starting index"
+          },
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "number of sequential samples to change (M)"
+          },
+          {
+            "type": {
+              "alternatives": [
+                "float32"
+              ],
+              "raw": "float"
+            },
+            "doc": "a sample value"
+          }
+        ]
+      }
+    ],
+    "asyncInfo": null
+  },
+  {
+    "address": "/b_setSampleRate",
+    "section": "Buffer Commands",
+    "category": "buffer",
+    "description": "Set the sampling rate of the buffer.",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "buffer number"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "float32"
+          ],
+          "raw": "float"
+        },
+        "doc": "the desired sampling rate. 0 or nil will set to the Server's sample rate."
+      }
+    ],
+    "asyncInfo": null
+  },
+  {
+    "address": "/b_write",
+    "section": "Buffer Commands",
+    "category": "buffer",
+    "description": "Write sound file data.",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "buffer number"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "string"
+          ],
+          "raw": "string"
+        },
+        "doc": "path name of a sound file."
+      },
+      {
+        "type": {
+          "alternatives": [
+            "string"
+          ],
+          "raw": "string"
+        },
+        "doc": "header format."
+      },
+      {
+        "type": {
+          "alternatives": [
+            "string"
+          ],
+          "raw": "string"
+        },
+        "doc": "sample format."
+      },
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "number of frames to write (optional. default = -1, see below)"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "starting frame in buffer (optional. default = 0)"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "leave file open (optional. default = 0)"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "blob"
+          ],
+          "raw": "bytes"
+        },
+        "doc": "an OSC message to execute upon completion. (optional)"
+      }
+    ],
+    "asyncInfo": "Replies to sender with /done /b_write bufNum when complete."
+  },
+  {
+    "address": "/b_zero",
+    "section": "Buffer Commands",
+    "category": "buffer",
+    "description": "Zero sample data.",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "buffer number"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "blob"
+          ],
+          "raw": "bytes"
+        },
+        "doc": "an OSC message to execute upon completion. (optional)"
+      }
+    ],
+    "asyncInfo": "Replies to sender with /done /b_zero bufNum when complete."
+  }
+]

@@ -1,0 +1,101 @@
+[
+  {
+    "address": "/d_free",
+    "section": "Synth Definition Commands",
+    "category": "synthdef",
+    "description": "Delete synth definition.",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "string"
+          ],
+          "raw": "string"
+        },
+        "doc": "synth def name"
+      }
+    ],
+    "asyncInfo": null
+  },
+  {
+    "address": "/d_load",
+    "section": "Synth Definition Commands",
+    "category": "synthdef",
+    "description": "Load synth definition.",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "string"
+          ],
+          "raw": "string"
+        },
+        "doc": "pathname of file. Can be a pattern like \"synthdefs/perc-*\""
+      },
+      {
+        "type": {
+          "alternatives": [
+            "blob"
+          ],
+          "raw": "bytes"
+        },
+        "doc": "an OSC message to execute upon completion. (optional)"
+      }
+    ],
+    "asyncInfo": "Replies to sender with /done when complete."
+  },
+  {
+    "address": "/d_loadDir",
+    "section": "Synth Definition Commands",
+    "category": "synthdef",
+    "description": "Load a directory of synth definitions.",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "string"
+          ],
+          "raw": "string"
+        },
+        "doc": "pathname of directory."
+      },
+      {
+        "type": {
+          "alternatives": [
+            "blob"
+          ],
+          "raw": "bytes"
+        },
+        "doc": "an OSC message to execute upon completion. (optional)"
+      }
+    ],
+    "asyncInfo": "Replies to sender with /done when complete."
+  },
+  {
+    "address": "/d_recv",
+    "section": "Synth Definition Commands",
+    "category": "synthdef",
+    "description": "Receive a synth definition file.",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "blob"
+          ],
+          "raw": "bytes"
+        },
+        "doc": "buffer of data."
+      },
+      {
+        "type": {
+          "alternatives": [
+            "blob"
+          ],
+          "raw": "bytes"
+        },
+        "doc": "an OSC message to execute upon completion. (optional)"
+      }
+    ],
+    "asyncInfo": "Replies to sender with /done when complete."
+  }
+]

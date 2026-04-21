@@ -1,0 +1,176 @@
+[
+  {
+    "address": "/c_fill",
+    "section": "Control Bus Commands",
+    "category": "control",
+    "description": "Fill ranges of bus value(s).",
+    "args": [
+      {
+        "repeated": true,
+        "fields": [
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "starting bus index"
+          },
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "number of buses to fill (M)"
+          },
+          {
+            "type": {
+              "alternatives": [
+                "float32",
+                "int32"
+              ],
+              "raw": "float or int"
+            },
+            "doc": "value"
+          }
+        ]
+      }
+    ],
+    "asyncInfo": null
+  },
+  {
+    "address": "/c_get",
+    "section": "Control Bus Commands",
+    "category": "control",
+    "description": "Get bus value(s).",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "a bus index"
+      }
+    ],
+    "asyncInfo": null
+  },
+  {
+    "address": "/c_getn",
+    "section": "Control Bus Commands",
+    "category": "control",
+    "description": "Get ranges of bus value(s).",
+    "args": [
+      {
+        "repeated": true,
+        "fields": [
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "starting bus index"
+          },
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "number of sequential buses to get (M)"
+          }
+        ]
+      }
+    ],
+    "asyncInfo": null
+  },
+  {
+    "address": "/c_set",
+    "section": "Control Bus Commands",
+    "category": "control",
+    "description": "Set bus value(s).",
+    "args": [
+      {
+        "repeated": true,
+        "fields": [
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "a bus index"
+          },
+          {
+            "type": {
+              "alternatives": [
+                "float32",
+                "int32"
+              ],
+              "raw": "float or int"
+            },
+            "doc": "a control value"
+          }
+        ]
+      }
+    ],
+    "asyncInfo": null
+  },
+  {
+    "address": "/c_setn",
+    "section": "Control Bus Commands",
+    "category": "control",
+    "description": "Set ranges of bus value(s).",
+    "args": [
+      {
+        "repeated": true,
+        "fields": [
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "starting bus index"
+          },
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "number of sequential buses to change (M)"
+          },
+          {
+            "type": {
+              "alternatives": [],
+              "raw": "M *"
+            },
+            "doc": ""
+          },
+          {
+            "type": {
+              "alternatives": [
+                "float32",
+                "int32"
+              ],
+              "raw": "float or int"
+            },
+            "doc": "a control value"
+          }
+        ]
+      }
+    ],
+    "asyncInfo": null
+  }
+]

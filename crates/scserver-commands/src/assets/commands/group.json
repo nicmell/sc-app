@@ -1,0 +1,248 @@
+[
+  {
+    "address": "/g_deepFree",
+    "section": "Group Commands",
+    "category": "group",
+    "description": "Free all synths in this group and all its sub-groups.",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "group ID(s)"
+      }
+    ],
+    "asyncInfo": null
+  },
+  {
+    "address": "/g_dumpTree",
+    "section": "Group Commands",
+    "category": "group",
+    "description": "Post a representation of this group's node subtree.",
+    "args": [
+      {
+        "repeated": true,
+        "fields": [
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "group ID"
+          },
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "flag; if not 0 the current control (arg) values for synths will be posted"
+          }
+        ]
+      }
+    ],
+    "asyncInfo": null
+  },
+  {
+    "address": "/g_freeAll",
+    "section": "Group Commands",
+    "category": "group",
+    "description": "Delete all nodes in a group.",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "group ID(s)"
+      }
+    ],
+    "asyncInfo": null
+  },
+  {
+    "address": "/g_head",
+    "section": "Group Commands",
+    "category": "group",
+    "description": "Add node to head of group.",
+    "args": [
+      {
+        "repeated": true,
+        "fields": [
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "group ID"
+          },
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "node ID"
+          }
+        ]
+      }
+    ],
+    "asyncInfo": null
+  },
+  {
+    "address": "/g_new",
+    "section": "Group Commands",
+    "category": "group",
+    "description": "Create a new group.",
+    "args": [
+      {
+        "repeated": true,
+        "fields": [
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "new group ID"
+          },
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "add action (0,1,2, 3 or 4 see below)"
+          },
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "add target ID"
+          }
+        ]
+      }
+    ],
+    "asyncInfo": null
+  },
+  {
+    "address": "/g_queryTree",
+    "section": "Group Commands",
+    "category": "group",
+    "description": "Get a representation of this group's node subtree.",
+    "args": [
+      {
+        "repeated": true,
+        "fields": [
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "group ID"
+          },
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "flag: if not 0 the current control (arg) values for synths will be included"
+          }
+        ]
+      }
+    ],
+    "asyncInfo": null
+  },
+  {
+    "address": "/g_tail",
+    "section": "Group Commands",
+    "category": "group",
+    "description": "Add node to tail of group.",
+    "args": [
+      {
+        "repeated": true,
+        "fields": [
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "group ID"
+          },
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "node ID"
+          }
+        ]
+      }
+    ],
+    "asyncInfo": null
+  },
+  {
+    "address": "/p_new",
+    "section": "Group Commands",
+    "category": "group",
+    "description": "Create a new parallel group.",
+    "args": [
+      {
+        "repeated": true,
+        "fields": [
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "new group ID"
+          },
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "add action (0,1,2, 3 or 4 see below)"
+          },
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "add target ID"
+          }
+        ]
+      }
+    ],
+    "asyncInfo": null
+  }
+]

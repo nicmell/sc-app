@@ -1,0 +1,161 @@
+[
+  {
+    "address": "/s_get",
+    "section": "Synth Commands",
+    "category": "synth",
+    "description": "Get control value(s).",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "synth ID"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "int32",
+            "string"
+          ],
+          "raw": "int or string"
+        },
+        "doc": "a control index or name"
+      }
+    ],
+    "asyncInfo": null
+  },
+  {
+    "address": "/s_getn",
+    "section": "Synth Commands",
+    "category": "synth",
+    "description": "Get ranges of control value(s).",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "synth ID"
+      },
+      {
+        "repeated": true,
+        "fields": [
+          {
+            "type": {
+              "alternatives": [
+                "int32",
+                "string"
+              ],
+              "raw": "int or string"
+            },
+            "doc": "a control index or name"
+          },
+          {
+            "type": {
+              "alternatives": [
+                "int32"
+              ],
+              "raw": "int"
+            },
+            "doc": "number of sequential controls to get (M)"
+          }
+        ]
+      }
+    ],
+    "asyncInfo": null
+  },
+  {
+    "address": "/s_new",
+    "section": "Synth Commands",
+    "category": "synth",
+    "description": "Create a new synth.",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "string"
+          ],
+          "raw": "string"
+        },
+        "doc": "synth definition name"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "synth ID"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "add action (0,1,2, 3 or 4 see below)"
+      },
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "add target ID"
+      },
+      {
+        "repeated": true,
+        "fields": [
+          {
+            "type": {
+              "alternatives": [
+                "int32",
+                "string"
+              ],
+              "raw": "int or string"
+            },
+            "doc": "a control index or name"
+          },
+          {
+            "type": {
+              "alternatives": [
+                "float32",
+                "int32",
+                "string"
+              ],
+              "raw": "float or int or string"
+            },
+            "doc": "floating point and integer arguments are interpreted as control value. a symbol argument consisting of the letter 'c' or 'a' (for control or audio) followed by the bus's index."
+          }
+        ]
+      }
+    ],
+    "asyncInfo": null
+  },
+  {
+    "address": "/s_noid",
+    "section": "Synth Commands",
+    "category": "synth",
+    "description": "Auto-reassign synth's ID to a reserved value.",
+    "args": [
+      {
+        "type": {
+          "alternatives": [
+            "int32"
+          ],
+          "raw": "int"
+        },
+        "doc": "synth IDs"
+      }
+    ],
+    "asyncInfo": null
+  }
+]
