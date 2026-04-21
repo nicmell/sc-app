@@ -1,73 +1,78 @@
 # scsynthdef-compiler
 
-A pure-Rust compiler for SuperCollider SynthDef binaries (SCgf v2) — the format
-emitted by `.scsyndef` files and consumed by scsynth via `/d_recv`.
+Spec-only Rust library for the SuperCollider SynthDef File Format v2
+([spec](https://doc.sccode.org/Reference/Synth-Definition-File-Format.html)).
+Compiles `.scsyndef` bytes that scsynth accepts, and parses them back.
 
-This crate is a Rust port of the TypeScript SynthDef compiler in the `sc-app`
-repository. It is designed to be usable:
+## Layers
 
-1. Natively from Rust (backend tools, tests, CLIs).
-2. As a WebAssembly module via `wasm-pack` (to later replace the TS compiler in
-   browser contexts with a single source of truth).
+- **`SynthDef`** — the builder / reader. `to_bytes` / `from_bytes` /
+  `to_json` / `from_json` cover the four round-trip entry points.
+- **`builders::*`** — a typed struct per bundled UGen (~365 total),
+  generated from `src/assets/ugens/*.json` (the curated catalogue). Each
+  struct exposes `ar()` / `kr()` / `ir()` constructors (only those rates
+  the UGen supports), setter methods per arg (with rustdoc from the
+  source catalogue), and `build(&mut SynthDef) -> UGenInput`.
+- **`registry::lookup_ugen` + `ugens_by_category`** — metadata access
+  for documentation browsers and generators.
 
-## Status
+## Build targets
 
-Early / experimental. The primary entry point is `compile_synthdef`, which
-consumes an HTML-parsed UGen spec map — the same shape produced by the sc-app
-plugin HTML parser.
-
-## Two APIs
-
-### High-level (HTML-driven)
-
-```rust
-use scsynthdef_compiler::{compile_synthdef, UGenSpec};
-use std::collections::BTreeMap;
-
-let mut params = BTreeMap::new();
-params.insert("freq".to_string(), 440.0);
-
-let mut specs = BTreeMap::new();
-specs.insert("osc".into(), UGenSpec {
-    name: "osc".into(),
-    ugen_type: "SinOsc".into(),
-    rate: "ar".into(),
-    inputs: [("freq".into(), "freq".into())].into_iter().collect(),
-});
-specs.insert("out".into(), UGenSpec {
-    name: "out".into(),
-    ugen_type: "Out".into(),
-    rate: "ar".into(),
-    inputs: [
-        ("bus".into(), "0".into()),
-        ("channelsArray".into(), "osc".into()),
-    ].into_iter().collect(),
-});
-
-let bytes = compile_synthdef("simpleSine", &params, &specs).unwrap();
-```
-
-### Low-level (programmatic)
-
-```rust
-use scsynthdef_compiler::{SynthDef, Rate, UGenInput};
-
-let mut def = SynthDef::new("simpleSine");
-let freq = def.add_control("freq", 440.0, Rate::Control);
-let osc = def.add_ugen("SinOsc", Rate::Audio,
-    vec![UGenInput::UGenRef(freq), UGenInput::Constant(0.0)], 1, 0);
-def.add_ugen("Out", Rate::Audio,
-    vec![UGenInput::Constant(0.0), UGenInput::UGenRef(osc)], 0, 0);
-let bytes = def.to_bytes().unwrap();
-```
-
-## WASM build
+### Native Rust
 
 ```bash
-wasm-pack build --target web --features wasm
+cargo build -p scsynthdef-compiler
+cargo test  -p scsynthdef-compiler
 ```
 
-## UGen registry
+### `wasm32` + wasm-bindgen (current frontend path)
 
-~367 UGens are bundled via embedded JSON (regenerated from Overtone metadata by
-`scripts/generate_ugen_db.mjs` in the parent sc-app repo).
+```bash
+cargo build -p scsynthdef-compiler \
+    --features wasm \
+    --target wasm32-unknown-unknown \
+    --release
+```
+
+The `wasm` Cargo feature gates `#[wasm_bindgen]` exports. Today that's
+`ugenRegistryJson` — used by
+`examples/frontend/` to render the bundled UGen docs in a browser.
+`examples/frontend/package.json::build:wasm` runs `wasm-pack` against
+this target and post-copies the resulting `pkg/` next to the HTML page.
+
+### WIT + Component Model (future / experimental)
+
+`wit/scsynthdef.wit` is the canonical interface definition for the
+crate — generated from the same curated catalogue by
+`scripts/generate_wit.mjs` and validated with `wasm-tools component
+wit`. It describes:
+
+- `interface core` — `rate`, `ugen-input`, the `synth-def` resource,
+  and `parse-scgf`.
+- `interface ugens` — one `func` per bundled UGen.
+- `world scsynthdef` — exports both interfaces.
+
+Consumers who can target the WebAssembly Component Model (Rust via
+`cargo-component`, JS via `@bytecodealliance/jco`, …) should treat this
+file as the source of truth. A future migration of
+`examples/frontend/` from `wasm-bindgen` to `jco`-generated bindings is
+tracked as follow-up work — the Rust-side `wit-bindgen` implementation
+is non-trivial (365 UGen functions to wire up to the typed builders)
+and we've deferred it rather than risk a half-finished toolchain swap.
+
+## Regeneration
+
+```bash
+# 1. Refresh the catalogue from Overtone (rare, network fetch):
+node scripts/generate_ugen_db.mjs
+
+# 2. Regenerate the Rust registry + typed builders:
+node scripts/generate_ugens_rust.mjs
+
+# 3. Regenerate the WIT interface:
+node scripts/generate_wit.mjs
+```
+
+`src/ugens/*.rs` (registry data) and `src/builders/*.rs` (typed
+builders) and `wit/scsynthdef.wit` are all generated artifacts.
+Edit the JSON catalogue, then re-run steps 2 and 3.
