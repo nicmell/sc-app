@@ -37,5 +37,4 @@ bytes = "1"
 tokio-tungstenite = "0.26"
 futures-util = "0.3"
 clap = { version = "4", features = ["derive", "env"] }
-scsynthdef-compiler = { path = "../crates/scsynthdef-compiler" }
 

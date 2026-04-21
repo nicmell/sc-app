@@ -1,9 +1,11 @@
 //! SuperCollider SynthDef (SCgf v2) compiler.
 //!
-//! See [`compile_synthdef`] for the HTML-driven entry point, and [`SynthDef`]
-//! for the programmatic builder.
+//! Library-only crate that writes and reads the [SynthDef File Format v2]
+//! binary, matching the byte-for-byte output of `sclang`'s built-in
+//! SynthDef encoder. See [`SynthDef`] for the programmatic builder.
+//!
+//! [SynthDef File Format v2]: https://doc.sccode.org/Reference/Synth-Definition-File-Format.html
 
-mod compile;
 mod error;
 mod operators;
 mod rate;
@@ -14,7 +16,6 @@ mod ugens;
 #[cfg(feature = "wasm")]
 mod wasm;
 
-pub use compile::{compile_synthdef, dump_specs_json, parse_specs_json, UGenSpec};
 pub use error::CompileError;
 pub use operators::{binary_op_index, unary_op_index};
 pub use rate::Rate;

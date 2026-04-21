@@ -1,29 +1,14 @@
 //! WASM bindings, gated behind the `wasm` Cargo feature.
 //!
-//! Exposes a JSON-in / bytes-out entry point to avoid leaking Rust structs
-//! across the FFI boundary.
+//! Exposes a JSON read-out of the bundled UGen registry so a browser can
+//! render a reference page without re-parsing the source JSON catalogue.
+//! Every other WASM interaction goes through the component model (WIT)
+//! build — see `crates/scsynthdef-compiler/wit/` and
+//! `crates/scsynthdef-compiler/examples/frontend/` for the end-to-end flow.
 
 use wasm_bindgen::prelude::*;
 
-use crate::{compile_synthdef, ugens_by_category, UGenSpec};
-
-/// Compile a SynthDef from JSON inputs.
-///
-/// `params_json`: `[[name, default], …]`.
-/// `specs_json`: `[{name, type, rate, inputs: {…}}, …]`.
-#[wasm_bindgen(js_name = compileSynthDef)]
-pub fn compile_synthdef_wasm(
-    name: &str,
-    params_json: &str,
-    specs_json: &str,
-) -> Result<Vec<u8>, JsError> {
-    let params: Vec<(String, f32)> =
-        serde_json::from_str(params_json).map_err(|e| JsError::new(&e.to_string()))?;
-    let specs: Vec<UGenSpec> =
-        serde_json::from_str(specs_json).map_err(|e| JsError::new(&e.to_string()))?;
-
-    compile_synthdef(name, &params, &specs).map_err(|e| JsError::new(&e.to_string()))
-}
+use crate::ugens_by_category;
 
 /// Return the full bundled UGen registry as JSON, grouped by source-file
 /// category. Shape:
