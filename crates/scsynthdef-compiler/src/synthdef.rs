@@ -32,6 +32,33 @@ impl UGenInput {
     }
 }
 
+// Ergonomic conversions so numeric literals can be passed directly into
+// builder setters: `SinOsc::ar().freq(440.0).phase(0)`.
+
+impl From<f32> for UGenInput {
+    fn from(v: f32) -> Self {
+        UGenInput::Constant(v)
+    }
+}
+
+impl From<f64> for UGenInput {
+    fn from(v: f64) -> Self {
+        UGenInput::Constant(v as f32)
+    }
+}
+
+impl From<i32> for UGenInput {
+    fn from(v: i32) -> Self {
+        UGenInput::Constant(v as f32)
+    }
+}
+
+impl From<u32> for UGenInput {
+    fn from(v: u32) -> Self {
+        UGenInput::Constant(v as f32)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct Node {
     pub class_name: String,

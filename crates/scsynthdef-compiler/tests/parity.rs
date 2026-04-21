@@ -254,6 +254,42 @@ fn synthdef_bytes_round_trip() {
     assert_eq!(a, b, "bytes round-trip must be identical");
 }
 
+/// Typed UGen builders produce the exact same bytes as the low-level
+/// `add_ugen` path for an equivalent graph. Exercises the generated
+/// `builders::*` structs end-to-end.
+#[test]
+fn typed_builders_match_low_level_path() {
+    use scsynthdef_compiler::builders::{Out, SinOsc};
+
+    // Reference: hand-assembled via add_ugen.
+    let mut reference = SynthDef::new("typed");
+    let freq = reference.add_control("freq", 440.0, Rate::Control).unwrap();
+    let sin_ref = reference.add_ugen(
+        "SinOsc",
+        Rate::Audio,
+        vec![freq, UGenInput::Constant(0.0)],
+        1,
+        0,
+    );
+    reference.add_ugen(
+        "Out",
+        Rate::Audio,
+        vec![UGenInput::Constant(0.0), UGenInput::UGen(sin_ref)],
+        0,
+        0,
+    );
+    let ref_bytes = reference.to_bytes().expect("encode reference");
+
+    // Same graph via the generated typed builders.
+    let mut def = SynthDef::new("typed");
+    let freq = def.add_control("freq", 440.0, Rate::Control).unwrap();
+    let osc = SinOsc::ar().freq(freq).phase(0.0).build(&mut def);
+    Out::ar().bus(0.0).channels_array([osc]).build(&mut def);
+    let built_bytes = def.to_bytes().expect("encode builders");
+
+    assert_eq!(ref_bytes, built_bytes, "builder bytes must match low-level");
+}
+
 /// `SynthDefJson` survives a pass through serde_json as pretty-printed text.
 #[test]
 fn synthdef_json_serializes_and_parses() {

@@ -6,6 +6,7 @@
 //!
 //! [SynthDef File Format v2]: https://doc.sccode.org/Reference/Synth-Definition-File-Format.html
 
+pub mod builders;
 mod error;
 mod operators;
 mod rate;
