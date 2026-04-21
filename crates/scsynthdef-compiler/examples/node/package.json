@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Node harness that mirrors examples/sclang_parity.rs using the jco-generated TypeScript bindings.",
   "scripts": {
-    "build:component": "cd ../.. && cargo component build --release --target wasm32-wasip1 && jco transpile target/wasm32-wasip1/release/scsynthdef_compiler.wasm -o examples/node/pkg",
+    "build:wasm": "cd ../.. && cargo component build --release --features component --target wasm32-wasip1 && jco transpile ../../target/wasm32-wasip1/release/scsynthdef_compiler.wasm -o examples/node/pkg",
     "parity": "tsx sclang_parity.ts"
   },
   "devDependencies": {

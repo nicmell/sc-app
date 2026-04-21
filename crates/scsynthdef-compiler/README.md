@@ -23,42 +23,57 @@ Compiles `.scsyndef` bytes that scsynth accepts, and parses them back.
 ```bash
 cargo build -p scsynthdef-compiler
 cargo test  -p scsynthdef-compiler
+cargo run   -p scsynthdef-compiler --example sclang_parity
 ```
 
-### `wasm32` + wasm-bindgen (current frontend path)
+`examples/sclang_parity.rs` builds three fixtures (`sine`,
+`sc_test_recorder`, `global_clock_phase`) via the typed `builders::*`
+API and byte-diffs the output against `sclang`'s compiler.
+
+### WebAssembly Component + TypeScript bindings
+
+The component path is the canonical way to use the crate from JS/TS.
+`wit/scsynthdef.wit` is the source of truth for the interface.
+
+Toolchain: `cargo install cargo-component` + `npm install -D
+@bytecodealliance/jco`. Then:
 
 ```bash
-cargo build -p scsynthdef-compiler \
-    --features wasm \
-    --target wasm32-unknown-unknown \
-    --release
+cd crates/scsynthdef-compiler
+cargo component build --release --features component --target wasm32-wasip1
+jco transpile target/wasm32-wasip1/release/scsynthdef_compiler.wasm -o pkg
 ```
 
-The `wasm` Cargo feature gates `#[wasm_bindgen]` exports. Today that's
-`ugenRegistryJson` — used by
-`examples/frontend/` to render the bundled UGen docs in a browser.
-`examples/frontend/package.json::build:wasm` runs `wasm-pack` against
-this target and post-copies the resulting `pkg/` next to the HTML page.
+The `component` feature pulls in `wit-bindgen-rt`; `src/component.rs`
+implements the WIT `core` interface — the `synth-def` resource
+(constructor + `name` / `add-control` / `add-ugen` / `to-bytes` /
+`to-json`), `parse-scgf`, and `registry-json`. `jco transpile`
+produces a self-contained ESM package with TypeScript declarations.
 
-### WIT + Component Model (future / experimental)
+Two examples consume the component:
 
-`wit/scsynthdef.wit` is the canonical interface definition for the
-crate — generated from the same curated catalogue by
-`scripts/generate_wit.mjs` and validated with `wasm-tools component
-wit`. It describes:
+- **`examples/frontend/`** — browser docs page (Vite + jco). Imports
+  `core.registryJson()` and renders every bundled UGen.
+  `npm run build:wasm` drives the full `cargo component build` + `jco
+  transpile` pipeline; `npm run dev` serves the page.
 
-- `interface core` — `rate`, `ugen-input`, the `synth-def` resource,
-  and `parse-scgf`.
-- `interface ugens` — one `func` per bundled UGen.
-- `world scsynthdef` — exports both interfaces.
+- **`examples/node/`** — Node `sclang_parity.ts`. Mirrors the Rust
+  harness: builds the same three fixtures via the `core.SynthDef`
+  resource's `addControl` / `addUgen` methods, runs sclang on each
+  fixture's `.scd`, byte-diffs the output. `npm run build:component`
+  compiles + transpiles; `npm run parity` runs the harness.
 
-Consumers who can target the WebAssembly Component Model (Rust via
-`cargo-component`, JS via `@bytecodealliance/jco`, …) should treat this
-file as the source of truth. A future migration of
-`examples/frontend/` from `wasm-bindgen` to `jco`-generated bindings is
-tracked as follow-up work — the Rust-side `wit-bindgen` implementation
-is non-trivial (365 UGen functions to wire up to the typed builders)
-and we've deferred it rather than risk a half-finished toolchain swap.
+### WIT surface (current)
+
+- `interface core` — exported. `rate` enum, `ugen-input` variant,
+  `synth-def` resource, `parse-scgf`, `registry-json`.
+- `interface ugens` — defined as a reference surface but **not
+  exported** from the `scsynthdef` world. It lists one typed `func` per
+  bundled UGen (`sin-osc`, `out`, `in`, `buf-wr`, …) — wiring the
+  Guest-side impls up to the existing `builders::*` structs is
+  tracked as follow-up work. The stringly-typed `core.synth-def`
+  methods cover the same byte output today and are what both examples
+  use.
 
 ## Regeneration
 
@@ -73,6 +88,9 @@ node scripts/generate_ugens_rust.mjs
 node scripts/generate_wit.mjs
 ```
 
-`src/ugens/*.rs` (registry data) and `src/builders/*.rs` (typed
-builders) and `wit/scsynthdef.wit` are all generated artifacts.
-Edit the JSON catalogue, then re-run steps 2 and 3.
+`src/ugens/*.rs` (registry data), `src/builders/*.rs` (typed
+builders), and `wit/scsynthdef.wit` are all generated artifacts —
+edit the JSON catalogue, then re-run steps 2 and 3.
+
+`src/bindings.rs` is emitted on demand by `cargo component bindings`
+/ `cargo component build` and is gitignored.

@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "description": "Browser-side documentation viewer for the UGens bundled with scsynthdef-compiler. Loads the wasm-pack build and renders every UGen's metadata.",
+  "description": "Browser-side documentation viewer for the UGens bundled with scsynthdef-compiler. Loads the cargo-component + jco build and renders every UGen's metadata.",
   "scripts": {
     "build:wasm": "cd ../.. && cargo component build --release --features component --target wasm32-wasip1 && jco transpile ../../target/wasm32-wasip1/release/scsynthdef_compiler.wasm -o examples/frontend/pkg",
     "dev": "vite",

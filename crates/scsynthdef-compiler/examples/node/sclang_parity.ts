@@ -18,7 +18,7 @@ import { join, dirname, resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { core } from './pkg/scsynthdef_compiler.js';
-import type { Rate, UgenInput } from './pkg/interfaces/scsynthdef-compiler-core.js';
+import type { UgenInput } from './pkg/interfaces/scsynthdef-compiler-core.js';
 
 const { SynthDef, parseScgf } = core;
 
