@@ -1,21 +1,22 @@
-import init, { ugenRegistryJson } from './pkg/scsynthdef_compiler.js';
+// jco-transpiled component bindings. See ./package.json "build:wasm".
+// The exported `core` module exposes the WIT `core` interface verbatim.
+import { core } from './pkg/scsynthdef_compiler.js';
 
-const RATE_LABEL = { 0: 'ir', 1: 'kr', 2: 'ar' };
+// `Rate` serialises with its Rust variant name ("Audio" / "Control" /
+// "Scalar"); the badge CSS keys on the short SC rate codes.
+const RATE_LABEL = { Audio: 'ar', Control: 'kr', Scalar: 'ir' };
 
 async function main() {
   try {
-    await init();
+    const data = JSON.parse(core.registryJson());
+    render(data);
   } catch (e) {
     const loading = document.getElementById('loading');
     loading.textContent =
-      'Could not load the WebAssembly bundle. Run `yarn build:wasm` in this folder first.';
+      'Could not load the component bindings. Run `npm run build:wasm` in this folder first.';
     loading.classList.add('error');
     console.error(e);
-    return;
   }
-
-  const data = JSON.parse(ugenRegistryJson());
-  render(data);
 }
 
 function render(data) {

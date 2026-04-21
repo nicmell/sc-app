@@ -5,12 +5,13 @@
   "type": "module",
   "description": "Browser-side documentation viewer for the UGens bundled with scsynthdef-compiler. Loads the wasm-pack build and renders every UGen's metadata.",
   "scripts": {
-    "build:wasm": "cd ../.. && wasm-pack build --target web --features wasm && rm -rf examples/frontend/pkg && cp -R pkg examples/frontend/pkg && rm -rf pkg",
+    "build:wasm": "cd ../.. && cargo component build --release --features component --target wasm32-wasip1 && jco transpile ../../target/wasm32-wasip1/release/scsynthdef_compiler.wasm -o examples/frontend/pkg",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@bytecodealliance/jco": "^1",
     "vite": "^6"
   }
 }

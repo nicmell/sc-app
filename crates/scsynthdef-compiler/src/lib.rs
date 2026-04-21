@@ -17,6 +17,9 @@ mod ugens;
 #[cfg(feature = "wasm")]
 mod wasm;
 
+#[cfg(feature = "component")]
+mod component;
+
 pub use error::CompileError;
 pub use operators::{binary_op_index, unary_op_index};
 pub use rate::Rate;

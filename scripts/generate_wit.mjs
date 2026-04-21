@@ -134,6 +134,11 @@ interface core {
     /// Parse SCgf v2 bytes into the structured JSON representation above.
     /// Inverse of \`synth-def.to-json\`.
     parse-scgf: func(bytes: list<u8>) -> result<string, string>;
+
+    /// Full bundled UGen registry as JSON, grouped by source-file
+    /// category: \`[[category, [entries, …]], …]\`. Useful for building
+    /// reference / documentation UIs without re-parsing the catalogue.
+    registry-json: func() -> string;
 }`;
 }
 
@@ -218,10 +223,14 @@ function ugensInterface(allEntries) {
 // ── World ───────────────────────────────────────────────────────────────
 
 function worldBlock() {
+  // `ugens` stays defined in the .wit as a reference interface, but only
+  // `core` is actually exported by the world today. Wiring up 365 Guest
+  // impls for `ugens` is tracked as follow-up work — the typed Rust
+  // builders in `src/builders/*` already cover the same surface for Rust
+  // consumers.
   return `/// Canonical world for embedders of the scsynthdef compiler.
 world scsynthdef {
     export core;
-    export ugens;
 }`;
 }
 

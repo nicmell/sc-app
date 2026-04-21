@@ -3457,6 +3457,7 @@ dependencies = [
  "serde_json",
  "thiserror 1.0.69",
  "wasm-bindgen",
+ "wit-bindgen-rt",
 ]
 
 [[package]]
@@ -5575,6 +5576,15 @@ dependencies = [
  "anyhow",
  "heck 0.5.0",
  "wit-parser",
+]
+
+[[package]]
+name = "wit-bindgen-rt"
+version = "0.44.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "653c85dd7aee6fe6f4bded0d242406deadae9819029ce6f7d258c920c384358a"
+dependencies = [
+ "bitflags 2.11.1",
 ]
 
 [[package]]
