@@ -14,8 +14,7 @@
         },
         "doc": "synth def name"
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/d_load",
@@ -41,8 +40,7 @@
         },
         "doc": "an OSC message to execute upon completion. (optional)"
       }
-    ],
-    "asyncInfo": "Replies to sender with /done when complete."
+    ]
   },
   {
     "address": "/d_loadDir",
@@ -68,8 +66,7 @@
         },
         "doc": "an OSC message to execute upon completion. (optional)"
       }
-    ],
-    "asyncInfo": "Replies to sender with /done when complete."
+    ]
   },
   {
     "address": "/d_recv",
@@ -95,7 +92,6 @@
         },
         "doc": "an OSC message to execute upon completion. (optional)"
       }
-    ],
-    "asyncInfo": "Replies to sender with /done when complete."
+    ]
   }
 ]

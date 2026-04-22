@@ -1,5 +1,5 @@
 // @generated — DO NOT EDIT.
-// Regenerate with `node scripts/generate_server_commands_rust.mjs`.
+// Regenerate with `node scripts/generate.mjs` (from the crate root).
 
 #![allow(non_snake_case, unused_mut, clippy::all)]
 
@@ -16,7 +16,7 @@ pub struct NAfter {
 
 impl NAfter {
     /// Construct `/n_after` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `NAfter { .. NAfter::new(...) }`.
     pub fn new(tail: Vec<(i32, i32)>) -> Self {
         Self {
@@ -24,7 +24,7 @@ impl NAfter {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         for (t0, t1) in self.tail {
@@ -50,7 +50,7 @@ pub struct NBefore {
 
 impl NBefore {
     /// Construct `/n_before` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `NBefore { .. NBefore::new(...) }`.
     pub fn new(tail: Vec<(i32, i32)>) -> Self {
         Self {
@@ -58,7 +58,7 @@ impl NBefore {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         for (t0, t1) in self.tail {
@@ -86,7 +86,7 @@ pub struct NFill {
 
 impl NFill {
     /// Construct `/n_fill` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `NFill { .. NFill::new(...) }`.
     pub fn new(node_id: i32, tail: Vec<(crate::args::ControlId, i32, crate::args::NumericValue)>) -> Self {
         Self {
@@ -95,7 +95,7 @@ impl NFill {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_id));
@@ -123,7 +123,7 @@ pub struct NFree {
 
 impl NFree {
     /// Construct `/n_free` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `NFree { .. NFree::new(...) }`.
     pub fn new(node_id: i32) -> Self {
         Self {
@@ -131,7 +131,7 @@ impl NFree {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_id));
@@ -156,7 +156,7 @@ pub struct NMap {
 
 impl NMap {
     /// Construct `/n_map` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `NMap { .. NMap::new(...) }`.
     pub fn new(node_id: i32, tail: Vec<(crate::args::ControlId, i32)>) -> Self {
         Self {
@@ -165,7 +165,7 @@ impl NMap {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_id));
@@ -194,7 +194,7 @@ pub struct NMapa {
 
 impl NMapa {
     /// Construct `/n_mapa` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `NMapa { .. NMapa::new(...) }`.
     pub fn new(node_id: i32, tail: Vec<(crate::args::ControlId, i32)>) -> Self {
         Self {
@@ -203,7 +203,7 @@ impl NMapa {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_id));
@@ -232,7 +232,7 @@ pub struct NMapan {
 
 impl NMapan {
     /// Construct `/n_mapan` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `NMapan { .. NMapan::new(...) }`.
     pub fn new(node_id: i32, tail: Vec<(crate::args::ControlId, i32, i32)>) -> Self {
         Self {
@@ -241,7 +241,7 @@ impl NMapan {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_id));
@@ -271,7 +271,7 @@ pub struct NMapn {
 
 impl NMapn {
     /// Construct `/n_mapn` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `NMapn { .. NMapn::new(...) }`.
     pub fn new(node_id: i32, tail: Vec<(crate::args::ControlId, i32, i32)>) -> Self {
         Self {
@@ -280,7 +280,7 @@ impl NMapn {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_id));
@@ -312,7 +312,7 @@ pub struct NOrder {
 
 impl NOrder {
     /// Construct `/n_order` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `NOrder { .. NOrder::new(...) }`.
     pub fn new(add_action: i32, target_id: i32, node_ids: i32) -> Self {
         Self {
@@ -322,7 +322,7 @@ impl NOrder {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.add_action));
@@ -347,7 +347,7 @@ pub struct NQuery {
 
 impl NQuery {
     /// Construct `/n_query` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `NQuery { .. NQuery::new(...) }`.
     pub fn new(node_id: i32) -> Self {
         Self {
@@ -355,7 +355,7 @@ impl NQuery {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_id));
@@ -378,7 +378,7 @@ pub struct NRun {
 
 impl NRun {
     /// Construct `/n_run` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `NRun { .. NRun::new(...) }`.
     pub fn new(tail: Vec<(i32, i32)>) -> Self {
         Self {
@@ -386,7 +386,7 @@ impl NRun {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         for (t0, t1) in self.tail {
@@ -414,7 +414,7 @@ pub struct NSet {
 
 impl NSet {
     /// Construct `/n_set` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `NSet { .. NSet::new(...) }`.
     pub fn new(node_id: i32, tail: Vec<(crate::args::ControlId, crate::args::NumericValue)>) -> Self {
         Self {
@@ -423,7 +423,7 @@ impl NSet {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_id));
@@ -452,7 +452,7 @@ pub struct NSetn {
 
 impl NSetn {
     /// Construct `/n_setn` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `NSetn { .. NSetn::new(...) }`.
     pub fn new(node_id: i32, tail: Vec<(crate::args::ControlId, i32, crate::args::NumericValue)>) -> Self {
         Self {
@@ -461,7 +461,7 @@ impl NSetn {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_id));
@@ -489,7 +489,7 @@ pub struct NTrace {
 
 impl NTrace {
     /// Construct `/n_trace` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `NTrace { .. NTrace::new(...) }`.
     pub fn new(node_ids: i32) -> Self {
         Self {
@@ -497,7 +497,7 @@ impl NTrace {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_ids));

@@ -1,24 +1,101 @@
-//! Non-realtime score file format.
+//! OSC wire layer: `ServerMessage` (one OSC message) + `NrtScore` (the
+//! length-prefixed bundle stream scsynth's `-N` mode reads).
 //!
-//! scsynth's `-N` mode reads a binary file containing a stream of
-//! timestamped OSC bundles, applying each bundle's messages at the given
-//! time and then rendering the result to a sound file. The on-disk layout
-//! for each entry is:
-//!
-//! ```text
-//!     [u32 BE] length of the OSC bundle that follows
-//!     [bundle] standard OSC bundle bytes (timetag + messages)
-//! ```
-//!
-//! This module produces that layout from a sequence of
-//! `(timestamp, ServerMessage)` pairs.
+//! Thin wrappers over [`rosc`]. Each server command is one OSC message
+//! (address + typed arg list); OSC bundles are used only by the NRT
+//! score format.
 
-use rosc::{OscBundle, OscPacket, OscTime};
+use rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType};
 
-use crate::{CommandError, ServerMessage};
+use crate::CommandError;
+
+// ── ServerMessage ───────────────────────────────────────────────────────
+
+/// A single OSC message carrying a server command or reply.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ServerMessage {
+    pub address: String,
+    pub args: Vec<OscType>,
+}
+
+impl ServerMessage {
+    pub fn new(address: impl Into<String>) -> Self {
+        Self {
+            address: address.into(),
+            args: Vec::new(),
+        }
+    }
+
+    pub fn with_args(address: impl Into<String>, args: Vec<OscType>) -> Self {
+        Self {
+            address: address.into(),
+            args,
+        }
+    }
+
+    /// Append one argument and return self. Accepts anything that converts
+    /// into [`OscType`] — numeric literals, `String`, `&str`, `Vec<u8>`, etc.
+    pub fn arg(mut self, value: impl Into<OscType>) -> Self {
+        self.args.push(value.into());
+        self
+    }
+
+    /// Encode as a raw OSC UDP packet.
+    pub fn encode(&self) -> Result<Vec<u8>, CommandError> {
+        let msg = OscMessage {
+            addr: self.address.clone(),
+            args: self.args.clone(),
+        };
+        rosc::encoder::encode(&OscPacket::Message(msg))
+            .map_err(|e| CommandError::OscEncode(format!("{e:?}")))
+    }
+
+    /// Decode a raw OSC UDP packet, accepting only plain messages. Bundles
+    /// are rejected — use the NRT score reader for those.
+    pub fn decode(bytes: &[u8]) -> Result<Self, CommandError> {
+        let packet = rosc::decoder::decode_udp(bytes)
+            .map_err(|e| CommandError::OscDecode(format!("{e:?}")))?;
+        match packet.1 {
+            OscPacket::Message(m) => Ok(Self {
+                address: m.addr,
+                args: m.args,
+            }),
+            OscPacket::Bundle(_) => Err(CommandError::Custom(
+                "expected OSC message, got bundle".into(),
+            )),
+        }
+    }
+}
+
+impl From<ServerMessage> for OscMessage {
+    fn from(m: ServerMessage) -> Self {
+        OscMessage {
+            addr: m.address,
+            args: m.args,
+        }
+    }
+}
+
+impl From<OscMessage> for ServerMessage {
+    fn from(m: OscMessage) -> Self {
+        ServerMessage {
+            address: m.addr,
+            args: m.args,
+        }
+    }
+}
+
+// ── NrtScore ────────────────────────────────────────────────────────────
 
 /// A sequence of timestamped OSC bundles, ready to be serialised as an
-/// NRT command file.
+/// NRT command file. scsynth's `-N` mode reads this file and applies
+/// each bundle at its declared time.
+///
+/// On-disk layout per entry:
+/// ```text
+///     [u32 BE] length of the OSC bundle that follows
+///     [bundle] standard OSC bundle bytes (timetag + messages)
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct NrtScore {
     bundles: Vec<OscBundle>,
@@ -71,8 +148,8 @@ impl NrtScore {
         Ok(out)
     }
 
-    /// Parse a binary NRT score back into its sequence of bundles. Inverse
-    /// of [`encode`].
+    /// Parse a binary NRT score back into its sequence of bundles.
+    /// Inverse of [`encode`].
     pub fn decode(bytes: &[u8]) -> Result<Self, CommandError> {
         let mut bundles = Vec::new();
         let mut pos = 0usize;
@@ -131,38 +208,57 @@ fn seconds_to_osc_time(secs: f64) -> OscTime {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ServerMessage;
 
     #[test]
-    fn empty_score_encodes_to_empty_bytes() {
-        let score = NrtScore::new();
-        assert_eq!(score.encode().unwrap().len(), 0);
+    fn round_trip_status_message() {
+        let msg = ServerMessage::new("/status");
+        let bytes = msg.encode().unwrap();
+        let back = ServerMessage::decode(&bytes).unwrap();
+        assert_eq!(back.address, "/status");
+        assert_eq!(back.args.len(), 0);
     }
 
     #[test]
-    fn round_trip_single_entry() {
-        let quit = ServerMessage::new("/quit");
-        let score = NrtScore::new().at(1.5, quit);
-        let bytes = score.encode().unwrap();
+    fn round_trip_s_new_message() {
+        let msg = ServerMessage::new("/s_new")
+            .arg("sine")
+            .arg(1001i32)
+            .arg(0i32)
+            .arg(1i32)
+            .arg("freq")
+            .arg(440.0f32);
+        let back = ServerMessage::decode(&msg.encode().unwrap()).unwrap();
+        assert_eq!(back.args.len(), 6);
+        match &back.args[0] {
+            OscType::String(s) => assert_eq!(s, "sine"),
+            _ => panic!("expected String"),
+        }
+    }
 
-        // Layout: [u32 BE length][bundle bytes].
+    #[test]
+    fn empty_score_encodes_to_empty_bytes() {
+        assert_eq!(NrtScore::new().encode().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn round_trip_single_nrt_entry() {
+        let score = NrtScore::new().at(1.5, ServerMessage::new("/quit"));
+        let bytes = score.encode().unwrap();
         assert!(bytes.len() > 4);
         let len = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
         assert_eq!(len, bytes.len() - 4);
-
         let back = NrtScore::decode(&bytes).unwrap();
         assert_eq!(back.len(), 1);
         assert_eq!(back.bundles()[0].timetag.seconds, 1);
     }
 
     #[test]
-    fn round_trip_multiple_entries() {
+    fn round_trip_multiple_nrt_entries() {
         let score = NrtScore::new()
             .at(0.0, ServerMessage::new("/g_new").arg(1001i32).arg(0i32).arg(0i32))
             .at(0.5, ServerMessage::new("/s_new").arg("sine").arg(1002i32).arg(0i32).arg(1001i32))
             .at(2.0, ServerMessage::new("/n_free").arg(1002i32));
-        let bytes = score.encode().unwrap();
-        let back = NrtScore::decode(&bytes).unwrap();
+        let back = NrtScore::decode(&score.encode().unwrap()).unwrap();
         assert_eq!(back.len(), 3);
     }
 }

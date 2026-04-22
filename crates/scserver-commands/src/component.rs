@@ -61,8 +61,7 @@ impl CoreGuest for Component {
     }
 
     fn registry_json() -> String {
-        serde_json::to_string(crate::all_commands())
-            .unwrap_or_else(|e| format!(r#"{{"error":"{e}"}}"#))
+        crate::REGISTRY_JSON.to_string()
     }
 }
 
@@ -202,9 +201,9 @@ fn reply_to_wit(reply: ServerReply) -> WitServerReply {
             trigger_id,
             value,
         }),
-        ServerReply::Other(m) => WitServerReply::Other(OtherReply {
-            address: m.address,
-            args: osc_args_to_wit(&m.args),
+        ServerReply::Other { address, args } => WitServerReply::Other(OtherReply {
+            address,
+            args: osc_args_to_wit(&args),
         }),
     }
 }

@@ -21,8 +21,7 @@
         },
         "doc": "(optional) some commands provide other information, for example a buffer index."
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/fail",
@@ -55,8 +54,7 @@
         },
         "doc": "(optional) some commands provide other information, for example a buffer index."
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/late",
@@ -100,56 +98,49 @@
         },
         "doc": "the low 32 bits of the time it was executed."
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/n_end",
     "section": "Node Notifications from Server",
     "category": "replies",
     "description": "A node ended. This command is sent to all registered clients when a node ends and is deallocated.",
-    "args": [],
-    "asyncInfo": null
+    "args": []
   },
   {
     "address": "/n_go",
     "section": "Node Notifications from Server",
     "category": "replies",
     "description": "A node was started. This command is sent to all registered clients when a node is created.",
-    "args": [],
-    "asyncInfo": null
+    "args": []
   },
   {
     "address": "/n_info",
     "section": "Node Notifications from Server",
     "category": "replies",
     "description": "Reply to /n_query. This command is sent to all registered clients in response to an /n_query command.",
-    "args": [],
-    "asyncInfo": null
+    "args": []
   },
   {
     "address": "/n_move",
     "section": "Node Notifications from Server",
     "category": "replies",
     "description": "A node was moved. This command is sent to all registered clients when a node is moved.",
-    "args": [],
-    "asyncInfo": null
+    "args": []
   },
   {
     "address": "/n_off",
     "section": "Node Notifications from Server",
     "category": "replies",
     "description": "A node was turned off. This command is sent to all registered clients when a node is turned off.",
-    "args": [],
-    "asyncInfo": null
+    "args": []
   },
   {
     "address": "/n_on",
     "section": "Node Notifications from Server",
     "category": "replies",
     "description": "A node was turned on. This command is sent to all registered clients when a node is turned on.",
-    "args": [],
-    "asyncInfo": null
+    "args": []
   },
   {
     "address": "/tr",
@@ -184,7 +175,6 @@
         },
         "doc": "trigger value"
       }
-    ],
-    "asyncInfo": null
+    ]
   }
 ]

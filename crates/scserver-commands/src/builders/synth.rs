@@ -1,5 +1,5 @@
 // @generated — DO NOT EDIT.
-// Regenerate with `node scripts/generate_server_commands_rust.mjs`.
+// Regenerate with `node scripts/generate.mjs` (from the crate root).
 
 #![allow(non_snake_case, unused_mut, clippy::all)]
 
@@ -18,7 +18,7 @@ pub struct SGet {
 
 impl SGet {
     /// Construct `/s_get` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `SGet { .. SGet::new(...) }`.
     pub fn new(node_id: i32, control: crate::args::ControlId) -> Self {
         Self {
@@ -27,7 +27,7 @@ impl SGet {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_id));
@@ -53,7 +53,7 @@ pub struct SGetn {
 
 impl SGetn {
     /// Construct `/s_getn` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `SGetn { .. SGetn::new(...) }`.
     pub fn new(node_id: i32, tail: Vec<(crate::args::ControlId, i32)>) -> Self {
         Self {
@@ -62,7 +62,7 @@ impl SGetn {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_id));
@@ -97,7 +97,7 @@ pub struct SNew {
 
 impl SNew {
     /// Construct `/s_new` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `SNew { .. SNew::new(...) }`.
     pub fn new(def_name: String, node_id: i32, add_action: i32, target_id: i32, tail: Vec<(crate::args::ControlId, crate::args::ControlValue)>) -> Self {
         Self {
@@ -109,7 +109,7 @@ impl SNew {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::String(self.def_name));
@@ -139,7 +139,7 @@ pub struct SNoid {
 
 impl SNoid {
     /// Construct `/s_noid` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `SNoid { .. SNoid::new(...) }`.
     pub fn new(synth_ids: i32) -> Self {
         Self {
@@ -147,7 +147,7 @@ impl SNoid {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.synth_ids));

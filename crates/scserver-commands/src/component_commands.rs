@@ -1,5 +1,5 @@
 // @generated — DO NOT EDIT.
-// Regenerate with `node scripts/generate_server_commands_component.mjs`.
+// Regenerate with `node scripts/generate.mjs` (from the crate root).
 
 use crate::component::bindings::exports::scserver::commands::commands as wit_cmd;
 use crate::component::{Component, ServerMessageResource};
@@ -11,8 +11,8 @@ impl wit_cmd::Guest for Component {
     ) -> WitServerMessageResource {
         let msg = crate::builders::BAlloc {
             num_channels: args.num_channels,
-            an_osc_message: args.an_osc_message,
-            the_required_sample: args.the_required_sample,
+            completion_msg: args.completion_msg,
+            sample_rate: args.sample_rate,
             ..crate::builders::BAlloc::new(args.bufnum, args.num_frames)
         }.to_message();
         WitServerMessageResource::new(crate::component::ServerMessageResource::new(msg))
@@ -23,7 +23,7 @@ impl wit_cmd::Guest for Component {
         let msg = crate::builders::BAllocRead {
             start_frame: args.start_frame,
             number_of_frames: args.number_of_frames,
-            an_osc_message: args.an_osc_message,
+            completion_msg: args.completion_msg,
             ..crate::builders::BAllocRead::new(args.bufnum, args.path)
         }.to_message();
         WitServerMessageResource::new(crate::component::ServerMessageResource::new(msg))
@@ -39,7 +39,7 @@ impl wit_cmd::Guest for Component {
         args: wit_cmd::BCloseArgs,
     ) -> WitServerMessageResource {
         let msg = crate::builders::BClose {
-            an_osc_message: args.an_osc_message,
+            completion_msg: args.completion_msg,
             ..crate::builders::BClose::new(args.bufnum)
         }.to_message();
         WitServerMessageResource::new(crate::component::ServerMessageResource::new(msg))
@@ -55,7 +55,7 @@ impl wit_cmd::Guest for Component {
         args: wit_cmd::BFreeArgs,
     ) -> WitServerMessageResource {
         let msg = crate::builders::BFree {
-            an_osc_message: args.an_osc_message,
+            completion_msg: args.completion_msg,
             ..crate::builders::BFree::new(args.bufnum)
         }.to_message();
         WitServerMessageResource::new(crate::component::ServerMessageResource::new(msg))
@@ -94,7 +94,7 @@ impl wit_cmd::Guest for Component {
             number_of_frames: args.number_of_frames,
             starting_frame: args.starting_frame,
             leave_file_open: args.leave_file_open,
-            an_osc_message: args.an_osc_message,
+            completion_msg: args.completion_msg,
             ..crate::builders::BRead::new(args.bufnum, args.path)
         }.to_message();
         WitServerMessageResource::new(crate::component::ServerMessageResource::new(msg))
@@ -133,7 +133,7 @@ impl wit_cmd::Guest for Component {
             number_of_frames: args.number_of_frames,
             starting_frame: args.starting_frame,
             leave_file_open: args.leave_file_open,
-            an_osc_message: args.an_osc_message,
+            completion_msg: args.completion_msg,
             ..crate::builders::BWrite::new(args.bufnum, args.path, args.header_format, args.sample_format)
         }.to_message();
         WitServerMessageResource::new(crate::component::ServerMessageResource::new(msg))
@@ -142,7 +142,7 @@ impl wit_cmd::Guest for Component {
         args: wit_cmd::BZeroArgs,
     ) -> WitServerMessageResource {
         let msg = crate::builders::BZero {
-            an_osc_message: args.an_osc_message,
+            completion_msg: args.completion_msg,
             ..crate::builders::BZero::new(args.bufnum)
         }.to_message();
         WitServerMessageResource::new(crate::component::ServerMessageResource::new(msg))
@@ -212,7 +212,7 @@ impl wit_cmd::Guest for Component {
         args: wit_cmd::DLoadArgs,
     ) -> WitServerMessageResource {
         let msg = crate::builders::DLoad {
-            an_osc_message: args.an_osc_message,
+            completion_msg: args.completion_msg,
             ..crate::builders::DLoad::new(args.pathname_of_file)
         }.to_message();
         WitServerMessageResource::new(crate::component::ServerMessageResource::new(msg))
@@ -221,7 +221,7 @@ impl wit_cmd::Guest for Component {
         args: wit_cmd::DLoadDirArgs,
     ) -> WitServerMessageResource {
         let msg = crate::builders::DLoadDir {
-            an_osc_message: args.an_osc_message,
+            completion_msg: args.completion_msg,
             ..crate::builders::DLoadDir::new(args.pathname_of_directory)
         }.to_message();
         WitServerMessageResource::new(crate::component::ServerMessageResource::new(msg))
@@ -230,7 +230,7 @@ impl wit_cmd::Guest for Component {
         args: wit_cmd::DRecvArgs,
     ) -> WitServerMessageResource {
         let msg = crate::builders::DRecv {
-            an_osc_message: args.an_osc_message,
+            completion_msg: args.completion_msg,
             ..crate::builders::DRecv::new(args.buffer_of_data)
         }.to_message();
         WitServerMessageResource::new(crate::component::ServerMessageResource::new(msg))

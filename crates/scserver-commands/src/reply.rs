@@ -16,7 +16,6 @@
 //! ```
 
 use rosc::OscType;
-use serde::Serialize;
 
 use crate::{CommandError, ServerMessage};
 
@@ -53,13 +52,17 @@ pub enum ServerReply {
         value: f32,
     },
     /// Any OSC message whose address doesn't match a known reply shape.
-    Other(ServerMessage),
+    /// Mirrors the `other-reply` WIT record: raw address + args.
+    Other {
+        address: String,
+        args: Vec<OscType>,
+    },
 }
 
 /// Shared arg layout for `/n_go`, `/n_end`, `/n_on`, `/n_off`, `/n_move`,
 /// `/n_info`. The last two fields are only present when the node is a
 /// group.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct NodeInfo {
     pub node_id: i32,
     pub parent_id: i32,
@@ -71,7 +74,7 @@ pub struct NodeInfo {
     pub tail_node: Option<i32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct StatusReply {
     pub unused: i32,
     pub num_ugens: i32,
@@ -131,7 +134,10 @@ impl ServerReply {
                 trigger_id: take_int(&msg, 1, "/tr")?,
                 value: take_float(&msg, 2, "/tr")?,
             }),
-            _ => Ok(Self::Other(msg)),
+            _ => Ok(Self::Other {
+                address: msg.address,
+                args: msg.args,
+            }),
         }
     }
 }
@@ -274,6 +280,6 @@ mod tests {
     fn unknown_address_becomes_other() {
         let m = ServerMessage::new("/some/random/addr").arg(42i32);
         let reply = ServerReply::from_message(m).unwrap();
-        assert!(matches!(reply, ServerReply::Other(_)));
+        assert!(matches!(reply, ServerReply::Other { .. }));
     }
 }

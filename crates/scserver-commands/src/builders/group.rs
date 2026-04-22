@@ -1,5 +1,5 @@
 // @generated — DO NOT EDIT.
-// Regenerate with `node scripts/generate_server_commands_rust.mjs`.
+// Regenerate with `node scripts/generate.mjs` (from the crate root).
 
 #![allow(non_snake_case, unused_mut, clippy::all)]
 
@@ -16,7 +16,7 @@ pub struct GDeepFree {
 
 impl GDeepFree {
     /// Construct `/g_deepFree` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `GDeepFree { .. GDeepFree::new(...) }`.
     pub fn new(group_id: i32) -> Self {
         Self {
@@ -24,7 +24,7 @@ impl GDeepFree {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.group_id));
@@ -47,7 +47,7 @@ pub struct GDumpTree {
 
 impl GDumpTree {
     /// Construct `/g_dumpTree` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `GDumpTree { .. GDumpTree::new(...) }`.
     pub fn new(tail: Vec<(i32, i32)>) -> Self {
         Self {
@@ -55,7 +55,7 @@ impl GDumpTree {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         for (t0, t1) in self.tail {
@@ -81,7 +81,7 @@ pub struct GFreeAll {
 
 impl GFreeAll {
     /// Construct `/g_freeAll` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `GFreeAll { .. GFreeAll::new(...) }`.
     pub fn new(group_id: i32) -> Self {
         Self {
@@ -89,7 +89,7 @@ impl GFreeAll {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.group_id));
@@ -112,7 +112,7 @@ pub struct GHead {
 
 impl GHead {
     /// Construct `/g_head` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `GHead { .. GHead::new(...) }`.
     pub fn new(tail: Vec<(i32, i32)>) -> Self {
         Self {
@@ -120,7 +120,7 @@ impl GHead {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         for (t0, t1) in self.tail {
@@ -146,7 +146,7 @@ pub struct GNew {
 
 impl GNew {
     /// Construct `/g_new` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `GNew { .. GNew::new(...) }`.
     pub fn new(tail: Vec<(i32, i32, i32)>) -> Self {
         Self {
@@ -154,7 +154,7 @@ impl GNew {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         for (t0, t1, t2) in self.tail {
@@ -181,7 +181,7 @@ pub struct GQueryTree {
 
 impl GQueryTree {
     /// Construct `/g_queryTree` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `GQueryTree { .. GQueryTree::new(...) }`.
     pub fn new(tail: Vec<(i32, i32)>) -> Self {
         Self {
@@ -189,7 +189,7 @@ impl GQueryTree {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         for (t0, t1) in self.tail {
@@ -215,7 +215,7 @@ pub struct GTail {
 
 impl GTail {
     /// Construct `/g_tail` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `GTail { .. GTail::new(...) }`.
     pub fn new(tail: Vec<(i32, i32)>) -> Self {
         Self {
@@ -223,7 +223,7 @@ impl GTail {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         for (t0, t1) in self.tail {
@@ -249,7 +249,7 @@ pub struct PNew {
 
 impl PNew {
     /// Construct `/p_new` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `PNew { .. PNew::new(...) }`.
     pub fn new(tail: Vec<(i32, i32, i32)>) -> Self {
         Self {
@@ -257,7 +257,7 @@ impl PNew {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         for (t0, t1, t2) in self.tail {

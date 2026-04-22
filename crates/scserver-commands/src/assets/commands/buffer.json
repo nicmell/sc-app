@@ -50,8 +50,7 @@
         },
         "doc": "the required sample rate (optional. default (or 0) = the server's sample rate)"
       }
-    ],
-    "asyncInfo": "Replies to sender with /done /b_alloc bufNum when complete."
+    ]
   },
   {
     "address": "/b_allocRead",
@@ -104,8 +103,7 @@
         },
         "doc": "an OSC message to execute upon completion. (optional)"
       }
-    ],
-    "asyncInfo": "Replies to sender with /done /b_allocRead bufNum when complete."
+    ]
   },
   {
     "address": "/b_allocReadChannel",
@@ -172,8 +170,7 @@
           }
         ]
       }
-    ],
-    "asyncInfo": "Replies to sender with /done /b_allocReadChannel bufNum when complete."
+    ]
   },
   {
     "address": "/b_close",
@@ -199,8 +196,7 @@
         },
         "doc": "an OSC message to execute upon completion. (optional)"
       }
-    ],
-    "asyncInfo": "Replies to sender with /done /b_close bufNum when complete."
+    ]
   },
   {
     "address": "/b_fill",
@@ -249,8 +245,7 @@
           }
         ]
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/b_free",
@@ -276,8 +271,7 @@
         },
         "doc": "an OSC message to execute upon completion. (optional)"
       }
-    ],
-    "asyncInfo": "Replies to sender with /done /b_free bufNum when complete."
+    ]
   },
   {
     "address": "/b_gen",
@@ -310,8 +304,7 @@
         },
         "doc": "command arguments"
       }
-    ],
-    "asyncInfo": "Replies to sender with /done /b_gen bufNum when complete."
+    ]
   },
   {
     "address": "/b_get",
@@ -337,8 +330,7 @@
         },
         "doc": "a sample index"
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/b_getn",
@@ -378,8 +370,7 @@
           }
         ]
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/b_query",
@@ -396,8 +387,7 @@
         },
         "doc": "buffer number(s)"
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/b_read",
@@ -468,8 +458,7 @@
         },
         "doc": "an OSC message to execute upon completion. (optional)"
       }
-    ],
-    "asyncInfo": "Replies to sender with /done /b_read bufNum when complete."
+    ]
   },
   {
     "address": "/b_readChannel",
@@ -554,8 +543,7 @@
           }
         ]
       }
-    ],
-    "asyncInfo": "Replies to sender with /done /b_readChannel bufNum when complete."
+    ]
   },
   {
     "address": "/b_set",
@@ -595,8 +583,7 @@
           }
         ]
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/b_setn",
@@ -645,8 +632,7 @@
           }
         ]
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/b_setSampleRate",
@@ -672,8 +658,7 @@
         },
         "doc": "the desired sampling rate. 0 or nil will set to the Server's sample rate."
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/b_write",
@@ -753,8 +738,7 @@
         },
         "doc": "an OSC message to execute upon completion. (optional)"
       }
-    ],
-    "asyncInfo": "Replies to sender with /done /b_write bufNum when complete."
+    ]
   },
   {
     "address": "/b_zero",
@@ -780,7 +764,6 @@
         },
         "doc": "an OSC message to execute upon completion. (optional)"
       }
-    ],
-    "asyncInfo": "Replies to sender with /done /b_zero bufNum when complete."
+    ]
   }
 ]

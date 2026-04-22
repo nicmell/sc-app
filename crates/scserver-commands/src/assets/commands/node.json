@@ -28,8 +28,7 @@
           }
         ]
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/n_before",
@@ -60,8 +59,7 @@
           }
         ]
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/n_fill",
@@ -112,8 +110,7 @@
           }
         ]
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/n_free",
@@ -130,8 +127,7 @@
         },
         "doc": "node ID"
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/n_map",
@@ -172,8 +168,7 @@
           }
         ]
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/n_mapa",
@@ -214,8 +209,7 @@
           }
         ]
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/n_mapan",
@@ -265,8 +259,7 @@
           }
         ]
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/n_mapn",
@@ -316,8 +309,7 @@
           }
         ]
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/n_order",
@@ -352,8 +344,7 @@
         },
         "doc": "node IDs"
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/n_query",
@@ -370,8 +361,7 @@
         },
         "doc": "node ID"
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/n_run",
@@ -402,8 +392,7 @@
           }
         ]
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/n_set",
@@ -445,8 +434,7 @@
           }
         ]
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/n_setn",
@@ -497,8 +485,7 @@
           }
         ]
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/n_trace",
@@ -515,7 +502,6 @@
         },
         "doc": "node IDs"
       }
-    ],
-    "asyncInfo": null
+    ]
   }
 ]

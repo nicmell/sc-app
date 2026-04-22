@@ -14,8 +14,7 @@
         },
         "doc": "group ID(s)"
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/g_dumpTree",
@@ -46,8 +45,7 @@
           }
         ]
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/g_freeAll",
@@ -64,8 +62,7 @@
         },
         "doc": "group ID(s)"
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/g_head",
@@ -96,8 +93,7 @@
           }
         ]
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/g_new",
@@ -137,8 +133,7 @@
           }
         ]
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/g_queryTree",
@@ -169,8 +164,7 @@
           }
         ]
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/g_tail",
@@ -201,8 +195,7 @@
           }
         ]
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/p_new",
@@ -242,7 +235,6 @@
           }
         ]
       }
-    ],
-    "asyncInfo": null
+    ]
   }
 ]

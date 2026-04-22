@@ -1,5 +1,5 @@
 // @generated — DO NOT EDIT.
-// Regenerate with `node scripts/generate_server_commands_rust.mjs`.
+// Regenerate with `node scripts/generate.mjs` (from the crate root).
 
 #![allow(non_snake_case, unused_mut, clippy::all)]
 
@@ -16,7 +16,7 @@ pub struct CFill {
 
 impl CFill {
     /// Construct `/c_fill` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `CFill { .. CFill::new(...) }`.
     pub fn new(tail: Vec<(i32, i32, crate::args::NumericValue)>) -> Self {
         Self {
@@ -24,7 +24,7 @@ impl CFill {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         for (t0, t1, t2) in self.tail {
@@ -51,7 +51,7 @@ pub struct CGet {
 
 impl CGet {
     /// Construct `/c_get` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `CGet { .. CGet::new(...) }`.
     pub fn new(a_bus_index: i32) -> Self {
         Self {
@@ -59,7 +59,7 @@ impl CGet {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.a_bus_index));
@@ -82,7 +82,7 @@ pub struct CGetn {
 
 impl CGetn {
     /// Construct `/c_getn` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `CGetn { .. CGetn::new(...) }`.
     pub fn new(tail: Vec<(i32, i32)>) -> Self {
         Self {
@@ -90,7 +90,7 @@ impl CGetn {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         for (t0, t1) in self.tail {
@@ -116,7 +116,7 @@ pub struct CSet {
 
 impl CSet {
     /// Construct `/c_set` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `CSet { .. CSet::new(...) }`.
     pub fn new(tail: Vec<(i32, crate::args::NumericValue)>) -> Self {
         Self {
@@ -124,7 +124,7 @@ impl CSet {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         for (t0, t1) in self.tail {
@@ -150,7 +150,7 @@ pub struct CSetn {
 
 impl CSetn {
     /// Construct `/c_setn` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `CSetn { .. CSetn::new(...) }`.
     pub fn new(tail: Vec<(i32, i32, rosc::OscType, crate::args::NumericValue)>) -> Self {
         Self {
@@ -158,7 +158,7 @@ impl CSetn {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         for (t0, t1, t2, t3) in self.tail {

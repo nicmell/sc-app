@@ -1,13 +1,12 @@
 // @generated — DO NOT EDIT.
-// Regenerate with `node scripts/generate_server_commands_rust.mjs`.
+// Regenerate with `node scripts/generate.mjs` (from the crate root).
 
 #![allow(non_snake_case, unused_mut, clippy::all)]
 
 use rosc::OscType;
 use crate::ServerMessage;
 
-/// Clear all scheduled bundles. Removes all bundles from the scheduling
-/// queue.
+/// Clear all scheduled bundles. Removes all bundles from the scheduling queue.
 /// OSC address: `/clearSched`
 #[derive(Debug, Clone)]
 pub struct ClearSched {
@@ -15,14 +14,14 @@ pub struct ClearSched {
 
 impl ClearSched {
     /// Construct `/clearSched` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `ClearSched { .. ClearSched::new(...) }`.
     pub fn new() -> Self {
         Self {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         ServerMessage::with_args(r"/clearSched", args)
@@ -46,7 +45,7 @@ pub struct Cmd {
 
 impl Cmd {
     /// Construct `/cmd` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `Cmd { .. Cmd::new(...) }`.
     pub fn new(cmd: String, any_arguments: rosc::OscType) -> Self {
         Self {
@@ -55,7 +54,7 @@ impl Cmd {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::String(self.cmd));
@@ -79,7 +78,7 @@ pub struct DumpOSC {
 
 impl DumpOSC {
     /// Construct `/dumpOSC` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `DumpOSC { .. DumpOSC::new(...) }`.
     pub fn new(code: i32) -> Self {
         Self {
@@ -87,7 +86,7 @@ impl DumpOSC {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.code));
@@ -110,7 +109,7 @@ pub struct Error {
 
 impl Error {
     /// Construct `/error` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `Error { .. Error::new(...) }`.
     pub fn new(mode: i32) -> Self {
         Self {
@@ -118,7 +117,7 @@ impl Error {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.mode));
@@ -143,7 +142,7 @@ pub struct Notify {
 
 impl Notify {
     /// Construct `/notify` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `Notify { .. Notify::new(...) }`.
     pub fn new(enable: i32) -> Self {
         Self {
@@ -152,7 +151,7 @@ impl Notify {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.enable));
@@ -176,14 +175,14 @@ pub struct Quit {
 
 impl Quit {
     /// Construct `/quit` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `Quit { .. Quit::new(...) }`.
     pub fn new() -> Self {
         Self {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         ServerMessage::with_args(r"/quit", args)
@@ -203,14 +202,14 @@ pub struct RtMemoryStatus {
 
 impl RtMemoryStatus {
     /// Construct `/rtMemoryStatus` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `RtMemoryStatus { .. RtMemoryStatus::new(...) }`.
     pub fn new() -> Self {
         Self {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         ServerMessage::with_args(r"/rtMemoryStatus", args)
@@ -230,14 +229,14 @@ pub struct Status {
 
 impl Status {
     /// Construct `/status` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `Status { .. Status::new(...) }`.
     pub fn new() -> Self {
         Self {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         ServerMessage::with_args(r"/status", args)
@@ -259,7 +258,7 @@ pub struct Sync {
 
 impl Sync {
     /// Construct `/sync` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `Sync { .. Sync::new(...) }`.
     pub fn new(a_unique_number: i32) -> Self {
         Self {
@@ -267,7 +266,7 @@ impl Sync {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.a_unique_number));
@@ -289,14 +288,14 @@ pub struct Version {
 
 impl Version {
     /// Construct `/version` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `Version { .. Version::new(...) }`.
     pub fn new() -> Self {
         Self {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         ServerMessage::with_args(r"/version", args)

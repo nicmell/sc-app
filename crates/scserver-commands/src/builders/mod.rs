@@ -1,5 +1,5 @@
 // @generated — DO NOT EDIT.
-// Regenerate with `node scripts/generate_server_commands_rust.mjs`.
+// Regenerate with `node scripts/generate.mjs` (from the crate root).
 
 //! Typed builders for every documented SuperCollider server command.
 //! Auto-generated from `src/assets/commands/*.json`.

@@ -12,36 +12,45 @@ jco-friendly TypeScript bindings.
 
 ## Layers
 
-- **`ServerCommand`** — tagged union over every documented command,
-  with typed args per variant. `encode() -> Vec<u8>` produces OSC wire
-  bytes via [`rosc`](https://docs.rs/rosc); `decode(&[u8])` is the
-  inverse.
-- **`ServerReply`** — same shape for replies (`/done`, `/fail`,
-  `/n_go`, `/status.reply`, `/tr`, `/b_info`, …).
-- **`builders::*`** — one fluent struct per command, generated from
-  the JSON catalogue. `SNew::new("sine").target(0, AddAction::Head).control("freq", 440).encode()`.
-- **`nrt`** — NRT score builder: timestamped bundles, emitted as the
-  length-prefixed binary file format that scsynth's `-N` mode reads.
-
-## Source of truth
-
-`src/assets/commands/*.json` is produced by
-`scripts/scrape_server_commands.mjs` (hand-maintainable after the
-initial scrape). One JSON file per category (master, node, synth,
-group, buffer, control, synthdef, unit, nrt, replies).
+- **`ServerMessage`** — one OSC message (address + typed args).
+  `encode() -> Vec<u8>` produces wire bytes via
+  [`rosc`](https://docs.rs/rosc); `decode(&[u8])` is the inverse.
+- **`ServerReply`** — tagged enum over every documented reply
+  (`/done`, `/fail`, `/n_go`, `/status.reply`, `/tr`, …).
+  `ServerReply::parse(&[u8])` dispatches on the incoming address.
+- **`builders::*`** — one typed struct per command, generated from
+  `src/assets/commands/*.json`. Required args in the constructor,
+  optional trailing args editable via struct update:
+  ```rust
+  BAlloc { num_channels: Some(2), ..BAlloc::new(0, 8192) }.encode()?;
+  ```
+- **`args::{ControlId, NumericValue, ControlValue}`** — the three
+  polymorphic OSC arg shapes the registry uses. Each has ergonomic
+  `From` impls: `"freq".into()` → `ControlId::Name`, `440.0f32.into()`
+  → `ControlValue::Float`.
+- **`NrtScore`** — timestamped OSC bundles, serialised to the
+  length-prefixed binary file scsynth's `-N` mode consumes.
 
 ## Regeneration
 
+The entire typed surface comes from one JSON catalogue. A single
+script emits builders, registry JSON const, WIT interface, and
+component Guest forwarders:
+
 ```bash
-# 1. Refresh the catalogue from the SC docs (rare):
-node scripts/scrape_server_commands.mjs
-
-# 2. Regenerate the Rust registry + typed builders:
-node scripts/generate_server_commands_rust.mjs
-
-# 3. Regenerate the WIT interface:
-node scripts/generate_server_commands_wit.mjs
+# from the crate root
+node scripts/generate.mjs
 ```
+
+It writes:
+- `src/builders/<category>.rs` + `src/builders/mod.rs`
+- `src/registry.rs`  (the `REGISTRY_JSON` const the WIT serves)
+- `wit/commands.wit`
+- `src/component_commands.rs`
+
+The catalogue itself (`src/assets/commands/*.json`) is the source of
+truth — hand-maintained; seed-scraped from the SC docs at project
+start.
 
 ## Build targets
 
@@ -60,3 +69,15 @@ cd crates/scserver-commands
 cargo component build --release --features component --target wasm32-wasip1
 jco transpile ../../target/wasm32-wasip1/release/scserver_commands.wasm -o pkg
 ```
+
+The WIT world exports three interfaces:
+
+- `core` — `osc-arg` + `server-message` resource + `decode-message` +
+  `registry-json` + `nrt-score` resource.
+- `commands` — 64 typed `<cmd>: func(args: <cmd>-args) -> server-message`
+  (plus the three polymorphic arg variants).
+- `replies` — `server-reply` variant with 12 cases + typed payload
+  records + `parse-reply`.
+
+Two Node smoke tests under `examples/node/` exercise the jco-generated
+bindings end-to-end.

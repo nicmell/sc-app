@@ -1,5 +1,5 @@
 // @generated — DO NOT EDIT.
-// Regenerate with `node scripts/generate_server_commands_rust.mjs`.
+// Regenerate with `node scripts/generate.mjs` (from the crate root).
 
 #![allow(non_snake_case, unused_mut, clippy::all)]
 
@@ -22,7 +22,7 @@ pub struct UCmd {
 
 impl UCmd {
     /// Construct `/u_cmd` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `UCmd { .. UCmd::new(...) }`.
     pub fn new(node_id: i32, unit_generator_index: i32, cmd: String, any_arguments: rosc::OscType) -> Self {
         Self {
@@ -33,7 +33,7 @@ impl UCmd {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_id));

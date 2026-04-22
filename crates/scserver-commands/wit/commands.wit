@@ -1,5 +1,5 @@
 // @generated — DO NOT EDIT.
-// Regenerate with `node scripts/generate_server_commands_wit.mjs`.
+// Regenerate with `node scripts/generate.mjs` (from the crate root).
 
 package scserver:commands@0.1.0;
 
@@ -26,10 +26,10 @@ interface commands {
         /// number of channels (optional. default = 1 channel)
         num-channels: option<s32>,
         /// an OSC message to execute upon completion. (optional)
-        an-osc-message: option<list<u8>>,
+        completion-msg: option<list<u8>>,
         /// the required sample rate (optional. default (or 0) = the server's
         /// sample rate)
-        the-required-sample: option<f32>,
+        sample-rate: option<f32>,
     }
     /// Allocate buffer space.
     /// OSC address: `/b_alloc`.
@@ -46,7 +46,7 @@ interface commands {
         /// number of frames to read (optional. default = 0, see below)
         number-of-frames: option<s32>,
         /// an OSC message to execute upon completion. (optional)
-        an-osc-message: option<list<u8>>,
+        completion-msg: option<list<u8>>,
     }
     /// Allocate buffer space and read a sound file.
     /// OSC address: `/b_allocRead`.
@@ -62,7 +62,7 @@ interface commands {
         start-frame: s32,
         /// number of frames to read
         number-of-frames: s32,
-        /// Repeated tuples (source_file_channel: source file channel index; an_osc_message: an OSC message to execute upon completion. (optional)).
+        /// Repeated tuples (source_file_channel: source file channel index; completion_msg: an OSC message to execute upon completion. (optional)).
         tail: list<tuple<s32, list<u8>>>,
     }
     /// Allocate buffer space and read channels from a sound file.
@@ -74,7 +74,7 @@ interface commands {
         /// buffer number
         bufnum: s32,
         /// an OSC message to execute upon completion. (optional)
-        an-osc-message: option<list<u8>>,
+        completion-msg: option<list<u8>>,
     }
     /// Close soundfile.
     /// OSC address: `/b_close`.
@@ -96,7 +96,7 @@ interface commands {
         /// buffer number
         bufnum: s32,
         /// an OSC message to execute upon completion. (optional)
-        an-osc-message: option<list<u8>>,
+        completion-msg: option<list<u8>>,
     }
     /// Free buffer data.
     /// OSC address: `/b_free`.
@@ -161,7 +161,7 @@ interface commands {
         /// leave file open (optional. default = 0)
         leave-file-open: option<s32>,
         /// an OSC message to execute upon completion. (optional)
-        an-osc-message: option<list<u8>>,
+        completion-msg: option<list<u8>>,
     }
     /// Read sound file data into an existing buffer.
     /// OSC address: `/b_read`.
@@ -239,7 +239,7 @@ interface commands {
         /// leave file open (optional. default = 0)
         leave-file-open: option<s32>,
         /// an OSC message to execute upon completion. (optional)
-        an-osc-message: option<list<u8>>,
+        completion-msg: option<list<u8>>,
     }
     /// Write sound file data.
     /// OSC address: `/b_write`.
@@ -250,7 +250,7 @@ interface commands {
         /// buffer number
         bufnum: s32,
         /// an OSC message to execute upon completion. (optional)
-        an-osc-message: option<list<u8>>,
+        completion-msg: option<list<u8>>,
     }
     /// Zero sample data.
     /// OSC address: `/b_zero`.
@@ -331,7 +331,7 @@ interface commands {
         /// pathname of file. Can be a pattern like "synthdefs/perc-*"
         pathname-of-file: string,
         /// an OSC message to execute upon completion. (optional)
-        an-osc-message: option<list<u8>>,
+        completion-msg: option<list<u8>>,
     }
     /// Load synth definition.
     /// OSC address: `/d_load`.
@@ -342,7 +342,7 @@ interface commands {
         /// pathname of directory.
         pathname-of-directory: string,
         /// an OSC message to execute upon completion. (optional)
-        an-osc-message: option<list<u8>>,
+        completion-msg: option<list<u8>>,
     }
     /// Load a directory of synth definitions.
     /// OSC address: `/d_loadDir`.
@@ -353,7 +353,7 @@ interface commands {
         /// buffer of data.
         buffer-of-data: list<u8>,
         /// an OSC message to execute upon completion. (optional)
-        an-osc-message: option<list<u8>>,
+        completion-msg: option<list<u8>>,
     }
     /// Receive a synth definition file.
     /// OSC address: `/d_recv`.

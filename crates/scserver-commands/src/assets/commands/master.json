@@ -4,8 +4,7 @@
     "section": "Top-Level Commands",
     "category": "master",
     "description": "Clear all scheduled bundles. Removes all bundles from the scheduling queue.",
-    "args": [],
-    "asyncInfo": null
+    "args": []
   },
   {
     "address": "/cmd",
@@ -29,8 +28,7 @@
         },
         "doc": "any arguments"
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/dumpOSC",
@@ -47,8 +45,7 @@
         },
         "doc": "code"
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/error",
@@ -65,8 +62,7 @@
         },
         "doc": "mode"
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/notify",
@@ -92,32 +88,28 @@
         },
         "doc": "client ID (optional)"
       }
-    ],
-    "asyncInfo": "Replies to sender with /done /notify clientID [maxLogins] when complete. If this client has registered for notifications before, this may be the same ID. Otherwise it will be a new one. Clients can use this ID in multi-client situations to avoid conflicts when allocating resources such as node IDs, bus indices, and buffer numbers. maxLogins is only returned when the client ID argument is supplied in this command. maxLogins is not supported by supernova."
+    ]
   },
   {
     "address": "/quit",
     "section": "Top-Level Commands",
     "category": "master",
     "description": "Quit program. Exits the synthesis server.",
-    "args": [],
-    "asyncInfo": "Replies to sender with /done just before completion."
+    "args": []
   },
   {
     "address": "/rtMemoryStatus",
     "section": "Top-Level Commands",
     "category": "master",
     "description": "Queries the amount of currently free real-time memory (in bytes).",
-    "args": [],
-    "asyncInfo": null
+    "args": []
   },
   {
     "address": "/status",
     "section": "Top-Level Commands",
     "category": "master",
     "description": "Query the status. Replies to sender with the following message:",
-    "args": [],
-    "asyncInfo": null
+    "args": []
   },
   {
     "address": "/sync",
@@ -134,15 +126,13 @@
         },
         "doc": "a unique number identifying this command."
       }
-    ],
-    "asyncInfo": "Replies to sender with /synced, ID when complete."
+    ]
   },
   {
     "address": "/version",
     "section": "Top-Level Commands",
     "category": "master",
     "description": "Query the SuperCollider version. Replies to sender with the following message:",
-    "args": [],
-    "asyncInfo": null
+    "args": []
   }
 ]

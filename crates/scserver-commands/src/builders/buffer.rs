@@ -1,5 +1,5 @@
 // @generated — DO NOT EDIT.
-// Regenerate with `node scripts/generate_server_commands_rust.mjs`.
+// Regenerate with `node scripts/generate.mjs` (from the crate root).
 
 #![allow(non_snake_case, unused_mut, clippy::all)]
 
@@ -17,27 +17,27 @@ pub struct BAlloc {
     /// number of channels (optional. default = 1 channel)
     pub num_channels: Option<i32>,
     /// an OSC message to execute upon completion. (optional)
-    pub an_osc_message: Option<Vec<u8>>,
-    /// the required sample rate (optional. default (or 0) = the server's
-    /// sample rate)
-    pub the_required_sample: Option<f32>,
+    pub completion_msg: Option<Vec<u8>>,
+    /// the required sample rate (optional. default (or 0) = the server's sample
+    /// rate)
+    pub sample_rate: Option<f32>,
 }
 
 impl BAlloc {
     /// Construct `/b_alloc` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `BAlloc { .. BAlloc::new(...) }`.
     pub fn new(bufnum: i32, num_frames: i32) -> Self {
         Self {
             bufnum,
             num_frames,
             num_channels: None,
-            an_osc_message: None,
-            the_required_sample: None,
+            completion_msg: None,
+            sample_rate: None,
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
@@ -45,10 +45,10 @@ impl BAlloc {
         if let Some(v) = self.num_channels {
             args.push(OscType::Int(v));
         }
-        if let Some(v) = self.an_osc_message {
+        if let Some(v) = self.completion_msg {
             args.push(OscType::Blob(v));
         }
-        if let Some(v) = self.the_required_sample {
+        if let Some(v) = self.sample_rate {
             args.push(OscType::Float(v));
         }
         ServerMessage::with_args(r"/b_alloc", args)
@@ -73,12 +73,12 @@ pub struct BAllocRead {
     /// number of frames to read (optional. default = 0, see below)
     pub number_of_frames: Option<i32>,
     /// an OSC message to execute upon completion. (optional)
-    pub an_osc_message: Option<Vec<u8>>,
+    pub completion_msg: Option<Vec<u8>>,
 }
 
 impl BAllocRead {
     /// Construct `/b_allocRead` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `BAllocRead { .. BAllocRead::new(...) }`.
     pub fn new(bufnum: i32, path: String) -> Self {
         Self {
@@ -86,11 +86,11 @@ impl BAllocRead {
             path,
             start_frame: None,
             number_of_frames: None,
-            an_osc_message: None,
+            completion_msg: None,
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
@@ -101,7 +101,7 @@ impl BAllocRead {
         if let Some(v) = self.number_of_frames {
             args.push(OscType::Int(v));
         }
-        if let Some(v) = self.an_osc_message {
+        if let Some(v) = self.completion_msg {
             args.push(OscType::Blob(v));
         }
         ServerMessage::with_args(r"/b_allocRead", args)
@@ -125,13 +125,13 @@ pub struct BAllocReadChannel {
     pub start_frame: i32,
     /// number of frames to read
     pub number_of_frames: i32,
-    /// Repeated tuples (source_file_channel: source file channel index; an_osc_message: an OSC message to execute upon completion. (optional)).
+    /// Repeated tuples (source_file_channel: source file channel index; completion_msg: an OSC message to execute upon completion. (optional)).
     pub tail: Vec<(i32, Vec<u8>)>,
 }
 
 impl BAllocReadChannel {
     /// Construct `/b_allocReadChannel` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `BAllocReadChannel { .. BAllocReadChannel::new(...) }`.
     pub fn new(bufnum: i32, path: String, start_frame: i32, number_of_frames: i32, tail: Vec<(i32, Vec<u8>)>) -> Self {
         Self {
@@ -143,7 +143,7 @@ impl BAllocReadChannel {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
@@ -170,25 +170,25 @@ pub struct BClose {
     /// buffer number
     pub bufnum: i32,
     /// an OSC message to execute upon completion. (optional)
-    pub an_osc_message: Option<Vec<u8>>,
+    pub completion_msg: Option<Vec<u8>>,
 }
 
 impl BClose {
     /// Construct `/b_close` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `BClose { .. BClose::new(...) }`.
     pub fn new(bufnum: i32) -> Self {
         Self {
             bufnum,
-            an_osc_message: None,
+            completion_msg: None,
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
-        if let Some(v) = self.an_osc_message {
+        if let Some(v) = self.completion_msg {
             args.push(OscType::Blob(v));
         }
         ServerMessage::with_args(r"/b_close", args)
@@ -212,7 +212,7 @@ pub struct BFill {
 
 impl BFill {
     /// Construct `/b_fill` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `BFill { .. BFill::new(...) }`.
     pub fn new(bufnum: i32, tail: Vec<(i32, i32, f32)>) -> Self {
         Self {
@@ -221,7 +221,7 @@ impl BFill {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
@@ -246,25 +246,25 @@ pub struct BFree {
     /// buffer number
     pub bufnum: i32,
     /// an OSC message to execute upon completion. (optional)
-    pub an_osc_message: Option<Vec<u8>>,
+    pub completion_msg: Option<Vec<u8>>,
 }
 
 impl BFree {
     /// Construct `/b_free` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `BFree { .. BFree::new(...) }`.
     pub fn new(bufnum: i32) -> Self {
         Self {
             bufnum,
-            an_osc_message: None,
+            completion_msg: None,
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
-        if let Some(v) = self.an_osc_message {
+        if let Some(v) = self.completion_msg {
             args.push(OscType::Blob(v));
         }
         ServerMessage::with_args(r"/b_free", args)
@@ -290,7 +290,7 @@ pub struct BGen {
 
 impl BGen {
     /// Construct `/b_gen` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `BGen { .. BGen::new(...) }`.
     pub fn new(bufnum: i32, cmd: String, command_arguments: rosc::OscType) -> Self {
         Self {
@@ -300,7 +300,7 @@ impl BGen {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
@@ -327,7 +327,7 @@ pub struct BGet {
 
 impl BGet {
     /// Construct `/b_get` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `BGet { .. BGet::new(...) }`.
     pub fn new(bufnum: i32, a_sample_index: i32) -> Self {
         Self {
@@ -336,7 +336,7 @@ impl BGet {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
@@ -362,7 +362,7 @@ pub struct BGetn {
 
 impl BGetn {
     /// Construct `/b_getn` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `BGetn { .. BGetn::new(...) }`.
     pub fn new(bufnum: i32, tail: Vec<(i32, i32)>) -> Self {
         Self {
@@ -371,7 +371,7 @@ impl BGetn {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
@@ -398,7 +398,7 @@ pub struct BQuery {
 
 impl BQuery {
     /// Construct `/b_query` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `BQuery { .. BQuery::new(...) }`.
     pub fn new(bufnum: i32) -> Self {
         Self {
@@ -406,7 +406,7 @@ impl BQuery {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
@@ -436,12 +436,12 @@ pub struct BRead {
     /// leave file open (optional. default = 0)
     pub leave_file_open: Option<i32>,
     /// an OSC message to execute upon completion. (optional)
-    pub an_osc_message: Option<Vec<u8>>,
+    pub completion_msg: Option<Vec<u8>>,
 }
 
 impl BRead {
     /// Construct `/b_read` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `BRead { .. BRead::new(...) }`.
     pub fn new(bufnum: i32, path: String) -> Self {
         Self {
@@ -451,11 +451,11 @@ impl BRead {
             number_of_frames: None,
             starting_frame: None,
             leave_file_open: None,
-            an_osc_message: None,
+            completion_msg: None,
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
@@ -472,7 +472,7 @@ impl BRead {
         if let Some(v) = self.leave_file_open {
             args.push(OscType::Int(v));
         }
-        if let Some(v) = self.an_osc_message {
+        if let Some(v) = self.completion_msg {
             args.push(OscType::Blob(v));
         }
         ServerMessage::with_args(r"/b_read", args)
@@ -506,7 +506,7 @@ pub struct BReadChannel {
 
 impl BReadChannel {
     /// Construct `/b_readChannel` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `BReadChannel { .. BReadChannel::new(...) }`.
     pub fn new(bufnum: i32, path: String, start_frame: i32, number_of_frames: i32, starting_frame: i32, leave_file_open: i32, tail: Vec<(i32, Vec<u8>)>) -> Self {
         Self {
@@ -520,7 +520,7 @@ impl BReadChannel {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
@@ -554,7 +554,7 @@ pub struct BSet {
 
 impl BSet {
     /// Construct `/b_set` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `BSet { .. BSet::new(...) }`.
     pub fn new(bufnum: i32, tail: Vec<(i32, f32)>) -> Self {
         Self {
@@ -563,7 +563,7 @@ impl BSet {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
@@ -592,7 +592,7 @@ pub struct BSetn {
 
 impl BSetn {
     /// Construct `/b_setn` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `BSetn { .. BSetn::new(...) }`.
     pub fn new(bufnum: i32, tail: Vec<(i32, i32, f32)>) -> Self {
         Self {
@@ -601,7 +601,7 @@ impl BSetn {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
@@ -632,7 +632,7 @@ pub struct BSetSampleRate {
 
 impl BSetSampleRate {
     /// Construct `/b_setSampleRate` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `BSetSampleRate { .. BSetSampleRate::new(...) }`.
     pub fn new(bufnum: i32, the_desired_sampling: f32) -> Self {
         Self {
@@ -641,7 +641,7 @@ impl BSetSampleRate {
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
@@ -674,12 +674,12 @@ pub struct BWrite {
     /// leave file open (optional. default = 0)
     pub leave_file_open: Option<i32>,
     /// an OSC message to execute upon completion. (optional)
-    pub an_osc_message: Option<Vec<u8>>,
+    pub completion_msg: Option<Vec<u8>>,
 }
 
 impl BWrite {
     /// Construct `/b_write` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `BWrite { .. BWrite::new(...) }`.
     pub fn new(bufnum: i32, path: String, header_format: String, sample_format: String) -> Self {
         Self {
@@ -690,11 +690,11 @@ impl BWrite {
             number_of_frames: None,
             starting_frame: None,
             leave_file_open: None,
-            an_osc_message: None,
+            completion_msg: None,
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
@@ -710,7 +710,7 @@ impl BWrite {
         if let Some(v) = self.leave_file_open {
             args.push(OscType::Int(v));
         }
-        if let Some(v) = self.an_osc_message {
+        if let Some(v) = self.completion_msg {
             args.push(OscType::Blob(v));
         }
         ServerMessage::with_args(r"/b_write", args)
@@ -729,25 +729,25 @@ pub struct BZero {
     /// buffer number
     pub bufnum: i32,
     /// an OSC message to execute upon completion. (optional)
-    pub an_osc_message: Option<Vec<u8>>,
+    pub completion_msg: Option<Vec<u8>>,
 }
 
 impl BZero {
     /// Construct `/b_zero` with all required args. Optional
-    /// fields default to `None` — set them via struct update syntax:
+    /// fields default to `None` — override via struct update syntax:
     /// `BZero { .. BZero::new(...) }`.
     pub fn new(bufnum: i32) -> Self {
         Self {
             bufnum,
-            an_osc_message: None,
+            completion_msg: None,
         }
     }
 
-    /// Encode the typed fields into an `OscType` message.
+    /// Encode the typed fields into an OSC `ServerMessage`.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
-        if let Some(v) = self.an_osc_message {
+        if let Some(v) = self.completion_msg {
             args.push(OscType::Blob(v));
         }
         ServerMessage::with_args(r"/b_zero", args)

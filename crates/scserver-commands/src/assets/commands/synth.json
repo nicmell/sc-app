@@ -24,8 +24,7 @@
         },
         "doc": "a control index or name"
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/s_getn",
@@ -66,8 +65,7 @@
           }
         ]
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/s_new",
@@ -137,8 +135,7 @@
           }
         ]
       }
-    ],
-    "asyncInfo": null
+    ]
   },
   {
     "address": "/s_noid",
@@ -155,7 +152,6 @@
         },
         "doc": "synth IDs"
       }
-    ],
-    "asyncInfo": null
+    ]
   }
 ]
