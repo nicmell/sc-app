@@ -2,13 +2,10 @@
 
 // Single-pass code generator for scserver-commands.
 //
-// Reads `src/assets/commands/*.json` once and emits four artefacts:
+// Reads `src/assets/commands/*.json` once and emits three artefacts:
 //
 //   - `src/builders/<category>.rs` + `src/builders/mod.rs`
 //     (typed Rust constructors, one struct per command)
-//   - `src/registry.rs`
-//     (one `pub const REGISTRY_JSON: &str` string, fed straight to the
-//     WIT `core.registry-json` function)
 //   - `wit/commands.wit`
 //     (typed WIT `commands` interface, one record + one func per command)
 //   - `src/component_commands.rs`
@@ -32,7 +29,6 @@ const CRATE = dirname(HERE); // scripts/ lives directly under the crate root
 
 const JSON_DIR = join(CRATE, 'src', 'assets', 'commands');
 const BUILDERS_DIR = join(CRATE, 'src', 'builders');
-const REGISTRY_FILE = join(CRATE, 'src', 'registry.rs');
 const COMPONENT_FILE = join(CRATE, 'src', 'component_commands.rs');
 const WIT_FILE = join(CRATE, 'wit', 'commands.wit');
 
@@ -611,25 +607,6 @@ function emitComponentForwarders(entries) {
   return out.join('\n');
 }
 
-// ── Registry (REGISTRY_JSON const) ──────────────────────────────────────
-
-function emitRegistry(allEntries) {
-  const minimal = allEntries.map((e) => ({
-    address: e.address,
-    category: e.category,
-    description: e.description,
-  }));
-  const json = JSON.stringify(minimal);
-  return [
-    HEADER,
-    '//! The full command / reply catalogue, inlined as a JSON string so',
-    '//! the WIT `core.registry-json` function can return it verbatim.',
-    '',
-    `pub(crate) const REGISTRY_JSON: &str = ${rustStr(json)};`,
-    '',
-  ].join('\n');
-}
-
 // ── Main ────────────────────────────────────────────────────────────────
 
 function main() {
@@ -639,12 +616,10 @@ function main() {
 
   const categories = [];
   const commandEntries = [];
-  const allEntries = [];
   for (const f of files) {
     const category = basename(f, '.json');
-    const entries = JSON.parse(readFileSync(join(JSON_DIR, f), 'utf8'));
-    allEntries.push(...entries);
     if (SKIP_CATEGORIES.has(category)) continue;
+    const entries = JSON.parse(readFileSync(join(JSON_DIR, f), 'utf8'));
     categories.push({ category, entries });
     commandEntries.push(...entries);
   }
@@ -658,9 +633,6 @@ function main() {
   }
   writeFileSync(join(BUILDERS_DIR, 'mod.rs'), emitBuildersMod(categories.map((c) => c.category)));
 
-  // registry.rs
-  writeFileSync(REGISTRY_FILE, emitRegistry(allEntries));
-
   // wit/commands.wit
   mkdirSync(dirname(WIT_FILE), { recursive: true });
   writeFileSync(WIT_FILE, emitWit(commandEntries));
@@ -669,7 +641,6 @@ function main() {
   writeFileSync(COMPONENT_FILE, emitComponentForwarders(commandEntries));
 
   console.log(`\nEmitted ${commandEntries.length} commands across ${categories.length} categories`);
-  console.log(`Registry: ${allEntries.length} entries`);
 }
 
 main();

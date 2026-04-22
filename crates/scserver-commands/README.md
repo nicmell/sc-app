@@ -34,7 +34,7 @@ jco-friendly TypeScript bindings.
 ## Regeneration
 
 The entire typed surface comes from one JSON catalogue. A single
-script emits builders, registry JSON const, WIT interface, and
+script emits builders, the WIT `commands` interface, and the
 component Guest forwarders:
 
 ```bash
@@ -44,7 +44,6 @@ node scripts/generate.mjs
 
 It writes:
 - `src/builders/<category>.rs` + `src/builders/mod.rs`
-- `src/registry.rs`  (the `REGISTRY_JSON` const the WIT serves)
 - `wit/commands.wit`
 - `src/component_commands.rs`
 
@@ -73,7 +72,7 @@ jco transpile ../../target/wasm32-wasip1/release/scserver_commands.wasm -o pkg
 The WIT world exports three interfaces:
 
 - `core` — `osc-arg` + `server-message` resource + `decode-message` +
-  `registry-json` + `nrt-score` resource.
+  `nrt-score` resource.
 - `commands` — 64 typed `<cmd>: func(args: <cmd>-args) -> server-message`
   (plus the three polymorphic arg variants).
 - `replies` — `server-reply` variant with 12 cases + typed payload

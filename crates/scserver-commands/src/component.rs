@@ -59,10 +59,6 @@ impl CoreGuest for Component {
             inner: RefCell::new(m),
         }))
     }
-
-    fn registry_json() -> String {
-        crate::REGISTRY_JSON.to_string()
-    }
 }
 
 impl RepliesGuest for Component {

@@ -11,7 +11,7 @@
 import { core, replies } from './pkg/scserver_commands.js';
 import type { OscArg } from './pkg/interfaces/scserver-commands-core.js';
 
-const { ServerMessage, NrtScore, decodeMessage, registryJson } = core;
+const { ServerMessage, NrtScore, decodeMessage } = core;
 const { parseReply } = replies;
 
 function eq(a: Uint8Array, b: Uint8Array): boolean {
@@ -117,15 +117,6 @@ console.log('================================');
     check('numUgens is 42', reply.val.numUgens === 42);
     check('actualSampleRate is 44100', reply.val.actualSampleRate === 44100);
   }
-}
-
-// 5. Registry JSON carries 70+ command entries.
-{
-  console.log('\n▸ registryJson()');
-  const catalogue = JSON.parse(registryJson());
-  check('registry is array', Array.isArray(catalogue));
-  check('at least 70 entries', catalogue.length >= 70, `got ${catalogue.length}`);
-  check('/s_new is in registry', catalogue.some((e: any) => e.address === '/s_new'));
 }
 
 console.log();
