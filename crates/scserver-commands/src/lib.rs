@@ -2,6 +2,7 @@
 //!
 //! See the [Server Command Reference](https://doc.sccode.org/Reference/Server-Command-Reference.html).
 
+pub mod args;
 pub mod builders;
 #[cfg(feature = "component")]
 mod component;
@@ -11,6 +12,7 @@ pub mod nrt;
 mod registry;
 mod reply;
 
+pub use args::{ControlId, ControlValue, NumericValue};
 pub use error::CommandError;
 pub use message::ServerMessage;
 pub use nrt::NrtScore;

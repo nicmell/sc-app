@@ -5,33 +5,33 @@
 
 use rosc::OscType;
 use crate::ServerMessage;
-use crate::builders::TailArgs;
 
 /// Get control value(s).
 /// OSC address: `/s_get`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct SGet {
     /// synth ID
-    node_id: Option<i32>,
+    pub node_id: i32,
     /// a control index or name
-    control: Option<OscType>,
+    pub control: crate::args::ControlId,
 }
 
 impl SGet {
-    /// Construct a new /s_get builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/s_get` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `SGet { .. SGet::new(...) }`.
+    pub fn new(node_id: i32, control: crate::args::ControlId) -> Self {
+        Self {
+            node_id,
+            control,
+        }
+    }
 
-    /// synth ID
-    pub fn node_id(mut self, v: i32) -> Self { self.node_id = Some(v); self }
-
-    /// a control index or name
-    pub fn control(mut self, v: impl Into<OscType>) -> Self { self.control = Some(v.into()); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.node_id { args.push(OscType::Int(v)); }
-        if let Some(v) = self.control { args.push(v); }
+        args.push(OscType::Int(self.node_id));
+        args.push(self.control.into());
         ServerMessage::with_args(r"/s_get", args)
     }
 
@@ -43,31 +43,33 @@ impl SGet {
 
 /// Get ranges of control value(s).
 /// OSC address: `/s_getn`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct SGetn {
     /// synth ID
-    node_id: Option<i32>,
-    /// Repeated tail group — one tuple per trailing entry.
-    tail: Vec<TailArgs>,
+    pub node_id: i32,
+    /// Repeated tuples (control: a control index or name; number_of_sequential: number of sequential controls to get (M)).
+    pub tail: Vec<(crate::args::ControlId, i32)>,
 }
 
 impl SGetn {
-    /// Construct a new /s_getn builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/s_getn` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `SGetn { .. SGetn::new(...) }`.
+    pub fn new(node_id: i32, tail: Vec<(crate::args::ControlId, i32)>) -> Self {
+        Self {
+            node_id,
+            tail,
+        }
+    }
 
-    /// synth ID
-    pub fn node_id(mut self, v: i32) -> Self { self.node_id = Some(v); self }
-
-    /// Append one tuple to the repeated tail.
-    /// a control index or name
-    /// number of sequential controls to get (M)
-    pub fn tail(mut self, a0: impl Into<OscType>, a1: impl Into<OscType>) -> Self { self.tail.push(TailArgs(vec![a0.into(), a1.into()])); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.node_id { args.push(OscType::Int(v)); }
-        for TailArgs(mut t) in self.tail { args.append(&mut t); }
+        args.push(OscType::Int(self.node_id));
+        for (t0, t1) in self.tail {
+            args.push(t0.into());
+            args.push(OscType::Int(t1));
+        }
         ServerMessage::with_args(r"/s_getn", args)
     }
 
@@ -79,51 +81,45 @@ impl SGetn {
 
 /// Create a new synth.
 /// OSC address: `/s_new`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct SNew {
     /// synth definition name
-    def_name: Option<String>,
+    pub def_name: String,
     /// synth ID
-    node_id: Option<i32>,
+    pub node_id: i32,
     /// add action (0,1,2, 3 or 4 see below)
-    add_action: Option<i32>,
+    pub add_action: i32,
     /// add target ID
-    target_id: Option<i32>,
-    /// Repeated tail group — one tuple per trailing entry.
-    tail: Vec<TailArgs>,
+    pub target_id: i32,
+    /// Repeated tuples (control: a control index or name; floating_point_and: floating point and integer arguments are interpreted as control value. a symbol argument consisting of the letter 'c' or 'a' (for control or audio) followed by the bus's index.).
+    pub tail: Vec<(crate::args::ControlId, crate::args::ControlValue)>,
 }
 
 impl SNew {
-    /// Construct a new /s_new builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/s_new` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `SNew { .. SNew::new(...) }`.
+    pub fn new(def_name: String, node_id: i32, add_action: i32, target_id: i32, tail: Vec<(crate::args::ControlId, crate::args::ControlValue)>) -> Self {
+        Self {
+            def_name,
+            node_id,
+            add_action,
+            target_id,
+            tail,
+        }
+    }
 
-    /// synth definition name
-    pub fn def_name(mut self, v: String) -> Self { self.def_name = Some(v); self }
-
-    /// synth ID
-    pub fn node_id(mut self, v: i32) -> Self { self.node_id = Some(v); self }
-
-    /// add action (0,1,2, 3 or 4 see below)
-    pub fn add_action(mut self, v: i32) -> Self { self.add_action = Some(v); self }
-
-    /// add target ID
-    pub fn target_id(mut self, v: i32) -> Self { self.target_id = Some(v); self }
-
-    /// Append one tuple to the repeated tail.
-    /// a control index or name
-    /// floating point and integer arguments are interpreted as control value.
-    /// a symbol argument consisting of the letter 'c' or 'a' (for control or
-    /// audio) followed by the bus's index.
-    pub fn tail(mut self, a0: impl Into<OscType>, a1: impl Into<OscType>) -> Self { self.tail.push(TailArgs(vec![a0.into(), a1.into()])); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.def_name { args.push(OscType::String(v)); }
-        if let Some(v) = self.node_id { args.push(OscType::Int(v)); }
-        if let Some(v) = self.add_action { args.push(OscType::Int(v)); }
-        if let Some(v) = self.target_id { args.push(OscType::Int(v)); }
-        for TailArgs(mut t) in self.tail { args.append(&mut t); }
+        args.push(OscType::String(self.def_name));
+        args.push(OscType::Int(self.node_id));
+        args.push(OscType::Int(self.add_action));
+        args.push(OscType::Int(self.target_id));
+        for (t0, t1) in self.tail {
+            args.push(t0.into());
+            args.push(t1.into());
+        }
         ServerMessage::with_args(r"/s_new", args)
     }
 
@@ -135,23 +131,26 @@ impl SNew {
 
 /// Auto-reassign synth's ID to a reserved value.
 /// OSC address: `/s_noid`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct SNoid {
     /// synth IDs
-    synth_ids: Option<i32>,
+    pub synth_ids: i32,
 }
 
 impl SNoid {
-    /// Construct a new /s_noid builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/s_noid` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `SNoid { .. SNoid::new(...) }`.
+    pub fn new(synth_ids: i32) -> Self {
+        Self {
+            synth_ids,
+        }
+    }
 
-    /// synth IDs
-    pub fn synth_ids(mut self, v: i32) -> Self { self.synth_ids = Some(v); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.synth_ids { args.push(OscType::Int(v)); }
+        args.push(OscType::Int(self.synth_ids));
         ServerMessage::with_args(r"/s_noid", args)
     }
 

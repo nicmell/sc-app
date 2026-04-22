@@ -1,7 +1,11 @@
 //! Integration tests exercising typed builders + reply parsing.
+//!
+//! Every builder takes all required args in its `new()` constructor, and
+//! exposes public fields so optional trailing args can be set via struct
+//! update syntax (`{ field: Some(v), ..Foo::new(required) }`).
 
 use scserver_commands::builders::{BAlloc, GNew, NFree, SNew, Status};
-use scserver_commands::{OscType, ServerMessage, ServerReply};
+use scserver_commands::{ControlId, ControlValue, OscType, ServerMessage, ServerReply};
 
 #[test]
 fn status_builds_and_decodes() {
@@ -13,16 +17,21 @@ fn status_builds_and_decodes() {
 
 #[test]
 fn s_new_with_controls_round_trips() {
-    // /s_new with one kr control pair ("freq", 440.0).
-    let bytes = SNew::new()
-        .def_name("sine".to_string())
-        .node_id(1001)
-        .add_action(0)
-        .target_id(1)
-        .tail("freq", 440.0f32)
-        .tail("amp", 0.5f32)
-        .encode()
-        .unwrap();
+    // /s_new with two kr control pairs ("freq", 440.0) and ("amp", 0.5).
+    // All required args in the constructor; controls are a typed Vec of
+    // (ControlId, ControlValue) tuples.
+    let bytes = SNew::new(
+        "sine".to_string(),
+        1001,
+        0,
+        1,
+        vec![
+            ("freq".into(), 440.0f32.into()),
+            ("amp".into(), 0.5f32.into()),
+        ],
+    )
+    .encode()
+    .unwrap();
 
     let msg = ServerMessage::decode(&bytes).unwrap();
     assert_eq!(msg.address, "/s_new");
@@ -42,9 +51,29 @@ fn s_new_with_controls_round_trips() {
     }
 }
 
+/// Exercise the `ControlId::Index` path: `/s_new` with a numeric control
+/// index instead of a name.
+#[test]
+fn s_new_by_control_index() {
+    let bytes = SNew::new(
+        "sine".to_string(),
+        1001,
+        0,
+        1,
+        vec![(ControlId::Index(0), ControlValue::Float(220.0))],
+    )
+    .encode()
+    .unwrap();
+    let msg = ServerMessage::decode(&bytes).unwrap();
+    match &msg.args[4] {
+        OscType::Int(i) => assert_eq!(*i, 0),
+        other => panic!("arg4 not Int: {other:?}"),
+    }
+}
+
 #[test]
 fn g_new_builds() {
-    let bytes = GNew::new().tail(1000i32, 0i32, 0i32).encode().unwrap();
+    let bytes = GNew::new(vec![(1000i32, 0i32, 0i32)]).encode().unwrap();
     let msg = ServerMessage::decode(&bytes).unwrap();
     assert_eq!(msg.address, "/g_new");
     assert_eq!(msg.args.len(), 3);
@@ -52,31 +81,45 @@ fn g_new_builds() {
 
 #[test]
 fn n_free_builds() {
-    let bytes = NFree::new().node_id(1001).encode().unwrap();
+    let bytes = NFree::new(1001).encode().unwrap();
     let msg = ServerMessage::decode(&bytes).unwrap();
     assert_eq!(msg.address, "/n_free");
     assert_eq!(msg.args.len(), 1);
 }
 
+/// `/b_alloc` with just the two required args — channels / completion /
+/// sample-rate all left at their `None` defaults, omitted from the wire.
 #[test]
-fn b_alloc_builds() {
-    let bytes = BAlloc::new()
-        .bufnum(0)
-        .num_frames(8192)
-        .number_of_channels(1)
-        .encode()
-        .unwrap();
+fn b_alloc_minimal() {
+    let bytes = BAlloc::new(0, 8192).encode().unwrap();
     let msg = ServerMessage::decode(&bytes).unwrap();
     assert_eq!(msg.address, "/b_alloc");
-    assert_eq!(msg.args.len(), 3);
+    assert_eq!(msg.args.len(), 2);
+}
+
+/// `/b_alloc` with an optional `num_channels` override — struct update
+/// syntax keeps the required args from the constructor.
+#[test]
+fn b_alloc_with_optional_channels() {
+    let bytes = BAlloc {
+        num_channels: Some(2),
+        ..BAlloc::new(0, 8192)
+    }
+    .encode()
+    .unwrap();
+    let msg = ServerMessage::decode(&bytes).unwrap();
+    assert_eq!(msg.address, "/b_alloc");
+    assert_eq!(msg.args.len(), 3, "bufnum + num_frames + num_channels");
+    match &msg.args[2] {
+        OscType::Int(i) => assert_eq!(*i, 2),
+        other => panic!("arg2 not Int: {other:?}"),
+    }
 }
 
 /// Parity check: the OSC wire format is deterministic per the spec, so
 /// hand-computed reference bytes must match our rosc-backed encoder.
 #[test]
 fn status_matches_osc_wire_format() {
-    // "/status" address (8 bytes, null-padded to 4-byte align) + ","
-    // type tag (4 bytes) + no args.
     let expected: &[u8] = &[
         0x2f, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x00, // "/status\0"
         0x2c, 0x00, 0x00, 0x00, // ",\0\0\0"
@@ -87,7 +130,6 @@ fn status_matches_osc_wire_format() {
 
 #[test]
 fn status_reply_round_trip_via_wire() {
-    // Simulate the server-side status.reply wire bytes.
     let raw = ServerMessage::new("/status.reply")
         .arg(1i32)
         .arg(42i32)

@@ -5,53 +5,52 @@
 
 use rosc::OscType;
 use crate::ServerMessage;
-use crate::builders::TailArgs;
 
 /// Allocate buffer space.
 /// OSC address: `/b_alloc`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct BAlloc {
     /// buffer number
-    bufnum: Option<i32>,
+    pub bufnum: i32,
     /// number of frames
-    num_frames: Option<i32>,
+    pub num_frames: i32,
     /// number of channels (optional. default = 1 channel)
-    number_of_channels: Option<i32>,
+    pub num_channels: Option<i32>,
     /// an OSC message to execute upon completion. (optional)
-    an_osc_message: Option<Vec<u8>>,
+    pub an_osc_message: Option<Vec<u8>>,
     /// the required sample rate (optional. default (or 0) = the server's
     /// sample rate)
-    the_required_sample: Option<f32>,
+    pub the_required_sample: Option<f32>,
 }
 
 impl BAlloc {
-    /// Construct a new /b_alloc builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/b_alloc` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `BAlloc { .. BAlloc::new(...) }`.
+    pub fn new(bufnum: i32, num_frames: i32) -> Self {
+        Self {
+            bufnum,
+            num_frames,
+            num_channels: None,
+            an_osc_message: None,
+            the_required_sample: None,
+        }
+    }
 
-    /// buffer number
-    pub fn bufnum(mut self, v: i32) -> Self { self.bufnum = Some(v); self }
-
-    /// number of frames
-    pub fn num_frames(mut self, v: i32) -> Self { self.num_frames = Some(v); self }
-
-    /// number of channels (optional. default = 1 channel)
-    pub fn number_of_channels(mut self, v: i32) -> Self { self.number_of_channels = Some(v); self }
-
-    /// an OSC message to execute upon completion. (optional)
-    pub fn an_osc_message(mut self, v: Vec<u8>) -> Self { self.an_osc_message = Some(v); self }
-
-    /// the required sample rate (optional. default (or 0) = the server's
-    /// sample rate)
-    pub fn the_required_sample(mut self, v: f32) -> Self { self.the_required_sample = Some(v); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.bufnum { args.push(OscType::Int(v)); }
-        if let Some(v) = self.num_frames { args.push(OscType::Int(v)); }
-        if let Some(v) = self.number_of_channels { args.push(OscType::Int(v)); }
-        if let Some(v) = self.an_osc_message { args.push(OscType::Blob(v)); }
-        if let Some(v) = self.the_required_sample { args.push(OscType::Float(v)); }
+        args.push(OscType::Int(self.bufnum));
+        args.push(OscType::Int(self.num_frames));
+        if let Some(v) = self.num_channels {
+            args.push(OscType::Int(v));
+        }
+        if let Some(v) = self.an_osc_message {
+            args.push(OscType::Blob(v));
+        }
+        if let Some(v) = self.the_required_sample {
+            args.push(OscType::Float(v));
+        }
         ServerMessage::with_args(r"/b_alloc", args)
     }
 
@@ -63,47 +62,48 @@ impl BAlloc {
 
 /// Allocate buffer space and read a sound file.
 /// OSC address: `/b_allocRead`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct BAllocRead {
     /// buffer number
-    bufnum: Option<i32>,
+    pub bufnum: i32,
     /// path name of a sound file.
-    path: Option<String>,
+    pub path: String,
     /// starting frame in file (optional. default = 0)
-    starting_frame_in: Option<i32>,
+    pub start_frame: Option<i32>,
     /// number of frames to read (optional. default = 0, see below)
-    number_of_frames: Option<i32>,
+    pub number_of_frames: Option<i32>,
     /// an OSC message to execute upon completion. (optional)
-    an_osc_message: Option<Vec<u8>>,
+    pub an_osc_message: Option<Vec<u8>>,
 }
 
 impl BAllocRead {
-    /// Construct a new /b_allocRead builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/b_allocRead` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `BAllocRead { .. BAllocRead::new(...) }`.
+    pub fn new(bufnum: i32, path: String) -> Self {
+        Self {
+            bufnum,
+            path,
+            start_frame: None,
+            number_of_frames: None,
+            an_osc_message: None,
+        }
+    }
 
-    /// buffer number
-    pub fn bufnum(mut self, v: i32) -> Self { self.bufnum = Some(v); self }
-
-    /// path name of a sound file.
-    pub fn path(mut self, v: String) -> Self { self.path = Some(v); self }
-
-    /// starting frame in file (optional. default = 0)
-    pub fn starting_frame_in(mut self, v: i32) -> Self { self.starting_frame_in = Some(v); self }
-
-    /// number of frames to read (optional. default = 0, see below)
-    pub fn number_of_frames(mut self, v: i32) -> Self { self.number_of_frames = Some(v); self }
-
-    /// an OSC message to execute upon completion. (optional)
-    pub fn an_osc_message(mut self, v: Vec<u8>) -> Self { self.an_osc_message = Some(v); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.bufnum { args.push(OscType::Int(v)); }
-        if let Some(v) = self.path { args.push(OscType::String(v)); }
-        if let Some(v) = self.starting_frame_in { args.push(OscType::Int(v)); }
-        if let Some(v) = self.number_of_frames { args.push(OscType::Int(v)); }
-        if let Some(v) = self.an_osc_message { args.push(OscType::Blob(v)); }
+        args.push(OscType::Int(self.bufnum));
+        args.push(OscType::String(self.path));
+        if let Some(v) = self.start_frame {
+            args.push(OscType::Int(v));
+        }
+        if let Some(v) = self.number_of_frames {
+            args.push(OscType::Int(v));
+        }
+        if let Some(v) = self.an_osc_message {
+            args.push(OscType::Blob(v));
+        }
         ServerMessage::with_args(r"/b_allocRead", args)
     }
 
@@ -115,49 +115,45 @@ impl BAllocRead {
 
 /// Allocate buffer space and read channels from a sound file.
 /// OSC address: `/b_allocReadChannel`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct BAllocReadChannel {
     /// buffer number
-    bufnum: Option<i32>,
+    pub bufnum: i32,
     /// path name of a sound file
-    path: Option<String>,
+    pub path: String,
     /// starting frame in file
-    start_frame: Option<i32>,
+    pub start_frame: i32,
     /// number of frames to read
-    number_of_frames: Option<i32>,
-    /// Repeated tail group — one tuple per trailing entry.
-    tail: Vec<TailArgs>,
+    pub number_of_frames: i32,
+    /// Repeated tuples (source_file_channel: source file channel index; an_osc_message: an OSC message to execute upon completion. (optional)).
+    pub tail: Vec<(i32, Vec<u8>)>,
 }
 
 impl BAllocReadChannel {
-    /// Construct a new /b_allocReadChannel builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/b_allocReadChannel` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `BAllocReadChannel { .. BAllocReadChannel::new(...) }`.
+    pub fn new(bufnum: i32, path: String, start_frame: i32, number_of_frames: i32, tail: Vec<(i32, Vec<u8>)>) -> Self {
+        Self {
+            bufnum,
+            path,
+            start_frame,
+            number_of_frames,
+            tail,
+        }
+    }
 
-    /// buffer number
-    pub fn bufnum(mut self, v: i32) -> Self { self.bufnum = Some(v); self }
-
-    /// path name of a sound file
-    pub fn path(mut self, v: String) -> Self { self.path = Some(v); self }
-
-    /// starting frame in file
-    pub fn start_frame(mut self, v: i32) -> Self { self.start_frame = Some(v); self }
-
-    /// number of frames to read
-    pub fn number_of_frames(mut self, v: i32) -> Self { self.number_of_frames = Some(v); self }
-
-    /// Append one tuple to the repeated tail.
-    /// source file channel index
-    /// an OSC message to execute upon completion. (optional)
-    pub fn tail(mut self, a0: impl Into<OscType>, a1: impl Into<OscType>) -> Self { self.tail.push(TailArgs(vec![a0.into(), a1.into()])); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.bufnum { args.push(OscType::Int(v)); }
-        if let Some(v) = self.path { args.push(OscType::String(v)); }
-        if let Some(v) = self.start_frame { args.push(OscType::Int(v)); }
-        if let Some(v) = self.number_of_frames { args.push(OscType::Int(v)); }
-        for TailArgs(mut t) in self.tail { args.append(&mut t); }
+        args.push(OscType::Int(self.bufnum));
+        args.push(OscType::String(self.path));
+        args.push(OscType::Int(self.start_frame));
+        args.push(OscType::Int(self.number_of_frames));
+        for (t0, t1) in self.tail {
+            args.push(OscType::Int(t0));
+            args.push(OscType::Blob(t1));
+        }
         ServerMessage::with_args(r"/b_allocReadChannel", args)
     }
 
@@ -169,29 +165,32 @@ impl BAllocReadChannel {
 
 /// Close soundfile.
 /// OSC address: `/b_close`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct BClose {
     /// buffer number
-    bufnum: Option<i32>,
+    pub bufnum: i32,
     /// an OSC message to execute upon completion. (optional)
-    an_osc_message: Option<Vec<u8>>,
+    pub an_osc_message: Option<Vec<u8>>,
 }
 
 impl BClose {
-    /// Construct a new /b_close builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/b_close` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `BClose { .. BClose::new(...) }`.
+    pub fn new(bufnum: i32) -> Self {
+        Self {
+            bufnum,
+            an_osc_message: None,
+        }
+    }
 
-    /// buffer number
-    pub fn bufnum(mut self, v: i32) -> Self { self.bufnum = Some(v); self }
-
-    /// an OSC message to execute upon completion. (optional)
-    pub fn an_osc_message(mut self, v: Vec<u8>) -> Self { self.an_osc_message = Some(v); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.bufnum { args.push(OscType::Int(v)); }
-        if let Some(v) = self.an_osc_message { args.push(OscType::Blob(v)); }
+        args.push(OscType::Int(self.bufnum));
+        if let Some(v) = self.an_osc_message {
+            args.push(OscType::Blob(v));
+        }
         ServerMessage::with_args(r"/b_close", args)
     }
 
@@ -203,32 +202,34 @@ impl BClose {
 
 /// Fill ranges of sample value(s).
 /// OSC address: `/b_fill`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct BFill {
     /// buffer number
-    bufnum: Option<i32>,
-    /// Repeated tail group — one tuple per trailing entry.
-    tail: Vec<TailArgs>,
+    pub bufnum: i32,
+    /// Repeated tuples (sample_starting_index: sample starting index; number_of_samples: number of samples to fill (M); value: value).
+    pub tail: Vec<(i32, i32, f32)>,
 }
 
 impl BFill {
-    /// Construct a new /b_fill builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/b_fill` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `BFill { .. BFill::new(...) }`.
+    pub fn new(bufnum: i32, tail: Vec<(i32, i32, f32)>) -> Self {
+        Self {
+            bufnum,
+            tail,
+        }
+    }
 
-    /// buffer number
-    pub fn bufnum(mut self, v: i32) -> Self { self.bufnum = Some(v); self }
-
-    /// Append one tuple to the repeated tail.
-    /// sample starting index
-    /// number of samples to fill (M)
-    /// value
-    pub fn tail(mut self, a0: impl Into<OscType>, a1: impl Into<OscType>, a2: impl Into<OscType>) -> Self { self.tail.push(TailArgs(vec![a0.into(), a1.into(), a2.into()])); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.bufnum { args.push(OscType::Int(v)); }
-        for TailArgs(mut t) in self.tail { args.append(&mut t); }
+        args.push(OscType::Int(self.bufnum));
+        for (t0, t1, t2) in self.tail {
+            args.push(OscType::Int(t0));
+            args.push(OscType::Int(t1));
+            args.push(OscType::Float(t2));
+        }
         ServerMessage::with_args(r"/b_fill", args)
     }
 
@@ -240,29 +241,32 @@ impl BFill {
 
 /// Free buffer data.
 /// OSC address: `/b_free`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct BFree {
     /// buffer number
-    bufnum: Option<i32>,
+    pub bufnum: i32,
     /// an OSC message to execute upon completion. (optional)
-    an_osc_message: Option<Vec<u8>>,
+    pub an_osc_message: Option<Vec<u8>>,
 }
 
 impl BFree {
-    /// Construct a new /b_free builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/b_free` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `BFree { .. BFree::new(...) }`.
+    pub fn new(bufnum: i32) -> Self {
+        Self {
+            bufnum,
+            an_osc_message: None,
+        }
+    }
 
-    /// buffer number
-    pub fn bufnum(mut self, v: i32) -> Self { self.bufnum = Some(v); self }
-
-    /// an OSC message to execute upon completion. (optional)
-    pub fn an_osc_message(mut self, v: Vec<u8>) -> Self { self.an_osc_message = Some(v); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.bufnum { args.push(OscType::Int(v)); }
-        if let Some(v) = self.an_osc_message { args.push(OscType::Blob(v)); }
+        args.push(OscType::Int(self.bufnum));
+        if let Some(v) = self.an_osc_message {
+            args.push(OscType::Blob(v));
+        }
         ServerMessage::with_args(r"/b_free", args)
     }
 
@@ -274,35 +278,34 @@ impl BFree {
 
 /// Call a command to fill a buffer.
 /// OSC address: `/b_gen`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct BGen {
     /// buffer number
-    bufnum: Option<i32>,
+    pub bufnum: i32,
     /// command name
-    cmd: Option<String>,
+    pub cmd: String,
     /// command arguments
-    command_arguments: Option<OscType>,
+    pub command_arguments: rosc::OscType,
 }
 
 impl BGen {
-    /// Construct a new /b_gen builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/b_gen` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `BGen { .. BGen::new(...) }`.
+    pub fn new(bufnum: i32, cmd: String, command_arguments: rosc::OscType) -> Self {
+        Self {
+            bufnum,
+            cmd,
+            command_arguments,
+        }
+    }
 
-    /// buffer number
-    pub fn bufnum(mut self, v: i32) -> Self { self.bufnum = Some(v); self }
-
-    /// command name
-    pub fn cmd(mut self, v: String) -> Self { self.cmd = Some(v); self }
-
-    /// command arguments
-    pub fn command_arguments(mut self, v: OscType) -> Self { self.command_arguments = Some(v); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.bufnum { args.push(OscType::Int(v)); }
-        if let Some(v) = self.cmd { args.push(OscType::String(v)); }
-        if let Some(v) = self.command_arguments { args.push(v); }
+        args.push(OscType::Int(self.bufnum));
+        args.push(OscType::String(self.cmd));
+        args.push(self.command_arguments);
         ServerMessage::with_args(r"/b_gen", args)
     }
 
@@ -314,29 +317,30 @@ impl BGen {
 
 /// Get sample value(s).
 /// OSC address: `/b_get`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct BGet {
     /// buffer number
-    bufnum: Option<i32>,
+    pub bufnum: i32,
     /// a sample index
-    a_sample_index: Option<i32>,
+    pub a_sample_index: i32,
 }
 
 impl BGet {
-    /// Construct a new /b_get builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/b_get` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `BGet { .. BGet::new(...) }`.
+    pub fn new(bufnum: i32, a_sample_index: i32) -> Self {
+        Self {
+            bufnum,
+            a_sample_index,
+        }
+    }
 
-    /// buffer number
-    pub fn bufnum(mut self, v: i32) -> Self { self.bufnum = Some(v); self }
-
-    /// a sample index
-    pub fn a_sample_index(mut self, v: i32) -> Self { self.a_sample_index = Some(v); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.bufnum { args.push(OscType::Int(v)); }
-        if let Some(v) = self.a_sample_index { args.push(OscType::Int(v)); }
+        args.push(OscType::Int(self.bufnum));
+        args.push(OscType::Int(self.a_sample_index));
         ServerMessage::with_args(r"/b_get", args)
     }
 
@@ -348,31 +352,33 @@ impl BGet {
 
 /// Get ranges of sample value(s).
 /// OSC address: `/b_getn`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct BGetn {
     /// buffer number
-    bufnum: Option<i32>,
-    /// Repeated tail group — one tuple per trailing entry.
-    tail: Vec<TailArgs>,
+    pub bufnum: i32,
+    /// Repeated tuples (start_index: starting sample index; number_of_sequential: number of sequential samples to get (M)).
+    pub tail: Vec<(i32, i32)>,
 }
 
 impl BGetn {
-    /// Construct a new /b_getn builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/b_getn` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `BGetn { .. BGetn::new(...) }`.
+    pub fn new(bufnum: i32, tail: Vec<(i32, i32)>) -> Self {
+        Self {
+            bufnum,
+            tail,
+        }
+    }
 
-    /// buffer number
-    pub fn bufnum(mut self, v: i32) -> Self { self.bufnum = Some(v); self }
-
-    /// Append one tuple to the repeated tail.
-    /// starting sample index
-    /// number of sequential samples to get (M)
-    pub fn tail(mut self, a0: impl Into<OscType>, a1: impl Into<OscType>) -> Self { self.tail.push(TailArgs(vec![a0.into(), a1.into()])); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.bufnum { args.push(OscType::Int(v)); }
-        for TailArgs(mut t) in self.tail { args.append(&mut t); }
+        args.push(OscType::Int(self.bufnum));
+        for (t0, t1) in self.tail {
+            args.push(OscType::Int(t0));
+            args.push(OscType::Int(t1));
+        }
         ServerMessage::with_args(r"/b_getn", args)
     }
 
@@ -384,23 +390,26 @@ impl BGetn {
 
 /// Get buffer info.
 /// OSC address: `/b_query`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct BQuery {
     /// buffer number(s)
-    buffer_number_s: Option<i32>,
+    pub bufnum: i32,
 }
 
 impl BQuery {
-    /// Construct a new /b_query builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/b_query` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `BQuery { .. BQuery::new(...) }`.
+    pub fn new(bufnum: i32) -> Self {
+        Self {
+            bufnum,
+        }
+    }
 
-    /// buffer number(s)
-    pub fn buffer_number_s(mut self, v: i32) -> Self { self.buffer_number_s = Some(v); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.buffer_number_s { args.push(OscType::Int(v)); }
+        args.push(OscType::Int(self.bufnum));
         ServerMessage::with_args(r"/b_query", args)
     }
 
@@ -412,59 +421,60 @@ impl BQuery {
 
 /// Read sound file data into an existing buffer.
 /// OSC address: `/b_read`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct BRead {
     /// buffer number
-    bufnum: Option<i32>,
+    pub bufnum: i32,
     /// path name of a sound file.
-    path: Option<String>,
+    pub path: String,
     /// starting frame in file (optional. default = 0)
-    starting_frame_in: Option<i32>,
+    pub start_frame: Option<i32>,
     /// number of frames to read (optional. default = -1, see below)
-    number_of_frames: Option<i32>,
+    pub number_of_frames: Option<i32>,
     /// starting frame in buffer (optional. default = 0)
-    starting_frame_in_2: Option<i32>,
+    pub starting_frame: Option<i32>,
     /// leave file open (optional. default = 0)
-    leave_file_open: Option<i32>,
+    pub leave_file_open: Option<i32>,
     /// an OSC message to execute upon completion. (optional)
-    an_osc_message: Option<Vec<u8>>,
+    pub an_osc_message: Option<Vec<u8>>,
 }
 
 impl BRead {
-    /// Construct a new /b_read builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/b_read` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `BRead { .. BRead::new(...) }`.
+    pub fn new(bufnum: i32, path: String) -> Self {
+        Self {
+            bufnum,
+            path,
+            start_frame: None,
+            number_of_frames: None,
+            starting_frame: None,
+            leave_file_open: None,
+            an_osc_message: None,
+        }
+    }
 
-    /// buffer number
-    pub fn bufnum(mut self, v: i32) -> Self { self.bufnum = Some(v); self }
-
-    /// path name of a sound file.
-    pub fn path(mut self, v: String) -> Self { self.path = Some(v); self }
-
-    /// starting frame in file (optional. default = 0)
-    pub fn starting_frame_in(mut self, v: i32) -> Self { self.starting_frame_in = Some(v); self }
-
-    /// number of frames to read (optional. default = -1, see below)
-    pub fn number_of_frames(mut self, v: i32) -> Self { self.number_of_frames = Some(v); self }
-
-    /// starting frame in buffer (optional. default = 0)
-    pub fn starting_frame_in_2(mut self, v: i32) -> Self { self.starting_frame_in_2 = Some(v); self }
-
-    /// leave file open (optional. default = 0)
-    pub fn leave_file_open(mut self, v: i32) -> Self { self.leave_file_open = Some(v); self }
-
-    /// an OSC message to execute upon completion. (optional)
-    pub fn an_osc_message(mut self, v: Vec<u8>) -> Self { self.an_osc_message = Some(v); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.bufnum { args.push(OscType::Int(v)); }
-        if let Some(v) = self.path { args.push(OscType::String(v)); }
-        if let Some(v) = self.starting_frame_in { args.push(OscType::Int(v)); }
-        if let Some(v) = self.number_of_frames { args.push(OscType::Int(v)); }
-        if let Some(v) = self.starting_frame_in_2 { args.push(OscType::Int(v)); }
-        if let Some(v) = self.leave_file_open { args.push(OscType::Int(v)); }
-        if let Some(v) = self.an_osc_message { args.push(OscType::Blob(v)); }
+        args.push(OscType::Int(self.bufnum));
+        args.push(OscType::String(self.path));
+        if let Some(v) = self.start_frame {
+            args.push(OscType::Int(v));
+        }
+        if let Some(v) = self.number_of_frames {
+            args.push(OscType::Int(v));
+        }
+        if let Some(v) = self.starting_frame {
+            args.push(OscType::Int(v));
+        }
+        if let Some(v) = self.leave_file_open {
+            args.push(OscType::Int(v));
+        }
+        if let Some(v) = self.an_osc_message {
+            args.push(OscType::Blob(v));
+        }
         ServerMessage::with_args(r"/b_read", args)
     }
 
@@ -476,61 +486,53 @@ impl BRead {
 
 /// Read sound file channel data into an existing buffer.
 /// OSC address: `/b_readChannel`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct BReadChannel {
     /// buffer number
-    bufnum: Option<i32>,
+    pub bufnum: i32,
     /// path name of a sound file
-    path: Option<String>,
+    pub path: String,
     /// starting frame in file
-    start_frame: Option<i32>,
+    pub start_frame: i32,
     /// number of frames to read
-    number_of_frames: Option<i32>,
+    pub number_of_frames: i32,
     /// starting frame in buffer
-    starting_frame: Option<i32>,
+    pub starting_frame: i32,
     /// leave file open
-    leave_file_open: Option<i32>,
-    /// Repeated tail group — one tuple per trailing entry.
-    tail: Vec<TailArgs>,
+    pub leave_file_open: i32,
+    /// Repeated tuples (source_file_channel: source file channel index; completion_message: completion message).
+    pub tail: Vec<(i32, Vec<u8>)>,
 }
 
 impl BReadChannel {
-    /// Construct a new /b_readChannel builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/b_readChannel` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `BReadChannel { .. BReadChannel::new(...) }`.
+    pub fn new(bufnum: i32, path: String, start_frame: i32, number_of_frames: i32, starting_frame: i32, leave_file_open: i32, tail: Vec<(i32, Vec<u8>)>) -> Self {
+        Self {
+            bufnum,
+            path,
+            start_frame,
+            number_of_frames,
+            starting_frame,
+            leave_file_open,
+            tail,
+        }
+    }
 
-    /// buffer number
-    pub fn bufnum(mut self, v: i32) -> Self { self.bufnum = Some(v); self }
-
-    /// path name of a sound file
-    pub fn path(mut self, v: String) -> Self { self.path = Some(v); self }
-
-    /// starting frame in file
-    pub fn start_frame(mut self, v: i32) -> Self { self.start_frame = Some(v); self }
-
-    /// number of frames to read
-    pub fn number_of_frames(mut self, v: i32) -> Self { self.number_of_frames = Some(v); self }
-
-    /// starting frame in buffer
-    pub fn starting_frame(mut self, v: i32) -> Self { self.starting_frame = Some(v); self }
-
-    /// leave file open
-    pub fn leave_file_open(mut self, v: i32) -> Self { self.leave_file_open = Some(v); self }
-
-    /// Append one tuple to the repeated tail.
-    /// source file channel index
-    /// completion message
-    pub fn tail(mut self, a0: impl Into<OscType>, a1: impl Into<OscType>) -> Self { self.tail.push(TailArgs(vec![a0.into(), a1.into()])); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.bufnum { args.push(OscType::Int(v)); }
-        if let Some(v) = self.path { args.push(OscType::String(v)); }
-        if let Some(v) = self.start_frame { args.push(OscType::Int(v)); }
-        if let Some(v) = self.number_of_frames { args.push(OscType::Int(v)); }
-        if let Some(v) = self.starting_frame { args.push(OscType::Int(v)); }
-        if let Some(v) = self.leave_file_open { args.push(OscType::Int(v)); }
-        for TailArgs(mut t) in self.tail { args.append(&mut t); }
+        args.push(OscType::Int(self.bufnum));
+        args.push(OscType::String(self.path));
+        args.push(OscType::Int(self.start_frame));
+        args.push(OscType::Int(self.number_of_frames));
+        args.push(OscType::Int(self.starting_frame));
+        args.push(OscType::Int(self.leave_file_open));
+        for (t0, t1) in self.tail {
+            args.push(OscType::Int(t0));
+            args.push(OscType::Blob(t1));
+        }
         ServerMessage::with_args(r"/b_readChannel", args)
     }
 
@@ -542,31 +544,33 @@ impl BReadChannel {
 
 /// Set sample value(s).
 /// OSC address: `/b_set`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct BSet {
     /// buffer number
-    bufnum: Option<i32>,
-    /// Repeated tail group — one tuple per trailing entry.
-    tail: Vec<TailArgs>,
+    pub bufnum: i32,
+    /// Repeated tuples (a_sample_index: a sample index; a_sample_value: a sample value).
+    pub tail: Vec<(i32, f32)>,
 }
 
 impl BSet {
-    /// Construct a new /b_set builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/b_set` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `BSet { .. BSet::new(...) }`.
+    pub fn new(bufnum: i32, tail: Vec<(i32, f32)>) -> Self {
+        Self {
+            bufnum,
+            tail,
+        }
+    }
 
-    /// buffer number
-    pub fn bufnum(mut self, v: i32) -> Self { self.bufnum = Some(v); self }
-
-    /// Append one tuple to the repeated tail.
-    /// a sample index
-    /// a sample value
-    pub fn tail(mut self, a0: impl Into<OscType>, a1: impl Into<OscType>) -> Self { self.tail.push(TailArgs(vec![a0.into(), a1.into()])); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.bufnum { args.push(OscType::Int(v)); }
-        for TailArgs(mut t) in self.tail { args.append(&mut t); }
+        args.push(OscType::Int(self.bufnum));
+        for (t0, t1) in self.tail {
+            args.push(OscType::Int(t0));
+            args.push(OscType::Float(t1));
+        }
         ServerMessage::with_args(r"/b_set", args)
     }
 
@@ -578,32 +582,34 @@ impl BSet {
 
 /// Set ranges of sample value(s).
 /// OSC address: `/b_setn`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct BSetn {
     /// buffer number
-    bufnum: Option<i32>,
-    /// Repeated tail group — one tuple per trailing entry.
-    tail: Vec<TailArgs>,
+    pub bufnum: i32,
+    /// Repeated tuples (sample_starting_index: sample starting index; number_of_sequential: number of sequential samples to change (M); a_sample_value: a sample value).
+    pub tail: Vec<(i32, i32, f32)>,
 }
 
 impl BSetn {
-    /// Construct a new /b_setn builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/b_setn` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `BSetn { .. BSetn::new(...) }`.
+    pub fn new(bufnum: i32, tail: Vec<(i32, i32, f32)>) -> Self {
+        Self {
+            bufnum,
+            tail,
+        }
+    }
 
-    /// buffer number
-    pub fn bufnum(mut self, v: i32) -> Self { self.bufnum = Some(v); self }
-
-    /// Append one tuple to the repeated tail.
-    /// sample starting index
-    /// number of sequential samples to change (M)
-    /// a sample value
-    pub fn tail(mut self, a0: impl Into<OscType>, a1: impl Into<OscType>, a2: impl Into<OscType>) -> Self { self.tail.push(TailArgs(vec![a0.into(), a1.into(), a2.into()])); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.bufnum { args.push(OscType::Int(v)); }
-        for TailArgs(mut t) in self.tail { args.append(&mut t); }
+        args.push(OscType::Int(self.bufnum));
+        for (t0, t1, t2) in self.tail {
+            args.push(OscType::Int(t0));
+            args.push(OscType::Int(t1));
+            args.push(OscType::Float(t2));
+        }
         ServerMessage::with_args(r"/b_setn", args)
     }
 
@@ -615,31 +621,31 @@ impl BSetn {
 
 /// Set the sampling rate of the buffer.
 /// OSC address: `/b_setSampleRate`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct BSetSampleRate {
     /// buffer number
-    bufnum: Option<i32>,
+    pub bufnum: i32,
     /// the desired sampling rate. 0 or nil will set to the Server's sample
     /// rate.
-    the_desired_sampling: Option<f32>,
+    pub the_desired_sampling: f32,
 }
 
 impl BSetSampleRate {
-    /// Construct a new /b_setSampleRate builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/b_setSampleRate` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `BSetSampleRate { .. BSetSampleRate::new(...) }`.
+    pub fn new(bufnum: i32, the_desired_sampling: f32) -> Self {
+        Self {
+            bufnum,
+            the_desired_sampling,
+        }
+    }
 
-    /// buffer number
-    pub fn bufnum(mut self, v: i32) -> Self { self.bufnum = Some(v); self }
-
-    /// the desired sampling rate. 0 or nil will set to the Server's sample
-    /// rate.
-    pub fn the_desired_sampling(mut self, v: f32) -> Self { self.the_desired_sampling = Some(v); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.bufnum { args.push(OscType::Int(v)); }
-        if let Some(v) = self.the_desired_sampling { args.push(OscType::Float(v)); }
+        args.push(OscType::Int(self.bufnum));
+        args.push(OscType::Float(self.the_desired_sampling));
         ServerMessage::with_args(r"/b_setSampleRate", args)
     }
 
@@ -651,65 +657,62 @@ impl BSetSampleRate {
 
 /// Write sound file data.
 /// OSC address: `/b_write`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct BWrite {
     /// buffer number
-    bufnum: Option<i32>,
+    pub bufnum: i32,
     /// path name of a sound file.
-    path: Option<String>,
+    pub path: String,
     /// header format.
-    header_format: Option<String>,
+    pub header_format: String,
     /// sample format.
-    sample_format: Option<String>,
+    pub sample_format: String,
     /// number of frames to write (optional. default = -1, see below)
-    number_of_frames: Option<i32>,
+    pub number_of_frames: Option<i32>,
     /// starting frame in buffer (optional. default = 0)
-    starting_frame_in: Option<i32>,
+    pub starting_frame: Option<i32>,
     /// leave file open (optional. default = 0)
-    leave_file_open: Option<i32>,
+    pub leave_file_open: Option<i32>,
     /// an OSC message to execute upon completion. (optional)
-    an_osc_message: Option<Vec<u8>>,
+    pub an_osc_message: Option<Vec<u8>>,
 }
 
 impl BWrite {
-    /// Construct a new /b_write builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/b_write` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `BWrite { .. BWrite::new(...) }`.
+    pub fn new(bufnum: i32, path: String, header_format: String, sample_format: String) -> Self {
+        Self {
+            bufnum,
+            path,
+            header_format,
+            sample_format,
+            number_of_frames: None,
+            starting_frame: None,
+            leave_file_open: None,
+            an_osc_message: None,
+        }
+    }
 
-    /// buffer number
-    pub fn bufnum(mut self, v: i32) -> Self { self.bufnum = Some(v); self }
-
-    /// path name of a sound file.
-    pub fn path(mut self, v: String) -> Self { self.path = Some(v); self }
-
-    /// header format.
-    pub fn header_format(mut self, v: String) -> Self { self.header_format = Some(v); self }
-
-    /// sample format.
-    pub fn sample_format(mut self, v: String) -> Self { self.sample_format = Some(v); self }
-
-    /// number of frames to write (optional. default = -1, see below)
-    pub fn number_of_frames(mut self, v: i32) -> Self { self.number_of_frames = Some(v); self }
-
-    /// starting frame in buffer (optional. default = 0)
-    pub fn starting_frame_in(mut self, v: i32) -> Self { self.starting_frame_in = Some(v); self }
-
-    /// leave file open (optional. default = 0)
-    pub fn leave_file_open(mut self, v: i32) -> Self { self.leave_file_open = Some(v); self }
-
-    /// an OSC message to execute upon completion. (optional)
-    pub fn an_osc_message(mut self, v: Vec<u8>) -> Self { self.an_osc_message = Some(v); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.bufnum { args.push(OscType::Int(v)); }
-        if let Some(v) = self.path { args.push(OscType::String(v)); }
-        if let Some(v) = self.header_format { args.push(OscType::String(v)); }
-        if let Some(v) = self.sample_format { args.push(OscType::String(v)); }
-        if let Some(v) = self.number_of_frames { args.push(OscType::Int(v)); }
-        if let Some(v) = self.starting_frame_in { args.push(OscType::Int(v)); }
-        if let Some(v) = self.leave_file_open { args.push(OscType::Int(v)); }
-        if let Some(v) = self.an_osc_message { args.push(OscType::Blob(v)); }
+        args.push(OscType::Int(self.bufnum));
+        args.push(OscType::String(self.path));
+        args.push(OscType::String(self.header_format));
+        args.push(OscType::String(self.sample_format));
+        if let Some(v) = self.number_of_frames {
+            args.push(OscType::Int(v));
+        }
+        if let Some(v) = self.starting_frame {
+            args.push(OscType::Int(v));
+        }
+        if let Some(v) = self.leave_file_open {
+            args.push(OscType::Int(v));
+        }
+        if let Some(v) = self.an_osc_message {
+            args.push(OscType::Blob(v));
+        }
         ServerMessage::with_args(r"/b_write", args)
     }
 
@@ -721,29 +724,32 @@ impl BWrite {
 
 /// Zero sample data.
 /// OSC address: `/b_zero`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct BZero {
     /// buffer number
-    bufnum: Option<i32>,
+    pub bufnum: i32,
     /// an OSC message to execute upon completion. (optional)
-    an_osc_message: Option<Vec<u8>>,
+    pub an_osc_message: Option<Vec<u8>>,
 }
 
 impl BZero {
-    /// Construct a new /b_zero builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/b_zero` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `BZero { .. BZero::new(...) }`.
+    pub fn new(bufnum: i32) -> Self {
+        Self {
+            bufnum,
+            an_osc_message: None,
+        }
+    }
 
-    /// buffer number
-    pub fn bufnum(mut self, v: i32) -> Self { self.bufnum = Some(v); self }
-
-    /// an OSC message to execute upon completion. (optional)
-    pub fn an_osc_message(mut self, v: Vec<u8>) -> Self { self.an_osc_message = Some(v); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.bufnum { args.push(OscType::Int(v)); }
-        if let Some(v) = self.an_osc_message { args.push(OscType::Blob(v)); }
+        args.push(OscType::Int(self.bufnum));
+        if let Some(v) = self.an_osc_message {
+            args.push(OscType::Blob(v));
+        }
         ServerMessage::with_args(r"/b_zero", args)
     }
 

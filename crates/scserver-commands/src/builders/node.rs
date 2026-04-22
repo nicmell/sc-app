@@ -5,29 +5,32 @@
 
 use rosc::OscType;
 use crate::ServerMessage;
-use crate::builders::TailArgs;
 
 /// Place a node after another.
 /// OSC address: `/n_after`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct NAfter {
-    /// Repeated tail group — one tuple per trailing entry.
-    tail: Vec<TailArgs>,
+    /// Repeated tuples (the_id_of: the ID of the node to place (A); the_id_of: the ID of the node after which the above is placed (B)).
+    pub tail: Vec<(i32, i32)>,
 }
 
 impl NAfter {
-    /// Construct a new /n_after builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/n_after` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `NAfter { .. NAfter::new(...) }`.
+    pub fn new(tail: Vec<(i32, i32)>) -> Self {
+        Self {
+            tail,
+        }
+    }
 
-    /// Append one tuple to the repeated tail.
-    /// the ID of the node to place (A)
-    /// the ID of the node after which the above is placed (B)
-    pub fn tail(mut self, a0: impl Into<OscType>, a1: impl Into<OscType>) -> Self { self.tail.push(TailArgs(vec![a0.into(), a1.into()])); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        for TailArgs(mut t) in self.tail { args.append(&mut t); }
+        for (t0, t1) in self.tail {
+            args.push(OscType::Int(t0));
+            args.push(OscType::Int(t1));
+        }
         ServerMessage::with_args(r"/n_after", args)
     }
 
@@ -39,25 +42,29 @@ impl NAfter {
 
 /// Place a node before another.
 /// OSC address: `/n_before`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct NBefore {
-    /// Repeated tail group — one tuple per trailing entry.
-    tail: Vec<TailArgs>,
+    /// Repeated tuples (the_id_of: the ID of the node to place (A); the_id_of: the ID of the node before which the above is placed (B)).
+    pub tail: Vec<(i32, i32)>,
 }
 
 impl NBefore {
-    /// Construct a new /n_before builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/n_before` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `NBefore { .. NBefore::new(...) }`.
+    pub fn new(tail: Vec<(i32, i32)>) -> Self {
+        Self {
+            tail,
+        }
+    }
 
-    /// Append one tuple to the repeated tail.
-    /// the ID of the node to place (A)
-    /// the ID of the node before which the above is placed (B)
-    pub fn tail(mut self, a0: impl Into<OscType>, a1: impl Into<OscType>) -> Self { self.tail.push(TailArgs(vec![a0.into(), a1.into()])); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        for TailArgs(mut t) in self.tail { args.append(&mut t); }
+        for (t0, t1) in self.tail {
+            args.push(OscType::Int(t0));
+            args.push(OscType::Int(t1));
+        }
         ServerMessage::with_args(r"/n_before", args)
     }
 
@@ -69,32 +76,34 @@ impl NBefore {
 
 /// Fill ranges of a node's control value(s).
 /// OSC address: `/n_fill`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct NFill {
     /// node ID
-    node_id: Option<i32>,
-    /// Repeated tail group — one tuple per trailing entry.
-    tail: Vec<TailArgs>,
+    pub node_id: i32,
+    /// Repeated tuples (control: a control index or name; number_of_values: number of values to fill (M); value: value).
+    pub tail: Vec<(crate::args::ControlId, i32, crate::args::NumericValue)>,
 }
 
 impl NFill {
-    /// Construct a new /n_fill builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/n_fill` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `NFill { .. NFill::new(...) }`.
+    pub fn new(node_id: i32, tail: Vec<(crate::args::ControlId, i32, crate::args::NumericValue)>) -> Self {
+        Self {
+            node_id,
+            tail,
+        }
+    }
 
-    /// node ID
-    pub fn node_id(mut self, v: i32) -> Self { self.node_id = Some(v); self }
-
-    /// Append one tuple to the repeated tail.
-    /// a control index or name
-    /// number of values to fill (M)
-    /// value
-    pub fn tail(mut self, a0: impl Into<OscType>, a1: impl Into<OscType>, a2: impl Into<OscType>) -> Self { self.tail.push(TailArgs(vec![a0.into(), a1.into(), a2.into()])); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.node_id { args.push(OscType::Int(v)); }
-        for TailArgs(mut t) in self.tail { args.append(&mut t); }
+        args.push(OscType::Int(self.node_id));
+        for (t0, t1, t2) in self.tail {
+            args.push(t0.into());
+            args.push(OscType::Int(t1));
+            args.push(t2.into());
+        }
         ServerMessage::with_args(r"/n_fill", args)
     }
 
@@ -106,23 +115,26 @@ impl NFill {
 
 /// Delete a node.
 /// OSC address: `/n_free`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct NFree {
     /// node ID
-    node_id: Option<i32>,
+    pub node_id: i32,
 }
 
 impl NFree {
-    /// Construct a new /n_free builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/n_free` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `NFree { .. NFree::new(...) }`.
+    pub fn new(node_id: i32) -> Self {
+        Self {
+            node_id,
+        }
+    }
 
-    /// node ID
-    pub fn node_id(mut self, v: i32) -> Self { self.node_id = Some(v); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.node_id { args.push(OscType::Int(v)); }
+        args.push(OscType::Int(self.node_id));
         ServerMessage::with_args(r"/n_free", args)
     }
 
@@ -134,31 +146,33 @@ impl NFree {
 
 /// Map a node's controls to read from a bus.
 /// OSC address: `/n_map`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct NMap {
     /// node ID
-    node_id: Option<i32>,
-    /// Repeated tail group — one tuple per trailing entry.
-    tail: Vec<TailArgs>,
+    pub node_id: i32,
+    /// Repeated tuples (control: a control index or name; control_bus_index: control bus index).
+    pub tail: Vec<(crate::args::ControlId, i32)>,
 }
 
 impl NMap {
-    /// Construct a new /n_map builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/n_map` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `NMap { .. NMap::new(...) }`.
+    pub fn new(node_id: i32, tail: Vec<(crate::args::ControlId, i32)>) -> Self {
+        Self {
+            node_id,
+            tail,
+        }
+    }
 
-    /// node ID
-    pub fn node_id(mut self, v: i32) -> Self { self.node_id = Some(v); self }
-
-    /// Append one tuple to the repeated tail.
-    /// a control index or name
-    /// control bus index
-    pub fn tail(mut self, a0: impl Into<OscType>, a1: impl Into<OscType>) -> Self { self.tail.push(TailArgs(vec![a0.into(), a1.into()])); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.node_id { args.push(OscType::Int(v)); }
-        for TailArgs(mut t) in self.tail { args.append(&mut t); }
+        args.push(OscType::Int(self.node_id));
+        for (t0, t1) in self.tail {
+            args.push(t0.into());
+            args.push(OscType::Int(t1));
+        }
         ServerMessage::with_args(r"/n_map", args)
     }
 
@@ -170,31 +184,33 @@ impl NMap {
 
 /// Map a node's controls to read from an audio bus.
 /// OSC address: `/n_mapa`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct NMapa {
     /// node ID
-    node_id: Option<i32>,
-    /// Repeated tail group — one tuple per trailing entry.
-    tail: Vec<TailArgs>,
+    pub node_id: i32,
+    /// Repeated tuples (control: a control index or name; audio_bus_index: audio bus index).
+    pub tail: Vec<(crate::args::ControlId, i32)>,
 }
 
 impl NMapa {
-    /// Construct a new /n_mapa builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/n_mapa` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `NMapa { .. NMapa::new(...) }`.
+    pub fn new(node_id: i32, tail: Vec<(crate::args::ControlId, i32)>) -> Self {
+        Self {
+            node_id,
+            tail,
+        }
+    }
 
-    /// node ID
-    pub fn node_id(mut self, v: i32) -> Self { self.node_id = Some(v); self }
-
-    /// Append one tuple to the repeated tail.
-    /// a control index or name
-    /// audio bus index
-    pub fn tail(mut self, a0: impl Into<OscType>, a1: impl Into<OscType>) -> Self { self.tail.push(TailArgs(vec![a0.into(), a1.into()])); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.node_id { args.push(OscType::Int(v)); }
-        for TailArgs(mut t) in self.tail { args.append(&mut t); }
+        args.push(OscType::Int(self.node_id));
+        for (t0, t1) in self.tail {
+            args.push(t0.into());
+            args.push(OscType::Int(t1));
+        }
         ServerMessage::with_args(r"/n_mapa", args)
     }
 
@@ -206,32 +222,34 @@ impl NMapa {
 
 /// Map a node's controls to read from audio buses.
 /// OSC address: `/n_mapan`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct NMapan {
     /// node ID
-    node_id: Option<i32>,
-    /// Repeated tail group — one tuple per trailing entry.
-    tail: Vec<TailArgs>,
+    pub node_id: i32,
+    /// Repeated tuples (control: a control index or name; audio_bus_index: audio bus index; number_of_controls: number of controls to map).
+    pub tail: Vec<(crate::args::ControlId, i32, i32)>,
 }
 
 impl NMapan {
-    /// Construct a new /n_mapan builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/n_mapan` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `NMapan { .. NMapan::new(...) }`.
+    pub fn new(node_id: i32, tail: Vec<(crate::args::ControlId, i32, i32)>) -> Self {
+        Self {
+            node_id,
+            tail,
+        }
+    }
 
-    /// node ID
-    pub fn node_id(mut self, v: i32) -> Self { self.node_id = Some(v); self }
-
-    /// Append one tuple to the repeated tail.
-    /// a control index or name
-    /// audio bus index
-    /// number of controls to map
-    pub fn tail(mut self, a0: impl Into<OscType>, a1: impl Into<OscType>, a2: impl Into<OscType>) -> Self { self.tail.push(TailArgs(vec![a0.into(), a1.into(), a2.into()])); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.node_id { args.push(OscType::Int(v)); }
-        for TailArgs(mut t) in self.tail { args.append(&mut t); }
+        args.push(OscType::Int(self.node_id));
+        for (t0, t1, t2) in self.tail {
+            args.push(t0.into());
+            args.push(OscType::Int(t1));
+            args.push(OscType::Int(t2));
+        }
         ServerMessage::with_args(r"/n_mapan", args)
     }
 
@@ -243,32 +261,34 @@ impl NMapan {
 
 /// Map a node's controls to read from buses.
 /// OSC address: `/n_mapn`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct NMapn {
     /// node ID
-    node_id: Option<i32>,
-    /// Repeated tail group — one tuple per trailing entry.
-    tail: Vec<TailArgs>,
+    pub node_id: i32,
+    /// Repeated tuples (control: a control index or name; control_bus_index: control bus index; number_of_controls: number of controls to map).
+    pub tail: Vec<(crate::args::ControlId, i32, i32)>,
 }
 
 impl NMapn {
-    /// Construct a new /n_mapn builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/n_mapn` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `NMapn { .. NMapn::new(...) }`.
+    pub fn new(node_id: i32, tail: Vec<(crate::args::ControlId, i32, i32)>) -> Self {
+        Self {
+            node_id,
+            tail,
+        }
+    }
 
-    /// node ID
-    pub fn node_id(mut self, v: i32) -> Self { self.node_id = Some(v); self }
-
-    /// Append one tuple to the repeated tail.
-    /// a control index or name
-    /// control bus index
-    /// number of controls to map
-    pub fn tail(mut self, a0: impl Into<OscType>, a1: impl Into<OscType>, a2: impl Into<OscType>) -> Self { self.tail.push(TailArgs(vec![a0.into(), a1.into(), a2.into()])); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.node_id { args.push(OscType::Int(v)); }
-        for TailArgs(mut t) in self.tail { args.append(&mut t); }
+        args.push(OscType::Int(self.node_id));
+        for (t0, t1, t2) in self.tail {
+            args.push(t0.into());
+            args.push(OscType::Int(t1));
+            args.push(OscType::Int(t2));
+        }
         ServerMessage::with_args(r"/n_mapn", args)
     }
 
@@ -280,35 +300,34 @@ impl NMapn {
 
 /// Move and order a list of nodes.
 /// OSC address: `/n_order`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct NOrder {
     /// add action (0,1,2 or 3 see below)
-    add_action: Option<i32>,
+    pub add_action: i32,
     /// add target ID
-    target_id: Option<i32>,
+    pub target_id: i32,
     /// node IDs
-    node_ids: Option<i32>,
+    pub node_ids: i32,
 }
 
 impl NOrder {
-    /// Construct a new /n_order builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/n_order` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `NOrder { .. NOrder::new(...) }`.
+    pub fn new(add_action: i32, target_id: i32, node_ids: i32) -> Self {
+        Self {
+            add_action,
+            target_id,
+            node_ids,
+        }
+    }
 
-    /// add action (0,1,2 or 3 see below)
-    pub fn add_action(mut self, v: i32) -> Self { self.add_action = Some(v); self }
-
-    /// add target ID
-    pub fn target_id(mut self, v: i32) -> Self { self.target_id = Some(v); self }
-
-    /// node IDs
-    pub fn node_ids(mut self, v: i32) -> Self { self.node_ids = Some(v); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.add_action { args.push(OscType::Int(v)); }
-        if let Some(v) = self.target_id { args.push(OscType::Int(v)); }
-        if let Some(v) = self.node_ids { args.push(OscType::Int(v)); }
+        args.push(OscType::Int(self.add_action));
+        args.push(OscType::Int(self.target_id));
+        args.push(OscType::Int(self.node_ids));
         ServerMessage::with_args(r"/n_order", args)
     }
 
@@ -320,23 +339,26 @@ impl NOrder {
 
 /// Get info about a node.
 /// OSC address: `/n_query`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct NQuery {
     /// node ID
-    node_id: Option<i32>,
+    pub node_id: i32,
 }
 
 impl NQuery {
-    /// Construct a new /n_query builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/n_query` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `NQuery { .. NQuery::new(...) }`.
+    pub fn new(node_id: i32) -> Self {
+        Self {
+            node_id,
+        }
+    }
 
-    /// node ID
-    pub fn node_id(mut self, v: i32) -> Self { self.node_id = Some(v); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.node_id { args.push(OscType::Int(v)); }
+        args.push(OscType::Int(self.node_id));
         ServerMessage::with_args(r"/n_query", args)
     }
 
@@ -348,25 +370,29 @@ impl NQuery {
 
 /// Turn node on or off.
 /// OSC address: `/n_run`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct NRun {
-    /// Repeated tail group — one tuple per trailing entry.
-    tail: Vec<TailArgs>,
+    /// Repeated tuples (node_id: node ID; run_flag: run flag).
+    pub tail: Vec<(i32, i32)>,
 }
 
 impl NRun {
-    /// Construct a new /n_run builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/n_run` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `NRun { .. NRun::new(...) }`.
+    pub fn new(tail: Vec<(i32, i32)>) -> Self {
+        Self {
+            tail,
+        }
+    }
 
-    /// Append one tuple to the repeated tail.
-    /// node ID
-    /// run flag
-    pub fn tail(mut self, a0: impl Into<OscType>, a1: impl Into<OscType>) -> Self { self.tail.push(TailArgs(vec![a0.into(), a1.into()])); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        for TailArgs(mut t) in self.tail { args.append(&mut t); }
+        for (t0, t1) in self.tail {
+            args.push(OscType::Int(t0));
+            args.push(OscType::Int(t1));
+        }
         ServerMessage::with_args(r"/n_run", args)
     }
 
@@ -378,31 +404,33 @@ impl NRun {
 
 /// Set a node's control value(s).
 /// OSC address: `/n_set`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct NSet {
     /// node ID
-    node_id: Option<i32>,
-    /// Repeated tail group — one tuple per trailing entry.
-    tail: Vec<TailArgs>,
+    pub node_id: i32,
+    /// Repeated tuples (control: a control index or name; value: a control value).
+    pub tail: Vec<(crate::args::ControlId, crate::args::NumericValue)>,
 }
 
 impl NSet {
-    /// Construct a new /n_set builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/n_set` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `NSet { .. NSet::new(...) }`.
+    pub fn new(node_id: i32, tail: Vec<(crate::args::ControlId, crate::args::NumericValue)>) -> Self {
+        Self {
+            node_id,
+            tail,
+        }
+    }
 
-    /// node ID
-    pub fn node_id(mut self, v: i32) -> Self { self.node_id = Some(v); self }
-
-    /// Append one tuple to the repeated tail.
-    /// a control index or name
-    /// a control value
-    pub fn tail(mut self, a0: impl Into<OscType>, a1: impl Into<OscType>) -> Self { self.tail.push(TailArgs(vec![a0.into(), a1.into()])); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.node_id { args.push(OscType::Int(v)); }
-        for TailArgs(mut t) in self.tail { args.append(&mut t); }
+        args.push(OscType::Int(self.node_id));
+        for (t0, t1) in self.tail {
+            args.push(t0.into());
+            args.push(t1.into());
+        }
         ServerMessage::with_args(r"/n_set", args)
     }
 
@@ -414,32 +442,34 @@ impl NSet {
 
 /// Set ranges of a node's control value(s).
 /// OSC address: `/n_setn`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct NSetn {
     /// node ID
-    node_id: Option<i32>,
-    /// Repeated tail group — one tuple per trailing entry.
-    tail: Vec<TailArgs>,
+    pub node_id: i32,
+    /// Repeated tuples (control: a control index or name; number_of_sequential: number of sequential controls to change (M); control_value: control value(s)).
+    pub tail: Vec<(crate::args::ControlId, i32, crate::args::NumericValue)>,
 }
 
 impl NSetn {
-    /// Construct a new /n_setn builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/n_setn` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `NSetn { .. NSetn::new(...) }`.
+    pub fn new(node_id: i32, tail: Vec<(crate::args::ControlId, i32, crate::args::NumericValue)>) -> Self {
+        Self {
+            node_id,
+            tail,
+        }
+    }
 
-    /// node ID
-    pub fn node_id(mut self, v: i32) -> Self { self.node_id = Some(v); self }
-
-    /// Append one tuple to the repeated tail.
-    /// a control index or name
-    /// number of sequential controls to change (M)
-    /// control value(s)
-    pub fn tail(mut self, a0: impl Into<OscType>, a1: impl Into<OscType>, a2: impl Into<OscType>) -> Self { self.tail.push(TailArgs(vec![a0.into(), a1.into(), a2.into()])); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.node_id { args.push(OscType::Int(v)); }
-        for TailArgs(mut t) in self.tail { args.append(&mut t); }
+        args.push(OscType::Int(self.node_id));
+        for (t0, t1, t2) in self.tail {
+            args.push(t0.into());
+            args.push(OscType::Int(t1));
+            args.push(t2.into());
+        }
         ServerMessage::with_args(r"/n_setn", args)
     }
 
@@ -451,23 +481,26 @@ impl NSetn {
 
 /// Trace a node.
 /// OSC address: `/n_trace`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct NTrace {
     /// node IDs
-    node_ids: Option<i32>,
+    pub node_ids: i32,
 }
 
 impl NTrace {
-    /// Construct a new /n_trace builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/n_trace` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `NTrace { .. NTrace::new(...) }`.
+    pub fn new(node_ids: i32) -> Self {
+        Self {
+            node_ids,
+        }
+    }
 
-    /// node IDs
-    pub fn node_ids(mut self, v: i32) -> Self { self.node_ids = Some(v); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.node_ids { args.push(OscType::Int(v)); }
+        args.push(OscType::Int(self.node_ids));
         ServerMessage::with_args(r"/n_trace", args)
     }
 

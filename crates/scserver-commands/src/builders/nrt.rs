@@ -11,15 +11,20 @@ use crate::ServerMessage;
 /// establish the ending time of the file. This command will end non real time
 /// mode and close the sound file. Replies to sender with /done when complete.
 /// OSC address: `/nrt_end`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct NrtEnd {
 }
 
 impl NrtEnd {
-    /// Construct a new /nrt_end builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/nrt_end` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `NrtEnd { .. NrtEnd::new(...) }`.
+    pub fn new() -> Self {
+        Self {
+        }
+    }
 
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         ServerMessage::with_args(r"/nrt_end", args)

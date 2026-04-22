@@ -1,11 +1,19 @@
 #!/usr/bin/env node
 
 // Reads crates/scserver-commands/src/assets/commands/*.json and emits
-// typed Rust builders + a lightweight registry:
+// typed Rust builders + a lightweight registry.
 //
 //   crates/scserver-commands/src/builders/<category>.rs
 //   crates/scserver-commands/src/builders/mod.rs
 //   crates/scserver-commands/src/registry_data.rs
+//
+// Design: each command becomes a struct with **public fields** and a
+// **single typed-parameter `new(...)` constructor**. Polymorphic args
+// collapse into one of the enums in `src/args.rs` (`ControlId`,
+// `NumericValue`, `ControlValue`). Repeated-tail groups become
+// `Vec<(T1, T2, …)>`. Trailing args whose docstring mentions "optional"
+// become `Option<T>` (kept out of the constructor; editable via struct
+// update syntax).
 //
 // Usage: node scripts/generate_server_commands_rust.mjs
 
@@ -50,7 +58,6 @@ const HEADER = [
   '',
 ].join('\n');
 
-// Rust keywords (kept short — full list is in generate_ugens_rust.mjs).
 const RUST_RESERVED = new Set([
   'as', 'async', 'await', 'break', 'const', 'continue', 'crate', 'do',
   'dyn', 'else', 'enum', 'extern', 'false', 'final', 'fn', 'for', 'if',
@@ -66,16 +73,10 @@ const SKIP_CATEGORIES = new Set(['replies']);
 // ── Name synthesis ───────────────────────────────────────────────────────
 
 function pascal(address) {
-  // "/s_new" → "SNew", "/b_allocReadChannel" → "BAllocReadChannel",
-  // "/n_free" → "NFree", "/status" → "Status".
   const body = address.replace(/^\//, '');
   return body
     .split('_')
-    .map((seg, i) =>
-      i === 0
-        ? seg[0].toUpperCase() + seg.slice(1)
-        : seg[0].toUpperCase() + seg.slice(1),
-    )
+    .map((seg) => (seg ? seg[0].toUpperCase() + seg.slice(1) : ''))
     .join('');
 }
 
@@ -83,17 +84,7 @@ function rustIdent(name) {
   return RUST_RESERVED.has(name) ? `r#${name}` : name;
 }
 
-function snake(s) {
-  return s
-    .replace(/[^\w\s]/g, ' ')
-    .trim()
-    .split(/\s+/)
-    .slice(0, 4)
-    .join('_')
-    .toLowerCase();
-}
-
-// Friendly names for the most common SC args. Keys are the cleaned docstring.
+// Friendly names for the most common SC args, keyed on a cleaned docstring.
 const NAME_OVERRIDES = {
   'synth definition name': 'def_name',
   'synth id': 'node_id',
@@ -121,7 +112,7 @@ const NAME_OVERRIDES = {
   'node id target': 'target_node_id',
   'header format': 'header_format',
   'sample format': 'sample_format',
-  'bytes': 'bytes',
+  bytes: 'bytes',
   '1 to receive notifications 0 to stop receiving them': 'enable',
   'client id optional': 'client_id',
   '0 for off 1 for on': 'enabled',
@@ -131,35 +122,90 @@ const NAME_OVERRIDES = {
 };
 
 function argNameFromDoc(doc, idx) {
-  const cleaned = doc.toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  // Strip the "(optional ...)" / default trailer before matching overrides,
+  // so "number of channels (optional. default = 1 channel)" picks up the
+  // same override as "number of channels".
+  const stripped = doc.replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim();
+  const cleaned = stripped
+    .toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (NAME_OVERRIDES[cleaned]) return NAME_OVERRIDES[cleaned];
   let short = cleaned.split(/\s+/).slice(0, 3).join('_');
   if (!short) return `arg${idx}`;
-  // Rust identifiers can't start with a digit. Prefix if the first
-  // scraped word is numeric (e.g. "1. unused." → "1_unused").
   if (/^\d/.test(short)) short = `arg_${short}`;
   return short;
 }
 
-// ── Rust emission helpers ────────────────────────────────────────────────
-
-function oscTypeFor(type) {
-  if (!type || !type.alternatives || type.alternatives.length === 0) return null;
-  if (type.alternatives.length === 1) return type.alternatives[0];
-  // Multiple alternatives → polymorphic. Use `OscType` and let the caller
-  // pass anything `Into<OscType>`.
-  return 'polymorphic';
+function isOptional(doc) {
+  return /\(optional/i.test(doc || '');
 }
 
-function rustArgType(oscType) {
-  switch (oscType) {
-    case 'int32': return 'i32';
-    case 'float32': return 'f32';
-    case 'float64': return 'f64';
-    case 'string': return 'String';
-    case 'blob': return 'Vec<u8>';
-    case 'polymorphic': return 'OscType';
-    default: return 'OscType';
+// ── Type classification ──────────────────────────────────────────────────
+
+/// Map a JSON `type.alternatives` list to one of a small set of known
+/// Rust types, plus a catch-all for anything variadic.
+function classify(type) {
+  const alts = ((type && type.alternatives) || []).slice().sort();
+  if (alts.length === 0) return 'variadic';
+  if (alts.length === 1) return alts[0]; // int32 / float32 / float64 / string / blob
+  const key = alts.join('|');
+  switch (key) {
+    case 'int32|string':
+      return 'ControlId';
+    case 'float32|int32':
+      return 'NumericValue';
+    case 'float32|int32|string':
+      return 'ControlValue';
+    default:
+      return 'variadic';
+  }
+}
+
+function rustArgType(kind) {
+  switch (kind) {
+    case 'int32':
+      return 'i32';
+    case 'float32':
+      return 'f32';
+    case 'float64':
+      return 'f64';
+    case 'string':
+      return 'String';
+    case 'blob':
+      return 'Vec<u8>';
+    case 'ControlId':
+      return 'crate::args::ControlId';
+    case 'NumericValue':
+      return 'crate::args::NumericValue';
+    case 'ControlValue':
+      return 'crate::args::ControlValue';
+    default:
+      return 'rosc::OscType';
+  }
+}
+
+/// Emit a Rust expression converting `field_expr` of the given classified
+/// type into an `OscType`. Moves `field_expr`.
+function emitPushOsc(kind, fieldExpr) {
+  switch (kind) {
+    case 'int32':
+      return `OscType::Int(${fieldExpr})`;
+    case 'float32':
+      return `OscType::Float(${fieldExpr})`;
+    case 'float64':
+      return `OscType::Double(${fieldExpr})`;
+    case 'string':
+      return `OscType::String(${fieldExpr})`;
+    case 'blob':
+      return `OscType::Blob(${fieldExpr})`;
+    case 'ControlId':
+    case 'NumericValue':
+    case 'ControlValue':
+      return `${fieldExpr}.into()`;
+    default:
+      return fieldExpr; // already an OscType
   }
 }
 
@@ -217,106 +263,126 @@ function emitBuilder(entry) {
     }
   }
 
-  // Dedupe arg names (two scalars might have the same inferred name).
-  const fieldNames = [];
+  // Dedupe arg names + classify each scalar arg + mark optional.
   const seen = new Map();
-  scalarArgs.forEach((a, i) => {
-    let n = argNameFromDoc(a.doc || '', i);
-    const count = (seen.get(n) || 0) + 1;
-    seen.set(n, count);
-    if (count > 1) n = `${n}_${count}`;
-    fieldNames.push(rustIdent(n));
+  const scalarInfos = scalarArgs.map((a, i) => {
+    let name = argNameFromDoc(a.doc || '', i);
+    const count = (seen.get(name) || 0) + 1;
+    seen.set(name, count);
+    if (count > 1) name = `${name}_${count}`;
+    return {
+      name: rustIdent(name),
+      kind: classify(a.type),
+      doc: a.doc,
+      optional: isOptional(a.doc || ''),
+    };
   });
 
-  // Struct definition.
-  lines.push(`#[derive(Debug, Clone, Default)]`);
+  // Same for repeated-tuple fields.
+  const repeatedInfos = repeated
+    ? repeated.map((f, i) => ({
+        name: argNameFromDoc(f.doc || '', i),
+        kind: classify(f.type),
+        doc: f.doc,
+      }))
+    : null;
+
+  const required = scalarInfos.filter((a) => !a.optional);
+  const optional = scalarInfos.filter((a) => a.optional);
+
+  // ── Struct definition ────────────────────────────────────────────────
+  lines.push('#[derive(Debug, Clone)]');
   lines.push(`pub struct ${structName} {`);
-  scalarArgs.forEach((a, i) => {
-    const ty = rustArgType(oscTypeFor(a.type));
-    const optTy = `Option<${ty}>`;
+  for (const a of scalarInfos) {
     if (a.doc) for (const ln of rustDoc(a.doc, '    ')) lines.push(ln);
-    lines.push(`    ${fieldNames[i]}: ${optTy},`);
-  });
+    const ty = rustArgType(a.kind);
+    const wrapped = a.optional ? `Option<${ty}>` : ty;
+    lines.push(`    pub ${a.name}: ${wrapped},`);
+  }
   if (repeated) {
-    lines.push(`    /// Repeated tail group — one tuple per trailing entry.`);
-    lines.push(`    tail: Vec<TailArgs>,`);
+    const tupleTy = repeatedInfos
+      .map((f) => rustArgType(f.kind))
+      .join(', ');
+    const tailDoc = repeatedInfos
+      .map((f) => `${f.name}: ${f.doc || ''}`)
+      .join('; ');
+    lines.push(`    /// Repeated tuples (${tailDoc}).`);
+    lines.push(`    pub tail: Vec<(${tupleTy})>,`);
   }
   lines.push('}');
   lines.push('');
 
+  // ── impl ─────────────────────────────────────────────────────────────
   lines.push(`impl ${structName} {`);
-  lines.push(`    /// Construct a new ${entry.address} builder with no args set.`);
-  lines.push(`    pub fn new() -> Self { Self::default() }`);
-  lines.push('');
 
-  // Setters.
-  scalarArgs.forEach((a, i) => {
-    const fname = fieldNames[i];
-    const osc = oscTypeFor(a.type);
-    const ty = rustArgType(osc);
-    if (a.doc) for (const ln of rustDoc(a.doc, '    ')) lines.push(ln);
-    if (osc === 'polymorphic') {
-      lines.push(
-        `    pub fn ${fname}(mut self, v: impl Into<OscType>) -> Self { self.${fname} = Some(v.into()); self }`,
-      );
-    } else {
-      lines.push(
-        `    pub fn ${fname}(mut self, v: ${ty}) -> Self { self.${fname} = Some(v); self }`,
-      );
-    }
-    lines.push('');
-  });
-
-  // Repeated-tail add method.
+  // Constructor — typed parameters for every required field + the tail.
+  const ctorParams = [];
+  for (const a of required) {
+    ctorParams.push(`${a.name}: ${rustArgType(a.kind)}`);
+  }
   if (repeated) {
-    const fieldDescs = repeated.map((f, i) => `${f.doc || 'tail arg ' + i}`);
-    const params = repeated.map((_, i) => `a${i}: impl Into<OscType>`).join(', ');
-    const pushes = repeated.map((_, i) => `a${i}.into()`).join(', ');
-    lines.push(`    /// Append one tuple to the repeated tail.`);
-    for (const f of fieldDescs) {
-      for (const ln of rustDoc(f, '    ')) lines.push(ln);
-    }
-    lines.push(
-      `    pub fn tail(mut self, ${params}) -> Self { self.tail.push(TailArgs(vec![${pushes}])); self }`,
-    );
-    lines.push('');
+    const tupleTy = repeatedInfos
+      .map((f) => rustArgType(f.kind))
+      .join(', ');
+    ctorParams.push(`tail: Vec<(${tupleTy})>`);
   }
 
-  // to_message().
-  lines.push(`    /// Build the encoded OSC message.`);
+  const paramsStr = ctorParams.length === 0 ? '' : ctorParams.join(', ');
+  lines.push(
+    `    /// Construct \`${entry.address}\` with all required args. Optional`,
+  );
+  lines.push(
+    `    /// fields default to \`None\` — set them via struct update syntax:`,
+  );
+  lines.push(`    /// \`${structName} { .. ${structName}::new(...) }\`.`);
+  lines.push(`    pub fn new(${paramsStr}) -> Self {`);
+  lines.push(`        Self {`);
+  for (const a of required) lines.push(`            ${a.name},`);
+  for (const a of optional) lines.push(`            ${a.name}: None,`);
+  if (repeated) lines.push(`            tail,`);
+  lines.push(`        }`);
+  lines.push(`    }`);
+  lines.push('');
+
+  // to_message() — encode the typed fields to an OSC arg list.
+  lines.push(`    /// Encode the typed fields into an \`OscType\` message.`);
   lines.push(`    pub fn to_message(self) -> ServerMessage {`);
   lines.push(`        let mut args: Vec<OscType> = Vec::new();`);
-  scalarArgs.forEach((a, i) => {
-    const fname = fieldNames[i];
-    const osc = oscTypeFor(a.type);
-    if (osc === 'polymorphic') {
-      lines.push(`        if let Some(v) = self.${fname} { args.push(v); }`);
-    } else if (osc === 'int32') {
-      lines.push(`        if let Some(v) = self.${fname} { args.push(OscType::Int(v)); }`);
-    } else if (osc === 'float32') {
-      lines.push(`        if let Some(v) = self.${fname} { args.push(OscType::Float(v)); }`);
-    } else if (osc === 'float64') {
-      lines.push(`        if let Some(v) = self.${fname} { args.push(OscType::Double(v)); }`);
-    } else if (osc === 'string') {
-      lines.push(`        if let Some(v) = self.${fname} { args.push(OscType::String(v)); }`);
-    } else if (osc === 'blob') {
-      lines.push(`        if let Some(v) = self.${fname} { args.push(OscType::Blob(v)); }`);
+  // Iterate in source-declared order (mixing required + optional).
+  for (const a of scalarInfos) {
+    if (a.optional) {
+      lines.push(`        if let Some(v) = self.${a.name} {`);
+      lines.push(`            args.push(${emitPushOsc(a.kind, 'v')});`);
+      lines.push(`        }`);
     } else {
-      lines.push(`        if let Some(v) = self.${fname} { args.push(v); }`);
+      lines.push(
+        `        args.push(${emitPushOsc(a.kind, `self.${a.name}`)});`,
+      );
     }
-  });
+  }
   if (repeated) {
-    lines.push(`        for TailArgs(mut t) in self.tail { args.append(&mut t); }`);
+    const tupleFields = repeatedInfos
+      .map((_, i) => `t${i}`)
+      .join(', ');
+    lines.push(`        for (${tupleFields}) in self.tail {`);
+    for (let i = 0; i < repeatedInfos.length; i++) {
+      const f = repeatedInfos[i];
+      lines.push(`            args.push(${emitPushOsc(f.kind, `t${i}`)});`);
+    }
+    lines.push(`        }`);
   }
   lines.push(
     `        ServerMessage::with_args(${rustStr(entry.address)}, args)`,
   );
   lines.push(`    }`);
   lines.push('');
+
+  // encode() — shortcut to wire bytes.
   lines.push(`    /// Shortcut: build + encode to OSC wire bytes.`);
   lines.push(`    pub fn encode(self) -> Result<Vec<u8>, crate::CommandError> {`);
   lines.push(`        self.to_message().encode()`);
   lines.push(`    }`);
+
   lines.push(`}`);
   lines.push('');
 
@@ -330,10 +396,8 @@ function emitCategoryFile(category, entries) {
   out.push(HEADER);
   out.push('#![allow(non_snake_case, unused_mut, clippy::all)]');
   out.push('');
-  const usesTail = entries.some((e) => (e.args || []).some((a) => a.repeated));
   out.push('use rosc::OscType;');
   out.push('use crate::ServerMessage;');
-  if (usesTail) out.push('use crate::builders::TailArgs;');
   out.push('');
   for (const e of entries) out.push(emitBuilder(e));
   return out.join('\n');
@@ -345,10 +409,6 @@ function emitModFile(categories) {
     HEADER,
     '//! Typed builders for every documented SuperCollider server command.',
     '//! Auto-generated from `src/assets/commands/*.json`.',
-    '',
-    '/// Holder for one element of a command\'s repeated-tail group.',
-    '#[derive(Debug, Clone, Default)]',
-    'pub struct TailArgs(pub Vec<rosc::OscType>);',
     '',
   ];
   for (const c of sorted) lines.push(`pub mod ${c};`);

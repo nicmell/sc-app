@@ -4,10 +4,6 @@
 //! Typed builders for every documented SuperCollider server command.
 //! Auto-generated from `src/assets/commands/*.json`.
 
-/// Holder for one element of a command's repeated-tail group.
-#[derive(Debug, Clone, Default)]
-pub struct TailArgs(pub Vec<rosc::OscType>);
-
 pub mod buffer;
 pub mod control;
 pub mod group;

@@ -9,15 +9,20 @@ use crate::ServerMessage;
 /// Clear all scheduled bundles. Removes all bundles from the scheduling
 /// queue.
 /// OSC address: `/clearSched`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ClearSched {
 }
 
 impl ClearSched {
-    /// Construct a new /clearSched builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/clearSched` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `ClearSched { .. ClearSched::new(...) }`.
+    pub fn new() -> Self {
+        Self {
+        }
+    }
 
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         ServerMessage::with_args(r"/clearSched", args)
@@ -31,29 +36,30 @@ impl ClearSched {
 
 /// Plug-in defined command.
 /// OSC address: `/cmd`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Cmd {
     /// command name
-    cmd: Option<String>,
+    pub cmd: String,
     /// any arguments
-    any_arguments: Option<OscType>,
+    pub any_arguments: rosc::OscType,
 }
 
 impl Cmd {
-    /// Construct a new /cmd builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/cmd` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `Cmd { .. Cmd::new(...) }`.
+    pub fn new(cmd: String, any_arguments: rosc::OscType) -> Self {
+        Self {
+            cmd,
+            any_arguments,
+        }
+    }
 
-    /// command name
-    pub fn cmd(mut self, v: String) -> Self { self.cmd = Some(v); self }
-
-    /// any arguments
-    pub fn any_arguments(mut self, v: OscType) -> Self { self.any_arguments = Some(v); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.cmd { args.push(OscType::String(v)); }
-        if let Some(v) = self.any_arguments { args.push(v); }
+        args.push(OscType::String(self.cmd));
+        args.push(self.any_arguments);
         ServerMessage::with_args(r"/cmd", args)
     }
 
@@ -65,23 +71,26 @@ impl Cmd {
 
 /// Display incoming OSC messages.
 /// OSC address: `/dumpOSC`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct DumpOSC {
     /// code
-    code: Option<i32>,
+    pub code: i32,
 }
 
 impl DumpOSC {
-    /// Construct a new /dumpOSC builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/dumpOSC` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `DumpOSC { .. DumpOSC::new(...) }`.
+    pub fn new(code: i32) -> Self {
+        Self {
+            code,
+        }
+    }
 
-    /// code
-    pub fn code(mut self, v: i32) -> Self { self.code = Some(v); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.code { args.push(OscType::Int(v)); }
+        args.push(OscType::Int(self.code));
         ServerMessage::with_args(r"/dumpOSC", args)
     }
 
@@ -93,23 +102,26 @@ impl DumpOSC {
 
 /// Enable/disable error message posting.
 /// OSC address: `/error`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Error {
     /// mode
-    mode: Option<i32>,
+    pub mode: i32,
 }
 
 impl Error {
-    /// Construct a new /error builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/error` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `Error { .. Error::new(...) }`.
+    pub fn new(mode: i32) -> Self {
+        Self {
+            mode,
+        }
+    }
 
-    /// mode
-    pub fn mode(mut self, v: i32) -> Self { self.mode = Some(v); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.mode { args.push(OscType::Int(v)); }
+        args.push(OscType::Int(self.mode));
         ServerMessage::with_args(r"/error", args)
     }
 
@@ -121,29 +133,32 @@ impl Error {
 
 /// Register to receive notifications from server
 /// OSC address: `/notify`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Notify {
     /// 1 to receive notifications, 0 to stop receiving them.
-    enable: Option<i32>,
+    pub enable: i32,
     /// client ID (optional)
-    client_id: Option<i32>,
+    pub client_id: Option<i32>,
 }
 
 impl Notify {
-    /// Construct a new /notify builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/notify` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `Notify { .. Notify::new(...) }`.
+    pub fn new(enable: i32) -> Self {
+        Self {
+            enable,
+            client_id: None,
+        }
+    }
 
-    /// 1 to receive notifications, 0 to stop receiving them.
-    pub fn enable(mut self, v: i32) -> Self { self.enable = Some(v); self }
-
-    /// client ID (optional)
-    pub fn client_id(mut self, v: i32) -> Self { self.client_id = Some(v); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.enable { args.push(OscType::Int(v)); }
-        if let Some(v) = self.client_id { args.push(OscType::Int(v)); }
+        args.push(OscType::Int(self.enable));
+        if let Some(v) = self.client_id {
+            args.push(OscType::Int(v));
+        }
         ServerMessage::with_args(r"/notify", args)
     }
 
@@ -155,15 +170,20 @@ impl Notify {
 
 /// Quit program. Exits the synthesis server.
 /// OSC address: `/quit`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Quit {
 }
 
 impl Quit {
-    /// Construct a new /quit builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/quit` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `Quit { .. Quit::new(...) }`.
+    pub fn new() -> Self {
+        Self {
+        }
+    }
 
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         ServerMessage::with_args(r"/quit", args)
@@ -177,15 +197,20 @@ impl Quit {
 
 /// Queries the amount of currently free real-time memory (in bytes).
 /// OSC address: `/rtMemoryStatus`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct RtMemoryStatus {
 }
 
 impl RtMemoryStatus {
-    /// Construct a new /rtMemoryStatus builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/rtMemoryStatus` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `RtMemoryStatus { .. RtMemoryStatus::new(...) }`.
+    pub fn new() -> Self {
+        Self {
+        }
+    }
 
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         ServerMessage::with_args(r"/rtMemoryStatus", args)
@@ -199,15 +224,20 @@ impl RtMemoryStatus {
 
 /// Query the status. Replies to sender with the following message:
 /// OSC address: `/status`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Status {
 }
 
 impl Status {
-    /// Construct a new /status builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/status` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `Status { .. Status::new(...) }`.
+    pub fn new() -> Self {
+        Self {
+        }
+    }
 
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         ServerMessage::with_args(r"/status", args)
@@ -221,23 +251,26 @@ impl Status {
 
 /// Notify when async commands have completed.
 /// OSC address: `/sync`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Sync {
     /// a unique number identifying this command.
-    a_unique_number: Option<i32>,
+    pub a_unique_number: i32,
 }
 
 impl Sync {
-    /// Construct a new /sync builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/sync` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `Sync { .. Sync::new(...) }`.
+    pub fn new(a_unique_number: i32) -> Self {
+        Self {
+            a_unique_number,
+        }
+    }
 
-    /// a unique number identifying this command.
-    pub fn a_unique_number(mut self, v: i32) -> Self { self.a_unique_number = Some(v); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.a_unique_number { args.push(OscType::Int(v)); }
+        args.push(OscType::Int(self.a_unique_number));
         ServerMessage::with_args(r"/sync", args)
     }
 
@@ -250,15 +283,20 @@ impl Sync {
 /// Query the SuperCollider version. Replies to sender with the following
 /// message:
 /// OSC address: `/version`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Version {
 }
 
 impl Version {
-    /// Construct a new /version builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/version` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `Version { .. Version::new(...) }`.
+    pub fn new() -> Self {
+        Self {
+        }
+    }
 
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
         ServerMessage::with_args(r"/version", args)

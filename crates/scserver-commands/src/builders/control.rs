@@ -5,30 +5,33 @@
 
 use rosc::OscType;
 use crate::ServerMessage;
-use crate::builders::TailArgs;
 
 /// Fill ranges of bus value(s).
 /// OSC address: `/c_fill`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct CFill {
-    /// Repeated tail group — one tuple per trailing entry.
-    tail: Vec<TailArgs>,
+    /// Repeated tuples (starting_bus_index: starting bus index; number_of_buses: number of buses to fill (M); value: value).
+    pub tail: Vec<(i32, i32, crate::args::NumericValue)>,
 }
 
 impl CFill {
-    /// Construct a new /c_fill builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/c_fill` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `CFill { .. CFill::new(...) }`.
+    pub fn new(tail: Vec<(i32, i32, crate::args::NumericValue)>) -> Self {
+        Self {
+            tail,
+        }
+    }
 
-    /// Append one tuple to the repeated tail.
-    /// starting bus index
-    /// number of buses to fill (M)
-    /// value
-    pub fn tail(mut self, a0: impl Into<OscType>, a1: impl Into<OscType>, a2: impl Into<OscType>) -> Self { self.tail.push(TailArgs(vec![a0.into(), a1.into(), a2.into()])); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        for TailArgs(mut t) in self.tail { args.append(&mut t); }
+        for (t0, t1, t2) in self.tail {
+            args.push(OscType::Int(t0));
+            args.push(OscType::Int(t1));
+            args.push(t2.into());
+        }
         ServerMessage::with_args(r"/c_fill", args)
     }
 
@@ -40,23 +43,26 @@ impl CFill {
 
 /// Get bus value(s).
 /// OSC address: `/c_get`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct CGet {
     /// a bus index
-    a_bus_index: Option<i32>,
+    pub a_bus_index: i32,
 }
 
 impl CGet {
-    /// Construct a new /c_get builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/c_get` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `CGet { .. CGet::new(...) }`.
+    pub fn new(a_bus_index: i32) -> Self {
+        Self {
+            a_bus_index,
+        }
+    }
 
-    /// a bus index
-    pub fn a_bus_index(mut self, v: i32) -> Self { self.a_bus_index = Some(v); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        if let Some(v) = self.a_bus_index { args.push(OscType::Int(v)); }
+        args.push(OscType::Int(self.a_bus_index));
         ServerMessage::with_args(r"/c_get", args)
     }
 
@@ -68,25 +74,29 @@ impl CGet {
 
 /// Get ranges of bus value(s).
 /// OSC address: `/c_getn`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct CGetn {
-    /// Repeated tail group — one tuple per trailing entry.
-    tail: Vec<TailArgs>,
+    /// Repeated tuples (starting_bus_index: starting bus index; number_of_sequential: number of sequential buses to get (M)).
+    pub tail: Vec<(i32, i32)>,
 }
 
 impl CGetn {
-    /// Construct a new /c_getn builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/c_getn` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `CGetn { .. CGetn::new(...) }`.
+    pub fn new(tail: Vec<(i32, i32)>) -> Self {
+        Self {
+            tail,
+        }
+    }
 
-    /// Append one tuple to the repeated tail.
-    /// starting bus index
-    /// number of sequential buses to get (M)
-    pub fn tail(mut self, a0: impl Into<OscType>, a1: impl Into<OscType>) -> Self { self.tail.push(TailArgs(vec![a0.into(), a1.into()])); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        for TailArgs(mut t) in self.tail { args.append(&mut t); }
+        for (t0, t1) in self.tail {
+            args.push(OscType::Int(t0));
+            args.push(OscType::Int(t1));
+        }
         ServerMessage::with_args(r"/c_getn", args)
     }
 
@@ -98,25 +108,29 @@ impl CGetn {
 
 /// Set bus value(s).
 /// OSC address: `/c_set`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct CSet {
-    /// Repeated tail group — one tuple per trailing entry.
-    tail: Vec<TailArgs>,
+    /// Repeated tuples (a_bus_index: a bus index; value: a control value).
+    pub tail: Vec<(i32, crate::args::NumericValue)>,
 }
 
 impl CSet {
-    /// Construct a new /c_set builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/c_set` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `CSet { .. CSet::new(...) }`.
+    pub fn new(tail: Vec<(i32, crate::args::NumericValue)>) -> Self {
+        Self {
+            tail,
+        }
+    }
 
-    /// Append one tuple to the repeated tail.
-    /// a bus index
-    /// a control value
-    pub fn tail(mut self, a0: impl Into<OscType>, a1: impl Into<OscType>) -> Self { self.tail.push(TailArgs(vec![a0.into(), a1.into()])); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        for TailArgs(mut t) in self.tail { args.append(&mut t); }
+        for (t0, t1) in self.tail {
+            args.push(OscType::Int(t0));
+            args.push(t1.into());
+        }
         ServerMessage::with_args(r"/c_set", args)
     }
 
@@ -128,27 +142,31 @@ impl CSet {
 
 /// Set ranges of bus value(s).
 /// OSC address: `/c_setn`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct CSetn {
-    /// Repeated tail group — one tuple per trailing entry.
-    tail: Vec<TailArgs>,
+    /// Repeated tuples (starting_bus_index: starting bus index; number_of_sequential: number of sequential buses to change (M); arg2: ; value: a control value).
+    pub tail: Vec<(i32, i32, rosc::OscType, crate::args::NumericValue)>,
 }
 
 impl CSetn {
-    /// Construct a new /c_setn builder with no args set.
-    pub fn new() -> Self { Self::default() }
+    /// Construct `/c_setn` with all required args. Optional
+    /// fields default to `None` — set them via struct update syntax:
+    /// `CSetn { .. CSetn::new(...) }`.
+    pub fn new(tail: Vec<(i32, i32, rosc::OscType, crate::args::NumericValue)>) -> Self {
+        Self {
+            tail,
+        }
+    }
 
-    /// Append one tuple to the repeated tail.
-    /// starting bus index
-    /// number of sequential buses to change (M)
-    /// tail arg 2
-    /// a control value
-    pub fn tail(mut self, a0: impl Into<OscType>, a1: impl Into<OscType>, a2: impl Into<OscType>, a3: impl Into<OscType>) -> Self { self.tail.push(TailArgs(vec![a0.into(), a1.into(), a2.into(), a3.into()])); self }
-
-    /// Build the encoded OSC message.
+    /// Encode the typed fields into an `OscType` message.
     pub fn to_message(self) -> ServerMessage {
         let mut args: Vec<OscType> = Vec::new();
-        for TailArgs(mut t) in self.tail { args.append(&mut t); }
+        for (t0, t1, t2, t3) in self.tail {
+            args.push(OscType::Int(t0));
+            args.push(OscType::Int(t1));
+            args.push(t2);
+            args.push(t3.into());
+        }
         ServerMessage::with_args(r"/c_setn", args)
     }
 
