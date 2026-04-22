@@ -95,6 +95,6 @@ interface replies {
     }
 
     /// Classify raw OSC reply bytes into a typed variant. The inverse of
-    /// encoding via `commands.*`.
-    parse-reply: func(bytes: list<u8>) -> result<server-reply, string>;
+    /// encoding via `commands.encode`.
+    decode: func(bytes: list<u8>) -> result<server-reply, string>;
 }

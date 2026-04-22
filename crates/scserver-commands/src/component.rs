@@ -3,7 +3,7 @@
 //!
 //! The host calls one exported function per crate surface:
 //! * `commands::encode(server-message)` — serialise a typed command.
-//! * `replies::parse-reply(bytes)` — classify a server reply.
+//! * `replies::decode(bytes)` — classify a server reply.
 //! * `nrt::nrt-score` resource — assemble an NRT score from typed
 //!   server messages.
 
@@ -44,7 +44,7 @@ impl NrtGuest for Component {
 }
 
 impl RepliesGuest for Component {
-    fn parse_reply(bytes: Vec<u8>) -> Result<WitServerReply, String> {
+    fn decode(bytes: Vec<u8>) -> Result<WitServerReply, String> {
         let reply = ServerReply::parse(&bytes).map_err(|e| e.to_string())?;
         Ok(reply_to_wit(reply))
     }
@@ -220,16 +220,18 @@ fn wit_to_rust(msg: WitServerMessage) -> ServerMessage {
             completion_msg: a.completion_msg,
             ..BAllocRead::new(a.bufnum, a.path)
         }),
-        WitServerMessage::BAllocReadChannel(a) => {
-            let tail: Vec<_> = a.tail.into_iter().map(|t| (t.0, t.1)).collect();
-            ServerMessage::BAllocReadChannel(BAllocReadChannel::new(
-                a.bufnum,
-                a.path,
-                a.start_frame,
-                a.number_of_frames,
-                tail,
-            ))
-        }
+        WitServerMessage::BAllocReadChannel(a) => ServerMessage::BAllocReadChannel(
+            BAllocReadChannel {
+                completion_msg: a.completion_msg,
+                ..BAllocReadChannel::new(
+                    a.bufnum,
+                    a.path,
+                    a.start_frame,
+                    a.number_of_frames,
+                    a.channels,
+                )
+            },
+        ),
         WitServerMessage::BClose(a) => ServerMessage::BClose(BClose {
             completion_msg: a.completion_msg,
             ..BClose::new(a.bufnum)
@@ -245,14 +247,14 @@ fn wit_to_rust(msg: WitServerMessage) -> ServerMessage {
         WitServerMessage::BGen(a) => ServerMessage::BGen(BGen::new(
             a.bufnum,
             a.cmd,
-            rosc::OscType::Blob(a.command_arguments),
+            a.command_arguments.into_iter().map(wit_to_osc).collect(),
         )),
-        WitServerMessage::BGet(a) => ServerMessage::BGet(BGet::new(a.bufnum, a.a_sample_index)),
+        WitServerMessage::BGet(a) => ServerMessage::BGet(BGet::new(a.bufnum, a.sample_indices)),
         WitServerMessage::BGetn(a) => {
             let tail: Vec<_> = a.tail.into_iter().map(|t| (t.0, t.1)).collect();
             ServerMessage::BGetn(BGetn::new(a.bufnum, tail))
         }
-        WitServerMessage::BQuery(a) => ServerMessage::BQuery(BQuery::new(a.bufnum)),
+        WitServerMessage::BQuery(a) => ServerMessage::BQuery(BQuery::new(a.bufnums)),
         WitServerMessage::BRead(a) => ServerMessage::BRead(BRead {
             start_frame: a.start_frame,
             number_of_frames: a.number_of_frames,
@@ -261,18 +263,18 @@ fn wit_to_rust(msg: WitServerMessage) -> ServerMessage {
             completion_msg: a.completion_msg,
             ..BRead::new(a.bufnum, a.path)
         }),
-        WitServerMessage::BReadChannel(a) => {
-            let tail: Vec<_> = a.tail.into_iter().map(|t| (t.0, t.1)).collect();
-            ServerMessage::BReadChannel(BReadChannel::new(
+        WitServerMessage::BReadChannel(a) => ServerMessage::BReadChannel(BReadChannel {
+            completion_msg: a.completion_msg,
+            ..BReadChannel::new(
                 a.bufnum,
                 a.path,
                 a.start_frame,
                 a.number_of_frames,
                 a.starting_frame,
                 a.leave_file_open,
-                tail,
-            ))
-        }
+                a.channels,
+            )
+        }),
         WitServerMessage::BSet(a) => {
             let tail: Vec<_> = a.tail.into_iter().map(|t| (t.0, t.1)).collect();
             ServerMessage::BSet(BSet::new(a.bufnum, tail))
@@ -281,7 +283,7 @@ fn wit_to_rust(msg: WitServerMessage) -> ServerMessage {
             ServerMessage::BSetSampleRate(BSetSampleRate::new(a.bufnum, a.the_desired_sampling))
         }
         WitServerMessage::BSetn(a) => {
-            let tail: Vec<_> = a.tail.into_iter().map(|t| (t.0, t.1, t.2)).collect();
+            let tail: Vec<_> = a.tail.into_iter().map(|t| (t.0, t.1)).collect();
             ServerMessage::BSetn(BSetn::new(a.bufnum, tail))
         }
         WitServerMessage::BWrite(a) => ServerMessage::BWrite(BWrite {
@@ -303,7 +305,7 @@ fn wit_to_rust(msg: WitServerMessage) -> ServerMessage {
                 .collect();
             ServerMessage::CFill(CFill::new(tail))
         }
-        WitServerMessage::CGet(a) => ServerMessage::CGet(CGet::new(a.a_bus_index)),
+        WitServerMessage::CGet(a) => ServerMessage::CGet(CGet::new(a.bus_indices)),
         WitServerMessage::CGetn(a) => {
             let tail: Vec<_> = a.tail.into_iter().map(|t| (t.0, t.1)).collect();
             ServerMessage::CGetn(CGetn::new(tail))
@@ -316,15 +318,16 @@ fn wit_to_rust(msg: WitServerMessage) -> ServerMessage {
             let tail: Vec<_> = a
                 .tail
                 .into_iter()
-                .map(|t| (t.0, t.1, rosc::OscType::Blob(t.2), wit_numeric(t.3)))
+                .map(|(start, values)| (start, values.into_iter().map(wit_numeric).collect()))
                 .collect();
             ServerMessage::CSetn(CSetn::new(tail))
         }
         WitServerMessage::ClearSched => ServerMessage::ClearSched,
-        WitServerMessage::Cmd(a) => {
-            ServerMessage::Cmd(Cmd::new(a.cmd, rosc::OscType::Blob(a.any_arguments)))
-        }
-        WitServerMessage::DFree(a) => ServerMessage::DFree(DFree::new(a.synth_def_name)),
+        WitServerMessage::Cmd(a) => ServerMessage::Cmd(Cmd::new(
+            a.cmd,
+            a.any_arguments.into_iter().map(wit_to_osc).collect(),
+        )),
+        WitServerMessage::DFree(a) => ServerMessage::DFree(DFree::new(a.synth_def_names)),
         WitServerMessage::DLoad(a) => ServerMessage::DLoad(DLoad {
             completion_msg: a.completion_msg,
             ..DLoad::new(a.pathname_of_file)
@@ -339,12 +342,12 @@ fn wit_to_rust(msg: WitServerMessage) -> ServerMessage {
         }),
         WitServerMessage::DumpOsc(a) => ServerMessage::DumpOSC(DumpOSC::new(a.code)),
         WitServerMessage::Error(a) => ServerMessage::Error(Error::new(a.mode)),
-        WitServerMessage::GDeepFree(a) => ServerMessage::GDeepFree(GDeepFree::new(a.group_id)),
+        WitServerMessage::GDeepFree(a) => ServerMessage::GDeepFree(GDeepFree::new(a.group_ids)),
         WitServerMessage::GDumpTree(a) => {
             let tail: Vec<_> = a.tail.into_iter().map(|t| (t.0, t.1)).collect();
             ServerMessage::GDumpTree(GDumpTree::new(tail))
         }
-        WitServerMessage::GFreeAll(a) => ServerMessage::GFreeAll(GFreeAll::new(a.group_id)),
+        WitServerMessage::GFreeAll(a) => ServerMessage::GFreeAll(GFreeAll::new(a.group_ids)),
         WitServerMessage::GHead(a) => {
             let tail: Vec<_> = a.tail.into_iter().map(|t| (t.0, t.1)).collect();
             ServerMessage::GHead(GHead::new(tail))
@@ -377,7 +380,7 @@ fn wit_to_rust(msg: WitServerMessage) -> ServerMessage {
                 .collect();
             ServerMessage::NFill(NFill::new(a.node_id, tail))
         }
-        WitServerMessage::NFree(a) => ServerMessage::NFree(NFree::new(a.node_id)),
+        WitServerMessage::NFree(a) => ServerMessage::NFree(NFree::new(a.node_ids)),
         WitServerMessage::NMap(a) => {
             let tail: Vec<_> = a
                 .tail
@@ -413,7 +416,7 @@ fn wit_to_rust(msg: WitServerMessage) -> ServerMessage {
         WitServerMessage::NOrder(a) => {
             ServerMessage::NOrder(NOrder::new(a.add_action, a.target_id, a.node_ids))
         }
-        WitServerMessage::NQuery(a) => ServerMessage::NQuery(NQuery::new(a.node_id)),
+        WitServerMessage::NQuery(a) => ServerMessage::NQuery(NQuery::new(a.node_ids)),
         WitServerMessage::NRun(a) => {
             let tail: Vec<_> = a.tail.into_iter().map(|t| (t.0, t.1)).collect();
             ServerMessage::NRun(NRun::new(tail))
@@ -430,7 +433,12 @@ fn wit_to_rust(msg: WitServerMessage) -> ServerMessage {
             let tail: Vec<_> = a
                 .tail
                 .into_iter()
-                .map(|t| (wit_control_id(t.0), t.1, wit_numeric(t.2)))
+                .map(|(ctrl, values)| {
+                    (
+                        wit_control_id(ctrl),
+                        values.into_iter().map(wit_numeric).collect(),
+                    )
+                })
                 .collect();
             ServerMessage::NSetn(NSetn::new(a.node_id, tail))
         }
@@ -447,7 +455,8 @@ fn wit_to_rust(msg: WitServerMessage) -> ServerMessage {
         WitServerMessage::Quit => ServerMessage::Quit,
         WitServerMessage::RtMemoryStatus => ServerMessage::RtMemoryStatus,
         WitServerMessage::SGet(a) => {
-            ServerMessage::SGet(SGet::new(a.node_id, wit_control_id(a.control)))
+            let controls: Vec<_> = a.controls.into_iter().map(wit_control_id).collect();
+            ServerMessage::SGet(SGet::new(a.node_id, controls))
         }
         WitServerMessage::SGetn(a) => {
             let tail: Vec<_> = a
@@ -478,7 +487,7 @@ fn wit_to_rust(msg: WitServerMessage) -> ServerMessage {
             a.node_id,
             a.unit_generator_index,
             a.cmd,
-            rosc::OscType::Blob(a.any_arguments),
+            a.any_arguments.into_iter().map(wit_to_osc).collect(),
         )),
         WitServerMessage::Version => ServerMessage::Version,
         WitServerMessage::Other(m) => ServerMessage::Other {

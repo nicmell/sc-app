@@ -73,7 +73,7 @@ Four interfaces, mirroring the Rust modules:
 - **`nrt`** — `nrt-score` resource that takes `server-message` values at
   timestamped positions and serialises to the NRT score format.
 - **`replies`** — `server-reply` variant with 12 cases + typed payload
-  records + `parse-reply`.
+  records + `decode`.
 
 The generated TS `.d.ts` exposes `ServerMessage` and `ServerReply` as
 symmetric discriminated unions:
@@ -89,5 +89,5 @@ export type ServerMessage =
 export function encode(msg: ServerMessage): Uint8Array;
 ```
 
-`examples/node/roundtrip.ts` exercises this end-to-end — encode, NRT
-score assembly, and `parseReply` round-trips.
+`examples/node/roundtrip.ts` exercises this end-to-end — `commands.encode`,
+NRT score assembly, and `replies.decode` round-trips.

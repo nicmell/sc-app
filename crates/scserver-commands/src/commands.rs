@@ -243,21 +243,30 @@ pub struct BAllocReadChannel {
     pub start_frame: i32,
     /// number of frames to read
     pub number_of_frames: i32,
-    /// Repeated tuples (source_file_channel: source file channel index; completion_msg: an OSC message to execute upon completion. (optional)).
-    pub tail: Vec<(i32, Vec<u8>)>,
+    /// source file channel indices (one or more) to read
+    pub channels: Vec<i32>,
+    /// an OSC message to execute upon completion. (optional)
+    pub completion_msg: Option<Vec<u8>>,
 }
 
 impl BAllocReadChannel {
-    /// Construct `/b_allocReadChannel` with all required args. Optional
-    /// fields default to `None` — override via struct update syntax:
-    /// `BAllocReadChannel { .. BAllocReadChannel::new(...) }`.
-    pub fn new(bufnum: i32, path: String, start_frame: i32, number_of_frames: i32, tail: Vec<(i32, Vec<u8>)>) -> Self {
+    /// Construct `/b_allocReadChannel` with all required args.
+    /// `completion_msg` defaults to `None` — override via struct update:
+    /// `BAllocReadChannel { completion_msg: Some(bytes), ..BAllocReadChannel::new(...) }`.
+    pub fn new(
+        bufnum: i32,
+        path: String,
+        start_frame: i32,
+        number_of_frames: i32,
+        channels: Vec<i32>,
+    ) -> Self {
         Self {
             bufnum,
             path,
             start_frame,
             number_of_frames,
-            tail,
+            channels,
+            completion_msg: None,
         }
     }
 
@@ -268,9 +277,11 @@ impl BAllocReadChannel {
         args.push(OscType::String(self.path));
         args.push(OscType::Int(self.start_frame));
         args.push(OscType::Int(self.number_of_frames));
-        for (t0, t1) in self.tail {
-            args.push(OscType::Int(t0));
-            args.push(OscType::Blob(t1));
+        for ch in self.channels {
+            args.push(OscType::Int(ch));
+        }
+        if let Some(v) = self.completion_msg {
+            args.push(OscType::Blob(v));
         }
         OscMessage::with_args(r"/b_allocReadChannel", args)
     }
@@ -402,15 +413,13 @@ pub struct BGen {
     pub bufnum: i32,
     /// command name
     pub cmd: String,
-    /// command arguments
-    pub command_arguments: rosc::OscType,
+    /// command arguments — variadic trailing OSC args (types depend on the
+    /// specific `/b_gen` command being invoked, e.g. `sine1`, `cheby`).
+    pub command_arguments: Vec<OscType>,
 }
 
 impl BGen {
-    /// Construct `/b_gen` with all required args. Optional
-    /// fields default to `None` — override via struct update syntax:
-    /// `BGen { .. BGen::new(...) }`.
-    pub fn new(bufnum: i32, cmd: String, command_arguments: rosc::OscType) -> Self {
+    pub fn new(bufnum: i32, cmd: String, command_arguments: Vec<OscType>) -> Self {
         Self {
             bufnum,
             cmd,
@@ -423,7 +432,7 @@ impl BGen {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
         args.push(OscType::String(self.cmd));
-        args.push(self.command_arguments);
+        args.extend(self.command_arguments);
         OscMessage::with_args(r"/b_gen", args)
     }
 
@@ -439,18 +448,16 @@ impl BGen {
 pub struct BGet {
     /// buffer number
     pub bufnum: i32,
-    /// a sample index
-    pub a_sample_index: i32,
+    /// sample indices (one or more) — the server replies with the value
+    /// at each index.
+    pub sample_indices: Vec<i32>,
 }
 
 impl BGet {
-    /// Construct `/b_get` with all required args. Optional
-    /// fields default to `None` — override via struct update syntax:
-    /// `BGet { .. BGet::new(...) }`.
-    pub fn new(bufnum: i32, a_sample_index: i32) -> Self {
+    pub fn new(bufnum: i32, sample_indices: Vec<i32>) -> Self {
         Self {
             bufnum,
-            a_sample_index,
+            sample_indices,
         }
     }
 
@@ -458,7 +465,9 @@ impl BGet {
     pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
-        args.push(OscType::Int(self.a_sample_index));
+        for idx in self.sample_indices {
+            args.push(OscType::Int(idx));
+        }
         OscMessage::with_args(r"/b_get", args)
     }
 
@@ -510,24 +519,21 @@ impl BGetn {
 /// OSC address: `/b_query`
 #[derive(Debug, Clone)]
 pub struct BQuery {
-    /// buffer number(s)
-    pub bufnum: i32,
+    /// buffer numbers to query
+    pub bufnums: Vec<i32>,
 }
 
 impl BQuery {
-    /// Construct `/b_query` with all required args. Optional
-    /// fields default to `None` — override via struct update syntax:
-    /// `BQuery { .. BQuery::new(...) }`.
-    pub fn new(bufnum: i32) -> Self {
-        Self {
-            bufnum,
-        }
+    pub fn new(bufnums: Vec<i32>) -> Self {
+        Self { bufnums }
     }
 
     /// Encode the typed fields into an OSC `OscMessage`.
     pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
-        args.push(OscType::Int(self.bufnum));
+        for b in self.bufnums {
+            args.push(OscType::Int(b));
+        }
         OscMessage::with_args(r"/b_query", args)
     }
 
@@ -618,15 +624,24 @@ pub struct BReadChannel {
     pub starting_frame: i32,
     /// leave file open
     pub leave_file_open: i32,
-    /// Repeated tuples (source_file_channel: source file channel index; completion_message: completion message).
-    pub tail: Vec<(i32, Vec<u8>)>,
+    /// source file channel indices (one or more) to read
+    pub channels: Vec<i32>,
+    /// an OSC message to execute upon completion. (optional)
+    pub completion_msg: Option<Vec<u8>>,
 }
 
 impl BReadChannel {
-    /// Construct `/b_readChannel` with all required args. Optional
-    /// fields default to `None` — override via struct update syntax:
-    /// `BReadChannel { .. BReadChannel::new(...) }`.
-    pub fn new(bufnum: i32, path: String, start_frame: i32, number_of_frames: i32, starting_frame: i32, leave_file_open: i32, tail: Vec<(i32, Vec<u8>)>) -> Self {
+    /// Construct `/b_readChannel` with all required args. `completion_msg`
+    /// defaults to `None` — override via struct update syntax.
+    pub fn new(
+        bufnum: i32,
+        path: String,
+        start_frame: i32,
+        number_of_frames: i32,
+        starting_frame: i32,
+        leave_file_open: i32,
+        channels: Vec<i32>,
+    ) -> Self {
         Self {
             bufnum,
             path,
@@ -634,7 +649,8 @@ impl BReadChannel {
             number_of_frames,
             starting_frame,
             leave_file_open,
-            tail,
+            channels,
+            completion_msg: None,
         }
     }
 
@@ -647,9 +663,11 @@ impl BReadChannel {
         args.push(OscType::Int(self.number_of_frames));
         args.push(OscType::Int(self.starting_frame));
         args.push(OscType::Int(self.leave_file_open));
-        for (t0, t1) in self.tail {
-            args.push(OscType::Int(t0));
-            args.push(OscType::Blob(t1));
+        for ch in self.channels {
+            args.push(OscType::Int(ch));
+        }
+        if let Some(v) = self.completion_msg {
+            args.push(OscType::Blob(v));
         }
         OscMessage::with_args(r"/b_readChannel", args)
     }
@@ -704,29 +722,27 @@ impl BSet {
 pub struct BSetn {
     /// buffer number
     pub bufnum: i32,
-    /// Repeated tuples (sample_starting_index: sample starting index; number_of_sequential: number of sequential samples to change (M); a_sample_value: a sample value).
-    pub tail: Vec<(i32, i32, f32)>,
+    /// Repeated ranges — each `(start_index, samples[])` range writes
+    /// `samples.len()` consecutive samples starting at `start_index`.
+    /// The count is computed from the vector length, not passed separately.
+    pub tail: Vec<(i32, Vec<f32>)>,
 }
 
 impl BSetn {
-    /// Construct `/b_setn` with all required args. Optional
-    /// fields default to `None` — override via struct update syntax:
-    /// `BSetn { .. BSetn::new(...) }`.
-    pub fn new(bufnum: i32, tail: Vec<(i32, i32, f32)>) -> Self {
-        Self {
-            bufnum,
-            tail,
-        }
+    pub fn new(bufnum: i32, tail: Vec<(i32, Vec<f32>)>) -> Self {
+        Self { bufnum, tail }
     }
 
     /// Encode the typed fields into an OSC `OscMessage`.
     pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
-        for (t0, t1, t2) in self.tail {
-            args.push(OscType::Int(t0));
-            args.push(OscType::Int(t1));
-            args.push(OscType::Float(t2));
+        for (start, samples) in self.tail {
+            args.push(OscType::Int(start));
+            args.push(OscType::Int(samples.len() as i32));
+            for v in samples {
+                args.push(OscType::Float(v));
+            }
         }
         OscMessage::with_args(r"/b_setn", args)
     }
@@ -918,24 +934,21 @@ impl CFill {
 /// OSC address: `/c_get`
 #[derive(Debug, Clone)]
 pub struct CGet {
-    /// a bus index
-    pub a_bus_index: i32,
+    /// bus indices (one or more)
+    pub bus_indices: Vec<i32>,
 }
 
 impl CGet {
-    /// Construct `/c_get` with all required args. Optional
-    /// fields default to `None` — override via struct update syntax:
-    /// `CGet { .. CGet::new(...) }`.
-    pub fn new(a_bus_index: i32) -> Self {
-        Self {
-            a_bus_index,
-        }
+    pub fn new(bus_indices: Vec<i32>) -> Self {
+        Self { bus_indices }
     }
 
     /// Encode the typed fields into an OSC `OscMessage`.
     pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
-        args.push(OscType::Int(self.a_bus_index));
+        for idx in self.bus_indices {
+            args.push(OscType::Int(idx));
+        }
         OscMessage::with_args(r"/c_get", args)
     }
 
@@ -1017,28 +1030,26 @@ impl CSet {
 /// OSC address: `/c_setn`
 #[derive(Debug, Clone)]
 pub struct CSetn {
-    /// Repeated tuples (starting_bus_index: starting bus index; number_of_sequential: number of sequential buses to change (M); arg2: ; value: a control value).
-    pub tail: Vec<(i32, i32, rosc::OscType, NumericValue)>,
+    /// Repeated ranges — each `(start_bus, values[])` writes `values.len()`
+    /// consecutive buses starting at `start_bus`. The count is encoded from
+    /// the vector length.
+    pub tail: Vec<(i32, Vec<NumericValue>)>,
 }
 
 impl CSetn {
-    /// Construct `/c_setn` with all required args. Optional
-    /// fields default to `None` — override via struct update syntax:
-    /// `CSetn { .. CSetn::new(...) }`.
-    pub fn new(tail: Vec<(i32, i32, rosc::OscType, NumericValue)>) -> Self {
-        Self {
-            tail,
-        }
+    pub fn new(tail: Vec<(i32, Vec<NumericValue>)>) -> Self {
+        Self { tail }
     }
 
     /// Encode the typed fields into an OSC `OscMessage`.
     pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
-        for (t0, t1, t2, t3) in self.tail {
-            args.push(OscType::Int(t0));
-            args.push(OscType::Int(t1));
-            args.push(t2);
-            args.push(t3.into());
+        for (start, values) in self.tail {
+            args.push(OscType::Int(start));
+            args.push(OscType::Int(values.len() as i32));
+            for v in values {
+                args.push(v.into());
+            }
         }
         OscMessage::with_args(r"/c_setn", args)
     }
@@ -1055,24 +1066,21 @@ impl CSetn {
 /// OSC address: `/g_deepFree`
 #[derive(Debug, Clone)]
 pub struct GDeepFree {
-    /// group ID(s)
-    pub group_id: i32,
+    /// group IDs (one or more)
+    pub group_ids: Vec<i32>,
 }
 
 impl GDeepFree {
-    /// Construct `/g_deepFree` with all required args. Optional
-    /// fields default to `None` — override via struct update syntax:
-    /// `GDeepFree { .. GDeepFree::new(...) }`.
-    pub fn new(group_id: i32) -> Self {
-        Self {
-            group_id,
-        }
+    pub fn new(group_ids: Vec<i32>) -> Self {
+        Self { group_ids }
     }
 
     /// Encode the typed fields into an OSC `OscMessage`.
     pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
-        args.push(OscType::Int(self.group_id));
+        for id in self.group_ids {
+            args.push(OscType::Int(id));
+        }
         OscMessage::with_args(r"/g_deepFree", args)
     }
 
@@ -1120,24 +1128,21 @@ impl GDumpTree {
 /// OSC address: `/g_freeAll`
 #[derive(Debug, Clone)]
 pub struct GFreeAll {
-    /// group ID(s)
-    pub group_id: i32,
+    /// group IDs (one or more)
+    pub group_ids: Vec<i32>,
 }
 
 impl GFreeAll {
-    /// Construct `/g_freeAll` with all required args. Optional
-    /// fields default to `None` — override via struct update syntax:
-    /// `GFreeAll { .. GFreeAll::new(...) }`.
-    pub fn new(group_id: i32) -> Self {
-        Self {
-            group_id,
-        }
+    pub fn new(group_ids: Vec<i32>) -> Self {
+        Self { group_ids }
     }
 
     /// Encode the typed fields into an OSC `OscMessage`.
     pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
-        args.push(OscType::Int(self.group_id));
+        for id in self.group_ids {
+            args.push(OscType::Int(id));
+        }
         OscMessage::with_args(r"/g_freeAll", args)
     }
 
@@ -1354,26 +1359,21 @@ impl ClearSched {
 pub struct Cmd {
     /// command name
     pub cmd: String,
-    /// any arguments
-    pub any_arguments: rosc::OscType,
+    /// variadic trailing OSC args — types depend on the specific
+    /// plug-in-defined command being invoked.
+    pub any_arguments: Vec<OscType>,
 }
 
 impl Cmd {
-    /// Construct `/cmd` with all required args. Optional
-    /// fields default to `None` — override via struct update syntax:
-    /// `Cmd { .. Cmd::new(...) }`.
-    pub fn new(cmd: String, any_arguments: rosc::OscType) -> Self {
-        Self {
-            cmd,
-            any_arguments,
-        }
+    pub fn new(cmd: String, any_arguments: Vec<OscType>) -> Self {
+        Self { cmd, any_arguments }
     }
 
     /// Encode the typed fields into an OSC `OscMessage`.
     pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::String(self.cmd));
-        args.push(self.any_arguments);
+        args.extend(self.any_arguments);
         OscMessage::with_args(r"/cmd", args)
     }
 
@@ -1735,24 +1735,21 @@ impl NFill {
 /// OSC address: `/n_free`
 #[derive(Debug, Clone)]
 pub struct NFree {
-    /// node ID
-    pub node_id: i32,
+    /// node IDs (one or more)
+    pub node_ids: Vec<i32>,
 }
 
 impl NFree {
-    /// Construct `/n_free` with all required args. Optional
-    /// fields default to `None` — override via struct update syntax:
-    /// `NFree { .. NFree::new(...) }`.
-    pub fn new(node_id: i32) -> Self {
-        Self {
-            node_id,
-        }
+    pub fn new(node_ids: Vec<i32>) -> Self {
+        Self { node_ids }
     }
 
     /// Encode the typed fields into an OSC `OscMessage`.
     pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
-        args.push(OscType::Int(self.node_id));
+        for id in self.node_ids {
+            args.push(OscType::Int(id));
+        }
         OscMessage::with_args(r"/n_free", args)
     }
 
@@ -1924,15 +1921,12 @@ pub struct NOrder {
     pub add_action: i32,
     /// add target ID
     pub target_id: i32,
-    /// node IDs
-    pub node_ids: i32,
+    /// node IDs (one or more) to reorder relative to the target
+    pub node_ids: Vec<i32>,
 }
 
 impl NOrder {
-    /// Construct `/n_order` with all required args. Optional
-    /// fields default to `None` — override via struct update syntax:
-    /// `NOrder { .. NOrder::new(...) }`.
-    pub fn new(add_action: i32, target_id: i32, node_ids: i32) -> Self {
+    pub fn new(add_action: i32, target_id: i32, node_ids: Vec<i32>) -> Self {
         Self {
             add_action,
             target_id,
@@ -1945,7 +1939,9 @@ impl NOrder {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.add_action));
         args.push(OscType::Int(self.target_id));
-        args.push(OscType::Int(self.node_ids));
+        for id in self.node_ids {
+            args.push(OscType::Int(id));
+        }
         OscMessage::with_args(r"/n_order", args)
     }
 
@@ -1959,24 +1955,21 @@ impl NOrder {
 /// OSC address: `/n_query`
 #[derive(Debug, Clone)]
 pub struct NQuery {
-    /// node ID
-    pub node_id: i32,
+    /// node IDs (one or more) to query
+    pub node_ids: Vec<i32>,
 }
 
 impl NQuery {
-    /// Construct `/n_query` with all required args. Optional
-    /// fields default to `None` — override via struct update syntax:
-    /// `NQuery { .. NQuery::new(...) }`.
-    pub fn new(node_id: i32) -> Self {
-        Self {
-            node_id,
-        }
+    pub fn new(node_ids: Vec<i32>) -> Self {
+        Self { node_ids }
     }
 
     /// Encode the typed fields into an OSC `OscMessage`.
     pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
-        args.push(OscType::Int(self.node_id));
+        for id in self.node_ids {
+            args.push(OscType::Int(id));
+        }
         OscMessage::with_args(r"/n_query", args)
     }
 
@@ -2064,29 +2057,27 @@ impl NSet {
 pub struct NSetn {
     /// node ID
     pub node_id: i32,
-    /// Repeated tuples (control: a control index or name; number_of_sequential: number of sequential controls to change (M); control_value: control value(s)).
-    pub tail: Vec<(ControlId, i32, NumericValue)>,
+    /// Repeated ranges — each `(control, values[])` writes `values.len()`
+    /// consecutive controls starting at `control`. The count is encoded
+    /// from the vector length.
+    pub tail: Vec<(ControlId, Vec<NumericValue>)>,
 }
 
 impl NSetn {
-    /// Construct `/n_setn` with all required args. Optional
-    /// fields default to `None` — override via struct update syntax:
-    /// `NSetn { .. NSetn::new(...) }`.
-    pub fn new(node_id: i32, tail: Vec<(ControlId, i32, NumericValue)>) -> Self {
-        Self {
-            node_id,
-            tail,
-        }
+    pub fn new(node_id: i32, tail: Vec<(ControlId, Vec<NumericValue>)>) -> Self {
+        Self { node_id, tail }
     }
 
     /// Encode the typed fields into an OSC `OscMessage`.
     pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_id));
-        for (t0, t1, t2) in self.tail {
-            args.push(t0.into());
-            args.push(OscType::Int(t1));
-            args.push(t2.into());
+        for (ctrl, values) in self.tail {
+            args.push(ctrl.into());
+            args.push(OscType::Int(values.len() as i32));
+            for v in values {
+                args.push(v.into());
+            }
         }
         OscMessage::with_args(r"/n_setn", args)
     }
@@ -2101,24 +2092,21 @@ impl NSetn {
 /// OSC address: `/n_trace`
 #[derive(Debug, Clone)]
 pub struct NTrace {
-    /// node IDs
-    pub node_ids: i32,
+    /// node IDs (one or more) to trace
+    pub node_ids: Vec<i32>,
 }
 
 impl NTrace {
-    /// Construct `/n_trace` with all required args. Optional
-    /// fields default to `None` — override via struct update syntax:
-    /// `NTrace { .. NTrace::new(...) }`.
-    pub fn new(node_ids: i32) -> Self {
-        Self {
-            node_ids,
-        }
+    pub fn new(node_ids: Vec<i32>) -> Self {
+        Self { node_ids }
     }
 
     /// Encode the typed fields into an OSC `OscMessage`.
     pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
-        args.push(OscType::Int(self.node_ids));
+        for id in self.node_ids {
+            args.push(OscType::Int(id));
+        }
         OscMessage::with_args(r"/n_trace", args)
     }
 
@@ -2168,26 +2156,22 @@ impl NrtEnd {
 pub struct SGet {
     /// synth ID
     pub node_id: i32,
-    /// a control index or name
-    pub control: ControlId,
+    /// controls (one or more) — each by index or name
+    pub controls: Vec<ControlId>,
 }
 
 impl SGet {
-    /// Construct `/s_get` with all required args. Optional
-    /// fields default to `None` — override via struct update syntax:
-    /// `SGet { .. SGet::new(...) }`.
-    pub fn new(node_id: i32, control: ControlId) -> Self {
-        Self {
-            node_id,
-            control,
-        }
+    pub fn new(node_id: i32, controls: Vec<ControlId>) -> Self {
+        Self { node_id, controls }
     }
 
     /// Encode the typed fields into an OSC `OscMessage`.
     pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_id));
-        args.push(self.control.into());
+        for c in self.controls {
+            args.push(c.into());
+        }
         OscMessage::with_args(r"/s_get", args)
     }
 
@@ -2289,24 +2273,21 @@ impl SNew {
 /// OSC address: `/s_noid`
 #[derive(Debug, Clone)]
 pub struct SNoid {
-    /// synth IDs
-    pub synth_ids: i32,
+    /// synth IDs (one or more) to reassign
+    pub synth_ids: Vec<i32>,
 }
 
 impl SNoid {
-    /// Construct `/s_noid` with all required args. Optional
-    /// fields default to `None` — override via struct update syntax:
-    /// `SNoid { .. SNoid::new(...) }`.
-    pub fn new(synth_ids: i32) -> Self {
-        Self {
-            synth_ids,
-        }
+    pub fn new(synth_ids: Vec<i32>) -> Self {
+        Self { synth_ids }
     }
 
     /// Encode the typed fields into an OSC `OscMessage`.
     pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
-        args.push(OscType::Int(self.synth_ids));
+        for id in self.synth_ids {
+            args.push(OscType::Int(id));
+        }
         OscMessage::with_args(r"/s_noid", args)
     }
 
@@ -2322,24 +2303,21 @@ impl SNoid {
 /// OSC address: `/d_free`
 #[derive(Debug, Clone)]
 pub struct DFree {
-    /// synth def name
-    pub synth_def_name: String,
+    /// synthdef names (one or more) to delete
+    pub synth_def_names: Vec<String>,
 }
 
 impl DFree {
-    /// Construct `/d_free` with all required args. Optional
-    /// fields default to `None` — override via struct update syntax:
-    /// `DFree { .. DFree::new(...) }`.
-    pub fn new(synth_def_name: String) -> Self {
-        Self {
-            synth_def_name,
-        }
+    pub fn new(synth_def_names: Vec<String>) -> Self {
+        Self { synth_def_names }
     }
 
     /// Encode the typed fields into an OSC `OscMessage`.
     pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
-        args.push(OscType::String(self.synth_def_name));
+        for name in self.synth_def_names {
+            args.push(OscType::String(name));
+        }
         OscMessage::with_args(r"/d_free", args)
     }
 
@@ -2472,15 +2450,18 @@ pub struct UCmd {
     pub unit_generator_index: i32,
     /// command name
     pub cmd: String,
-    /// any arguments
-    pub any_arguments: rosc::OscType,
+    /// variadic trailing OSC args — types depend on the UGen command
+    /// being invoked.
+    pub any_arguments: Vec<OscType>,
 }
 
 impl UCmd {
-    /// Construct `/u_cmd` with all required args. Optional
-    /// fields default to `None` — override via struct update syntax:
-    /// `UCmd { .. UCmd::new(...) }`.
-    pub fn new(node_id: i32, unit_generator_index: i32, cmd: String, any_arguments: rosc::OscType) -> Self {
+    pub fn new(
+        node_id: i32,
+        unit_generator_index: i32,
+        cmd: String,
+        any_arguments: Vec<OscType>,
+    ) -> Self {
         Self {
             node_id,
             unit_generator_index,
@@ -2495,7 +2476,7 @@ impl UCmd {
         args.push(OscType::Int(self.node_id));
         args.push(OscType::Int(self.unit_generator_index));
         args.push(OscType::String(self.cmd));
-        args.push(self.any_arguments);
+        args.extend(self.any_arguments);
         OscMessage::with_args(r"/u_cmd", args)
     }
 

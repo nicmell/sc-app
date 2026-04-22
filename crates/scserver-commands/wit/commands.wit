@@ -58,8 +58,10 @@ interface commands {
         start-frame: s32,
         /// number of frames to read
         number-of-frames: s32,
-        /// Repeated tuples (source_file_channel: source file channel index; completion_msg: an OSC message to execute upon completion. (optional)).
-        tail: list<tuple<s32, list<u8>>>,
+        /// source file channel indices (one or more) to read
+        channels: list<s32>,
+        /// an OSC message to execute upon completion. (optional)
+        completion-msg: option<list<u8>>,
     }
 
     /// Close soundfile.
@@ -92,16 +94,17 @@ interface commands {
         bufnum: s32,
         /// command name
         cmd: string,
-        /// command arguments
-        command-arguments: list<u8>,
+        /// variadic trailing args — types depend on the `/b_gen` command
+        /// being invoked.
+        command-arguments: list<osc-arg>,
     }
 
     /// Get sample value(s).
     record b-get-args {
         /// buffer number
         bufnum: s32,
-        /// a sample index
-        a-sample-index: s32,
+        /// sample indices (one or more)
+        sample-indices: list<s32>,
     }
 
     /// Get ranges of sample value(s).
@@ -114,8 +117,8 @@ interface commands {
 
     /// Get buffer info.
     record b-query-args {
-        /// buffer number(s)
-        bufnum: s32,
+        /// buffer numbers to query
+        bufnums: list<s32>,
     }
 
     /// Read sound file data into an existing buffer.
@@ -150,8 +153,10 @@ interface commands {
         starting-frame: s32,
         /// leave file open
         leave-file-open: s32,
-        /// Repeated tuples (source_file_channel: source file channel index; completion_message: completion message).
-        tail: list<tuple<s32, list<u8>>>,
+        /// source file channel indices (one or more) to read
+        channels: list<s32>,
+        /// an OSC message to execute upon completion. (optional)
+        completion-msg: option<list<u8>>,
     }
 
     /// Set sample value(s).
@@ -175,8 +180,10 @@ interface commands {
     record b-setn-args {
         /// buffer number
         bufnum: s32,
-        /// Repeated tuples (sample_starting_index: sample starting index; number_of_sequential: number of sequential samples to change (M); a_sample_value: a sample value).
-        tail: list<tuple<s32, s32, f32>>,
+        /// Repeated ranges — each `(start, samples)` writes `samples.len()`
+        /// consecutive samples starting at `start`. The count is encoded
+        /// on the wire from the list length.
+        tail: list<tuple<s32, list<f32>>>,
     }
 
     /// Write sound file data.
@@ -215,8 +222,8 @@ interface commands {
 
     /// Get bus value(s).
     record c-get-args {
-        /// a bus index
-        a-bus-index: s32,
+        /// bus indices (one or more)
+        bus-indices: list<s32>,
     }
 
     /// Get ranges of bus value(s).
@@ -233,22 +240,24 @@ interface commands {
 
     /// Set ranges of bus value(s).
     record c-setn-args {
-        /// Repeated tuples (starting_bus_index: starting bus index; number_of_sequential: number of sequential buses to change (M); arg2: ; value: a control value).
-        tail: list<tuple<s32, s32, list<u8>, numeric-value>>,
+        /// Repeated ranges — each `(start_bus, values)` writes `values.len()`
+        /// consecutive buses starting at `start_bus`. The count is encoded
+        /// on the wire from the list length.
+        tail: list<tuple<s32, list<numeric-value>>>,
     }
 
     /// Plug-in defined command.
     record cmd-args {
         /// command name
         cmd: string,
-        /// any arguments
-        any-arguments: list<u8>,
+        /// variadic trailing OSC args — types depend on the plug-in command.
+        any-arguments: list<osc-arg>,
     }
 
-    /// Delete synth definition.
+    /// Delete synth definition(s).
     record d-free-args {
-        /// synth def name
-        synth-def-name: string,
+        /// synthdef names (one or more) to delete
+        synth-def-names: list<string>,
     }
 
     /// Load synth definition.
@@ -289,8 +298,8 @@ interface commands {
 
     /// Free all synths in this group and all its sub-groups.
     record g-deep-free-args {
-        /// group ID(s)
-        group-id: s32,
+        /// group IDs (one or more)
+        group-ids: list<s32>,
     }
 
     /// Post a representation of this group's node subtree.
@@ -301,8 +310,8 @@ interface commands {
 
     /// Delete all nodes in a group.
     record g-free-all-args {
-        /// group ID(s)
-        group-id: s32,
+        /// group IDs (one or more)
+        group-ids: list<s32>,
     }
 
     /// Add node to head of group.
@@ -351,8 +360,8 @@ interface commands {
 
     /// Delete a node.
     record n-free-args {
-        /// node ID
-        node-id: s32,
+        /// node IDs (one or more)
+        node-ids: list<s32>,
     }
 
     /// Map a node's controls to read from a bus.
@@ -393,14 +402,14 @@ interface commands {
         add-action: s32,
         /// add target ID
         target-id: s32,
-        /// node IDs
-        node-ids: s32,
+        /// node IDs (one or more) to reorder
+        node-ids: list<s32>,
     }
 
     /// Get info about a node.
     record n-query-args {
-        /// node ID
-        node-id: s32,
+        /// node IDs (one or more) to query
+        node-ids: list<s32>,
     }
 
     /// Turn node on or off.
@@ -421,14 +430,16 @@ interface commands {
     record n-setn-args {
         /// node ID
         node-id: s32,
-        /// Repeated tuples (control: a control index or name; number_of_sequential: number of sequential controls to change (M); control_value: control value(s)).
-        tail: list<tuple<control-id, s32, numeric-value>>,
+        /// Repeated ranges — each `(control, values)` writes `values.len()`
+        /// consecutive controls starting at `control`. The count is encoded
+        /// on the wire from the list length.
+        tail: list<tuple<control-id, list<numeric-value>>>,
     }
 
     /// Trace a node.
     record n-trace-args {
-        /// node IDs
-        node-ids: s32,
+        /// node IDs (one or more)
+        node-ids: list<s32>,
     }
 
     /// Register to receive notifications from server.
@@ -449,8 +460,8 @@ interface commands {
     record s-get-args {
         /// synth ID
         node-id: s32,
-        /// a control index or name
-        control: control-id,
+        /// controls (one or more) — each by index or name
+        controls: list<control-id>,
     }
 
     /// Get ranges of control value(s).
@@ -477,8 +488,8 @@ interface commands {
 
     /// Auto-reassign synth's ID to a reserved value.
     record s-noid-args {
-        /// synth IDs
-        synth-ids: s32,
+        /// synth IDs (one or more) to reassign
+        synth-ids: list<s32>,
     }
 
     /// Notify when async commands have completed.
@@ -495,8 +506,8 @@ interface commands {
         unit-generator-index: s32,
         /// command name
         cmd: string,
-        /// any arguments
-        any-arguments: list<u8>,
+        /// variadic trailing OSC args — types depend on the UGen command.
+        any-arguments: list<osc-arg>,
     }
 
     /// Escape hatch for sending an OSC message whose address isn't in the

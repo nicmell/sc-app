@@ -81,10 +81,15 @@ fn g_new_builds() {
 
 #[test]
 fn n_free_builds() {
-    let bytes = NFree::new(1001).encode().unwrap();
+    let bytes = NFree::new(vec![1001]).encode().unwrap();
     let msg = OscMessage::decode(&bytes).unwrap();
     assert_eq!(msg.address, "/n_free");
     assert_eq!(msg.args.len(), 1);
+
+    // Multi-ID is the real reason N*int exists.
+    let bytes = NFree::new(vec![1001, 1002, 1003]).encode().unwrap();
+    let msg = OscMessage::decode(&bytes).unwrap();
+    assert_eq!(msg.args.len(), 3);
 }
 
 /// `/b_alloc` with just the two required args — channels / completion /

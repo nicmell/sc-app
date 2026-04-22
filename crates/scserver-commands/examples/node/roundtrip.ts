@@ -6,10 +6,10 @@
 //                                          command, discriminated by tag.
 //   - `nrt.NrtScore`                    — assembles scores from typed
 //                                          `ServerMessage` values.
-//   - `replies.parseReply(bytes)`       — typed union, unchanged.
+//   - `replies.decode(bytes)`       — typed union, unchanged.
 //
 // To verify the content of encoded commands we round-trip the bytes
-// through `parseReply`: addresses outside the reply catalogue come back
+// through `decode`: addresses outside the reply catalogue come back
 // as `{ tag: 'other', val: { address, args } }`, which gives us the
 // decoded shape without a dedicated command-side decoder.
 //
@@ -23,7 +23,7 @@ import type { ServerMessage } from './pkg/interfaces/scserver-commands-commands.
 
 const { encode } = commands;
 const { NrtScore } = nrt;
-const { parseReply } = replies;
+const { decode } = replies;
 
 function i(n: number): OscArg { return { tag: 'int32', val: n }; }
 function f(n: number): OscArg { return { tag: 'float32', val: n }; }
@@ -49,12 +49,12 @@ function check(label: string, pass: boolean, detail?: string): void {
   else { console.log(`  ✗ ${label}${detail ? ` (${detail})` : ''}`); fails++; }
 }
 
-/** Encode then `parseReply`-back: the reply parser returns `other` for any
+/** Encode then `decode`-back: the reply parser returns `other` for any
  *  address outside its catalogue, which gives us a decoded `{address, args}`
  *  view of any command's wire bytes. */
 function decodeAsOther(msg: ServerMessage): { address: string; args: OscArg[] } {
   const bytes = encode(msg);
-  const reply = parseReply(bytes);
+  const reply = decode(bytes);
   if (reply.tag !== 'other') {
     throw new Error(`expected 'other' for non-reply addr, got '${reply.tag}'`);
   }
@@ -167,7 +167,7 @@ console.log('================================');
     tag: 's-new',
     val: { defName: 'sine', nodeId: 1002, addAction: 0, targetId: 1001, tail: [] },
   });
-  score.at(2.0, { tag: 'n-free', val: { nodeId: 1002 } });
+  score.at(2.0, { tag: 'n-free', val: { nodeIds: [1002] } });
   const bytes = score.encode();
   check('score has bytes', bytes.length > 0);
   const firstLen = new DataView(bytes.buffer, bytes.byteOffset, 4).getUint32(0, false);
@@ -190,7 +190,7 @@ console.log('================================');
 
 // 8. /status.reply — typed payload.
 {
-  console.log('\n▸ parseReply(/status.reply)');
+  console.log('\n▸ decode(/status.reply)');
   // Build a fake status reply by encoding `other` with the reply address.
   const bytes = encode({
     tag: 'other',
@@ -204,7 +204,7 @@ console.log('================================');
       ],
     },
   });
-  const reply = parseReply(bytes);
+  const reply = decode(bytes);
   check('tag is status-reply', reply.tag === 'status-reply');
   if (reply.tag === 'status-reply') {
     check('numUgens is 42', reply.val.numUgens === 42);
@@ -214,7 +214,7 @@ console.log('================================');
 
 // 9. /n_go — node-info variant.
 {
-  console.log('\n▸ parseReply(/n_go)');
+  console.log('\n▸ decode(/n_go)');
   const bytes = encode({
     tag: 'other',
     val: {
@@ -222,7 +222,7 @@ console.log('================================');
       args: [i(1001), i(0), i(-1), i(-1), i(0)], // is-group = 0 → synth
     },
   });
-  const reply = parseReply(bytes);
+  const reply = decode(bytes);
   check('tag is n-go', reply.tag === 'n-go');
   if (reply.tag === 'n-go') {
     check('nodeId is 1001', reply.val.nodeId === 1001);
@@ -233,7 +233,7 @@ console.log('================================');
 
 // 10. /fail — error-carrying reply.
 {
-  console.log('\n▸ parseReply(/fail)');
+  console.log('\n▸ decode(/fail)');
   const bytes = encode({
     tag: 'other',
     val: {
@@ -241,7 +241,7 @@ console.log('================================');
       args: [s('/s_new'), s('SynthDef not found: bogus')],
     },
   });
-  const reply = parseReply(bytes);
+  const reply = decode(bytes);
   check('tag is fail', reply.tag === 'fail');
   if (reply.tag === 'fail') {
     check('error includes "bogus"', reply.val.error.includes('bogus'));
