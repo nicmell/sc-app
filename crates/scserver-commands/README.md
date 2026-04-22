@@ -5,51 +5,33 @@ protocol](https://doc.sccode.org/Reference/Server-Command-Reference.html)
 — the OSC messages scsynth accepts at runtime, the replies it sends
 back, and the NRT (non-realtime) score file format.
 
-Design sibling to
-[`scsynthdef-compiler`](../scsynthdef-compiler/README.md): curated JSON
-catalogue → generator → typed Rust builders + Component Model WIT +
-jco-friendly TypeScript bindings.
-
 ## Layers
 
+- **`commands::*`** — one typed struct per command (`SNew`, `NFree`,
+  `BAlloc`, …). Required args in the constructor, optional trailing
+  args editable via struct update:
+  ```rust
+  BAlloc { num_channels: Some(2), ..BAlloc::new(0, 8192) }.encode()?;
+  ```
+- **`commands::{ControlId, NumericValue, ControlValue}`** — the three
+  polymorphic OSC arg shapes the SC protocol uses. Each has ergonomic
+  `From` impls: `"freq".into()` → `ControlId::Name`, `440.0f32.into()`
+  → `ControlValue::Float`.
 - **`ServerMessage`** — one OSC message (address + typed args).
   `encode() -> Vec<u8>` produces wire bytes via
   [`rosc`](https://docs.rs/rosc); `decode(&[u8])` is the inverse.
 - **`ServerReply`** — tagged enum over every documented reply
   (`/done`, `/fail`, `/n_go`, `/status.reply`, `/tr`, …).
   `ServerReply::parse(&[u8])` dispatches on the incoming address.
-- **`builders::*`** — one typed struct per command, generated from
-  `src/assets/commands/*.json`. Required args in the constructor,
-  optional trailing args editable via struct update:
-  ```rust
-  BAlloc { num_channels: Some(2), ..BAlloc::new(0, 8192) }.encode()?;
-  ```
-- **`args::{ControlId, NumericValue, ControlValue}`** — the three
-  polymorphic OSC arg shapes the registry uses. Each has ergonomic
-  `From` impls: `"freq".into()` → `ControlId::Name`, `440.0f32.into()`
-  → `ControlValue::Float`.
 - **`NrtScore`** — timestamped OSC bundles, serialised to the
   length-prefixed binary file scsynth's `-N` mode consumes.
 
-## Regeneration
+## Source of truth
 
-The entire typed surface comes from one JSON catalogue. A single
-script emits builders, the WIT `commands` interface, and the
-component Guest forwarders:
-
-```bash
-# from the crate root
-node scripts/generate.mjs
-```
-
-It writes:
-- `src/builders/<category>.rs` + `src/builders/mod.rs`
-- `wit/commands.wit`
-- `src/component_commands.rs`
-
-The catalogue itself (`src/assets/commands/*.json`) is the source of
-truth — hand-maintained; seed-scraped from the SC docs at project
-start.
+`src/commands.rs` is the single source of truth for the command
+surface — add / remove / tweak commands by editing it directly. When
+you do, also update `wit/commands.wit` so the component bindings stay
+in sync.
 
 ## Build targets
 

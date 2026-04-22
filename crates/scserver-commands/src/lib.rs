@@ -2,15 +2,14 @@
 //!
 //! See the [Server Command Reference](https://doc.sccode.org/Reference/Server-Command-Reference.html).
 
-pub mod args;
-pub mod builders;
+pub mod commands;
 #[cfg(feature = "component")]
 mod component;
 mod error;
 mod osc;
 mod reply;
 
-pub use args::{ControlId, ControlValue, NumericValue};
+pub use commands::{ControlId, ControlValue, NumericValue};
 pub use error::CommandError;
 pub use osc::{NrtScore, ServerMessage};
 pub use reply::{NodeInfo, ServerReply, StatusReply};

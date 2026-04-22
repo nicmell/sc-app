@@ -1,9 +1,0 @@
-[
-  {
-    "address": "/nrt_end",
-    "section": "Non Real Time Mode Commands",
-    "category": "nrt",
-    "description": "End real time mode, close file. Not yet implemented. This message should be sent in a bundle in non real time mode. The bundle timestamp will establish the ending time of the file. This command will end non real time mode and close the sound file. Replies to sender with /done when complete.",
-    "args": []
-  }
-]

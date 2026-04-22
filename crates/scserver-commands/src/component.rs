@@ -8,9 +8,6 @@ pub(crate) mod bindings {
     include!("bindings.rs");
 }
 
-#[path = "component_commands.rs"]
-mod component_commands;
-
 use std::cell::RefCell;
 
 use bindings::exports::scserver::commands::core::{

@@ -4,7 +4,7 @@
 //! exposes public fields so optional trailing args can be set via struct
 //! update syntax (`{ field: Some(v), ..Foo::new(required) }`).
 
-use scserver_commands::builders::{BAlloc, GNew, NFree, SNew, Status};
+use scserver_commands::commands::{BAlloc, GNew, NFree, SNew, Status};
 use scserver_commands::{ControlId, ControlValue, OscType, ServerMessage, ServerReply};
 
 #[test]
