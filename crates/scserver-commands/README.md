@@ -31,7 +31,7 @@ back, and the NRT (non-realtime) score file format.
   `decode(&[u8])` is the inverse.
 - **`ServerReply`** — tagged enum over every documented reply
   (`/done`, `/fail`, `/n_go`, `/status.reply`, `/tr`, …).
-  `ServerReply::parse(&[u8])` dispatches on the incoming address.
+  `ServerReply::decode(&[u8])` dispatches on the incoming address.
 - **`NrtScore`** — timestamped OSC bundles, serialised to the
   length-prefixed binary file scsynth's `-N` mode consumes.
 

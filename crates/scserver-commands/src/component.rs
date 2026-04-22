@@ -45,7 +45,7 @@ impl NrtGuest for Component {
 
 impl RepliesGuest for Component {
     fn decode(bytes: Vec<u8>) -> Result<WitServerReply, String> {
-        let reply = ServerReply::parse(&bytes).map_err(|e| e.to_string())?;
+        let reply = ServerReply::decode(&bytes).map_err(|e| e.to_string())?;
         Ok(reply_to_wit(reply))
     }
 }

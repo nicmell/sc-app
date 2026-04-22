@@ -176,7 +176,7 @@ fn status_reply_round_trip_via_wire() {
         .arg(44100.0f64)
         .encode()
         .unwrap();
-    match ServerReply::parse(&raw).unwrap() {
+    match ServerReply::decode(&raw).unwrap() {
         ServerReply::StatusReply(s) => {
             assert_eq!(s.num_ugens, 42);
             assert_eq!(s.num_synths, 3);

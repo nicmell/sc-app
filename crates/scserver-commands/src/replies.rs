@@ -4,10 +4,9 @@
 //! Usage:
 //!
 //! ```no_run
-//! use scserver_commands::{OscMessage, ServerReply};
+//! use scserver_commands::ServerReply;
 //! let bytes = [/* … from UDP socket … */];
-//! let msg = OscMessage::decode(&bytes).unwrap();
-//! match ServerReply::from_message(msg).unwrap() {
+//! match ServerReply::decode(&bytes).unwrap() {
 //!     ServerReply::Done { address, .. } => println!("done: {address}"),
 //!     ServerReply::Fail { address, error, .. } => eprintln!("fail {address}: {error}"),
 //!     ServerReply::NGo(n) => println!("node {} started in group {}", n.node_id, n.parent_id),
@@ -88,8 +87,8 @@ pub struct StatusReply {
 }
 
 impl ServerReply {
-    /// Parse a raw OSC packet.
-    pub fn parse(bytes: &[u8]) -> Result<Self, CommandError> {
+    /// Decode raw OSC reply bytes into a typed variant.
+    pub fn decode(bytes: &[u8]) -> Result<Self, CommandError> {
         Self::from_message(OscMessage::decode(bytes)?)
     }
 
