@@ -100,7 +100,7 @@ console.log('================================');
   check('first bundle has valid length prefix', firstLen > 0 && firstLen + 4 <= bytes.length);
 }
 
-// 4. parseReply on a fabricated /status.reply.
+// 4. parseReply on a fabricated /status.reply — typed variant dispatch.
 {
   console.log('\n▸ parseReply(/status.reply)');
   const m = new ServerMessage('/status.reply');
@@ -110,10 +110,12 @@ console.log('================================');
   m.push({ tag: 'float64', val: 44100 });
   m.push({ tag: 'float64', val: 44100 });
   const bytes = m.encode();
-  const json = JSON.parse(parseReply(bytes));
-  check('reply classified as status-reply', json.kind === 'status-reply');
-  check('num-ugens is 42', json.num_ugens === 42);
-  check('actual-sample-rate is 44100', json.actual_sample_rate === 44100);
+  const reply = parseReply(bytes);
+  check('reply variant tag is status-reply', reply.tag === 'status-reply');
+  if (reply.tag === 'status-reply') {
+    check('numUgens is 42', reply.val.numUgens === 42);
+    check('actualSampleRate is 44100', reply.val.actualSampleRate === 44100);
+  }
 }
 
 // 5. Registry JSON carries 70+ command entries.

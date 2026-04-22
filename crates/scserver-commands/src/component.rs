@@ -3,19 +3,24 @@
 
 #![allow(warnings)]
 
-mod bindings {
+pub(crate) mod bindings {
     #![allow(warnings)]
     include!("bindings.rs");
 }
 
+#[path = "component_commands.rs"]
+mod component_commands;
+
 use std::cell::RefCell;
 
 use bindings::exports::scserver::commands::core::{
-    Guest as CoreGuest, GuestNrtScore, GuestServerMessage, OscArg as WitOscArg,
+    DoneInfo, FailInfo, Guest as CoreGuest, GuestNrtScore, GuestServerMessage, LateInfo,
+    NodeInfo as WitNodeInfo, OscArg as WitOscArg, OtherReply,
     ServerMessage as WitServerMessageResource, ServerMessageBorrow,
+    ServerReply as WitServerReply, StatusReplyInfo, TrInfo,
 };
 
-use crate::{NrtScore, ServerMessage, ServerReply};
+use crate::{NodeInfo, NrtScore, ServerMessage, ServerReply, StatusReply};
 
 // ── osc-arg mapping ─────────────────────────────────────────────────────
 
@@ -40,7 +45,7 @@ fn osc_to_wit(a: &rosc::OscType) -> WitOscArg {
     }
 }
 
-struct Component;
+pub(crate) struct Component;
 
 impl CoreGuest for Component {
     type ServerMessage = ServerMessageResource;
@@ -53,9 +58,9 @@ impl CoreGuest for Component {
         }))
     }
 
-    fn parse_reply(bytes: Vec<u8>) -> Result<String, String> {
+    fn parse_reply(bytes: Vec<u8>) -> Result<WitServerReply, String> {
         let reply = ServerReply::parse(&bytes).map_err(|e| e.to_string())?;
-        serde_json::to_string(&ReplyJson::from(reply)).map_err(|e| e.to_string())
+        Ok(reply_to_wit(reply))
     }
 
     fn registry_json() -> String {
@@ -64,8 +69,16 @@ impl CoreGuest for Component {
     }
 }
 
-pub struct ServerMessageResource {
-    inner: RefCell<ServerMessage>,
+pub(crate) struct ServerMessageResource {
+    pub(crate) inner: RefCell<ServerMessage>,
+}
+
+impl ServerMessageResource {
+    pub(crate) fn new(inner: ServerMessage) -> Self {
+        Self {
+            inner: RefCell::new(inner),
+        }
+    }
 }
 
 impl GuestServerMessage for ServerMessageResource {
@@ -117,68 +130,77 @@ impl GuestNrtScore for NrtScoreResource {
 
 bindings::export!(Component with_types_in bindings);
 
-#[derive(serde::Serialize)]
-#[serde(tag = "kind", rename_all = "kebab-case")]
-enum ReplyJson {
-    Done { address: String, extras: serde_json::Value },
-    Fail { address: String, error: String, extras: serde_json::Value },
-    Late { seconds: i32, fractions: i32, late_secs: i32, late_fracs: i32 },
-    NGo(crate::NodeInfo),
-    NEnd(crate::NodeInfo),
-    NOn(crate::NodeInfo),
-    NOff(crate::NodeInfo),
-    NMove(crate::NodeInfo),
-    NInfo(crate::NodeInfo),
-    StatusReply(crate::StatusReply),
-    Tr { node_id: i32, trigger_id: i32, value: f32 },
-    Other { address: String, args: serde_json::Value },
+fn osc_args_to_wit(args: &[rosc::OscType]) -> Vec<WitOscArg> {
+    args.iter().map(osc_to_wit).collect()
 }
 
-impl From<ServerReply> for ReplyJson {
-    fn from(r: ServerReply) -> Self {
-        use ServerReply::*;
-        match r {
-            Done { address, extras } => ReplyJson::Done {
-                address,
-                extras: osc_args_to_json(&extras),
-            },
-            Fail { address, error, extras } => ReplyJson::Fail {
-                address,
-                error,
-                extras: osc_args_to_json(&extras),
-            },
-            Late { seconds, fractions, late_secs, late_fracs } => ReplyJson::Late {
-                seconds, fractions, late_secs, late_fracs,
-            },
-            NGo(n) => ReplyJson::NGo(n),
-            NEnd(n) => ReplyJson::NEnd(n),
-            NOn(n) => ReplyJson::NOn(n),
-            NOff(n) => ReplyJson::NOff(n),
-            NMove(n) => ReplyJson::NMove(n),
-            NInfo(n) => ReplyJson::NInfo(n),
-            StatusReply(s) => ReplyJson::StatusReply(s),
-            Tr { node_id, trigger_id, value } => ReplyJson::Tr {
-                node_id, trigger_id, value,
-            },
-            Other(m) => ReplyJson::Other {
-                address: m.address,
-                args: osc_args_to_json(&m.args),
-            },
-        }
+fn node_info_to_wit(n: NodeInfo) -> WitNodeInfo {
+    WitNodeInfo {
+        node_id: n.node_id,
+        parent_id: n.parent_id,
+        prev_id: n.prev_node,
+        next_id: n.next_node,
+        is_group: n.is_group,
+        head_id: n.head_node,
+        tail_id: n.tail_node,
     }
 }
 
-fn osc_args_to_json(args: &[rosc::OscType]) -> serde_json::Value {
-    serde_json::Value::Array(
-        args.iter()
-            .map(|a| match a {
-                rosc::OscType::Int(v) => serde_json::json!(v),
-                rosc::OscType::Float(v) => serde_json::json!(v),
-                rosc::OscType::Double(v) => serde_json::json!(v),
-                rosc::OscType::String(s) => serde_json::json!(s),
-                rosc::OscType::Blob(b) => serde_json::json!(b),
-                other => serde_json::json!(format!("{other:?}")),
-            })
-            .collect(),
-    )
+fn status_reply_to_wit(s: StatusReply) -> StatusReplyInfo {
+    StatusReplyInfo {
+        unused: s.unused,
+        num_ugens: s.num_ugens,
+        num_synths: s.num_synths,
+        num_groups: s.num_groups,
+        num_synth_defs: s.num_synth_defs,
+        avg_cpu: s.avg_cpu,
+        peak_cpu: s.peak_cpu,
+        nominal_sample_rate: s.nominal_sample_rate,
+        actual_sample_rate: s.actual_sample_rate,
+    }
+}
+
+fn reply_to_wit(reply: ServerReply) -> WitServerReply {
+    match reply {
+        ServerReply::Done { address, extras } => WitServerReply::Done(DoneInfo {
+            address,
+            extras: osc_args_to_wit(&extras),
+        }),
+        ServerReply::Fail { address, error, extras } => WitServerReply::Fail(FailInfo {
+            address,
+            error,
+            extras: osc_args_to_wit(&extras),
+        }),
+        ServerReply::Late {
+            seconds,
+            fractions,
+            late_secs,
+            late_fracs,
+        } => WitServerReply::Late(LateInfo {
+            seconds,
+            fractions,
+            late_secs,
+            late_fracs,
+        }),
+        ServerReply::NGo(n) => WitServerReply::NGo(node_info_to_wit(n)),
+        ServerReply::NEnd(n) => WitServerReply::NEnd(node_info_to_wit(n)),
+        ServerReply::NOn(n) => WitServerReply::NOn(node_info_to_wit(n)),
+        ServerReply::NOff(n) => WitServerReply::NOff(node_info_to_wit(n)),
+        ServerReply::NMove(n) => WitServerReply::NMove(node_info_to_wit(n)),
+        ServerReply::NInfo(n) => WitServerReply::NInfo(node_info_to_wit(n)),
+        ServerReply::StatusReply(s) => WitServerReply::StatusReply(status_reply_to_wit(s)),
+        ServerReply::Tr {
+            node_id,
+            trigger_id,
+            value,
+        } => WitServerReply::Tr(TrInfo {
+            node_id,
+            trigger_id,
+            value,
+        }),
+        ServerReply::Other(m) => WitServerReply::Other(OtherReply {
+            address: m.address,
+            args: osc_args_to_wit(&m.args),
+        }),
+    }
 }
