@@ -14,9 +14,11 @@ mod component_commands;
 use std::cell::RefCell;
 
 use bindings::exports::scserver::commands::core::{
-    DoneInfo, FailInfo, Guest as CoreGuest, GuestNrtScore, GuestServerMessage, LateInfo,
-    NodeInfo as WitNodeInfo, OscArg as WitOscArg, OtherReply,
+    Guest as CoreGuest, GuestNrtScore, GuestServerMessage, OscArg as WitOscArg,
     ServerMessage as WitServerMessageResource, ServerMessageBorrow,
+};
+use bindings::exports::scserver::commands::replies::{
+    DoneInfo, FailInfo, Guest as RepliesGuest, LateInfo, NodeInfo as WitNodeInfo, OtherReply,
     ServerReply as WitServerReply, StatusReplyInfo, TrInfo,
 };
 
@@ -58,14 +60,16 @@ impl CoreGuest for Component {
         }))
     }
 
-    fn parse_reply(bytes: Vec<u8>) -> Result<WitServerReply, String> {
-        let reply = ServerReply::parse(&bytes).map_err(|e| e.to_string())?;
-        Ok(reply_to_wit(reply))
-    }
-
     fn registry_json() -> String {
         serde_json::to_string(crate::all_commands())
             .unwrap_or_else(|e| format!(r#"{{"error":"{e}"}}"#))
+    }
+}
+
+impl RepliesGuest for Component {
+    fn parse_reply(bytes: Vec<u8>) -> Result<WitServerReply, String> {
+        let reply = ServerReply::parse(&bytes).map_err(|e| e.to_string())?;
+        Ok(reply_to_wit(reply))
     }
 }
 

@@ -7,10 +7,11 @@
 //   npm run build:wasm
 //   ./node_modules/.bin/tsx commands_smoke.ts
 
-import { core, commands } from './pkg/scserver_commands.js';
+import { core, commands, replies } from './pkg/scserver_commands.js';
 import type { OscArg } from './pkg/interfaces/scserver-commands-core.js';
 
-const { decodeMessage, parseReply } = core;
+const { decodeMessage } = core;
+const { parseReply } = replies;
 
 function i(n: number): OscArg { return { tag: 'int32', val: n }; }
 function f(n: number): OscArg { return { tag: 'float32', val: n }; }

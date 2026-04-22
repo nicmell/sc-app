@@ -30,100 +30,6 @@ interface core {
     /// Parse raw OSC bytes. Errors if the packet is a bundle.
     decode-message: func(bytes: list<u8>) -> result<server-message, string>;
 
-    // ── Typed replies ───────────────────────────────────────────────────
-
-    /// Details for a `/done` reply — acknowledging an async command.
-    record done-info {
-        /// Address of the command being acknowledged (e.g. `/b_alloc`).
-        address: string,
-        /// Any additional args (e.g. the buffer index an `/b_alloc`
-        /// completion echoes back).
-        extras: list<osc-arg>,
-    }
-
-    /// Details for a `/fail` reply — an error occurred.
-    record fail-info {
-        /// Address of the command that failed.
-        address: string,
-        /// Server-supplied error message.
-        error: string,
-        /// Any additional context args.
-        extras: list<osc-arg>,
-    }
-
-    /// Details for a `/late` reply — a bundle arrived after its timestamp.
-    record late-info {
-        /// High 32 bits of the original timestamp.
-        seconds: s32,
-        /// Low 32 bits of the original timestamp.
-        fractions: s32,
-        /// High 32 bits of the execution time.
-        late-secs: s32,
-        /// Low 32 bits of the execution time.
-        late-fracs: s32,
-    }
-
-    /// Shared layout for `/n_go`, `/n_end`, `/n_on`, `/n_off`, `/n_move`,
-    /// `/n_info`. `head-id` / `tail-id` only present for group nodes.
-    record node-info {
-        node-id: s32,
-        parent-id: s32,
-        prev-id: s32,
-        next-id: s32,
-        /// 1 if the node is a group, 0 if a synth.
-        is-group: s32,
-        head-id: option<s32>,
-        tail-id: option<s32>,
-    }
-
-    /// Details for a `/status.reply`.
-    record status-reply-info {
-        unused: s32,
-        num-ugens: s32,
-        num-synths: s32,
-        num-groups: s32,
-        num-synth-defs: s32,
-        avg-cpu: f32,
-        peak-cpu: f32,
-        nominal-sample-rate: f64,
-        actual-sample-rate: f64,
-    }
-
-    /// Details for a `/tr` trigger reply emitted by `SendTrig.kr/ar`.
-    record tr-info {
-        node-id: s32,
-        trigger-id: s32,
-        value: f32,
-    }
-
-    /// Fallback for any reply whose address doesn't match a known shape
-    /// — carries the raw decoded message.
-    record other-reply {
-        address: string,
-        args: list<osc-arg>,
-    }
-
-    /// Typed dispatch of a server reply. Every variant carries the
-    /// payload record for that reply address.
-    variant server-reply {
-        done(done-info),
-        fail(fail-info),
-        late(late-info),
-        n-go(node-info),
-        n-end(node-info),
-        n-on(node-info),
-        n-off(node-info),
-        n-move(node-info),
-        n-info(node-info),
-        status-reply(status-reply-info),
-        tr(tr-info),
-        other(other-reply),
-    }
-
-    /// Classify raw OSC reply bytes into a typed variant. The inverse of
-    /// encoding via `commands.*`.
-    parse-reply: func(bytes: list<u8>) -> result<server-reply, string>;
-
     /// Full command / reply catalogue as JSON:
     /// `[{ "address": "/s_new", "category": "synth", "description": "…" }, …]`.
     registry-json: func() -> string;
@@ -142,4 +48,5 @@ interface core {
 world scserver {
     export core;
     export commands;
+    export replies;
 }

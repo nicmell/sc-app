@@ -8,10 +8,11 @@
 //   npm run build:wasm
 //   npm run roundtrip
 
-import { core } from './pkg/scserver_commands.js';
+import { core, replies } from './pkg/scserver_commands.js';
 import type { OscArg } from './pkg/interfaces/scserver-commands-core.js';
 
-const { ServerMessage, NrtScore, decodeMessage, parseReply, registryJson } = core;
+const { ServerMessage, NrtScore, decodeMessage, registryJson } = core;
+const { parseReply } = replies;
 
 function eq(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
