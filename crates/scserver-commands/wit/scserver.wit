@@ -12,37 +12,11 @@ interface core {
         %string(string),
         blob(list<u8>),
     }
-
-    /// A single OSC message (command or reply).
-    resource server-message {
-        /// Start a message at the given OSC address (e.g. `/s_new`).
-        constructor(address: string);
-        /// The OSC address.
-        address: func() -> string;
-        /// The message's arguments, in order.
-        args: func() -> list<osc-arg>;
-        /// Append one argument.
-        push: func(arg: osc-arg);
-        /// Encode as raw OSC UDP packet bytes.
-        encode: func() -> result<list<u8>, string>;
-    }
-
-    /// Parse raw OSC bytes. Errors if the packet is a bundle.
-    decode-message: func(bytes: list<u8>) -> result<server-message, string>;
-
-    /// Non-realtime score (a sequence of timestamped bundles that
-    /// scsynth's `-N` mode consumes).
-    resource nrt-score {
-        constructor();
-        /// Append one message at the given time (seconds from score start).
-        at: func(seconds: f64, msg: borrow<server-message>);
-        /// Encode to the binary NRT command-file layout.
-        encode: func() -> result<list<u8>, string>;
-    }
 }
 
 world scserver {
     export core;
     export commands;
+    export nrt;
     export replies;
 }

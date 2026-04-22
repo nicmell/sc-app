@@ -1,12 +1,14 @@
-// @generated — DO NOT EDIT.
-// Regenerate with `node scripts/generate.mjs` (from the crate root).
-
 package scserver:commands@0.1.0;
 
-/// Typed, named-arg creators for every documented server command.
-/// Mechanically derived from `src/assets/commands/*.json`.
+/// Typed command surface for the SuperCollider server protocol.
+///
+/// Each command has an `x-args` record describing its payload; the
+/// `server-message` variant discriminates across them. `encode` is the
+/// one exported function — it serialises a typed `server-message` to OSC
+/// wire bytes. NRT score assembly is in the sibling `nrt` interface,
+/// which consumes the same `server-message` values.
 interface commands {
-    use core.{server-message};
+    use core.{osc-arg};
 
     /// Control identifier: index or name.
     variant control-id { index(s32), name(string) }
@@ -31,9 +33,6 @@ interface commands {
         /// sample rate)
         sample-rate: option<f32>,
     }
-    /// Allocate buffer space.
-    /// OSC address: `/b_alloc`.
-    b-alloc: func(args: b-alloc-args) -> server-message;
 
     /// Allocate buffer space and read a sound file.
     record b-alloc-read-args {
@@ -48,9 +47,6 @@ interface commands {
         /// an OSC message to execute upon completion. (optional)
         completion-msg: option<list<u8>>,
     }
-    /// Allocate buffer space and read a sound file.
-    /// OSC address: `/b_allocRead`.
-    b-alloc-read: func(args: b-alloc-read-args) -> server-message;
 
     /// Allocate buffer space and read channels from a sound file.
     record b-alloc-read-channel-args {
@@ -65,9 +61,6 @@ interface commands {
         /// Repeated tuples (source_file_channel: source file channel index; completion_msg: an OSC message to execute upon completion. (optional)).
         tail: list<tuple<s32, list<u8>>>,
     }
-    /// Allocate buffer space and read channels from a sound file.
-    /// OSC address: `/b_allocReadChannel`.
-    b-alloc-read-channel: func(args: b-alloc-read-channel-args) -> server-message;
 
     /// Close soundfile.
     record b-close-args {
@@ -76,9 +69,6 @@ interface commands {
         /// an OSC message to execute upon completion. (optional)
         completion-msg: option<list<u8>>,
     }
-    /// Close soundfile.
-    /// OSC address: `/b_close`.
-    b-close: func(args: b-close-args) -> server-message;
 
     /// Fill ranges of sample value(s).
     record b-fill-args {
@@ -87,9 +77,6 @@ interface commands {
         /// Repeated tuples (sample_starting_index: sample starting index; number_of_samples: number of samples to fill (M); value: value).
         tail: list<tuple<s32, s32, f32>>,
     }
-    /// Fill ranges of sample value(s).
-    /// OSC address: `/b_fill`.
-    b-fill: func(args: b-fill-args) -> server-message;
 
     /// Free buffer data.
     record b-free-args {
@@ -98,9 +85,6 @@ interface commands {
         /// an OSC message to execute upon completion. (optional)
         completion-msg: option<list<u8>>,
     }
-    /// Free buffer data.
-    /// OSC address: `/b_free`.
-    b-free: func(args: b-free-args) -> server-message;
 
     /// Call a command to fill a buffer.
     record b-gen-args {
@@ -111,9 +95,6 @@ interface commands {
         /// command arguments
         command-arguments: list<u8>,
     }
-    /// Call a command to fill a buffer.
-    /// OSC address: `/b_gen`.
-    b-gen: func(args: b-gen-args) -> server-message;
 
     /// Get sample value(s).
     record b-get-args {
@@ -122,9 +103,6 @@ interface commands {
         /// a sample index
         a-sample-index: s32,
     }
-    /// Get sample value(s).
-    /// OSC address: `/b_get`.
-    b-get: func(args: b-get-args) -> server-message;
 
     /// Get ranges of sample value(s).
     record b-getn-args {
@@ -133,18 +111,12 @@ interface commands {
         /// Repeated tuples (start_index: starting sample index; number_of_sequential: number of sequential samples to get (M)).
         tail: list<tuple<s32, s32>>,
     }
-    /// Get ranges of sample value(s).
-    /// OSC address: `/b_getn`.
-    b-getn: func(args: b-getn-args) -> server-message;
 
     /// Get buffer info.
     record b-query-args {
         /// buffer number(s)
         bufnum: s32,
     }
-    /// Get buffer info.
-    /// OSC address: `/b_query`.
-    b-query: func(args: b-query-args) -> server-message;
 
     /// Read sound file data into an existing buffer.
     record b-read-args {
@@ -163,9 +135,6 @@ interface commands {
         /// an OSC message to execute upon completion. (optional)
         completion-msg: option<list<u8>>,
     }
-    /// Read sound file data into an existing buffer.
-    /// OSC address: `/b_read`.
-    b-read: func(args: b-read-args) -> server-message;
 
     /// Read sound file channel data into an existing buffer.
     record b-read-channel-args {
@@ -184,9 +153,6 @@ interface commands {
         /// Repeated tuples (source_file_channel: source file channel index; completion_message: completion message).
         tail: list<tuple<s32, list<u8>>>,
     }
-    /// Read sound file channel data into an existing buffer.
-    /// OSC address: `/b_readChannel`.
-    b-read-channel: func(args: b-read-channel-args) -> server-message;
 
     /// Set sample value(s).
     record b-set-args {
@@ -195,9 +161,6 @@ interface commands {
         /// Repeated tuples (a_sample_index: a sample index; a_sample_value: a sample value).
         tail: list<tuple<s32, f32>>,
     }
-    /// Set sample value(s).
-    /// OSC address: `/b_set`.
-    b-set: func(args: b-set-args) -> server-message;
 
     /// Set the sampling rate of the buffer.
     record b-set-sample-rate-args {
@@ -207,9 +170,6 @@ interface commands {
         /// rate.
         the-desired-sampling: f32,
     }
-    /// Set the sampling rate of the buffer.
-    /// OSC address: `/b_setSampleRate`.
-    b-set-sample-rate: func(args: b-set-sample-rate-args) -> server-message;
 
     /// Set ranges of sample value(s).
     record b-setn-args {
@@ -218,9 +178,6 @@ interface commands {
         /// Repeated tuples (sample_starting_index: sample starting index; number_of_sequential: number of sequential samples to change (M); a_sample_value: a sample value).
         tail: list<tuple<s32, s32, f32>>,
     }
-    /// Set ranges of sample value(s).
-    /// OSC address: `/b_setn`.
-    b-setn: func(args: b-setn-args) -> server-message;
 
     /// Write sound file data.
     record b-write-args {
@@ -241,9 +198,6 @@ interface commands {
         /// an OSC message to execute upon completion. (optional)
         completion-msg: option<list<u8>>,
     }
-    /// Write sound file data.
-    /// OSC address: `/b_write`.
-    b-write: func(args: b-write-args) -> server-message;
 
     /// Zero sample data.
     record b-zero-args {
@@ -252,59 +206,36 @@ interface commands {
         /// an OSC message to execute upon completion. (optional)
         completion-msg: option<list<u8>>,
     }
-    /// Zero sample data.
-    /// OSC address: `/b_zero`.
-    b-zero: func(args: b-zero-args) -> server-message;
 
     /// Fill ranges of bus value(s).
     record c-fill-args {
         /// Repeated tuples (starting_bus_index: starting bus index; number_of_buses: number of buses to fill (M); value: value).
         tail: list<tuple<s32, s32, numeric-value>>,
     }
-    /// Fill ranges of bus value(s).
-    /// OSC address: `/c_fill`.
-    c-fill: func(args: c-fill-args) -> server-message;
 
     /// Get bus value(s).
     record c-get-args {
         /// a bus index
         a-bus-index: s32,
     }
-    /// Get bus value(s).
-    /// OSC address: `/c_get`.
-    c-get: func(args: c-get-args) -> server-message;
 
     /// Get ranges of bus value(s).
     record c-getn-args {
         /// Repeated tuples (starting_bus_index: starting bus index; number_of_sequential: number of sequential buses to get (M)).
         tail: list<tuple<s32, s32>>,
     }
-    /// Get ranges of bus value(s).
-    /// OSC address: `/c_getn`.
-    c-getn: func(args: c-getn-args) -> server-message;
 
     /// Set bus value(s).
     record c-set-args {
         /// Repeated tuples (a_bus_index: a bus index; value: a control value).
         tail: list<tuple<s32, numeric-value>>,
     }
-    /// Set bus value(s).
-    /// OSC address: `/c_set`.
-    c-set: func(args: c-set-args) -> server-message;
 
     /// Set ranges of bus value(s).
     record c-setn-args {
         /// Repeated tuples (starting_bus_index: starting bus index; number_of_sequential: number of sequential buses to change (M); arg2: ; value: a control value).
         tail: list<tuple<s32, s32, list<u8>, numeric-value>>,
     }
-    /// Set ranges of bus value(s).
-    /// OSC address: `/c_setn`.
-    c-setn: func(args: c-setn-args) -> server-message;
-
-    /// Clear all scheduled bundles. Removes all bundles from the scheduling
-    /// queue.
-    /// OSC address: `/clearSched`.
-    clear-sched: func() -> server-message;
 
     /// Plug-in defined command.
     record cmd-args {
@@ -313,18 +244,12 @@ interface commands {
         /// any arguments
         any-arguments: list<u8>,
     }
-    /// Plug-in defined command.
-    /// OSC address: `/cmd`.
-    cmd: func(args: cmd-args) -> server-message;
 
     /// Delete synth definition.
     record d-free-args {
         /// synth def name
         synth-def-name: string,
     }
-    /// Delete synth definition.
-    /// OSC address: `/d_free`.
-    d-free: func(args: d-free-args) -> server-message;
 
     /// Load synth definition.
     record d-load-args {
@@ -333,9 +258,6 @@ interface commands {
         /// an OSC message to execute upon completion. (optional)
         completion-msg: option<list<u8>>,
     }
-    /// Load synth definition.
-    /// OSC address: `/d_load`.
-    d-load: func(args: d-load-args) -> server-message;
 
     /// Load a directory of synth definitions.
     record d-load-dir-args {
@@ -344,9 +266,6 @@ interface commands {
         /// an OSC message to execute upon completion. (optional)
         completion-msg: option<list<u8>>,
     }
-    /// Load a directory of synth definitions.
-    /// OSC address: `/d_loadDir`.
-    d-load-dir: func(args: d-load-dir-args) -> server-message;
 
     /// Receive a synth definition file.
     record d-recv-args {
@@ -355,108 +274,72 @@ interface commands {
         /// an OSC message to execute upon completion. (optional)
         completion-msg: option<list<u8>>,
     }
-    /// Receive a synth definition file.
-    /// OSC address: `/d_recv`.
-    d-recv: func(args: d-recv-args) -> server-message;
 
     /// Display incoming OSC messages.
     record dump-osc-args {
         /// code
         code: s32,
     }
-    /// Display incoming OSC messages.
-    /// OSC address: `/dumpOSC`.
-    dump-osc: func(args: dump-osc-args) -> server-message;
 
     /// Enable/disable error message posting.
     record error-args {
         /// mode
         mode: s32,
     }
-    /// Enable/disable error message posting.
-    /// OSC address: `/error`.
-    error: func(args: error-args) -> server-message;
 
     /// Free all synths in this group and all its sub-groups.
     record g-deep-free-args {
         /// group ID(s)
         group-id: s32,
     }
-    /// Free all synths in this group and all its sub-groups.
-    /// OSC address: `/g_deepFree`.
-    g-deep-free: func(args: g-deep-free-args) -> server-message;
 
     /// Post a representation of this group's node subtree.
     record g-dump-tree-args {
         /// Repeated tuples (group_id: group ID; flag_if_not: flag; if not 0 the current control (arg) values for synths will be posted).
         tail: list<tuple<s32, s32>>,
     }
-    /// Post a representation of this group's node subtree.
-    /// OSC address: `/g_dumpTree`.
-    g-dump-tree: func(args: g-dump-tree-args) -> server-message;
 
     /// Delete all nodes in a group.
     record g-free-all-args {
         /// group ID(s)
         group-id: s32,
     }
-    /// Delete all nodes in a group.
-    /// OSC address: `/g_freeAll`.
-    g-free-all: func(args: g-free-all-args) -> server-message;
 
     /// Add node to head of group.
     record g-head-args {
         /// Repeated tuples (group_id: group ID; node_id: node ID).
         tail: list<tuple<s32, s32>>,
     }
-    /// Add node to head of group.
-    /// OSC address: `/g_head`.
-    g-head: func(args: g-head-args) -> server-message;
 
     /// Create a new group.
     record g-new-args {
         /// Repeated tuples (new_group_id: new group ID; add_action: add action (0,1,2, 3 or 4 see below); target_id: add target ID).
         tail: list<tuple<s32, s32, s32>>,
     }
-    /// Create a new group.
-    /// OSC address: `/g_new`.
-    g-new: func(args: g-new-args) -> server-message;
 
     /// Get a representation of this group's node subtree.
     record g-query-tree-args {
         /// Repeated tuples (group_id: group ID; flag_if_not: flag: if not 0 the current control (arg) values for synths will be included).
         tail: list<tuple<s32, s32>>,
     }
-    /// Get a representation of this group's node subtree.
-    /// OSC address: `/g_queryTree`.
-    g-query-tree: func(args: g-query-tree-args) -> server-message;
 
     /// Add node to tail of group.
     record g-tail-args {
         /// Repeated tuples (group_id: group ID; node_id: node ID).
         tail: list<tuple<s32, s32>>,
     }
-    /// Add node to tail of group.
-    /// OSC address: `/g_tail`.
-    g-tail: func(args: g-tail-args) -> server-message;
 
     /// Place a node after another.
     record n-after-args {
         /// Repeated tuples (the_id_of: the ID of the node to place (A); the_id_of: the ID of the node after which the above is placed (B)).
         tail: list<tuple<s32, s32>>,
     }
-    /// Place a node after another.
-    /// OSC address: `/n_after`.
-    n-after: func(args: n-after-args) -> server-message;
 
     /// Place a node before another.
     record n-before-args {
         /// Repeated tuples (the_id_of: the ID of the node to place (A); the_id_of: the ID of the node before which the above is placed (B)).
         tail: list<tuple<s32, s32>>,
     }
-    /// Place a node before another.
-    /// OSC address: `/n_before`.
-    n-before: func(args: n-before-args) -> server-message;
 
     /// Fill ranges of a node's control value(s).
     record n-fill-args {
@@ -465,18 +348,12 @@ interface commands {
         /// Repeated tuples (control: a control index or name; number_of_values: number of values to fill (M); value: value).
         tail: list<tuple<control-id, s32, numeric-value>>,
     }
-    /// Fill ranges of a node's control value(s).
-    /// OSC address: `/n_fill`.
-    n-fill: func(args: n-fill-args) -> server-message;
 
     /// Delete a node.
     record n-free-args {
         /// node ID
         node-id: s32,
     }
-    /// Delete a node.
-    /// OSC address: `/n_free`.
-    n-free: func(args: n-free-args) -> server-message;
 
     /// Map a node's controls to read from a bus.
     record n-map-args {
@@ -485,9 +362,6 @@ interface commands {
         /// Repeated tuples (control: a control index or name; control_bus_index: control bus index).
         tail: list<tuple<control-id, s32>>,
     }
-    /// Map a node's controls to read from a bus.
-    /// OSC address: `/n_map`.
-    n-map: func(args: n-map-args) -> server-message;
 
     /// Map a node's controls to read from an audio bus.
     record n-mapa-args {
@@ -496,9 +370,6 @@ interface commands {
         /// Repeated tuples (control: a control index or name; audio_bus_index: audio bus index).
         tail: list<tuple<control-id, s32>>,
     }
-    /// Map a node's controls to read from an audio bus.
-    /// OSC address: `/n_mapa`.
-    n-mapa: func(args: n-mapa-args) -> server-message;
 
     /// Map a node's controls to read from audio buses.
     record n-mapan-args {
@@ -507,9 +378,6 @@ interface commands {
         /// Repeated tuples (control: a control index or name; audio_bus_index: audio bus index; number_of_controls: number of controls to map).
         tail: list<tuple<control-id, s32, s32>>,
     }
-    /// Map a node's controls to read from audio buses.
-    /// OSC address: `/n_mapan`.
-    n-mapan: func(args: n-mapan-args) -> server-message;
 
     /// Map a node's controls to read from buses.
     record n-mapn-args {
@@ -518,9 +386,6 @@ interface commands {
         /// Repeated tuples (control: a control index or name; control_bus_index: control bus index; number_of_controls: number of controls to map).
         tail: list<tuple<control-id, s32, s32>>,
     }
-    /// Map a node's controls to read from buses.
-    /// OSC address: `/n_mapn`.
-    n-mapn: func(args: n-mapn-args) -> server-message;
 
     /// Move and order a list of nodes.
     record n-order-args {
@@ -531,27 +396,18 @@ interface commands {
         /// node IDs
         node-ids: s32,
     }
-    /// Move and order a list of nodes.
-    /// OSC address: `/n_order`.
-    n-order: func(args: n-order-args) -> server-message;
 
     /// Get info about a node.
     record n-query-args {
         /// node ID
         node-id: s32,
     }
-    /// Get info about a node.
-    /// OSC address: `/n_query`.
-    n-query: func(args: n-query-args) -> server-message;
 
     /// Turn node on or off.
     record n-run-args {
         /// Repeated tuples (node_id: node ID; run_flag: run flag).
         tail: list<tuple<s32, s32>>,
     }
-    /// Turn node on or off.
-    /// OSC address: `/n_run`.
-    n-run: func(args: n-run-args) -> server-message;
 
     /// Set a node's control value(s).
     record n-set-args {
@@ -560,9 +416,6 @@ interface commands {
         /// Repeated tuples (control: a control index or name; value: a control value).
         tail: list<tuple<control-id, numeric-value>>,
     }
-    /// Set a node's control value(s).
-    /// OSC address: `/n_set`.
-    n-set: func(args: n-set-args) -> server-message;
 
     /// Set ranges of a node's control value(s).
     record n-setn-args {
@@ -571,54 +424,26 @@ interface commands {
         /// Repeated tuples (control: a control index or name; number_of_sequential: number of sequential controls to change (M); control_value: control value(s)).
         tail: list<tuple<control-id, s32, numeric-value>>,
     }
-    /// Set ranges of a node's control value(s).
-    /// OSC address: `/n_setn`.
-    n-setn: func(args: n-setn-args) -> server-message;
 
     /// Trace a node.
     record n-trace-args {
         /// node IDs
         node-ids: s32,
     }
-    /// Trace a node.
-    /// OSC address: `/n_trace`.
-    n-trace: func(args: n-trace-args) -> server-message;
 
-    /// Register to receive notifications from server
+    /// Register to receive notifications from server.
     record notify-args {
         /// 1 to receive notifications, 0 to stop receiving them.
         enable: s32,
         /// client ID (optional)
         client-id: option<s32>,
     }
-    /// Register to receive notifications from server
-    /// OSC address: `/notify`.
-    notify: func(args: notify-args) -> server-message;
-
-    /// End real time mode, close file. Not yet implemented. This message should
-    /// be sent in a bundle in non real time mode. The bundle timestamp will
-    /// establish the ending time of the file. This command will end non real
-    /// time mode and close the sound file. Replies to sender with /done when
-    /// complete.
-    /// OSC address: `/nrt_end`.
-    nrt-end: func() -> server-message;
 
     /// Create a new parallel group.
     record p-new-args {
         /// Repeated tuples (new_group_id: new group ID; add_action: add action (0,1,2, 3 or 4 see below); target_id: add target ID).
         tail: list<tuple<s32, s32, s32>>,
     }
-    /// Create a new parallel group.
-    /// OSC address: `/p_new`.
-    p-new: func(args: p-new-args) -> server-message;
-
-    /// Quit program. Exits the synthesis server.
-    /// OSC address: `/quit`.
-    quit: func() -> server-message;
-
-    /// Queries the amount of currently free real-time memory (in bytes).
-    /// OSC address: `/rtMemoryStatus`.
-    rt-memory-status: func() -> server-message;
 
     /// Get control value(s).
     record s-get-args {
@@ -627,9 +452,6 @@ interface commands {
         /// a control index or name
         control: control-id,
     }
-    /// Get control value(s).
-    /// OSC address: `/s_get`.
-    s-get: func(args: s-get-args) -> server-message;
 
     /// Get ranges of control value(s).
     record s-getn-args {
@@ -638,9 +460,6 @@ interface commands {
         /// Repeated tuples (control: a control index or name; number_of_sequential: number of sequential controls to get (M)).
         tail: list<tuple<control-id, s32>>,
     }
-    /// Get ranges of control value(s).
-    /// OSC address: `/s_getn`.
-    s-getn: func(args: s-getn-args) -> server-message;
 
     /// Create a new synth.
     record s-new-args {
@@ -655,31 +474,18 @@ interface commands {
         /// Repeated tuples (control: a control index or name; floating_point_and: floating point and integer arguments are interpreted as control value. a symbol argument consisting of the letter 'c' or 'a' (for control or audio) followed by the bus's index.).
         tail: list<tuple<control-id, control-value>>,
     }
-    /// Create a new synth.
-    /// OSC address: `/s_new`.
-    s-new: func(args: s-new-args) -> server-message;
 
     /// Auto-reassign synth's ID to a reserved value.
     record s-noid-args {
         /// synth IDs
         synth-ids: s32,
     }
-    /// Auto-reassign synth's ID to a reserved value.
-    /// OSC address: `/s_noid`.
-    s-noid: func(args: s-noid-args) -> server-message;
-
-    /// Query the status. Replies to sender with the following message:
-    /// OSC address: `/status`.
-    status: func() -> server-message;
 
     /// Notify when async commands have completed.
     record sync-args {
         /// a unique number identifying this command.
         a-unique-number: s32,
     }
-    /// Notify when async commands have completed.
-    /// OSC address: `/sync`.
-    sync: func(args: sync-args) -> server-message;
 
     /// Send a command to a unit generator.
     record u-cmd-args {
@@ -692,13 +498,94 @@ interface commands {
         /// any arguments
         any-arguments: list<u8>,
     }
-    /// Send a command to a unit generator.
-    /// OSC address: `/u_cmd`.
-    u-cmd: func(args: u-cmd-args) -> server-message;
 
-    /// Query the SuperCollider version. Replies to sender with the following
-    /// message:
-    /// OSC address: `/version`.
-    version: func() -> server-message;
+    /// Escape hatch for sending an OSC message whose address isn't in the
+    /// catalogue (e.g. an SC extension or plug-in command). Carries a raw
+    /// address + arg list.
+    record other-msg {
+        address: string,
+        args: list<osc-arg>,
+    }
 
+    /// Typed dispatch over every SC server command plus an `other` catch-all.
+    /// One variant case per address. Six argless commands carry no payload
+    /// (clear-sched, nrt-end, quit, rt-memory-status, status, version).
+    variant server-message {
+        b-alloc(b-alloc-args),
+        b-alloc-read(b-alloc-read-args),
+        b-alloc-read-channel(b-alloc-read-channel-args),
+        b-close(b-close-args),
+        b-fill(b-fill-args),
+        b-free(b-free-args),
+        b-gen(b-gen-args),
+        b-get(b-get-args),
+        b-getn(b-getn-args),
+        b-query(b-query-args),
+        b-read(b-read-args),
+        b-read-channel(b-read-channel-args),
+        b-set(b-set-args),
+        b-set-sample-rate(b-set-sample-rate-args),
+        b-setn(b-setn-args),
+        b-write(b-write-args),
+        b-zero(b-zero-args),
+        c-fill(c-fill-args),
+        c-get(c-get-args),
+        c-getn(c-getn-args),
+        c-set(c-set-args),
+        c-setn(c-setn-args),
+        /// `/clearSched` — Clear all scheduled bundles.
+        clear-sched,
+        cmd(cmd-args),
+        d-free(d-free-args),
+        d-load(d-load-args),
+        d-load-dir(d-load-dir-args),
+        d-recv(d-recv-args),
+        dump-osc(dump-osc-args),
+        error(error-args),
+        g-deep-free(g-deep-free-args),
+        g-dump-tree(g-dump-tree-args),
+        g-free-all(g-free-all-args),
+        g-head(g-head-args),
+        g-new(g-new-args),
+        g-query-tree(g-query-tree-args),
+        g-tail(g-tail-args),
+        n-after(n-after-args),
+        n-before(n-before-args),
+        n-fill(n-fill-args),
+        n-free(n-free-args),
+        n-map(n-map-args),
+        n-mapa(n-mapa-args),
+        n-mapan(n-mapan-args),
+        n-mapn(n-mapn-args),
+        n-order(n-order-args),
+        n-query(n-query-args),
+        n-run(n-run-args),
+        n-set(n-set-args),
+        n-setn(n-setn-args),
+        n-trace(n-trace-args),
+        notify(notify-args),
+        /// `/nrt_end` — End NRT mode, close the score file.
+        nrt-end,
+        p-new(p-new-args),
+        /// `/quit` — Exit the synthesis server.
+        quit,
+        /// `/rtMemoryStatus` — Query free real-time memory.
+        rt-memory-status,
+        s-get(s-get-args),
+        s-getn(s-getn-args),
+        s-new(s-new-args),
+        s-noid(s-noid-args),
+        /// `/status` — Query the server status.
+        status,
+        sync(sync-args),
+        u-cmd(u-cmd-args),
+        /// `/version` — Query the SC version string.
+        version,
+        /// Escape hatch: raw address + arg list for messages outside the
+        /// catalogue.
+        other(other-msg),
+    }
+
+    /// Serialise a typed command to raw OSC wire bytes.
+    encode: func(msg: server-message) -> result<list<u8>, string>;
 }

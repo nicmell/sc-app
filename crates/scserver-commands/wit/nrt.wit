@@ -1,0 +1,17 @@
+package scserver:commands@0.1.0;
+
+/// Non-realtime score assembly. A score is a sequence of timestamped
+/// server messages; `encode` serialises it to the length-prefixed binary
+/// file scsynth's `-N` mode consumes (each entry is a 4-byte big-endian
+/// length followed by a standard OSC bundle).
+interface nrt {
+    use commands.{server-message};
+
+    resource nrt-score {
+        constructor();
+        /// Append one message at the given time (seconds from score start).
+        at: func(seconds: f64, msg: server-message);
+        /// Encode the score to the binary NRT command-file layout.
+        encode: func() -> result<list<u8>, string>;
+    }
+}

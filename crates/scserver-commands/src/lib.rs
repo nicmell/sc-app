@@ -6,12 +6,14 @@ pub mod commands;
 #[cfg(feature = "component")]
 mod component;
 mod error;
+mod nrt;
 mod osc;
-mod reply;
+mod replies;
 
-pub use commands::{ControlId, ControlValue, NumericValue};
+pub use commands::{ControlId, ControlValue, NumericValue, ServerMessage};
 pub use error::CommandError;
-pub use osc::{NrtScore, ServerMessage};
-pub use reply::{NodeInfo, ServerReply, StatusReply};
+pub use nrt::NrtScore;
+pub use osc::OscMessage;
+pub use replies::{NodeInfo, ServerReply, StatusReply};
 
 pub use rosc::OscType;

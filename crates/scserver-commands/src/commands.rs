@@ -7,7 +7,7 @@
 #![allow(non_snake_case, unused_mut)]
 
 use rosc::OscType;
-use crate::ServerMessage;
+use crate::OscMessage;
 
 // ── Polymorphic arg types ───────────────────────────────────────────────
 
@@ -155,8 +155,8 @@ impl BAlloc {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
         args.push(OscType::Int(self.num_frames));
@@ -169,7 +169,7 @@ impl BAlloc {
         if let Some(v) = self.sample_rate {
             args.push(OscType::Float(v));
         }
-        ServerMessage::with_args(r"/b_alloc", args)
+        OscMessage::with_args(r"/b_alloc", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -208,8 +208,8 @@ impl BAllocRead {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
         args.push(OscType::String(self.path));
@@ -222,7 +222,7 @@ impl BAllocRead {
         if let Some(v) = self.completion_msg {
             args.push(OscType::Blob(v));
         }
-        ServerMessage::with_args(r"/b_allocRead", args)
+        OscMessage::with_args(r"/b_allocRead", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -261,8 +261,8 @@ impl BAllocReadChannel {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
         args.push(OscType::String(self.path));
@@ -272,7 +272,7 @@ impl BAllocReadChannel {
             args.push(OscType::Int(t0));
             args.push(OscType::Blob(t1));
         }
-        ServerMessage::with_args(r"/b_allocReadChannel", args)
+        OscMessage::with_args(r"/b_allocReadChannel", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -302,14 +302,14 @@ impl BClose {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
         if let Some(v) = self.completion_msg {
             args.push(OscType::Blob(v));
         }
-        ServerMessage::with_args(r"/b_close", args)
+        OscMessage::with_args(r"/b_close", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -339,8 +339,8 @@ impl BFill {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
         for (t0, t1, t2) in self.tail {
@@ -348,7 +348,7 @@ impl BFill {
             args.push(OscType::Int(t1));
             args.push(OscType::Float(t2));
         }
-        ServerMessage::with_args(r"/b_fill", args)
+        OscMessage::with_args(r"/b_fill", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -378,14 +378,14 @@ impl BFree {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
         if let Some(v) = self.completion_msg {
             args.push(OscType::Blob(v));
         }
-        ServerMessage::with_args(r"/b_free", args)
+        OscMessage::with_args(r"/b_free", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -418,13 +418,13 @@ impl BGen {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
         args.push(OscType::String(self.cmd));
         args.push(self.command_arguments);
-        ServerMessage::with_args(r"/b_gen", args)
+        OscMessage::with_args(r"/b_gen", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -454,12 +454,12 @@ impl BGet {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
         args.push(OscType::Int(self.a_sample_index));
-        ServerMessage::with_args(r"/b_get", args)
+        OscMessage::with_args(r"/b_get", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -489,15 +489,15 @@ impl BGetn {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
         for (t0, t1) in self.tail {
             args.push(OscType::Int(t0));
             args.push(OscType::Int(t1));
         }
-        ServerMessage::with_args(r"/b_getn", args)
+        OscMessage::with_args(r"/b_getn", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -524,11 +524,11 @@ impl BQuery {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
-        ServerMessage::with_args(r"/b_query", args)
+        OscMessage::with_args(r"/b_query", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -573,8 +573,8 @@ impl BRead {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
         args.push(OscType::String(self.path));
@@ -593,7 +593,7 @@ impl BRead {
         if let Some(v) = self.completion_msg {
             args.push(OscType::Blob(v));
         }
-        ServerMessage::with_args(r"/b_read", args)
+        OscMessage::with_args(r"/b_read", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -638,8 +638,8 @@ impl BReadChannel {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
         args.push(OscType::String(self.path));
@@ -651,7 +651,7 @@ impl BReadChannel {
             args.push(OscType::Int(t0));
             args.push(OscType::Blob(t1));
         }
-        ServerMessage::with_args(r"/b_readChannel", args)
+        OscMessage::with_args(r"/b_readChannel", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -681,15 +681,15 @@ impl BSet {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
         for (t0, t1) in self.tail {
             args.push(OscType::Int(t0));
             args.push(OscType::Float(t1));
         }
-        ServerMessage::with_args(r"/b_set", args)
+        OscMessage::with_args(r"/b_set", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -719,8 +719,8 @@ impl BSetn {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
         for (t0, t1, t2) in self.tail {
@@ -728,7 +728,7 @@ impl BSetn {
             args.push(OscType::Int(t1));
             args.push(OscType::Float(t2));
         }
-        ServerMessage::with_args(r"/b_setn", args)
+        OscMessage::with_args(r"/b_setn", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -759,12 +759,12 @@ impl BSetSampleRate {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
         args.push(OscType::Float(self.the_desired_sampling));
-        ServerMessage::with_args(r"/b_setSampleRate", args)
+        OscMessage::with_args(r"/b_setSampleRate", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -812,8 +812,8 @@ impl BWrite {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
         args.push(OscType::String(self.path));
@@ -831,7 +831,7 @@ impl BWrite {
         if let Some(v) = self.completion_msg {
             args.push(OscType::Blob(v));
         }
-        ServerMessage::with_args(r"/b_write", args)
+        OscMessage::with_args(r"/b_write", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -861,14 +861,14 @@ impl BZero {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.bufnum));
         if let Some(v) = self.completion_msg {
             args.push(OscType::Blob(v));
         }
-        ServerMessage::with_args(r"/b_zero", args)
+        OscMessage::with_args(r"/b_zero", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -897,15 +897,15 @@ impl CFill {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         for (t0, t1, t2) in self.tail {
             args.push(OscType::Int(t0));
             args.push(OscType::Int(t1));
             args.push(t2.into());
         }
-        ServerMessage::with_args(r"/c_fill", args)
+        OscMessage::with_args(r"/c_fill", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -932,11 +932,11 @@ impl CGet {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.a_bus_index));
-        ServerMessage::with_args(r"/c_get", args)
+        OscMessage::with_args(r"/c_get", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -963,14 +963,14 @@ impl CGetn {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         for (t0, t1) in self.tail {
             args.push(OscType::Int(t0));
             args.push(OscType::Int(t1));
         }
-        ServerMessage::with_args(r"/c_getn", args)
+        OscMessage::with_args(r"/c_getn", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -997,14 +997,14 @@ impl CSet {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         for (t0, t1) in self.tail {
             args.push(OscType::Int(t0));
             args.push(t1.into());
         }
-        ServerMessage::with_args(r"/c_set", args)
+        OscMessage::with_args(r"/c_set", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1031,8 +1031,8 @@ impl CSetn {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         for (t0, t1, t2, t3) in self.tail {
             args.push(OscType::Int(t0));
@@ -1040,7 +1040,7 @@ impl CSetn {
             args.push(t2);
             args.push(t3.into());
         }
-        ServerMessage::with_args(r"/c_setn", args)
+        OscMessage::with_args(r"/c_setn", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1069,11 +1069,11 @@ impl GDeepFree {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.group_id));
-        ServerMessage::with_args(r"/g_deepFree", args)
+        OscMessage::with_args(r"/g_deepFree", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1100,14 +1100,14 @@ impl GDumpTree {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         for (t0, t1) in self.tail {
             args.push(OscType::Int(t0));
             args.push(OscType::Int(t1));
         }
-        ServerMessage::with_args(r"/g_dumpTree", args)
+        OscMessage::with_args(r"/g_dumpTree", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1134,11 +1134,11 @@ impl GFreeAll {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.group_id));
-        ServerMessage::with_args(r"/g_freeAll", args)
+        OscMessage::with_args(r"/g_freeAll", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1165,14 +1165,14 @@ impl GHead {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         for (t0, t1) in self.tail {
             args.push(OscType::Int(t0));
             args.push(OscType::Int(t1));
         }
-        ServerMessage::with_args(r"/g_head", args)
+        OscMessage::with_args(r"/g_head", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1199,15 +1199,15 @@ impl GNew {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         for (t0, t1, t2) in self.tail {
             args.push(OscType::Int(t0));
             args.push(OscType::Int(t1));
             args.push(OscType::Int(t2));
         }
-        ServerMessage::with_args(r"/g_new", args)
+        OscMessage::with_args(r"/g_new", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1234,14 +1234,14 @@ impl GQueryTree {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         for (t0, t1) in self.tail {
             args.push(OscType::Int(t0));
             args.push(OscType::Int(t1));
         }
-        ServerMessage::with_args(r"/g_queryTree", args)
+        OscMessage::with_args(r"/g_queryTree", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1268,14 +1268,14 @@ impl GTail {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         for (t0, t1) in self.tail {
             args.push(OscType::Int(t0));
             args.push(OscType::Int(t1));
         }
-        ServerMessage::with_args(r"/g_tail", args)
+        OscMessage::with_args(r"/g_tail", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1302,15 +1302,15 @@ impl PNew {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         for (t0, t1, t2) in self.tail {
             args.push(OscType::Int(t0));
             args.push(OscType::Int(t1));
             args.push(OscType::Int(t2));
         }
-        ServerMessage::with_args(r"/p_new", args)
+        OscMessage::with_args(r"/p_new", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1336,10 +1336,10 @@ impl ClearSched {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
-        ServerMessage::with_args(r"/clearSched", args)
+        OscMessage::with_args(r"/clearSched", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1369,12 +1369,12 @@ impl Cmd {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::String(self.cmd));
         args.push(self.any_arguments);
-        ServerMessage::with_args(r"/cmd", args)
+        OscMessage::with_args(r"/cmd", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1401,11 +1401,11 @@ impl DumpOSC {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.code));
-        ServerMessage::with_args(r"/dumpOSC", args)
+        OscMessage::with_args(r"/dumpOSC", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1432,11 +1432,11 @@ impl Error {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.mode));
-        ServerMessage::with_args(r"/error", args)
+        OscMessage::with_args(r"/error", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1466,14 +1466,14 @@ impl Notify {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.enable));
         if let Some(v) = self.client_id {
             args.push(OscType::Int(v));
         }
-        ServerMessage::with_args(r"/notify", args)
+        OscMessage::with_args(r"/notify", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1497,10 +1497,10 @@ impl Quit {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
-        ServerMessage::with_args(r"/quit", args)
+        OscMessage::with_args(r"/quit", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1524,10 +1524,10 @@ impl RtMemoryStatus {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
-        ServerMessage::with_args(r"/rtMemoryStatus", args)
+        OscMessage::with_args(r"/rtMemoryStatus", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1551,10 +1551,10 @@ impl Status {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
-        ServerMessage::with_args(r"/status", args)
+        OscMessage::with_args(r"/status", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1581,11 +1581,11 @@ impl Sync {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.a_unique_number));
-        ServerMessage::with_args(r"/sync", args)
+        OscMessage::with_args(r"/sync", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1610,10 +1610,10 @@ impl Version {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
-        ServerMessage::with_args(r"/version", args)
+        OscMessage::with_args(r"/version", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1642,14 +1642,14 @@ impl NAfter {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         for (t0, t1) in self.tail {
             args.push(OscType::Int(t0));
             args.push(OscType::Int(t1));
         }
-        ServerMessage::with_args(r"/n_after", args)
+        OscMessage::with_args(r"/n_after", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1676,14 +1676,14 @@ impl NBefore {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         for (t0, t1) in self.tail {
             args.push(OscType::Int(t0));
             args.push(OscType::Int(t1));
         }
-        ServerMessage::with_args(r"/n_before", args)
+        OscMessage::with_args(r"/n_before", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1713,8 +1713,8 @@ impl NFill {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_id));
         for (t0, t1, t2) in self.tail {
@@ -1722,7 +1722,7 @@ impl NFill {
             args.push(OscType::Int(t1));
             args.push(t2.into());
         }
-        ServerMessage::with_args(r"/n_fill", args)
+        OscMessage::with_args(r"/n_fill", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1749,11 +1749,11 @@ impl NFree {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_id));
-        ServerMessage::with_args(r"/n_free", args)
+        OscMessage::with_args(r"/n_free", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1783,15 +1783,15 @@ impl NMap {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_id));
         for (t0, t1) in self.tail {
             args.push(t0.into());
             args.push(OscType::Int(t1));
         }
-        ServerMessage::with_args(r"/n_map", args)
+        OscMessage::with_args(r"/n_map", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1821,15 +1821,15 @@ impl NMapa {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_id));
         for (t0, t1) in self.tail {
             args.push(t0.into());
             args.push(OscType::Int(t1));
         }
-        ServerMessage::with_args(r"/n_mapa", args)
+        OscMessage::with_args(r"/n_mapa", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1859,8 +1859,8 @@ impl NMapan {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_id));
         for (t0, t1, t2) in self.tail {
@@ -1868,7 +1868,7 @@ impl NMapan {
             args.push(OscType::Int(t1));
             args.push(OscType::Int(t2));
         }
-        ServerMessage::with_args(r"/n_mapan", args)
+        OscMessage::with_args(r"/n_mapan", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1898,8 +1898,8 @@ impl NMapn {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_id));
         for (t0, t1, t2) in self.tail {
@@ -1907,7 +1907,7 @@ impl NMapn {
             args.push(OscType::Int(t1));
             args.push(OscType::Int(t2));
         }
-        ServerMessage::with_args(r"/n_mapn", args)
+        OscMessage::with_args(r"/n_mapn", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1940,13 +1940,13 @@ impl NOrder {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.add_action));
         args.push(OscType::Int(self.target_id));
         args.push(OscType::Int(self.node_ids));
-        ServerMessage::with_args(r"/n_order", args)
+        OscMessage::with_args(r"/n_order", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -1973,11 +1973,11 @@ impl NQuery {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_id));
-        ServerMessage::with_args(r"/n_query", args)
+        OscMessage::with_args(r"/n_query", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -2004,14 +2004,14 @@ impl NRun {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         for (t0, t1) in self.tail {
             args.push(OscType::Int(t0));
             args.push(OscType::Int(t1));
         }
-        ServerMessage::with_args(r"/n_run", args)
+        OscMessage::with_args(r"/n_run", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -2041,15 +2041,15 @@ impl NSet {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_id));
         for (t0, t1) in self.tail {
             args.push(t0.into());
             args.push(t1.into());
         }
-        ServerMessage::with_args(r"/n_set", args)
+        OscMessage::with_args(r"/n_set", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -2079,8 +2079,8 @@ impl NSetn {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_id));
         for (t0, t1, t2) in self.tail {
@@ -2088,7 +2088,7 @@ impl NSetn {
             args.push(OscType::Int(t1));
             args.push(t2.into());
         }
-        ServerMessage::with_args(r"/n_setn", args)
+        OscMessage::with_args(r"/n_setn", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -2115,11 +2115,11 @@ impl NTrace {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_ids));
-        ServerMessage::with_args(r"/n_trace", args)
+        OscMessage::with_args(r"/n_trace", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -2148,10 +2148,10 @@ impl NrtEnd {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
-        ServerMessage::with_args(r"/nrt_end", args)
+        OscMessage::with_args(r"/nrt_end", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -2183,12 +2183,12 @@ impl SGet {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_id));
         args.push(self.control.into());
-        ServerMessage::with_args(r"/s_get", args)
+        OscMessage::with_args(r"/s_get", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -2218,15 +2218,15 @@ impl SGetn {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_id));
         for (t0, t1) in self.tail {
             args.push(t0.into());
             args.push(OscType::Int(t1));
         }
-        ServerMessage::with_args(r"/s_getn", args)
+        OscMessage::with_args(r"/s_getn", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -2265,8 +2265,8 @@ impl SNew {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::String(self.def_name));
         args.push(OscType::Int(self.node_id));
@@ -2276,7 +2276,7 @@ impl SNew {
             args.push(t0.into());
             args.push(t1.into());
         }
-        ServerMessage::with_args(r"/s_new", args)
+        OscMessage::with_args(r"/s_new", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -2303,11 +2303,11 @@ impl SNoid {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.synth_ids));
-        ServerMessage::with_args(r"/s_noid", args)
+        OscMessage::with_args(r"/s_noid", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -2336,11 +2336,11 @@ impl DFree {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::String(self.synth_def_name));
-        ServerMessage::with_args(r"/d_free", args)
+        OscMessage::with_args(r"/d_free", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -2370,14 +2370,14 @@ impl DLoad {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::String(self.pathname_of_file));
         if let Some(v) = self.completion_msg {
             args.push(OscType::Blob(v));
         }
-        ServerMessage::with_args(r"/d_load", args)
+        OscMessage::with_args(r"/d_load", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -2407,14 +2407,14 @@ impl DLoadDir {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::String(self.pathname_of_directory));
         if let Some(v) = self.completion_msg {
             args.push(OscType::Blob(v));
         }
-        ServerMessage::with_args(r"/d_loadDir", args)
+        OscMessage::with_args(r"/d_loadDir", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -2444,14 +2444,14 @@ impl DRecv {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Blob(self.buffer_of_data));
         if let Some(v) = self.completion_msg {
             args.push(OscType::Blob(v));
         }
-        ServerMessage::with_args(r"/d_recv", args)
+        OscMessage::with_args(r"/d_recv", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
@@ -2489,18 +2489,201 @@ impl UCmd {
         }
     }
 
-    /// Encode the typed fields into an OSC `ServerMessage`.
-    pub fn to_message(self) -> ServerMessage {
+    /// Encode the typed fields into an OSC `OscMessage`.
+    pub fn to_message(self) -> OscMessage {
         let mut args: Vec<OscType> = Vec::new();
         args.push(OscType::Int(self.node_id));
         args.push(OscType::Int(self.unit_generator_index));
         args.push(OscType::String(self.cmd));
         args.push(self.any_arguments);
-        ServerMessage::with_args(r"/u_cmd", args)
+        OscMessage::with_args(r"/u_cmd", args)
     }
 
     /// Shortcut: build + encode to OSC wire bytes.
     pub fn encode(self) -> Result<Vec<u8>, crate::CommandError> {
         self.to_message().encode()
     }
+}
+
+// ── ServerMessage: typed dispatch over every command ────────────────────
+
+/// Typed dispatch over every documented SC server command. One variant
+/// per address — 57 carry their per-command arg struct, 6 argless
+/// commands are pure unit cases, and `Other` is an escape hatch for
+/// addresses outside the catalogue (extensions / plug-in commands).
+///
+/// Construct via `From<…>` (`let msg: ServerMessage = BAlloc::new(0, 8192).into();`)
+/// or directly (`ServerMessage::ClearSched`), then call [`encode`] to
+/// produce OSC wire bytes.
+#[derive(Debug, Clone)]
+pub enum ServerMessage {
+    BAlloc(BAlloc),
+    BAllocRead(BAllocRead),
+    BAllocReadChannel(BAllocReadChannel),
+    BClose(BClose),
+    BFill(BFill),
+    BFree(BFree),
+    BGen(BGen),
+    BGet(BGet),
+    BGetn(BGetn),
+    BQuery(BQuery),
+    BRead(BRead),
+    BReadChannel(BReadChannel),
+    BSet(BSet),
+    BSetSampleRate(BSetSampleRate),
+    BSetn(BSetn),
+    BWrite(BWrite),
+    BZero(BZero),
+    CFill(CFill),
+    CGet(CGet),
+    CGetn(CGetn),
+    CSet(CSet),
+    CSetn(CSetn),
+    ClearSched,
+    Cmd(Cmd),
+    DFree(DFree),
+    DLoad(DLoad),
+    DLoadDir(DLoadDir),
+    DRecv(DRecv),
+    DumpOSC(DumpOSC),
+    Error(Error),
+    GDeepFree(GDeepFree),
+    GDumpTree(GDumpTree),
+    GFreeAll(GFreeAll),
+    GHead(GHead),
+    GNew(GNew),
+    GQueryTree(GQueryTree),
+    GTail(GTail),
+    NAfter(NAfter),
+    NBefore(NBefore),
+    NFill(NFill),
+    NFree(NFree),
+    NMap(NMap),
+    NMapa(NMapa),
+    NMapan(NMapan),
+    NMapn(NMapn),
+    NOrder(NOrder),
+    NQuery(NQuery),
+    NRun(NRun),
+    NSet(NSet),
+    NSetn(NSetn),
+    NTrace(NTrace),
+    Notify(Notify),
+    NrtEnd,
+    PNew(PNew),
+    Quit,
+    RtMemoryStatus,
+    SGet(SGet),
+    SGetn(SGetn),
+    SNew(SNew),
+    SNoid(SNoid),
+    Status,
+    Sync(Sync),
+    UCmd(UCmd),
+    Version,
+    /// Escape hatch for addresses outside the catalogue. The `ServerMessage`
+    /// enum covers every documented command; use this for SC extensions or
+    /// plug-in commands the catalogue doesn't know about.
+    Other {
+        address: String,
+        args: Vec<OscType>,
+    },
+}
+
+impl ServerMessage {
+    /// Lower to the underlying `OscMessage` (raw address + arg list).
+    pub fn to_osc_message(self) -> OscMessage {
+        match self {
+            Self::BAlloc(c) => c.to_message(),
+            Self::BAllocRead(c) => c.to_message(),
+            Self::BAllocReadChannel(c) => c.to_message(),
+            Self::BClose(c) => c.to_message(),
+            Self::BFill(c) => c.to_message(),
+            Self::BFree(c) => c.to_message(),
+            Self::BGen(c) => c.to_message(),
+            Self::BGet(c) => c.to_message(),
+            Self::BGetn(c) => c.to_message(),
+            Self::BQuery(c) => c.to_message(),
+            Self::BRead(c) => c.to_message(),
+            Self::BReadChannel(c) => c.to_message(),
+            Self::BSet(c) => c.to_message(),
+            Self::BSetSampleRate(c) => c.to_message(),
+            Self::BSetn(c) => c.to_message(),
+            Self::BWrite(c) => c.to_message(),
+            Self::BZero(c) => c.to_message(),
+            Self::CFill(c) => c.to_message(),
+            Self::CGet(c) => c.to_message(),
+            Self::CGetn(c) => c.to_message(),
+            Self::CSet(c) => c.to_message(),
+            Self::CSetn(c) => c.to_message(),
+            Self::ClearSched => ClearSched::new().to_message(),
+            Self::Cmd(c) => c.to_message(),
+            Self::DFree(c) => c.to_message(),
+            Self::DLoad(c) => c.to_message(),
+            Self::DLoadDir(c) => c.to_message(),
+            Self::DRecv(c) => c.to_message(),
+            Self::DumpOSC(c) => c.to_message(),
+            Self::Error(c) => c.to_message(),
+            Self::GDeepFree(c) => c.to_message(),
+            Self::GDumpTree(c) => c.to_message(),
+            Self::GFreeAll(c) => c.to_message(),
+            Self::GHead(c) => c.to_message(),
+            Self::GNew(c) => c.to_message(),
+            Self::GQueryTree(c) => c.to_message(),
+            Self::GTail(c) => c.to_message(),
+            Self::NAfter(c) => c.to_message(),
+            Self::NBefore(c) => c.to_message(),
+            Self::NFill(c) => c.to_message(),
+            Self::NFree(c) => c.to_message(),
+            Self::NMap(c) => c.to_message(),
+            Self::NMapa(c) => c.to_message(),
+            Self::NMapan(c) => c.to_message(),
+            Self::NMapn(c) => c.to_message(),
+            Self::NOrder(c) => c.to_message(),
+            Self::NQuery(c) => c.to_message(),
+            Self::NRun(c) => c.to_message(),
+            Self::NSet(c) => c.to_message(),
+            Self::NSetn(c) => c.to_message(),
+            Self::NTrace(c) => c.to_message(),
+            Self::Notify(c) => c.to_message(),
+            Self::NrtEnd => NrtEnd::new().to_message(),
+            Self::PNew(c) => c.to_message(),
+            Self::Quit => Quit::new().to_message(),
+            Self::RtMemoryStatus => RtMemoryStatus::new().to_message(),
+            Self::SGet(c) => c.to_message(),
+            Self::SGetn(c) => c.to_message(),
+            Self::SNew(c) => c.to_message(),
+            Self::SNoid(c) => c.to_message(),
+            Self::Status => Status::new().to_message(),
+            Self::Sync(c) => c.to_message(),
+            Self::UCmd(c) => c.to_message(),
+            Self::Version => Version::new().to_message(),
+            Self::Other { address, args } => OscMessage::with_args(address, args),
+        }
+    }
+
+    /// Serialise the command to OSC wire bytes.
+    pub fn encode(self) -> Result<Vec<u8>, crate::CommandError> {
+        self.to_osc_message().encode()
+    }
+}
+
+macro_rules! impl_from_cmd {
+    ($($ty:ident),* $(,)?) => {
+        $(
+            impl From<$ty> for ServerMessage {
+                fn from(c: $ty) -> Self { ServerMessage::$ty(c) }
+            }
+        )*
+    };
+}
+
+impl_from_cmd! {
+    BAlloc, BAllocRead, BAllocReadChannel, BClose, BFill, BFree, BGen,
+    BGet, BGetn, BQuery, BRead, BReadChannel, BSet, BSetSampleRate, BSetn,
+    BWrite, BZero, CFill, CGet, CGetn, CSet, CSetn, Cmd, DFree, DLoad,
+    DLoadDir, DRecv, DumpOSC, Error, GDeepFree, GDumpTree, GFreeAll,
+    GHead, GNew, GQueryTree, GTail, NAfter, NBefore, NFill, NFree, NMap,
+    NMapa, NMapan, NMapn, NOrder, NQuery, NRun, NSet, NSetn, NTrace,
+    Notify, PNew, SGet, SGetn, SNew, SNoid, Sync, UCmd,
 }

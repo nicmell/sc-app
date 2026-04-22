@@ -4,9 +4,9 @@
 //! Usage:
 //!
 //! ```no_run
-//! use scserver_commands::{ServerMessage, ServerReply};
+//! use scserver_commands::{OscMessage, ServerReply};
 //! let bytes = [/* … from UDP socket … */];
-//! let msg = ServerMessage::decode(&bytes).unwrap();
+//! let msg = OscMessage::decode(&bytes).unwrap();
 //! match ServerReply::from_message(msg).unwrap() {
 //!     ServerReply::Done { address, .. } => println!("done: {address}"),
 //!     ServerReply::Fail { address, error, .. } => eprintln!("fail {address}: {error}"),
@@ -17,7 +17,7 @@
 
 use rosc::OscType;
 
-use crate::{CommandError, ServerMessage};
+use crate::{CommandError, OscMessage};
 
 /// Typed representation of every server-to-client reply.
 #[derive(Debug, Clone, PartialEq)]
@@ -90,12 +90,12 @@ pub struct StatusReply {
 impl ServerReply {
     /// Parse a raw OSC packet.
     pub fn parse(bytes: &[u8]) -> Result<Self, CommandError> {
-        Self::from_message(ServerMessage::decode(bytes)?)
+        Self::from_message(OscMessage::decode(bytes)?)
     }
 
     /// Dispatch an already-decoded message into the typed variant whose
     /// OSC address it matches. Unknown addresses become `Other(..)`.
-    pub fn from_message(msg: ServerMessage) -> Result<Self, CommandError> {
+    pub fn from_message(msg: OscMessage) -> Result<Self, CommandError> {
         match msg.address.as_str() {
             "/done" => Ok(Self::Done {
                 address: take_string(&msg, 0, "/done")?,
@@ -142,7 +142,7 @@ impl ServerReply {
     }
 }
 
-fn parse_node_info(msg: &ServerMessage) -> Result<NodeInfo, CommandError> {
+fn parse_node_info(msg: &OscMessage) -> Result<NodeInfo, CommandError> {
     let addr = msg.address.clone();
     Ok(NodeInfo {
         node_id: take_int(msg, 0, &addr)?,
@@ -155,7 +155,7 @@ fn parse_node_info(msg: &ServerMessage) -> Result<NodeInfo, CommandError> {
     })
 }
 
-fn take_int(msg: &ServerMessage, i: usize, addr: &str) -> Result<i32, CommandError> {
+fn take_int(msg: &OscMessage, i: usize, addr: &str) -> Result<i32, CommandError> {
     msg.args.get(i).and_then(as_int).ok_or_else(|| CommandError::ArgType {
         address: addr.to_string(),
         pos: i,
@@ -164,7 +164,7 @@ fn take_int(msg: &ServerMessage, i: usize, addr: &str) -> Result<i32, CommandErr
     })
 }
 
-fn take_float(msg: &ServerMessage, i: usize, addr: &str) -> Result<f32, CommandError> {
+fn take_float(msg: &OscMessage, i: usize, addr: &str) -> Result<f32, CommandError> {
     msg.args.get(i).and_then(as_float).ok_or_else(|| CommandError::ArgType {
         address: addr.to_string(),
         pos: i,
@@ -173,7 +173,7 @@ fn take_float(msg: &ServerMessage, i: usize, addr: &str) -> Result<f32, CommandE
     })
 }
 
-fn take_double(msg: &ServerMessage, i: usize, addr: &str) -> Result<f64, CommandError> {
+fn take_double(msg: &OscMessage, i: usize, addr: &str) -> Result<f64, CommandError> {
     msg.args.get(i).and_then(as_double).ok_or_else(|| CommandError::ArgType {
         address: addr.to_string(),
         pos: i,
@@ -182,7 +182,7 @@ fn take_double(msg: &ServerMessage, i: usize, addr: &str) -> Result<f64, Command
     })
 }
 
-fn take_string(msg: &ServerMessage, i: usize, addr: &str) -> Result<String, CommandError> {
+fn take_string(msg: &OscMessage, i: usize, addr: &str) -> Result<String, CommandError> {
     msg.args.get(i).and_then(as_string).map(|s| s.to_string()).ok_or_else(|| CommandError::ArgType {
         address: addr.to_string(),
         pos: i,
@@ -225,7 +225,7 @@ mod tests {
 
     #[test]
     fn done_reply_roundtrip() {
-        let m = ServerMessage::new("/done").arg("/notify").arg(0i32);
+        let m = OscMessage::new("/done").arg("/notify").arg(0i32);
         match ServerReply::from_message(m).unwrap() {
             ServerReply::Done { address, extras } => {
                 assert_eq!(address, "/notify");
@@ -237,7 +237,7 @@ mod tests {
 
     #[test]
     fn status_reply_roundtrip() {
-        let m = ServerMessage::new("/status.reply")
+        let m = OscMessage::new("/status.reply")
             .arg(1i32) // unused
             .arg(10i32) // ugens
             .arg(2i32) // synths
@@ -259,7 +259,7 @@ mod tests {
 
     #[test]
     fn n_go_roundtrip() {
-        let m = ServerMessage::new("/n_go")
+        let m = OscMessage::new("/n_go")
             .arg(1001i32) // node
             .arg(0i32) // parent
             .arg(-1i32) // prev
@@ -278,7 +278,7 @@ mod tests {
 
     #[test]
     fn unknown_address_becomes_other() {
-        let m = ServerMessage::new("/some/random/addr").arg(42i32);
+        let m = OscMessage::new("/some/random/addr").arg(42i32);
         let reply = ServerReply::from_message(m).unwrap();
         assert!(matches!(reply, ServerReply::Other { .. }));
     }

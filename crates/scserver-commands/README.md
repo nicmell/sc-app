@@ -13,13 +13,22 @@ back, and the NRT (non-realtime) score file format.
   ```rust
   BAlloc { num_channels: Some(2), ..BAlloc::new(0, 8192) }.encode()?;
   ```
+- **`ServerMessage`** — tagged union over every documented command (63
+  payload variants + 6 argless unit cases + an `Other { address, args }`
+  escape hatch). Construct via `From<Cmd>` or directly:
+  ```rust
+  let msg: ServerMessage = BAlloc::new(0, 8192).into();
+  let bytes = msg.encode()?;        // OSC wire bytes
+  ServerMessage::Status.encode()?;  // unit variant
+  ```
 - **`commands::{ControlId, NumericValue, ControlValue}`** — the three
   polymorphic OSC arg shapes the SC protocol uses. Each has ergonomic
   `From` impls: `"freq".into()` → `ControlId::Name`, `440.0f32.into()`
   → `ControlValue::Float`.
-- **`ServerMessage`** — one OSC message (address + typed args).
-  `encode() -> Vec<u8>` produces wire bytes via
-  [`rosc`](https://docs.rs/rosc); `decode(&[u8])` is the inverse.
+- **`OscMessage`** — one raw OSC wire message (address + typed args).
+  The low-level shape every command encodes into.
+  `encode() -> Vec<u8>` via [`rosc`](https://docs.rs/rosc);
+  `decode(&[u8])` is the inverse.
 - **`ServerReply`** — tagged enum over every documented reply
   (`/done`, `/fail`, `/n_go`, `/status.reply`, `/tr`, …).
   `ServerReply::parse(&[u8])` dispatches on the incoming address.
@@ -51,14 +60,34 @@ cargo component build --release --features component --target wasm32-wasip1
 jco transpile ../../target/wasm32-wasip1/release/scserver_commands.wasm -o pkg
 ```
 
-The WIT world exports three interfaces:
+## WIT surface
 
-- `core` — `osc-arg` + `server-message` resource + `decode-message` +
-  `nrt-score` resource.
-- `commands` — 64 typed `<cmd>: func(args: <cmd>-args) -> server-message`
-  (plus the three polymorphic arg variants).
-- `replies` — `server-reply` variant with 12 cases + typed payload
+Four interfaces, mirroring the Rust modules:
+
+- **`core`** — just the `osc-arg` variant (primitive OSC arg shape
+  shared across the other interfaces).
+- **`commands`** — one `x-args` record per command (63 total), plus a
+  `server-message` variant that discriminates across them. A single
+  exported function `encode(msg: server-message) -> list<u8>` produces
+  OSC wire bytes.
+- **`nrt`** — `nrt-score` resource that takes `server-message` values at
+  timestamped positions and serialises to the NRT score format.
+- **`replies`** — `server-reply` variant with 12 cases + typed payload
   records + `parse-reply`.
 
-Two Node smoke tests under `examples/node/` exercise the jco-generated
-bindings end-to-end.
+The generated TS `.d.ts` exposes `ServerMessage` and `ServerReply` as
+symmetric discriminated unions:
+
+```ts
+// scserver-commands-commands.d.ts
+export type ServerMessage =
+  | ServerMessageBAlloc       // { tag: 'b-alloc',  val: BAllocArgs }
+  | ServerMessageSNew         // { tag: 's-new',    val: SNewArgs }
+  | ServerMessageStatus       // { tag: 'status' }  (argless)
+  | ServerMessageOther        // { tag: 'other',    val: { address, args } }
+  | ...;
+export function encode(msg: ServerMessage): Uint8Array;
+```
+
+`examples/node/roundtrip.ts` exercises this end-to-end — encode, NRT
+score assembly, and `parseReply` round-trips.
