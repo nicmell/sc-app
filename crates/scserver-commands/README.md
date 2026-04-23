@@ -35,6 +35,120 @@ back, and the NRT (non-realtime) score file format.
 - **`NrtScore`** — timestamped OSC bundles, serialised to the
   length-prefixed binary file scsynth's `-N` mode consumes.
 
+## Usage
+
+### From Rust
+
+Encode a command, decode a reply, build an NRT score:
+
+```rust
+use scserver_commands::{NrtScore, ServerMessage, ServerReply};
+use scserver_commands::commands::{NFree, SNew};
+
+// 1. Encode a /s_new with two control pairs.
+let msg: ServerMessage = SNew::new(
+    "sine".into(),
+    1001,   // new node id
+    0,      // add action = head
+    1,      // target group
+    vec![
+        ("freq".into(), 440.0f32.into()),
+        ("amp".into(),   0.5f32.into()),
+    ],
+).into();
+let bytes: Vec<u8> = msg.encode()?;
+// … send `bytes` to scsynth over UDP …
+
+// 2. Decode an incoming reply — typed variant dispatch.
+match ServerReply::decode(&reply_bytes)? {
+    ServerReply::StatusReply(s) =>
+        println!("{} ugens, {} synths", s.num_ugens, s.num_synths),
+    ServerReply::NGo(n) =>
+        println!("node {} started in group {}", n.node_id, n.parent_id),
+    ServerReply::Fail { address, error, .. } =>
+        eprintln!("fail {address}: {error}"),
+    _ => {}
+}
+
+// 3. Assemble an NRT score — feed typed commands into timestamped
+//    bundles, serialise to the scsynth `-N` file format.
+let score = NrtScore::new()
+    .at(0.0, ServerMessage::from(SNew::new(
+        "sine".into(), 1001, 0, 1, vec![],
+    )).to_osc_message())
+    .at(2.0, ServerMessage::from(NFree::new(vec![1001])).to_osc_message());
+let nrt_bytes = score.encode()?;
+# Ok::<(), scserver_commands::CommandError>(())
+```
+
+Required args go in `new(...)`; optional trailing args use struct-update:
+
+```rust
+use scserver_commands::commands::BAlloc;
+
+let bytes = BAlloc {
+    num_channels: Some(2),
+    ..BAlloc::new(0, 8192)
+}.encode()?;
+```
+
+### From TypeScript (WASM component)
+
+Same three flows, via the jco-transpiled bindings:
+
+```ts
+import { commands, nrt, replies } from './pkg/scserver_commands.js';
+
+// 1. Encode a /s_new command.
+const bytes = commands.encode({
+  tag: 's-new',
+  val: {
+    defName: 'sine',
+    nodeId: 1001,
+    addAction: 0,
+    targetId: 1,
+    tail: [
+      [{ tag: 'name', val: 'freq' }, { tag: 'float', val: 440 }],
+      [{ tag: 'name', val: 'amp'  }, { tag: 'float', val: 0.5 }],
+    ],
+  },
+});
+// … send `bytes` to scsynth …
+
+// 2. Decode a reply — discriminated union with full TS narrowing.
+const reply = replies.decode(replyBytes);
+switch (reply.tag) {
+  case 'status-reply':
+    console.log(reply.val.numUgens, reply.val.numSynths);
+    break;
+  case 'n-go':
+    console.log(reply.val.nodeId, reply.val.parentId);
+    break;
+  case 'fail':
+    console.error(reply.val.address, reply.val.error);
+    break;
+}
+
+// 3. Build an NRT score.
+const score = new nrt.NrtScore();
+score.at(0.0, { tag: 's-new', val: {
+  defName: 'sine', nodeId: 1001, addAction: 0, targetId: 1, tail: [],
+}});
+score.at(2.0, { tag: 'n-free', val: { nodeIds: [1001] } });
+const nrtBytes = score.encode();
+```
+
+Addresses outside the catalogue go through the `other` variant:
+
+```ts
+commands.encode({
+  tag: 'other',
+  val: { address: '/my-plugin-cmd', args: [{ tag: 'int32', val: 1 }] },
+});
+```
+
+See `examples/node/roundtrip.ts` for the full end-to-end exercise.
+
 ## Source of truth
 
 `src/commands.rs` is the single source of truth for the command

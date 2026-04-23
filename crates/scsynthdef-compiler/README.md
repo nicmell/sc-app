@@ -16,6 +16,96 @@ Compiles `.scsyndef` bytes that scsynth accepts, and parses them back.
 - **`registry::lookup_ugen` + `ugens_by_category`** — metadata access
   for documentation browsers and generators.
 
+## Usage
+
+### From Rust — typed `builders::*` API
+
+Each UGen is a generated struct with `ar()` / `kr()` / `ir()`
+constructors (only the rates SC actually supports), typed setter
+methods per arg, and a terminal `.build(&mut SynthDef) -> UGenInput`
+that appends the UGen to the graph and returns a handle usable as
+another UGen's input.
+
+```rust
+use scsynthdef_compiler::builders::{Out, SinOsc};
+use scsynthdef_compiler::{Rate, SynthDef};
+
+let mut def = SynthDef::new("sine");
+
+// Add a kr control — it returns a UGenInput handle.
+let freq = def.add_control("freq", 440.0, Rate::Control)?;
+
+// Build the graph. Each `.build` appends the UGen and returns the
+// handle you feed into the next one. Constants are passed unwrapped
+// — the setters take `impl Into<UGenInput>`.
+let osc = SinOsc::ar().freq(freq).phase(0.0).build(&mut def);
+Out::ar().bus(0.0).channels_array([osc]).build(&mut def);
+
+// `.scsyndef` bytes — send via `/d_recv` or write to disk.
+let bytes = def.to_bytes()?;
+# Ok::<(), scsynthdef_compiler::SynthDefError>(())
+```
+
+Round-trip a compiled binary back into a `SynthDef` for inspection:
+
+```rust
+use scsynthdef_compiler::SynthDef;
+
+let def = SynthDef::from_bytes(&bytes)?;
+let json = def.to_json()?;          // for diffs / debugging
+let back = SynthDef::from_json(&json)?;
+```
+
+Introspect the bundled UGen catalogue (365 UGens shipped):
+
+```rust
+use scsynthdef_compiler::registry::{lookup_ugen, ugens_by_category};
+
+let spec = lookup_ugen("SinOsc").unwrap();
+println!("{}: {} inputs, {} outputs",
+    spec.name, spec.inputs.len(), spec.outputs);
+
+for (category, ugens) in ugens_by_category() {
+    println!("{category}: {} ugens", ugens.len());
+}
+```
+
+### From TypeScript (WASM component)
+
+The WIT `core` interface exports a `SynthDef` resource mirroring the
+Rust builder, plus stringly-typed `addUgen` / `addControl` methods
+(the typed `ugens` interface is declared but not exported — see
+"WIT surface" below).
+
+```ts
+import { core } from './pkg/scsynthdef_compiler.js';
+import type { UgenInput } from './pkg/interfaces/scsynthdef-compiler-core.js';
+
+// Helpers to build UgenInput variants for addUgen's inputs array.
+const k = (v: number): UgenInput => ({ tag: 'constant', val: v });
+const u = (i: number): UgenInput => ({ tag: 'ugen',     val: i });
+
+const def = new core.SynthDef('sine');
+
+// addControl returns a UgenInput handle you can feed to addUgen.
+const freq = def.addControl('freq', 440, 'control');
+
+// addUgen(name, rate, inputs, numOutputs, specialIndex) → graph index.
+// Wrap that index in `u(...)` to reference it from a later UGen.
+const osc = def.addUgen('SinOsc', 'audio', [freq, k(0)], 1, 0);
+def.addUgen('Out',    'audio', [k(0), u(osc)],           0, 0);
+
+const bytes = def.toBytes();
+
+// Inspect / diff.
+const json = def.toJson();
+const parsed = core.parseScgf(bytes);           // JSON from bytes
+const registry = JSON.parse(core.registryJson()); // catalogue for UI
+```
+
+See `examples/node/sclang_parity.ts` for the full three-fixture
+harness that byte-diffs against `sclang`.
+
 ## Build targets
 
 ### Native Rust
