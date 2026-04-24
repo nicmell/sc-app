@@ -1,0 +1,166 @@
+// @generated — DO NOT EDIT. Regenerate with scripts/generate_specs.mjs.
+//
+// Ported from crates/scsynthdef-compiler/src/specs/beq_suite.rs.
+
+import { UGenRegistryEntry } from '../registry.js';
+
+export const UGENS: UGenRegistryEntry[] = [
+  {
+    name: "BAllPass",
+    rates: ['audio'],
+    defaults: [
+      { name: "in", default: null },
+      { name: "freq", default: 1200 },
+      { name: "rq", default: 1 },
+    ],
+    numOutputs: null,
+    extends: null,
+    summary: null,
+    doc: "All pass filter based on the Second Order Section (SOS) biquad UGen",
+    signalRange: null,
+    argDocs: [
+      { name: "freq", doc: "center frequency." },
+      { name: "in", doc: "input signal to be processed." },
+      { name: "rq", doc: "the reciprocal of Q. bandwidth / cutoffFreq." },
+    ],
+  },
+  {
+    name: "BBandPass",
+    rates: ['audio'],
+    defaults: [
+      { name: "in", default: null },
+      { name: "freq", default: 1200 },
+      { name: "bw", default: 1 },
+    ],
+    numOutputs: null,
+    extends: null,
+    summary: null,
+    doc: "Band pass filter based on the Second Order Section (SOS) biquad UGen",
+    signalRange: null,
+    argDocs: [
+      { name: "bw", doc: "the bandwidth in octaves between -3 dB frequencies" },
+      { name: "freq", doc: "center frequency" },
+      { name: "in", doc: "input signal to be processed" },
+    ],
+  },
+  {
+    name: "BBandStop",
+    rates: ['audio'],
+    defaults: [
+      { name: "in", default: null },
+      { name: "freq", default: 1200 },
+      { name: "bw", default: 1 },
+    ],
+    numOutputs: null,
+    extends: null,
+    summary: null,
+    doc: "Band reject filter based on the Second Order Section (SOS) biquad UGen",
+    signalRange: null,
+    argDocs: [
+      { name: "bw", doc: "the bandwidth in octaves between -3 dB frequencies" },
+      { name: "freq", doc: "center frequency" },
+      { name: "in", doc: "input signal to be processed" },
+    ],
+  },
+  {
+    name: "BHiPass",
+    rates: ['audio'],
+    defaults: [
+      { name: "in", default: null },
+      { name: "freq", default: 1200 },
+      { name: "rq", default: 1 },
+    ],
+    numOutputs: null,
+    extends: null,
+    summary: null,
+    doc: "12db/oct rolloff - 2nd order resonant Hi Pass Filter based on the Second Order Section (SOS) biquad UGen.",
+    signalRange: null,
+    argDocs: [
+      { name: "freq", doc: "cutoff frequency" },
+      { name: "in", doc: "input signal to be processed" },
+      { name: "rq", doc: "the reciprocal of Q. bandwidth / cutoffFreq" },
+    ],
+  },
+  {
+    name: "BHiShelf",
+    rates: ['audio'],
+    defaults: [
+      { name: "in", default: null },
+      { name: "freq", default: 1200 },
+      { name: "rs", default: 1 },
+      { name: "db", default: 0 },
+    ],
+    numOutputs: null,
+    extends: null,
+    summary: null,
+    doc: "Hi shelfbased on the Second Order Section (SOS) biquad UGen",
+    signalRange: null,
+    argDocs: [
+      { name: "db", doc: "gain. boost/cut the center frequency in dBs" },
+      { name: "freq", doc: "center frequency" },
+      { name: "in", doc: "input signal to be processed" },
+      { name: "rs", doc: "the reciprocal of S. Shell boost/cut slope. When S = 1, the shelf slope is as steep as it can be and remain monotonically increasing or decreasing gain with frequency. The shelf slope, in dB/octave, remains proportional to S for all other values for a fixed freq/SampleRate.ir and db." },
+    ],
+  },
+  {
+    name: "BLowPass",
+    rates: ['audio'],
+    defaults: [
+      { name: "in", default: null },
+      { name: "freq", default: 1200 },
+      { name: "rq", default: 1 },
+    ],
+    numOutputs: null,
+    extends: null,
+    summary: null,
+    doc: "12db/oct rolloff - 2nd order resonant Low Pass Filter based on the Second Order Section (SOS) biquad UGen",
+    signalRange: null,
+    argDocs: [
+      { name: "freq", doc: "cutoff frequency" },
+      { name: "in", doc: "input signal to be processed" },
+      { name: "rq", doc: "the reciprocal of Q. bandwidth / cutoffFreq" },
+    ],
+  },
+  {
+    name: "BLowShelf",
+    rates: ['audio'],
+    defaults: [
+      { name: "in", default: null },
+      { name: "freq", default: 1200 },
+      { name: "rs", default: 1 },
+      { name: "db", default: 0 },
+    ],
+    numOutputs: null,
+    extends: null,
+    summary: null,
+    doc: "Low shelf based on the Second Order Section (SOS) biquad UGen",
+    signalRange: null,
+    argDocs: [
+      { name: "db", doc: "gain. boost/cut the center frequency in dBs" },
+      { name: "freq", doc: "center frequency" },
+      { name: "in", doc: "input signal to be processed" },
+      { name: "rs", doc: "the reciprocal of S. Shell boost/cut slope. When S = 1, the shelf slope is as steep as it can be and remain monotonically increasing or decreasing gain with frequency. The shelf slope, in dB/octave, remains proportional to S for all other values for a fixed freq/SampleRate.ir and db." },
+    ],
+  },
+  {
+    name: "BPeakEQ",
+    rates: ['audio'],
+    defaults: [
+      { name: "in", default: null },
+      { name: "freq", default: 1200 },
+      { name: "rq", default: 1 },
+      { name: "db", default: 0 },
+    ],
+    numOutputs: null,
+    extends: null,
+    summary: null,
+    doc: "Parametric equalizer based on the Second Order Section (SOS) biquad UGen",
+    signalRange: null,
+    argDocs: [
+      { name: "db", doc: "boost/cut the center frequency (in dBs)" },
+      { name: "freq", doc: "center frequency" },
+      { name: "in", doc: "input signal to be processed" },
+      { name: "rq", doc: "the reciprocal of Q. bandwidth / cutoffFreq" },
+    ],
+  },
+];
