@@ -20,6 +20,16 @@
 
 import type { MainToWorker } from '../scope/workerProtocol';
 
+// osc-js has a helper that does `typeof global !== 'undefined' ? global
+// : window`, which in a Web Worker throws "Can't find variable: window"
+// (workers have `self`/`globalThis`, not `window`). Shim `window` to
+// `globalThis` before osc-js loads — the lookup then finds the worker
+// global scope, which has `TextDecoder` available as expected.
+// Must run before any import that pulls in osc-js.
+if (typeof (globalThis as { window?: unknown }).window === 'undefined') {
+  (globalThis as { window?: unknown }).window = globalThis;
+}
+
 type Handler = (msg: MainToWorker) => void;
 
 const buffer: MainToWorker[] = [];
