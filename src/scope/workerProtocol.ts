@@ -35,16 +35,48 @@ export interface ClockTick {
   receivedAt: number;
 }
 
+/** Per-scope subscription registered with the worker's tick-driven
+ *  read loop. Once registered, the worker fires a `/b_getn` for the
+ *  just-completed half of `bufnum` on every clock tick and posts the
+ *  result back as a `scopeChunk` event keyed by `scopeId`.
+ *
+ *  `chunkSize` is a per-subscription concern (recordings in Phase 12
+ *  will use a different value than scopes) — the worker stays
+ *  oblivious to subscription kind and just reads `chunkSize × channels`
+ *  samples each tick. */
+export interface ScopeSubscription {
+  scopeId: string;
+  bufnum: number;
+  chunkSize: number;
+  channels: number;
+}
+
+/** One scope chunk delivered to the main thread. `data.length` =
+ *  `chunkSize × channels`. The worker hands ownership over via
+ *  `postMessage(..., [data.buffer])` — main consumers should not
+ *  retain references that outlive a frame. */
+export interface ScopeChunk {
+  scopeId: string;
+  data: Float32Array;
+  channels: number;
+  /** `tickIndex` of the tick whose `/b_getn` was answered by this
+   *  chunk. Monotonic per-subscription. */
+  tickIndex: number;
+}
+
 export type MainToWorker =
   | { type: 'connect'; url: string }
   | { type: 'disconnect' }
   | { type: 'send'; bytes: Uint8Array }
   | { type: 'registerClock'; trigId: number }
-  | { type: 'unregisterClock' };
+  | { type: 'unregisterClock' }
+  | { type: 'subscribeScope'; subscription: ScopeSubscription }
+  | { type: 'unsubscribeScope'; scopeId: string };
 
 export type WorkerToMain =
   | { type: 'ready' }
   | { type: 'error'; message: string }
   | { type: 'reply'; reply: OscReply }
   | { type: 'clockTick'; tick: ClockTick }
+  | { type: 'scopeChunk'; chunk: ScopeChunk }
   | { type: 'log'; level: 'log' | 'info' | 'warn' | 'error'; message: string };

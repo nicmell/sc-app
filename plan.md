@@ -1638,170 +1638,169 @@ scopeTap reads both on the same control block.
 
 **Goal.** Worker automatically reads completed chunks on every tick. Emits typed `scopeChunk` events. No rendering yet.
 
-### Files
+### Files (as landed)
 
-- `src/workers/scopeWorker.ts` — extended
-- `src/workers/subscriptionTable.ts`
-- `src/scope/workerProtocol.ts` — scope events
-- `src/scope/WorkerClient.ts` — scope API
-- `src/scope/ScopeController.ts`
-- `src/ui/ScopeDebugPanel.ts`
+- `src/scope/workerProtocol.ts` — adds `ScopeSubscription`,
+  `ScopeChunk`, plus `subscribeScope` / `unsubscribeScope` (main →
+  worker) and `scopeChunk` (worker → main).
+- `src/workers/scopeWorker.ts` — adds the per-bufnum subscription
+  table and the read loop. On every clock `/tr`, fires `/b_getn`
+  for each subscribed bufnum at the just-completed half offset; on
+  `/b_setn` matching a subscribed bufnum, copies samples into a
+  `Float32Array` and posts `scopeChunk` with zero-copy buffer
+  transfer.
+- `src/scope/WorkerClient.ts` — adds
+  `subscribeScope(sub, cb): () => void` (returns the unsubscribe
+  function — combines registration and dispatch). Internal
+  `Map<scopeId, Set<cb>>` routes incoming chunks to listeners.
+- `src/ui/ScopeTestPanel/` — extended with **Subscribe** /
+  **Unsubscribe** toggle, live chunks-per-second readout, and a
+  once-per-second continuity log of last4(N-1) / first4(N) for
+  catching parity flips.
+
+(No standalone `subscriptionTable.ts` or `ScopeDebugPanel.ts` —
+the table is a private `Map` inside `scopeWorker.ts`, the debug
+view is folded into `ScopeTestPanel`. `ScopeController` is deferred
+to Phase 11 where multi-scope demands the per-scope class; for
+Phase 8 the panel calls `subscribeScope` directly.)
 
 ### Protocol additions
 
 ```ts
-export type ScopeId = string;
-
 export interface ScopeSubscription {
-  scopeId: ScopeId;
+  scopeId: string;
   bufnum: number;
+  chunkSize: number;     // per-subscription, not derived from clock
   channels: number;
-  // chunkSize comes from registerClock — not repeated here
 }
 
 export interface ScopeChunk {
-  scopeId: ScopeId;
-  data: Float32Array;     // length = chunkSize * channels, interleaved
+  scopeId: string;
+  data: Float32Array;    // length = chunkSize * channels, interleaved
   channels: number;
   tickIndex: number;
 }
 
 // MainToWorker:
 | { type: 'subscribeScope'; subscription: ScopeSubscription }
-| { type: 'unsubscribeScope'; scopeId: ScopeId }
+| { type: 'unsubscribeScope'; scopeId: string }
 
 // WorkerToMain:
 | { type: 'scopeChunk'; chunk: ScopeChunk }
 ```
 
-`registerClock` expands:
+**`chunkSize` per subscription, not on `registerClock`.** Phase 12's
+recordings will reuse the exact same machinery with `chunkSize =
+samplesPerTick`. Putting `chunkSize` on the subscription rather than
+deriving it from a global "clock config" lets the worker stay
+oblivious to subscription kind — it just reads
+`chunkSize × channels` samples per tick at the parity-determined
+offset.
 
-```ts
-| { type: 'registerClock'; trigId: number; scopeChunkSize: number; samplesPerTick: number }
-```
+`registerClock` keeps its narrow signature (just `trigId`).
 
-### `subscriptionTable.ts`
+### Worker subscription table
 
-```ts
-interface ScopeEntry {
-  kind: 'scope';
-  scopeId: ScopeId;
-  bufnum: number;
-  channels: number;
-  parity: 0 | 1;
-  pendingRead: { tickIndex: number } | null;
-}
+A private `Map<bufnum, SubscriptionEntry>` plus a parallel
+`Map<scopeId, bufnum>` for unsubscribe-by-id. Each entry carries
+its `ScopeSubscription` and a transient `pendingTickIndex` used
+solely as a tag so the dispatched `scopeChunk` can carry the
+right `tickIndex`.
 
-// (Phase 12 adds RecordingEntry with the same shape + extras.)
+### Tick handler
 
-export class SubscriptionTable {
-  addScope(entry: ScopeEntry): void;
-  removeScope(scopeId: ScopeId): void;
-  byBufnum(bufnum: number): ScopeEntry | RecordingEntry | null;
-  allEntries(): Iterable<ScopeEntry | RecordingEntry>;
-  seedParity(currentTickIndex: number): void;  // called on add mid-run
-}
-```
-
-### Worker tick handler
-
-On decoded reply `{ tag: 'tr', val: { triggerId, value } }` where
-`triggerId` matches the registered clock id (`value | 0` is the
-`tickIndex`):
+On `/tr` matching the registered clock trigId:
 
 ```
-emit clockTick to main
+tickIndex = packet.args[2] | 0
+post clockTick
+completedHalf = 1 - (tickIndex % 2)        // see parity derivation
 for each subscription:
-    completedHalf = (tickIndex % 2 === 1) ? 0 : 1    // see parity note below
     offset = completedHalf * chunkSize * channels
     count  = chunkSize * channels
-    send bGetn(bufnum, offset, count)
-    subscription.pendingRead = { tickIndex }
-    subscription.parity ^= 1
+    transport.send(encode(bGetn(bufnum, offset, count)))
+    entry.pendingTickIndex = tickIndex
 ```
 
-**Parity.** Clock starts at `phase = 0`. First tick fires at phase crossing `chunkSize` → first half `[0, chunkSize)` just completed → read first half. So `tickIndex === 1` → read half 0. `tickIndex === 2` → read half 1. → `completedHalf = 1 - (tickIndex % 2)`. Verify empirically in acceptance test; flip bit if off.
+**Parity derivation (from Phase 6 design).** The clock publishes
+`Phasor.ar(0, 1, 0, 2 × samplesPerTick)`. At tick `N`, the server's
+audio frame is `N × samplesPerTick`, so the bus phase is
+`(N mod 2) × samplesPerTick`. The scope's
+`writeIdx = (phase / decimation) mod (chunkSize × 2)` evaluates to
+`(N mod 2) × chunkSize`. Therefore at tick `N` the *just-completed*
+half starts at `(1 - N mod 2) × chunkSize`. The acceptance test's
+continuity check verifies this empirically — if every other
+boundary is glitched, flip the formula.
 
-**chunkSize** per subscription: scopes use `scopeChunkSize` from `registerClock`; recordings (Phase 12) use `samplesPerTick`.
+**No `pendingRead` state machine.** scsynth replies on localhost
+within sub-ms; ticks are 21 ms apart. We don't track in-flight
+reads or drop overlapping requests. If overlap ever happens, the
+later reply just wins and we attribute it to the latest tick.
+Acceptable for the scope use case; revisit if real overlap is
+observed.
 
-### On incoming `BSetn` reply
-
-With the typed variant in place, the worker matches on tag directly and
-gets a `Float32Array` for the sample payload — no boxed-per-element JS
-objects:
+### `/b_setn` dispatch
 
 ```
-// reply: { tag: 'b-setn', val: { bufnum, start, samples: Float32Array } }
-entry = table.byBufnum(reply.val.bufnum)
-if no entry: forward as generic reply
-if no pendingRead: log warning, drop
-tickIndex = entry.pendingRead.tickIndex
-entry.pendingRead = null
-data = reply.val.samples              // already a Float32Array
-if entry.kind === 'scope':
-    postMessage({ type: 'scopeChunk',
-                  chunk: { scopeId, data, channels, tickIndex } },
-                [data.buffer])        // transfer ownership, zero-copy
+if address === '/b_setn':
+    bufnum = args[0]
+    entry  = subscriptions.get(bufnum)
+    if entry:
+        count  = args[2]
+        data   = new Float32Array(count)
+        for i in 0..count: data[i] = args[3 + i]
+        post({ type: 'scopeChunk',
+               chunk: { scopeId, data, channels, tickIndex: entry.pendingTickIndex } },
+             [data.buffer])    // zero-copy transfer
+        entry.pendingTickIndex = null
+        return
+    // Otherwise falls through to the generic reply path so
+    // main-thread BufferPokers (Phase 7) still work for
+    // non-subscribed bufnums.
 ```
 
-**Unknown reply fallback.** Any reply whose address isn't in the typed
-catalogue lands in `{ tag: 'other', val: { address, args } }` — the
-worker forwards those unchanged as generic `reply` events. `/b_info`
-(response to `/b_query`) and `/g_queryTree.reply` come through this path
-and callers parse them manually when needed.
+**Caveat: subscribed bufnum vs. BufferPoker.** A `BufferPoker.poke()`
+against a *subscribed* bufnum is intercepted by the worker and never
+reaches `onReply`, so the poker hangs. The Phase 7 panel disables
+its **Poke** button while subscribed for this reason.
 
 ### Mid-run subscribe
 
-On `subscribeScope` while clock is running, seed `parity` from current `tickIndex`:
-```
-parity = (tickIndex % 2)   // so the next tick flips it to the correct first half
-```
-First tick after subscribe → reads the half that just completed, exactly as a new clock-start subscription would.
+The completed-half formula is purely a function of `tickIndex`, so
+no per-subscription parity state is needed. On the next tick after
+subscribe, the worker fires `/b_getn` for whichever half just
+completed.
 
 ### `WorkerClient` additions
 
 ```ts
-registerClock(trigId: number, chunkSize: number, samplesPerTick: number): void;
-subscribeScope(sub: ScopeSubscription): void;
-unsubscribeScope(scopeId: ScopeId): void;
-onScopeChunk(scopeId: ScopeId, cb: (chunk: ScopeChunk) => void): () => void;
-onTick(cb: (tick: ClockTick) => void): () => void;
+subscribeScope(
+  sub: ScopeSubscription,
+  cb: (chunk: ScopeChunk) => void,
+): () => void;
 ```
 
-Internal dispatch: the client keeps a `Map<ScopeId, Set<cb>>` for per-scope chunk callbacks.
+Returns the unsubscribe function — combines registration + dispatch
+in one call. The unsubscribe is paired with the subscription that
+owns it; multiple `cb`s for the same `scopeId` are deduplicated by
+identity. The worker is told to remove the subscription only when
+the last callback unsubscribes.
 
-### `ScopeController.ts`
+### `ScopeTestPanel` extension
 
-```ts
-export class ScopeController {
-  constructor(
-    private client: WorkerClient,
-    private clock: ClockController,
-    private registry: SynthDefRegistry,
-    private ids: IdAllocators,
-    readonly scopeId: ScopeId = crypto.randomUUID(),
-  );
+The Phase 7 panel grows two artefacts:
+- **Subscribe / Unsubscribe** button — toggles a `client.subscribeScope`
+  against the panel's existing `bufnum`. While subscribed, **Poke**
+  is disabled.
+- **Live readout** under the Poke output: `tick=… count=… N/s` plus
+  the latest chunk's min/max/rms/first8.
+- **Continuity log** — once per second, prints `last4(N-1)` and
+  `first4(N)` so a misplaced parity bit jumps out as a step at every
+  other boundary.
 
-  readonly latestChunk: ReadonlyStore<ScopeChunk | null>;
-
-  async start(opts: { inputBus: number; channels: number }): Promise<void>;
-  async stop(): Promise<void>;
-}
-```
-
-`start` (using the `scope/cmd` helpers):
-1. `registry.ensureLoaded('scopeTap', compileScopeSynthDef())`.
-2. `bufnum = ids.buffer.next()`; `nodeId = ids.node.next()`.
-3. `await client.sendAndSync(bAlloc(bufnum, clock.derived.scopeRingSize, channels))`.
-4. `client.sendCommand(sNew('scopeTap', nodeId, AddToTail, clock.parentGroupId, { in: inputBus, bufnum, clockBus: clock.clockBus, channels }))`.
-5. `client.subscribeScope({ scopeId, bufnum, channels })`.
-6. `client.onScopeChunk(scopeId, chunk => latestChunk.set(chunk))`.
-
-`stop`: unsubscribe; `client.sendCommand(nFree(nodeId))`; `client.sendCommand(bFree(bufnum))`. Idempotent.
-
-### `ScopeDebugPanel.ts`
-
-Line per update: `scope-1 | bufnum 1000 | tick 373 | len 250 | min -0.19 max 0.20 | [0.12, 0.15, 0.18, ...]`. Plus rolling chunks/sec counter.
+`ScopeController` is deferred to Phase 11 where multi-scope demands
+the per-scope class. For Phase 8 the panel just calls `subscribeScope`
+directly.
 
 ### Acceptance
 

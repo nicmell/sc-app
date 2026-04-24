@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AddToTail,
   bAlloc,
@@ -12,6 +12,7 @@ import type { GroupController } from '@/scope/GroupController';
 import type { IdAllocator } from '@/scope/IdAllocator';
 import type { SynthDefRegistry } from '@/scope/SynthDefRegistry';
 import type { WorkerClient } from '@/scope/WorkerClient';
+import type { ScopeChunk } from '@/scope/workerProtocol';
 import { DEFAULT_PARAMS } from '@/config/clockConfig';
 import {
   SCOPE_SYNTHDEF_NAME,
@@ -61,6 +62,25 @@ interface PokeStats {
   first8: number[];
 }
 
+interface SubStats {
+  /** Most recent chunk's tickIndex. */
+  tickIndex: number;
+  /** Number of chunks delivered since subscribe. */
+  count: number;
+  /** Rolling chunks-per-second (windowed over the last second). */
+  chunksPerSec: number;
+  /** Snapshot summary of the most recent chunk. */
+  last: PokeStats;
+}
+
+/** Used to derive a stable scopeId per panel instance — survives
+ *  Subscribe→Unsubscribe→Subscribe cycles in the same panel. */
+function freshScopeId(): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `scope-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export function ScopeTestPanel({
   client,
   clock,
@@ -79,10 +99,17 @@ export function ScopeTestPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<PokeStats | null>(null);
+  const [subStats, setSubStats] = useState<SubStats | null>(null);
+  // Subscribe state lives in refs because `unsubscribeRef` returns a
+  // fresh function each subscription and we don't want to re-render
+  // every time a chunk arrives just to keep the readout updated.
+  const unsubscribeRef = useRef<(() => void) | null>(null);
+  const lastChunkRef = useRef<ScopeChunk | null>(null);
 
   const hasTone = res.toneNodeId !== null;
   const hasScope = res.scopeNodeId !== null;
   const hasMonitor = res.monitorNodeId !== null;
+  const hasSubscription = unsubscribeRef.current !== null;
   const hasAny =
     hasTone || hasScope || hasMonitor || res.bufnum !== null;
 
@@ -194,6 +221,71 @@ export function ScopeTestPanel({
     });
   }, [client, group, ids, registry, res.monitorNodeId, res.toneBus, guard]);
 
+  const onToggleSubscribe = useCallback(() => {
+    void guard(async () => {
+      if (unsubscribeRef.current !== null) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+        lastChunkRef.current = null;
+        console.log('[sc:scope-test] unsubscribed');
+        setSubStats(null);
+        return;
+      }
+      if (res.bufnum === null) {
+        throw new Error('start the scope first');
+      }
+      const scopeId = freshScopeId();
+      // Per-second rolling window: timestamps of recent chunk arrivals.
+      const recent: number[] = [];
+      // Continuity check: log boundary samples once per second.
+      let lastChunkData: Float32Array | null = null;
+      let nextContinuityLogAt = 0;
+      let count = 0;
+
+      const off = client.subscribeScope(
+        { scopeId, bufnum: res.bufnum, chunkSize: DEFAULT_PARAMS.scopeChunkSize, channels: 1 },
+        (chunk) => {
+          count += 1;
+          const now = performance.now();
+          recent.push(now);
+          while (recent.length > 0 && recent[0] < now - 1000) recent.shift();
+
+          // Continuity diagnostic — log last4(N-1) and first4(N) every
+          // second so misplaced parity stands out.
+          if (lastChunkData && now >= nextContinuityLogAt) {
+            const lastN = lastChunkData.length;
+            const last4 = Array.from(lastChunkData.slice(lastN - 4, lastN));
+            const first4 = Array.from(chunk.data.slice(0, 4));
+            console.log(
+              `[sc:scope-test] continuity tick=${chunk.tickIndex} ` +
+                `last4=[${last4.map((v) => v.toFixed(3)).join(', ')}] ` +
+                `first4=[${first4.map((v) => v.toFixed(3)).join(', ')}]`,
+            );
+            nextContinuityLogAt = now + 1000;
+          }
+          // Copy because the original buffer was zero-copy-transferred —
+          // if we hold a reference, the next chunk arrival overwrites
+          // nothing (it's a new array), but stash a copy for the
+          // continuity check on the FOLLOWING chunk so we don't
+          // accidentally observe a transferred buffer.
+          lastChunkData = new Float32Array(chunk.data);
+
+          lastChunkRef.current = chunk;
+          setSubStats({
+            tickIndex: chunk.tickIndex,
+            count,
+            chunksPerSec: recent.length,
+            last: summarize(chunk.data),
+          });
+        },
+      );
+      unsubscribeRef.current = off;
+      console.log(
+        `[sc:scope-test] subscribed scopeId=${scopeId} bufnum=${res.bufnum}`,
+      );
+    });
+  }, [client, res.bufnum, guard]);
+
   const onPoke = useCallback(() => {
     void guard(async () => {
       if (res.bufnum === null) throw new Error('no buffer allocated');
@@ -216,7 +308,15 @@ export function ScopeTestPanel({
 
   const onStopAll = useCallback(() => {
     void guard(async () => {
-      // Free scope + monitor first so nothing is still reading the
+      // Drop any active subscription first so the worker stops
+      // firing /b_getn for a buffer we're about to free.
+      if (unsubscribeRef.current !== null) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+        lastChunkRef.current = null;
+        setSubStats(null);
+      }
+      // Free scope + monitor next so nothing is still reading the
       // tone bus / writing the buffer when those go away.
       if (res.monitorNodeId !== null) {
         try {
@@ -261,9 +361,14 @@ export function ScopeTestPanel({
   // Automatic teardown if the panel unmounts while resources exist
   // (usually means the dashboard itself is going away; the dashboard
   // already frees the whole group, so this is just belt-and-braces
-  // for hot-reload in dev).
+  // for hot-reload in dev). Always drop the subscription on unmount
+  // so the worker doesn't keep firing /b_getn into nothing.
   useEffect(() => {
     return () => {
+      if (unsubscribeRef.current !== null) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
       if (res.scopeNodeId !== null || res.toneNodeId !== null) {
         console.log('[sc:scope-test] panel unmount — resources still active');
       }
@@ -301,8 +406,24 @@ export function ScopeTestPanel({
         <button
           type="button"
           className="secondary"
-          onClick={onPoke}
+          onClick={onToggleSubscribe}
           disabled={busy || !hasScope}
+          title="Toggle worker tick-driven /b_getn loop"
+        >
+          {hasSubscription ? 'Unsubscribe' : 'Subscribe'}
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          onClick={onPoke}
+          // Worker intercepts /b_setn for subscribed bufnums, so a
+          // BufferPoker against the same bufnum would hang.
+          disabled={busy || !hasScope || hasSubscription}
+          title={
+            hasSubscription
+              ? 'Disabled while subscribed — the worker intercepts /b_setn for this bufnum'
+              : 'Manually read the entire scope ring via /b_getn'
+          }
         >
           Poke
         </button>
@@ -327,10 +448,21 @@ export function ScopeTestPanel({
         {hasMonitor
           ? `monitor → out ${HARDWARE_OUT_BUS}`
           : 'monitor off'}
+        {' · '}
+        {hasSubscription
+          ? `subscribed (${subStats ? `${subStats.chunksPerSec}/s` : 'no chunks yet'})`
+          : 'unsubscribed'}
       </div>
+      {subStats && (
+        <pre className="readout">
+          {`SUB tick=${subStats.tickIndex} count=${subStats.count} ${subStats.chunksPerSec}/s
+last min=${subStats.last.min.toFixed(4)}  max=${subStats.last.max.toFixed(4)}  rms=${subStats.last.rms.toFixed(4)}
+first8=[${subStats.last.first8.map((v) => v.toFixed(4)).join(', ')}]`}
+        </pre>
+      )}
       {stats && (
         <pre className="readout">
-          {`length=${stats.length}
+          {`POKE length=${stats.length}
 min=${stats.min.toFixed(4)}  max=${stats.max.toFixed(4)}  rms=${stats.rms.toFixed(4)}
 first8=[${stats.first8.map((v) => v.toFixed(4)).join(', ')}]`}
         </pre>

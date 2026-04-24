@@ -28,6 +28,8 @@ import type {
   ClockTick,
   MainToWorker,
   OscReply,
+  ScopeChunk,
+  ScopeSubscription,
   WorkerToMain,
 } from './workerProtocol';
 
@@ -37,6 +39,7 @@ const DEFAULT_SYNC_TIMEOUT_MS = 2000;
 export type ReplyListener = (reply: OscReply) => void;
 export type ErrorListener = (message: string) => void;
 export type TickListener = (tick: ClockTick) => void;
+export type ChunkListener = (chunk: ScopeChunk) => void;
 export type ReplyMatcher = (reply: OscReply) => boolean;
 
 export class WorkerClient {
@@ -44,6 +47,7 @@ export class WorkerClient {
   private readonly replyListeners = new Set<ReplyListener>();
   private readonly errorListeners = new Set<ErrorListener>();
   private readonly tickListeners = new Set<TickListener>();
+  private readonly chunkListeners = new Map<string, Set<ChunkListener>>();
   private nextSyncId = 1;
   readonly ready: Promise<void>;
 
@@ -118,6 +122,16 @@ export class WorkerClient {
         case 'clockTick':
           for (const cb of this.tickListeners) cb(msg.tick);
           break;
+        case 'scopeChunk': {
+          const cbs = this.chunkListeners.get(msg.chunk.scopeId);
+          if (cbs) {
+            for (const cb of cbs) cb(msg.chunk);
+          }
+          // No listener registered → drop on the floor; the worker
+          // already paid the cost of decoding, but holding onto an
+          // orphan chunk would just leak the Float32Array.
+          break;
+        }
         case 'error':
           console.warn('[sc:client] error', msg.message);
           for (const cb of this.errorListeners) cb(msg.message);
@@ -169,6 +183,38 @@ export class WorkerClient {
 
   unregisterClock(): void {
     this.post({ type: 'unregisterClock' });
+  }
+
+  /** Register a per-scope tick-driven read on the worker's
+   *  subscription table and route the resulting `scopeChunk` events
+   *  to `cb`. Returns the unsubscribe function — pair every call
+   *  with the cleanup it returns. Calling twice with the same
+   *  `scopeId` replaces the previous subscription on the worker
+   *  side and adds a second callback. */
+  subscribeScope(
+    sub: ScopeSubscription,
+    cb: ChunkListener,
+  ): () => void {
+    this.post({ type: 'subscribeScope', subscription: sub });
+    let cbs = this.chunkListeners.get(sub.scopeId);
+    if (!cbs) {
+      cbs = new Set();
+      this.chunkListeners.set(sub.scopeId, cbs);
+    }
+    cbs.add(cb);
+    let disposed = false;
+    return () => {
+      if (disposed) return;
+      disposed = true;
+      const set = this.chunkListeners.get(sub.scopeId);
+      if (set) {
+        set.delete(cb);
+        if (set.size === 0) {
+          this.chunkListeners.delete(sub.scopeId);
+          this.post({ type: 'unsubscribeScope', scopeId: sub.scopeId });
+        }
+      }
+    };
   }
 
   /** Send `msg` and resolve on the first reply satisfying `match`. */
@@ -271,6 +317,7 @@ export class WorkerClient {
     this.replyListeners.clear();
     this.errorListeners.clear();
     this.tickListeners.clear();
+    this.chunkListeners.clear();
   }
 
   private post(msg: MainToWorker): void {
