@@ -5,7 +5,12 @@ import { DebugLog } from '@/ui/DebugLog';
 import { OscConsole } from '@/ui/OscConsole';
 import { SynthDefPanel } from '@/ui/SynthDefPanel';
 import { DEFAULT_ENV, DEFAULT_PARAMS } from '@/config/clockConfig';
-import { notify, status } from '@sc-app/server-commands';
+import {
+  gFreeAll,
+  nFree,
+  notify,
+  status,
+} from '@sc-app/server-commands';
 import { ClockController } from './ClockController';
 import { GroupController } from './GroupController';
 import { IdAllocator } from './IdAllocator';
@@ -14,7 +19,8 @@ import { WorkerClient } from './WorkerClient';
 
 const STORAGE_KEY = 'sc.address';
 const STATUS_PROBE_TIMEOUT_MS = 1000;
-const PARENT_GROUP_ID = 100;
+/** Fallback when scsynth returns clientId 0 (can't use root group 0). */
+const FALLBACK_PARENT_GROUP_ID = 100;
 
 interface DashboardResources {
   client: WorkerClient;
@@ -73,14 +79,17 @@ function wsUrlFor(address: string): string {
   return url.href;
 }
 
-async function bringUpDashboard(client: WorkerClient): Promise<DashboardResources> {
+async function bringUpDashboard(
+  client: WorkerClient,
+  parentGroupId: number,
+): Promise<DashboardResources> {
   const ids = {
     node: new IdAllocator(1000),
     buffer: new IdAllocator(1000),
     bus: new IdAllocator(32),
   };
   const registry = new SynthDefRegistry(client);
-  const group = new GroupController(client, PARENT_GROUP_ID);
+  const group = new GroupController(client, parentGroupId);
   const clock = new ClockController({
     client,
     group,
@@ -90,7 +99,7 @@ async function bringUpDashboard(client: WorkerClient): Promise<DashboardResource
     params: DEFAULT_PARAMS,
   });
 
-  console.log('[sc:app] starting global clock');
+  console.log(`[sc:app] starting global clock in group ${parentGroupId}`);
   await clock.start();
   console.log('[sc:app] dashboard ready');
 
@@ -151,12 +160,21 @@ export function AppShell() {
       );
     }
 
-    // Subscribe to async notifications (/tr, /n_go, /n_end, /done, …).
-    // Without this, SendTrig replies are never broadcast to us.
+    // Subscribe to async notifications (/tr, /n_go, /n_end, /done, …)
+    // and capture the assigned clientId from `/done /notify`. The
+    // per-session parent group id is derived from it (see below).
     console.log('[sc:app] enabling /notify');
+    let clientId: number;
     try {
-      await next.sendAndSync(notify(1));
-      console.log('[sc:app] /notify enabled');
+      const reply = await next.sendAndAwaitReply(
+        notify(1),
+        (r) => r.address === '/done' && r.args[0] === '/notify',
+        STATUS_PROBE_TIMEOUT_MS,
+      );
+      clientId = reply.args[1] as number;
+      console.log(
+        `[sc:app] /notify enabled, clientId=${clientId}, maxLogins=${reply.args[2]}`,
+      );
     } catch (err) {
       console.error('[sc:app] /notify failed', err);
       next.dispose();
@@ -164,6 +182,21 @@ export function AppShell() {
         `scsynth didn't accept /notify at ${address}: ${
           err instanceof Error ? err.message : String(err)
         }`,
+      );
+    }
+
+    // Per-session root group, derived from the notify-assigned clientId.
+    // Reconnects usually get a different clientId (because /notify 0
+    // on the prior session frees the slot, but the OS port is also
+    // different), so collisions across sessions are avoided as long as
+    // scsynth hasn't recycled the slot. `clientId = 0` is the
+    // single-client default; we can't use root group 0, so fall back
+    // to the old hardcoded 100.
+    const parentGroupId =
+      clientId > 0 ? clientId * 100 : FALLBACK_PARENT_GROUP_ID;
+    if (clientId === 0) {
+      console.warn(
+        `[sc:app] scsynth returned clientId=0; using fallback group ${FALLBACK_PARENT_GROUP_ID}`,
       );
     }
 
@@ -180,7 +213,7 @@ export function AppShell() {
 
     let built: DashboardResources;
     try {
-      built = await bringUpDashboard(next);
+      built = await bringUpDashboard(next, parentGroupId);
     } catch (err) {
       console.error('[sc:app] dashboard bring-up failed', err);
       next.dispose();
@@ -194,6 +227,10 @@ export function AppShell() {
   const handleDisconnect = useCallback(async () => {
     const current = resources;
     if (current) {
+      // Free server-side state in dependency order: clock synth →
+      // parent group + descendants → unregister notifications → tear
+      // down the worker. Each step is best-effort so a single
+      // failure doesn't strand the rest.
       try {
         await current.clock.dispose();
       } catch (err) {
@@ -204,10 +241,39 @@ export function AppShell() {
       } catch (err) {
         console.warn('[sc:app] group.free on disconnect failed', err);
       }
+      try {
+        await current.client.sendAndSync(notify(0));
+      } catch (err) {
+        console.warn('[sc:app] /notify 0 on disconnect failed', err);
+      }
       current.client.dispose();
       clientRef.current = null;
     }
     setResources(null);
+  }, [resources]);
+
+  // Best-effort shutdown when the tab / Tauri window closes. `pagehide`
+  // fires synchronously on the main thread; the commands we emit here
+  // queue into the worker's message channel and its WebSocket, which
+  // typically flush before the process is reaped. If we get killed
+  // before they land (hard close / SIGKILL), the leftover state sits
+  // on scsynth until manual cleanup or next /g_new-with-same-id fails
+  // — current tradeoff; acceptable because the normal disconnect path
+  // above handles the happy case cleanly.
+  useEffect(() => {
+    if (!resources) return;
+    const handler = () => {
+      const { client, group } = resources;
+      try {
+        client.sendCommand(gFreeAll(group.groupId));
+        client.sendCommand(nFree(group.groupId));
+        client.sendCommand(notify(0));
+      } catch {
+        /* best effort */
+      }
+    };
+    window.addEventListener('pagehide', handler);
+    return () => window.removeEventListener('pagehide', handler);
   }, [resources]);
 
   // Expose the client + clock in dev mode for console poking.
