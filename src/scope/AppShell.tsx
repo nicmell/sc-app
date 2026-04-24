@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ConnectScreen } from '@/ui/ConnectScreen';
 import { DebugLog } from '@/ui/DebugLog';
 import { OscConsole } from '@/ui/OscConsole';
+import { SynthDefPanel } from '@/ui/SynthDefPanel';
 import * as cmd from './cmd';
 import { WorkerClient } from './WorkerClient';
 
@@ -22,6 +23,7 @@ function Dashboard({ client, onDisconnect }: { client: WorkerClient; onDisconnec
           Disconnect
         </button>
       </header>
+      <SynthDefPanel client={client} />
       <OscConsole client={client} />
     </main>
   );

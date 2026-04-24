@@ -697,9 +697,15 @@ export class WorkerClient {
 
 ### `workerProtocol.ts` (typed)
 
+Types come from the jco-transpiled crate under `crates/scserver-commands/pkg/`
+via the `@wasm/scserver-commands` Vite alias (set up in `vite.config.ts`;
+see "Build pipeline" below). A `log` channel is added so worker-side
+`console.*` calls cross the postMessage boundary into the main-thread
+on-screen debug log.
+
 ```ts
-import type { ServerMessage } from '@sc-app/scserver-commands-pkg/interfaces/scserver-commands-commands';
-import type { ServerReply } from '@sc-app/scserver-commands-pkg/interfaces/scserver-commands-replies';
+import type { ServerMessage } from '@wasm/scserver-commands/interfaces/scserver-commands-commands';
+import type { ServerReply } from '@wasm/scserver-commands/interfaces/scserver-commands-replies';
 
 export type MainToWorker =
   | { type: 'connect'; url: string }
@@ -708,8 +714,9 @@ export type MainToWorker =
 
 export type WorkerToMain =
   | { type: 'ready' }
-  | { type: 'error'; message: string; cause?: unknown }
-  | { type: 'reply'; reply: ServerReply };
+  | { type: 'error'; message: string }
+  | { type: 'reply'; reply: ServerReply }
+  | { type: 'log'; level: 'log' | 'info' | 'warn' | 'error'; message: string };
 ```
 
 ### Worker changes
@@ -719,24 +726,55 @@ bytes: try `replies.decode(bytes)` → `reply`; on failure post `error`,
 don't crash. `decode` is tolerant — unknown reply addresses round-trip
 through `ServerReply.Other { address, args }` rather than throwing.
 
+**Race fix for wasm TLA init** — jco's transpiled module uses a
+module-level `await $init`. ESM evaluates imports in dependency order
+before any top-level code, so `self.addEventListener('message', …)` in
+`scopeWorker.ts` only runs *after* the wasm bootstrap resolves. If the
+main thread posts `connect` immediately after `new Worker(...)`, that
+message is delivered to an EventTarget with no listeners yet — and
+silently dropped. A small `src/workers/workerBootstrap.ts` module with
+zero imports registers a synchronous buffering listener during its own
+evaluation phase (which runs first); the main worker module calls
+`setWorkerMessageHandler(real)` after init, draining the buffer in
+order.
+
+A companion `src/workers/workerConsoleBridge.ts` (also pre-TLA)
+forwards `console.*` calls to the main thread via the new `log`
+protocol channel, so the on-screen debug log surfaces worker
+diagnostics even before wasm init completes.
+
 ### `WorkerClient` changes
 
 ```ts
 sendCommand(cmd: ServerMessage): void;
 onReply(cb: (reply: ServerReply) => void): () => void;
 
-// Correlation helper used throughout the app
-async sendAndSync(cmd: ServerMessage, timeoutMs = 2000): Promise<void>;
+// Correlation-free probe: await the first reply matching a predicate.
+// Used for one-shot queries like Status → StatusReply.
+async sendAndAwaitReply(
+  cmd: ServerMessage,
+  match: (reply: ServerReply) => boolean,
+  timeoutMs?: number,
+): Promise<ServerReply>;
+
+// Primary correlation helper: send cmd, post a separate /sync, resolve
+// on the matching /synced.
+async sendAndSync(cmd: ServerMessage, timeoutMs?: number): Promise<void>;
+
+// Atomic variant — the command itself embeds the /sync (e.g. /d_recv's
+// `completionMsg` field) so the server runs the sync *after* the async
+// op completes, no race. Used by SynthDefRegistry (Phase 3) and the
+// buffer-alloc flows (Phase 7+).
+async sendCommandAndAwaitSync(
+  buildCmd: (syncId: number) => ServerMessage,
+  timeoutMs?: number,
+): Promise<void>;
 ```
 
-`sendAndSync` sends `cmd`, then a `/sync` with a unique 32-bit id, and
-resolves when the matching `/synced` reply arrives. With the typed
-`Synced` variant (see Crate Prerequisites), the worker match is:
-```ts
-if (reply.tag === 'synced' && reply.val.syncId === pendingId) resolve();
-```
-Timeout rejects. This is the primary way SynthDefs and buffers get
-created reliably — `/d_recv` and similar have no built-in correlation.
+All three match the typed `Synced` variant (see Crate Prerequisites).
+The status probe in `AppShell.onConnect` uses `sendAndAwaitReply(cmd.status,
+r => r.tag === 'status-reply', 1000)`. SynthDef loading uses
+`sendCommandAndAwaitSync`.
 
 ### Thin command helpers
 
@@ -789,19 +827,71 @@ export const dRecv  = (bytes: Uint8Array, completionMsg?: Uint8Array): ServerMes
 
 Now the whole plan uses readable constructors: `client.sendCommand(sNew('sine', 1001, AddToHead, 100, { freq: 440 }))`.
 
-### `OscConsole.ts` upgraded
+### `OscConsole` upgraded
 
-- Dropdown of commands: `Status`, `QueryTree`, `DumpOSC`, `Sync`.
-- Per-command form fields for args.
-- Log panel pretty-prints decoded replies as JSON.
+Kept the Phase 1 hex input as-is; added a **Quick Actions** row above
+with buttons: **Status**, **DumpOSC on**, **DumpOSC off**, **QueryTree(0)**,
+**sendAndAwaitReply(Status)**. Log entries render typed summaries per
+`ServerReply` variant (`status-reply` shows ugens/synths/CPU; `b-setn`
+shows bufnum/start/count; `synced` shows the sync id; etc.).
+
+### Build pipeline (added in Phase 2)
+
+- Root `package.json` script `build:wasm` chains `build:wasm:scserver-commands`
+  (and `build:wasm:scsynthdef-compiler` once Phase 3 brings it online). Each
+  runs `cargo component build --release --features component --target
+  wasm32-wasip1` and `jco transpile … -o pkg`. jco's output lives at
+  the crate root `pkg/` (gitignored; regenerated on demand).
+- `vite.config.ts` aliases `@wasm/scserver-commands` → the crate's
+  `pkg/scserver_commands.js`, plus a `@wasm/scserver-commands/…`
+  sub-path form. Tsconfig mirrors with `paths`.
+- `worker.format: "es"` + `build.target: "es2022"` — jco's generated
+  module worker has multiple chunks (ESM code-split requirement) and a
+  module-level `await $init` (TLA needs at least ES2022).
+- Explicit alias to pin every `@bytecodealliance/preview2-shim/*`
+  import to the *browser* branch — the package's export map otherwise
+  resolves `node:fs/promises` in Vite, which crashes the worker at
+  init.
+- `@bytecodealliance/preview2-shim` is a direct dep so Vite's
+  resolution pipeline sees it deterministically.
+
+### On-screen debug log (added in Phase 2)
+
+`src/scope/debugLog.ts` monkey-patches `console.*` on the main thread
+and mirrors every call into a 500-entry ring buffer; `src/ui/DebugLog/`
+renders it as a fixed-bottom collapsible panel, always mounted by
+`AppShell`. Worker-side logs cross the postMessage boundary via the
+`log` channel (see `workerConsoleBridge.ts` above) and get replayed
+through the main-thread console hook, so they appear in the same
+panel. Every connect/command/reply path now logs at `[sc:app]`,
+`[sc:client]`, `[sc:worker]`, `[sc:transport]` prefixes — useful when
+the Tauri webview's DevTools are hard to reach.
+
+### Backend hardening (added in Phase 2)
+
+`src-tauri/src/server/mod.rs` previously did
+`ServeDir::new(dist).fallback(ServeFile::new(index))` — which served
+`index.html` for *every* 404. Stale cached references to removed
+`/assets/scopeWorker-<hash>.js` bundles came back as HTML and tripped
+browsers' strict-MIME module-script check with "non-JavaScript MIME
+type" errors, burying the real failure. The handler is now scoped:
+paths under `/assets/` or with a file extension → loud 404 with a
+`text/plain` body; everything else → `index.html` for the React
+router.
 
 ### Acceptance
 
-1. Select `Status`, Send → `StatusReply` variant logged with populated fields.
-2. `DumpOSC(1)` → subsequent replies still decode; no stream corruption.
-3. Bad command object (forced in code) → `error` event; worker survives.
-4. Random garbage injected into WS → `error` per frame; worker survives.
-5. `sendAndSync(Status)` resolves within ~50 ms.
+1. Click **Status** in the OSC console → the log panel shows
+   `status-reply ugens=… synths=… groups=…` within ~50 ms.
+2. **DumpOSC on** → subsequent replies still decode (no stream
+   corruption from the extra server-printed lines); **DumpOSC off**
+   stops them.
+3. Bad command object forced in code → worker posts `error`; the UI
+   surfaces it; subsequent commands still work.
+4. Random garbage frames pushed into the WS → one `error` per frame;
+   worker survives; the bridge keeps running.
+5. `sendAndAwaitReply(status, r => r.tag === 'status-reply', 1000)`
+   resolves within ~50 ms once the connect probe runs.
 
 ---
 
@@ -809,46 +899,77 @@ Now the whole plan uses readable constructors: `client.sendCommand(sNew('sine', 
 
 **Goal.** Validate the compile-and-upload path end-to-end with a trivial SynthDef.
 
+### Prerequisite (done): typed `ugens` interface wired up
+
+Before Phase 3 proper, `scsynthdef-compiler` needed its typed `ugens`
+interface exported. The WIT declared 365 typed per-UGen functions but
+the world only exported `core`, so at runtime every SynthDef compile
+fell back to `core.SynthDef.addUgen(className, …)` — stringly-typed.
+
+Wiring steps applied:
+
+- `wit/scsynthdef.wit` world gained `export ugens;`.
+- `scripts/generate_ugens_component.mjs` (new, zero-dep Node) parses
+  the `ugens` interface out of the WIT, cross-references
+  `src/builders/*.rs` for canonical PascalCase class names, and emits
+  `src/ugens_component.rs` containing an `impl UgensGuest for
+  Component` block with a `delegate_ugen(...)` helper + one one-liner
+  per UGen. 19 UGens take a variable `numChannels` override (`BufRd`,
+  `GrainBuf`, `In`, `PlayBuf`, etc.); handled with a dedicated code
+  path.
+- `src/component.rs` declares `#[path = "ugens_component.rs"] mod
+  ugens_component;`.
+- `cargo component build` + `cargo test` clean; 13 tests pass (7 unit
+  + 6 parity).
+
+Net result: the frontend can now write `ugens.sinOsc(def, 'audio',
+freq, phase)` with real types instead of
+`def.addUgen('SinOsc', 'audio', [freq, phase], 1, 0)`.
+
+### Build pipeline (extended from Phase 2)
+
+- `yarn build:wasm` now chains `build:wasm:scserver-commands` *and*
+  `build:wasm:scsynthdef-compiler`.
+- `vite.config.ts` adds the `@wasm/scsynthdef-compiler` alias plus
+  sub-path variant, mirroring the scserver-commands setup. Tsconfig
+  paths follow.
+
 ### Files
 
 - `src/synth/noopSynthDef.ts`
 - `src/scope/SynthDefRegistry.ts`
-- `src/ui/SynthDefPanel.ts`
+- `src/ui/SynthDefPanel/` — `SynthDefPanel.tsx` + `.scss` + `index.ts`
+  matching the per-component directory convention used by
+  `ConnectScreen` and `OscConsole`.
 
 ### `noopSynthDef.ts`
 
-Trivial graph: `Out.ar(0, DC.ar(0))`. Compiled once via the wasm
-component's stringly-typed `core.SynthDef` resource, result cached:
+Trivial graph: `Out.ar(0, DC.ar(0))`. Compiled once via the typed
+`ugens` interface (not the stringly-typed `core.SynthDef.addUgen`);
+result cached at module scope so subsequent calls are free.
 
 ```ts
-import { core } from '@sc-app/scsynthdef-compiler-pkg';
-import type { UgenInput } from '@sc-app/scsynthdef-compiler-pkg/interfaces/scsynthdef-compiler-core';
-
-const k = (v: number): UgenInput => ({ tag: 'constant',    val: v });
-const u = (i: number): UgenInput => ({ tag: 'ugen',        val: i });
-const uo = (i: number, o: number): UgenInput => ({ tag: 'ugen-output', val: [i, o] });
+import { core, ugens } from '@wasm/scsynthdef-compiler';
 
 let cached: Uint8Array | null = null;
 
 export function compileNoopSynthDef(): Uint8Array {
   if (cached) return cached;
   const def = new core.SynthDef('noop');
-  const dc  = def.addUgen('DC',  'audio', [k(0)], 1, 0);
-  def.addUgen('Out', 'audio', [k(0), u(dc)], 0, 0);
+  const dc = ugens.dc(def, 'audio', { tag: 'constant', val: 0 });
+  ugens.out(def, 'audio', { tag: 'constant', val: 0 }, [dc]);
   cached = def.toBytes();
   return cached;
 }
 ```
 
 Every subsequent `src/synth/*.ts` follows the same pattern — module-scope
-cached, stringly-typed `addUgen` / `addControl`. The 365-UGen catalogue
-covers everything the plan needs.
+cached, typed per-UGen calls. The 365-UGen catalogue covers everything
+the plan needs.
 
 ### `SynthDefRegistry.ts`
 
 ```ts
-import { dRecv, sync as syncCmd } from '../scope/cmd';
-
 export class SynthDefRegistry {
   constructor(private client: WorkerClient);
   isLoaded(name: string): boolean;
@@ -856,28 +977,44 @@ export class SynthDefRegistry {
 }
 ```
 
-`ensureLoaded`: if already tracked, no-op. Otherwise send `/d_recv` with
-the `/sync` embedded in its `completionMsg` so the server runs the sync
-atomically *after* the synthdef is installed:
+`ensureLoaded`: if already tracked, no-op. Concurrent callers for the
+same name share one request (via an in-flight `Map<name, Promise>`).
+Otherwise uses `WorkerClient.sendCommandAndAwaitSync(buildCmd)` (added
+in Phase 2) with the `/sync` bytes embedded in `/d_recv`'s
+`completionMsg`, so the server runs the sync *after* the synthdef
+installs — not racing a separate `/sync`:
 
 ```ts
-const syncId = this.nextSyncId();
-const syncBytes = commands.encode(syncCmd(syncId));
-await this.client.sendAndSyncWithId(dRecv(bytes, syncBytes), syncId);
+await client.sendCommandAndAwaitSync((syncId) =>
+  dRecvWithSync(bytes, commands.encode(sync(syncId))),
+);
 ```
 
-On success, mark loaded. On `/fail` reply, reject with the failure message.
+`/d_recv` failure would never run the completion, so `sendCommandAndAwaitSync`
+would just time out. To fail fast with a useful message, the registry
+races the await against a reply-stream watcher that rejects on
+`{ tag: 'fail', val: { address: '/d_recv', error } }`.
 
-### `SynthDefPanel.ts`
+### `SynthDefPanel.tsx`
 
-One button "Load noop SynthDef". Status label. On click: `registry.ensureLoaded('noop', compileNoopSynthDef())`. Shows spinner → ✓ or error.
+One React component mounted in the dashboard shell. Single button,
+label reflects state: `Load noop SynthDef` → `Loading…` → `Loaded ✓`
+(or `Retry` if an error occurred, with the error message rendered
+below). On click: `registry.ensureLoaded('noop', compileNoopSynthDef())`
+then logs the elapsed time via the debug log panel.
 
 ### Acceptance
 
-1. Click → ✓ within ~50 ms.
-2. Second click → no OSC traffic (observable in the Phase 1 byte log if re-enabled).
-3. Corrupt bytes (force-flip) → `Fail` reply → UI error; registry does not mark loaded.
-4. Kill scsynth, reload page → click works again.
+1. Click → `Loaded ✓` within ~50 ms; `[sc:synthdef] noop loaded in
+   Nms` appears in the debug log.
+2. Second click → promise resolves instantly; no extra `/d_recv`
+   frames sent (visible in the OSC console's reply log — no `/synced`
+   appears the second time).
+3. Corrupt bytes (force-flip one byte in `cached` before posting) →
+   `/fail` reply → UI shows the error message; `isLoaded('noop')`
+   stays `false`; a retry works.
+4. Kill scsynth mid-session, reload the page → reconnect → click
+   works again.
 
 ---
 

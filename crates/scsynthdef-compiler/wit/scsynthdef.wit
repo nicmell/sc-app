@@ -4262,4 +4262,5 @@ interface ugens {
 /// Canonical world for embedders of the scsynthdef compiler.
 world scsynthdef {
     export core;
+    export ugens;
 }

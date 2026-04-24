@@ -14,6 +14,9 @@ mod bindings {
     include!("bindings.rs");
 }
 
+#[path = "ugens_component.rs"]
+mod ugens_component;
+
 use std::cell::RefCell;
 
 use bindings::exports::scsynthdef::compiler::core::{

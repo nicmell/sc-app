@@ -205,6 +205,50 @@ export class WorkerClient {
     });
   }
 
+  /**
+   * Send a command that itself embeds a `/sync` (e.g. `/d_recv`'s
+   * `completionMsg` field), then resolve when the matching `/synced`
+   * reply arrives. The caller receives the fresh sync id via the
+   * `buildCmd` callback and is responsible for embedding it in the
+   * right place on the outgoing command.
+   *
+   * This is the atomic variant of `sendAndSync` — useful when the
+   * server should run the sync *after* an async operation completes
+   * (the synthdef is installed, the buffer is allocated, …) rather
+   * than racing it against a separate `/sync`.
+   */
+  sendCommandAndAwaitSync(
+    buildCmd: (syncId: number) => ServerMessage,
+    timeoutMs = DEFAULT_SYNC_TIMEOUT_MS,
+  ): Promise<void> {
+    const syncId = this.nextSyncId++;
+    return new Promise((resolve, reject) => {
+      const offReply = this.onReply((reply) => {
+        if (reply.tag !== 'synced' || reply.val.syncId !== syncId) return;
+        cleanup();
+        resolve();
+      });
+      const offError = this.onError((message) => {
+        cleanup();
+        reject(new Error(message));
+      });
+      const timer = window.setTimeout(() => {
+        cleanup();
+        reject(
+          new Error(
+            `sendCommandAndAwaitSync(${syncId}) timed out after ${timeoutMs} ms`,
+          ),
+        );
+      }, timeoutMs);
+      const cleanup = () => {
+        window.clearTimeout(timer);
+        offReply();
+        offError();
+      };
+      this.sendCommand(buildCmd(syncId));
+    });
+  }
+
   dispose(): void {
     this.post({ type: 'disconnect' });
     this.worker.terminate();

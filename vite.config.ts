@@ -2,7 +2,8 @@ import path from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-const pkgDir = path.resolve(__dirname, "crates/scserver-commands/pkg");
+const serverCmdsPkg = path.resolve(__dirname, "crates/scserver-commands/pkg");
+const synthdefPkg = path.resolve(__dirname, "crates/scsynthdef-compiler/pkg");
 const preview2Browser = path.resolve(
   __dirname,
   "node_modules/@bytecodealliance/preview2-shim/lib/browser",
@@ -30,11 +31,13 @@ export default defineConfig({
     alias: [
       { find: "@", replacement: path.resolve(__dirname, "src") },
 
-      // jco-transpiled scserver-commands component. Regenerate via
-      // `yarn build:wasm`. Bare import → ESM entry; sub-paths →
-      // per-interface .d.ts files used for types only.
-      { find: /^@wasm\/scserver-commands$/, replacement: `${pkgDir}/scserver_commands.js` },
-      { find: /^@wasm\/scserver-commands\/(.*)$/, replacement: `${pkgDir}/$1` },
+      // jco-transpiled wasm components. Regenerate via `yarn
+      // build:wasm`. Bare import → ESM entry; sub-paths → per-interface
+      // .d.ts files used for types only.
+      { find: /^@wasm\/scserver-commands$/, replacement: `${serverCmdsPkg}/scserver_commands.js` },
+      { find: /^@wasm\/scserver-commands\/(.*)$/, replacement: `${serverCmdsPkg}/$1` },
+      { find: /^@wasm\/scsynthdef-compiler$/, replacement: `${synthdefPkg}/scsynthdef_compiler.js` },
+      { find: /^@wasm\/scsynthdef-compiler\/(.*)$/, replacement: `${synthdefPkg}/$1` },
 
       // jco's preview2-shim has a `{ node, default }` exports map; Vite
       // otherwise resolves the `node` branch, which imports

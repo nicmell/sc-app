@@ -42,4 +42,6 @@ dist-ssr
 # jco-transpiled component bindings — regenerated via `yarn build:wasm`.
 /crates/scserver-commands/pkg/
 /crates/scserver-commands/src/bindings.rs
+/crates/scsynthdef-compiler/pkg/
+/crates/scsynthdef-compiler/src/bindings.rs
 *.tsbuildinfo

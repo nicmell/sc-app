@@ -25,7 +25,9 @@
     "paths": {
       "@/*": ["src/*"],
       "@wasm/scserver-commands": ["crates/scserver-commands/pkg/scserver_commands.d.ts"],
-      "@wasm/scserver-commands/*": ["crates/scserver-commands/pkg/*"]
+      "@wasm/scserver-commands/*": ["crates/scserver-commands/pkg/*"],
+      "@wasm/scsynthdef-compiler": ["crates/scsynthdef-compiler/pkg/scsynthdef_compiler.d.ts"],
+      "@wasm/scsynthdef-compiler/*": ["crates/scsynthdef-compiler/pkg/*"]
     }
   },
   "include": ["src"],
