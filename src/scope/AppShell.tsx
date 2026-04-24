@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ConnectScreen } from '@/ui/ConnectScreen';
+import { DebugLog } from '@/ui/DebugLog';
 import { OscConsole } from '@/ui/OscConsole';
 import * as cmd from './cmd';
 import { WorkerClient } from './WorkerClient';
@@ -60,6 +61,7 @@ export function AppShell() {
   }, [client]);
 
   const handleConnect = useCallback(async (address: string) => {
+    console.log('[sc:app] handleConnect', address);
     try {
       window.localStorage.setItem(STORAGE_KEY, address);
     } catch {
@@ -67,11 +69,13 @@ export function AppShell() {
     }
 
     const url = wsUrlFor(address);
+    console.log('[sc:app] ws url', url);
     const next = new WorkerClient(url);
 
     try {
       await next.ready;
     } catch (err) {
+      console.error('[sc:app] ready failed:', err);
       next.dispose();
       throw err;
     }
@@ -80,13 +84,16 @@ export function AppShell() {
     // scsynth → back) is actually responsive before mounting the
     // dashboard. Silent UDP "nothing listening" can only be detected
     // here, because UDP sends don't fail.
+    console.log('[sc:app] running /status probe');
     try {
       await next.sendAndAwaitReply(
         cmd.status,
         (reply) => reply.tag === 'status-reply',
         STATUS_PROBE_TIMEOUT_MS,
       );
+      console.log('[sc:app] /status probe OK');
     } catch (err) {
+      console.error('[sc:app] /status probe failed', err);
       next.dispose();
       throw new Error(
         `scsynth didn't reply to /status at ${address}: ${
@@ -127,15 +134,18 @@ export function AppShell() {
     };
   }, [client]);
 
-  if (!client) {
-    return (
-      <ConnectScreen
-        defaultAddress={defaultAddress}
-        onConnect={handleConnect}
-        error={error}
-      />
-    );
-  }
-
-  return <Dashboard client={client} onDisconnect={handleDisconnect} />;
+  return (
+    <>
+      {client ? (
+        <Dashboard client={client} onDisconnect={handleDisconnect} />
+      ) : (
+        <ConnectScreen
+          defaultAddress={defaultAddress}
+          onConnect={handleConnect}
+          error={error}
+        />
+      )}
+      <DebugLog />
+    </>
+  );
 }

@@ -36,6 +36,7 @@ export class WorkerClient {
 
   /** `url` is the full WS URL including the `?scsynth=HOST:PORT` param. */
   constructor(url: string) {
+    console.log('[sc:client] constructing WorkerClient', url);
     this.worker = new Worker(
       new URL('../workers/scopeWorker.ts', import.meta.url),
       { type: 'module' },
@@ -47,11 +48,11 @@ export class WorkerClient {
     this.worker.addEventListener('error', (ev) => {
       const message =
         ev.message || `worker module error at ${ev.filename}:${ev.lineno}:${ev.colno}`;
-      console.error('[WorkerClient] worker error:', ev);
+      console.error('[sc:client] worker error', ev, { message });
       for (const cb of this.errorListeners) cb(message);
     });
     this.worker.addEventListener('messageerror', (ev) => {
-      console.error('[WorkerClient] messageerror:', ev);
+      console.error('[sc:client] messageerror', ev);
       for (const cb of this.errorListeners) cb('worker messageerror (uncloneable payload)');
     });
 
@@ -68,14 +69,17 @@ export class WorkerClient {
 
       const handleReady = (ev: MessageEvent<WorkerToMain>) => {
         if (ev.data.type === 'ready') {
+          console.log('[sc:client] ready ✓');
           cleanup();
           resolve();
         } else if (ev.data.type === 'error') {
+          console.error('[sc:client] handshake failed:', ev.data.message);
           cleanup();
           reject(new Error(ev.data.message));
         }
       };
       const handleErrorEvent = (ev: ErrorEvent) => {
+        console.error('[sc:client] worker error event during handshake', ev);
         cleanup();
         reject(
           new Error(
@@ -98,14 +102,29 @@ export class WorkerClient {
       const msg = ev.data;
       switch (msg.type) {
         case 'reply':
+          console.log('[sc:client] reply', msg.reply.tag);
           for (const cb of this.replyListeners) cb(msg.reply);
           break;
         case 'error':
+          console.warn('[sc:client] error', msg.message);
           for (const cb of this.errorListeners) cb(msg.message);
           break;
+        case 'log': {
+          // Forward worker-side console calls to the main-thread
+          // console — the monkey-patched version (see `debugLog.ts`)
+          // captures them into the on-screen log panel.
+          const target =
+            msg.level === 'error' ? console.error
+              : msg.level === 'warn' ? console.warn
+                : msg.level === 'info' ? console.info
+                  : console.log;
+          target(msg.message);
+          break;
+        }
       }
     });
 
+    console.log('[sc:client] posting connect');
     this.post({ type: 'connect', url });
   }
 

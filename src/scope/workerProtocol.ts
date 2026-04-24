@@ -16,6 +16,7 @@ export type MainToWorker =
 export type WorkerToMain =
   | { type: 'ready' }
   | { type: 'error'; message: string }
-  | { type: 'reply'; reply: ServerReply };
+  | { type: 'reply'; reply: ServerReply }
+  | { type: 'log'; level: 'log' | 'info' | 'warn' | 'error'; message: string };
 
 export type { ServerMessage, ServerReply };

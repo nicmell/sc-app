@@ -20,6 +20,7 @@ export interface OscTransport {
 }
 
 export function createOscTransport(url: string): OscTransport {
+  console.log('[sc:transport] opening ws', url);
   const ws = new WebSocket(url);
   ws.binaryType = 'arraybuffer';
 
@@ -29,11 +30,13 @@ export function createOscTransport(url: string): OscTransport {
 
   const ready = new Promise<void>((resolve, reject) => {
     const onOpen = () => {
+      console.log('[sc:transport] ws open');
       ws.removeEventListener('open', onOpen);
       ws.removeEventListener('error', onErrorBeforeOpen);
       resolve();
     };
-    const onErrorBeforeOpen = () => {
+    const onErrorBeforeOpen = (ev: Event) => {
+      console.error('[sc:transport] ws error before open', ev);
       ws.removeEventListener('open', onOpen);
       ws.removeEventListener('error', onErrorBeforeOpen);
       reject(new Error('websocket failed to open'));
@@ -52,10 +55,12 @@ export function createOscTransport(url: string): OscTransport {
   });
 
   ws.addEventListener('error', (ev) => {
+    console.error('[sc:transport] ws error (after open)', ev);
     for (const cb of errCbs) cb(ev);
   });
 
   ws.addEventListener('close', (ev) => {
+    console.warn('[sc:transport] ws close', ev.code, ev.reason || '(no reason)');
     for (const cb of closeCbs) cb(ev);
   });
 

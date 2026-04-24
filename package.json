@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "serve": "cargo run --manifest-path src-tauri/Cargo.toml -- serve",
     "build:wasm": "yarn build:wasm:scserver-commands",
     "build:wasm:scserver-commands": "cd crates/scserver-commands && cargo component build --release --features component --target wasm32-wasip1 && jco transpile target/wasm32-wasip1/release/scserver_commands.wasm -o pkg"
   },
