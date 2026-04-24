@@ -899,32 +899,65 @@ router.
 
 **Goal.** Validate the compile-and-upload path end-to-end with a trivial SynthDef.
 
-### Prerequisite (done): typed `ugens` interface wired up
+### Prerequisite (done): typed `ugens` interface with arg-record calling convention
 
 Before Phase 3 proper, `scsynthdef-compiler` needed its typed `ugens`
-interface exported. The WIT declared 365 typed per-UGen functions but
-the world only exported `core`, so at runtime every SynthDef compile
-fell back to `core.SynthDef.addUgen(className, …)` — stringly-typed.
+interface exported *and* reshaped from positional args to named arg
+records. The WIT declared 365 typed per-UGen functions but the world
+only exported `core`, and each function took positional
+`ugen-input` args (`sin-osc: func(def, ugen-rate, freq, phase)`) —
+forcing TS callers to wrap every scalar and memorise arg order.
 
 Wiring steps applied:
 
 - `wit/scsynthdef.wit` world gained `export ugens;`.
-- `scripts/generate_ugens_component.mjs` (new, zero-dep Node) parses
-  the `ugens` interface out of the WIT, cross-references
-  `src/builders/*.rs` for canonical PascalCase class names, and emits
-  `src/ugens_component.rs` containing an `impl UgensGuest for
-  Component` block with a `delegate_ugen(...)` helper + one one-liner
-  per UGen. 19 UGens take a variable `numChannels` override (`BufRd`,
-  `GrainBuf`, `In`, `PlayBuf`, etc.); handled with a dedicated code
-  path.
+- Every UGen function's signature changed to take a named arg record:
+  ```wit
+  record sin-osc-args {
+    freq:  option<ugen-input>,   // registry default 440 → optional
+    phase: option<ugen-input>,   // registry default 0   → optional
+  }
+  sin-osc: func(def: borrow<synth-def>, ugen-rate: rate, args: sin-osc-args) -> ugen-input;
+  ```
+  Field types follow the registry:
+  - scalar input with a default → `option<ugen-input>`
+  - scalar input without a default → plain `ugen-input` (required)
+  - `num-channels` with a default → `option<u32>`
+  - variadic arrays → `list<ugen-input>` (required)
+  348 UGens get an arg record; 17 argless ones still take only
+  `(def, ugen-rate)`. 145 UGens have at least one required field.
+- `scripts/generate_ugens_component.mjs` (zero-dep Node ESM) parses
+  the `defaults:` entries out of `src/ugens/*.rs`, cross-references
+  `src/builders/*.rs` for canonical PascalCase class names,
+  regenerates the `interface ugens { … }` block of the WIT in place
+  (preserving `core` above and the `world` below byte-identical), and
+  emits `src/ugens_component.rs` with one Guest impl per UGen. Each
+  impl unpacks the args record, applies registry defaults for any
+  `None`, then calls a shared `delegate_ugen(...)` helper.
 - `src/component.rs` declares `#[path = "ugens_component.rs"] mod
   ugens_component;`.
+- **Native Rust builders under `src/builders/*.rs` are deliberately
+  untouched** — Rust callers keep the chained
+  `SinOsc::ar().freq(x).phase(y).build(&mut def)` API. The arg-record
+  change is a WIT/TS-boundary ergonomics improvement only; the
+  component bridge lifts the TS-side records and dispatches to the
+  same underlying `SynthDef::add_ugen` as the native builders do.
 - `cargo component build` + `cargo test` clean; 13 tests pass (7 unit
   + 6 parity).
 
-Net result: the frontend can now write `ugens.sinOsc(def, 'audio',
-freq, phase)` with real types instead of
-`def.addUgen('SinOsc', 'audio', [freq, phase], 1, 0)`.
+Net result: frontend callers only name the args they care about.
+
+```ts
+// Before (positional, all args required, scalars wrapped):
+ugens.sinOsc(def, 'audio',
+  { tag: 'constant', val: 220 },
+  { tag: 'constant', val: 0 });
+
+// After (named arg record, optional fields, registry fills in defaults):
+const k = (v: number): UgenInput => ({ tag: 'constant', val: v });
+ugens.sinOsc(def, 'audio', { freq: k(220) });          // phase → 0 (registry)
+ugens.out(def, 'audio', { bus: k(0), channelsArray: [osc] });
+```
 
 ### Build pipeline (extended from Phase 2)
 
@@ -950,14 +983,17 @@ result cached at module scope so subsequent calls are free.
 
 ```ts
 import { core, ugens } from '@wasm/scsynthdef-compiler';
+import type { UgenInput } from '@wasm/scsynthdef-compiler/interfaces/scsynthdef-compiler-core';
+
+const k = (v: number): UgenInput => ({ tag: 'constant', val: v });
 
 let cached: Uint8Array | null = null;
 
 export function compileNoopSynthDef(): Uint8Array {
   if (cached) return cached;
   const def = new core.SynthDef('noop');
-  const dc = ugens.dc(def, 'audio', { tag: 'constant', val: 0 });
-  ugens.out(def, 'audio', { tag: 'constant', val: 0 }, [dc]);
+  const dc = ugens.dc(def, 'audio', { in: k(0) });
+  ugens.out(def, 'audio', { bus: k(0), channelsArray: [dc] });
   cached = def.toBytes();
   return cached;
 }
