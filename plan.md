@@ -1301,6 +1301,41 @@ Watchdog for tick freshness: `setInterval` every `tickIntervalMs / 2` ms; if no 
 6. Kill bridge → pill → `Disconnected`; watchdog may first show `Paused`, acceptable.
 7. Register wrong `trigId` → no ticks reach UI; other replies unaffected.
 
+### Adaptations from the written plan (agreed before implementation)
+
+1. **`ClockController` composes `GroupController` — does not inherit it.**
+   Plan said `extends`. Composition scales better to Phase 7+ where
+   `ScopeController` / `RecorderController` also need the same group;
+   inheritance would have each controller "own" the singleton group.
+   `clock.stop()` still maps to `group.pause()` internally, so behaviour
+   is unchanged.
+2. **`silentTestSynthDef.ts` is deleted** (and the heartbeat code path
+   in `ClockPanel`). Phase 5 replaces the dev heartbeat with the real
+   clock (trigId 1000), which drives the same slot in the panel.
+3. **`trigId` is baked into the compiled SynthDef as a constant
+   (`k(1000)`); `tickRate` is a compile-time parameter of
+   `compileClockSynthDef(params)` sourced from `ClockParams`.** Plan's
+   sclang had both as synth args. Hardcoding `trigId` matches the
+   "reserved sentinel" semantic; threading `tickRate` through
+   `ClockParams` keeps one source of truth with `deriveClock()`.
+4. **Effective state is computed inside the controller, not the panel.**
+   `ClockController.effectiveState: ReadonlyStore<'running' | 'paused'
+   | 'stopped'>` derives from `group.state + tickFresh`. The panel just
+   renders it. Simpler, and makes the watchdog testable in isolation.
+5. **`bringUpDashboard` loses its manual `registry.ensureLoaded` +
+   `sNew` dance.** Phase 5 consolidates it into `clock.start()`, which
+   ensures the group, loads the SynthDef on demand, and adds the clock
+   synth at head of the group.
+
+### Prerequisite fix: enable `/notify 1` on connect
+
+`/tr` replies from `SendTrig` are only broadcast to clients that have
+registered via `/notify 1`. We were never sending it — symptom was the
+Phase 4 heartbeat counter sitting at 0/s even with the synth running.
+Fix lands in `AppShell.handleConnect` right after the `/status` probe
+and before `bringUpDashboard`. The same flag is required in Phase 5
+for the clock ticks and in later phases for `/n_go`, `/n_end`, etc.
+
 ---
 
 ## Phase 6 — Shared Phasor on Clock Bus

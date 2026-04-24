@@ -152,6 +152,24 @@ export function AppShell() {
       );
     }
 
+    // Subscribe to async notifications (/tr, /n_go, /n_end, /done, …).
+    // Without this, SendTrig replies are never broadcast to us, which
+    // is why the Phase 4 heartbeat read 0/s. /notify replies with
+    // /done /notify, so sendAndSync is enough to confirm it stuck.
+    console.log('[sc:app] enabling /notify');
+    try {
+      await next.sendAndSync(cmd.notifyEnable(1));
+      console.log('[sc:app] /notify enabled');
+    } catch (err) {
+      console.error('[sc:app] /notify failed', err);
+      next.dispose();
+      throw new Error(
+        `scsynth didn't accept /notify at ${address}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+
     // Wire disconnection handler *before* the async bring-up so a
     // mid-bring-up WebSocket error still unwinds cleanly.
     next.onError((message) => {
