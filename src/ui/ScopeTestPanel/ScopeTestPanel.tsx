@@ -21,10 +21,16 @@ import {
   TEST_TONE_SYNTHDEF_NAME,
   compileTestToneSynthDef,
 } from '@/synth/testToneSynthDef';
+import {
+  MONITOR_SYNTHDEF_NAME,
+  compileMonitorSynthDef,
+} from '@/synth/monitorSynthDef';
 import './ScopeTestPanel.scss';
 
 const TONE_FREQ = 440;
 const TONE_AMP = 0.2;
+const MONITOR_AMP = 0.5;
+const HARDWARE_OUT_BUS = 0;
 const SCOPE_RING = DEFAULT_PARAMS.scopeChunkSize * 2;
 
 interface ScopeTestPanelProps {
@@ -44,6 +50,7 @@ interface Resources {
   toneBus: number | null;
   scopeNodeId: number | null;
   bufnum: number | null;
+  monitorNodeId: number | null;
 }
 
 interface PokeStats {
@@ -67,6 +74,7 @@ export function ScopeTestPanel({
     toneBus: null,
     scopeNodeId: null,
     bufnum: null,
+    monitorNodeId: null,
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +82,9 @@ export function ScopeTestPanel({
 
   const hasTone = res.toneNodeId !== null;
   const hasScope = res.scopeNodeId !== null;
-  const hasAny = hasTone || hasScope || res.bufnum !== null;
+  const hasMonitor = res.monitorNodeId !== null;
+  const hasAny =
+    hasTone || hasScope || hasMonitor || res.bufnum !== null;
 
   const guard = useCallback(
     async <T,>(op: () => Promise<T>): Promise<T | undefined> => {
@@ -145,6 +155,45 @@ export function ScopeTestPanel({
     });
   }, [client, clock, group, ids, registry, res.scopeNodeId, res.toneBus, guard]);
 
+  const onToggleMonitor = useCallback(() => {
+    void guard(async () => {
+      if (res.monitorNodeId !== null) {
+        // Stop monitor
+        try {
+          await client.sendAndSync(nFree(res.monitorNodeId));
+          console.log(
+            `[sc:scope-test] stopped monitor node=${res.monitorNodeId}`,
+          );
+        } catch (err) {
+          console.warn('[sc:scope-test] monitor nFree failed', err);
+        }
+        setRes((r) => ({ ...r, monitorNodeId: null }));
+        return;
+      }
+      // Start monitor
+      if (res.toneBus === null) {
+        throw new Error('start the tone first');
+      }
+      await registry.ensureLoaded(
+        MONITOR_SYNTHDEF_NAME,
+        compileMonitorSynthDef(),
+      );
+      const nodeId = ids.node.next();
+      await client.sendAndSync(
+        sNew(MONITOR_SYNTHDEF_NAME, nodeId, AddToTail, group.groupId, {
+          inBus: res.toneBus,
+          outBus: HARDWARE_OUT_BUS,
+          amp: MONITOR_AMP,
+        }),
+      );
+      console.log(
+        `[sc:scope-test] started monitor node=${nodeId} ` +
+          `inBus=${res.toneBus} → outBus=${HARDWARE_OUT_BUS} amp=${MONITOR_AMP}`,
+      );
+      setRes((r) => ({ ...r, monitorNodeId: nodeId }));
+    });
+  }, [client, group, ids, registry, res.monitorNodeId, res.toneBus, guard]);
+
   const onPoke = useCallback(() => {
     void guard(async () => {
       if (res.bufnum === null) throw new Error('no buffer allocated');
@@ -167,8 +216,15 @@ export function ScopeTestPanel({
 
   const onStopAll = useCallback(() => {
     void guard(async () => {
-      // Free scope synth first so nothing is still writing the buffer
-      // when we free it.
+      // Free scope + monitor first so nothing is still reading the
+      // tone bus / writing the buffer when those go away.
+      if (res.monitorNodeId !== null) {
+        try {
+          await client.sendAndSync(nFree(res.monitorNodeId));
+        } catch (err) {
+          console.warn('[sc:scope-test] monitor nFree failed', err);
+        }
+      }
       if (res.scopeNodeId !== null) {
         try {
           await client.sendAndSync(nFree(res.scopeNodeId));
@@ -196,6 +252,7 @@ export function ScopeTestPanel({
         toneBus: null,
         scopeNodeId: null,
         bufnum: null,
+        monitorNodeId: null,
       });
       setStats(null);
     });
@@ -235,6 +292,15 @@ export function ScopeTestPanel({
         <button
           type="button"
           className="secondary"
+          onClick={onToggleMonitor}
+          disabled={busy || !hasTone}
+          title={`Toggle hardware-out monitor on bus ${HARDWARE_OUT_BUS}`}
+        >
+          {hasMonitor ? 'Stop monitor' : 'Monitor'}
+        </button>
+        <button
+          type="button"
+          className="secondary"
           onClick={onPoke}
           disabled={busy || !hasScope}
         >
@@ -257,6 +323,10 @@ export function ScopeTestPanel({
         {hasScope
           ? `scope → bufnum ${res.bufnum}`
           : 'scope idle'}
+        {' · '}
+        {hasMonitor
+          ? `monitor → out ${HARDWARE_OUT_BUS}`
+          : 'monitor off'}
       </div>
       {stats && (
         <pre className="readout">
