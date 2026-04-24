@@ -95,11 +95,15 @@ async function bringUpDashboard(
     group,
     registry,
     nodeIds: ids.node,
+    busIds: ids.bus,
     env: DEFAULT_ENV,
     params: DEFAULT_PARAMS,
   });
 
-  console.log(`[sc:app] starting global clock in group ${parentGroupId}`);
+  console.log(
+    `[sc:app] starting global clock in group ${parentGroupId}, ` +
+      `clockBus=${clock.clockBus}`,
+  );
   await clock.start();
   console.log('[sc:app] dashboard ready');
 
@@ -141,15 +145,32 @@ export function AppShell() {
     // Status probe — proves the full chain (worker → bridge → UDP →
     // scsynth → back) is actually responsive before mounting the
     // dashboard. Silent UDP "nothing listening" can only be detected
-    // here, because UDP sends don't fail.
+    // here, because UDP sends don't fail. We also use the reply to
+    // sanity-check the server's sample rate: if it disagrees with
+    // our assumed config, `samplesPerTick` math goes non-integer and
+    // every phase in the plan silently breaks.
     console.log('[sc:app] running /status probe');
     try {
-      await next.sendAndAwaitReply(
+      const reply = await next.sendAndAwaitReply(
         status(),
-        (reply) => reply.address === '/status.reply',
+        (r) => r.address === '/status.reply',
         STATUS_PROBE_TIMEOUT_MS,
       );
-      console.log('[sc:app] /status probe OK');
+      // args index per scsynth's /status.reply spec:
+      // 0=unused, 1=numUgens, 2=numSynths, 3=numGroups, 4=numSynthDefs,
+      // 5=avgCpu, 6=peakCpu, 7=nominalSampleRate, 8=actualSampleRate.
+      const actualSampleRate = reply.args[8] as number;
+      if (Math.abs(actualSampleRate - DEFAULT_ENV.sampleRate) > 0.5) {
+        next.dispose();
+        throw new Error(
+          `scsynth sample rate ${actualSampleRate} doesn't match expected ` +
+            `${DEFAULT_ENV.sampleRate} — update DEFAULT_ENV or reboot scsynth ` +
+            `at the matching rate.`,
+        );
+      }
+      console.log(
+        `[sc:app] /status probe OK (sr=${actualSampleRate})`,
+      );
     } catch (err) {
       console.error('[sc:app] /status probe failed', err);
       next.dispose();

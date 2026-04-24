@@ -79,6 +79,26 @@ export function ClockPanel({ clock }: ClockPanelProps) {
     }
   }, [clock]);
 
+  const onProbe = useCallback(async () => {
+    setBusy(true);
+    try {
+      const t0 = performance.now();
+      const result = await clock.probePhase();
+      const elapsedMs = (performance.now() - t0).toFixed(0);
+      console.log(
+        `[sc:clock] probe phase (${elapsedMs} ms) bus=${clock.clockBus} ` +
+          `count=${result.count} min=${result.min.toFixed(1)} ` +
+          `max=${result.max.toFixed(1)} first=[${result.first
+            .map((v) => v.toFixed(1))
+            .join(', ')}]`,
+      );
+    } catch (err) {
+      console.error('[sc:clock] probe phase failed', err);
+    } finally {
+      setBusy(false);
+    }
+  }, [clock]);
+
   const pill = pillFor(state);
   const tickIndex = tick?.tickIndex ?? 0;
   const elapsed = formatElapsed(tickIndex, clock.params.tickRate);
@@ -106,6 +126,15 @@ export function ClockPanel({ clock }: ClockPanelProps) {
           disabled={busy || state === 'stopped'}
         >
           Reset
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          onClick={onProbe}
+          disabled={busy || state === 'stopped'}
+          title={`Read clockBus ${clock.clockBus} for 2 s and log the phase values`}
+        >
+          Probe
         </button>
       </div>
     </section>

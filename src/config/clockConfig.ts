@@ -75,3 +75,15 @@ export const DEFAULT_PARAMS: ClockParams = {
 /** Reserved SendTrig ID for the global clock synth. No other synth
  *  may use this id — it's the worker's dispatch key. */
 export const CLOCK_TRIG_ID = 1000;
+
+/** Reserved SendTrig ID for the dev phase-probe synth. Used only
+ *  by `ClockController.probePhase`. */
+export const PHASE_PROBE_TRIG_ID = 9001;
+
+/** How many ticks the clock's audio-rate sample phasor covers before
+ *  wrapping. The value `2` implements the double-buffering convention
+ *  every downstream consumer (scopes, recorders) relies on: at each
+ *  tick, exactly one half-ring of each consumer's buffer has
+ *  completed. Any consumer whose ring size divides
+ *  `CLOCK_WRAP_TICKS × samplesPerTick` sees clean wraps. */
+export const CLOCK_WRAP_TICKS = 2;

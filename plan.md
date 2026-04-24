@@ -1383,68 +1383,143 @@ for the clock ticks and in later phases for `/n_go`, `/n_end`, etc.
 
 ## Phase 6 — Shared Phasor on Clock Bus
 
-**Goal.** Extend clock with a shared audio-rate phasor on a bus. Verify via a diagnostic synth.
+**Goal.** Give every future scope / recorder synth a shared audio-rate
+time reference so they stay sample-aligned without each maintaining
+its own phasor. The clock publishes an audio-rate sample counter on
+a bus; consumers derive their own buffer index from it.
 
-### Files
+### Files (as landed)
 
-- `src/synth/clockSynthDef.ts` — v2 (adds phasor)
-- `src/synth/phaseProbeSynthDef.ts` (dev)
-- `src/scope/ClockController.ts` — now allocates clock bus
-- `src/ui/PhaseProbePanel.ts` (dev)
+- `src/synth/clockSynthDef.ts` — evolved to publish a shared
+  sample phase; clock stays oblivious to scope / recorder params.
+- `src/synth/phaseProbeSynthDef.ts` — dev diagnostic.
+- `src/scope/ClockController.ts` — allocates `clockBus` in its
+  constructor, passes it via `/s_new` controls, exposes
+  `probePhase(durationMs)`.
+- `src/ui/ClockPanel/ClockPanel.tsx` — adds a `Probe` button that
+  calls `clock.probePhase()` and logs the aggregate to the debug log.
+- `src/config/clockConfig.ts` — new constant `CLOCK_WRAP_TICKS = 2`
+  and `PHASE_PROBE_TRIG_ID = 9001`.
+- `src/scope/AppShell.tsx` — `bringUpDashboard` threads `ids.bus`
+  into `ClockController`; `/status` probe now sanity-checks
+  `args[8]` against `DEFAULT_ENV.sampleRate`.
 
-### `clockSynthDef.ts` v2
+### Decoupled clock SynthDef
+
+The clock knows **only `tickRate` and the server's sample rate**
+(via `SampleRate.ir` at synth-spawn time). It does not reference
+`scopeChunkSize` or `decimation` — those are scope-level concerns,
+owned entirely by Phase 7's scope SynthDef.
+
+Equivalent sclang:
 
 ```
-SynthDef("globalClock", {
-    arg clockBus = 0, tickRate = 48, scopeChunkSize = 250, decimation = 4, trigId = 1000;
+SynthDef("globalClock", { |clockBus = 0|
+    var tick = Impulse.kr(tickRate);
+    SendTrig.kr(tick, trigId, PulseCount.kr(tick));
 
-    var tick, counter, sampleTick, phase;
-
-    // Tick path — unchanged from v1
-    tick    = Impulse.kr(tickRate);
-    counter = PulseCount.kr(tick);
-    SendTrig.kr(tick, trigId, counter);
-
-    // Shared phasor path
-    sampleTick = Impulse.ar(SampleRate.ir / decimation);
-    phase      = Phasor.ar(0, sampleTick, 0, scopeChunkSize * 2);
+    var wrap  = SampleRate.ir * (CLOCK_WRAP_TICKS / tickRate);
+    var phase = Phasor.ar(0, 1, 0, wrap);
     Out.ar(clockBus, phase);
 }).add;
 ```
 
-**Alignment:** at `sampleRate=48000, decimation=4, scopeChunkSize=250`, `phase` advances once every 4 audio samples, wraps at 500. `tickRate=48` → 1000 audio samples between ticks → phase advances 250 → exactly one half completed per tick. ✓
+The phase advances `+1` per audio sample and wraps at
+`CLOCK_WRAP_TICKS × samplesPerTick`. With the default
+`CLOCK_WRAP_TICKS = 2`, that's two tick periods (2000 samples at
+the default config). Every downstream consumer whose ring size
+divides `CLOCK_WRAP_TICKS × samplesPerTick` sees clean wraps — and
+the plan's per-scope invariant (`scopeChunkSize × decimation =
+samplesPerTick`) guarantees exactly that.
 
-### `ClockController` changes
+### How consumers derive their index (Phase 7+ preview)
 
-On `start`: allocate `clockBus = ids.bus.next()`; pass to SynthDef args.
-
-### `phaseProbeSynthDef.ts`
+Scope synth:
 
 ```
-SynthDef("phaseProbe", {
-    arg clockBus = 0, replyRate = 10, trigId = 9001;
-    var phase = In.ar(clockBus, 1);
-    var tick  = Impulse.kr(replyRate);
-    SendTrig.kr(tick, trigId, A2K.kr(phase));
-}).add;
+phase    = In.ar(clockBus, 1);
+writeIdx = (phase / decimation) mod (scopeChunkSize * 2);
+BufWr.ar(sig, bufnum, writeIdx);
 ```
 
-Placed at tail of parent group so it reads after the clock writes on the same control block.
+Recorder synth (no decimation, ring = `samplesPerTick × 2` which
+happens to equal the clock's wrap point):
 
-### `PhaseProbePanel.ts` (dev)
+```
+phase = In.ar(clockBus, 1);
+BufWr.ar(sig, bufnum, phase);     // no mod / div needed
+```
 
-- "Start probe" / "Stop probe" toggle.
-- Monospace readout of current phase value.
-- Optional mini sparkline of last N values.
-- Hidden unless `?debug` flag.
+### Parity math (feeds Phase 8)
+
+At server audio frame `N × samplesPerTick` (= tick `N`, assuming tick 0
+aligned to frame 0):
+
+- clock phase = `(N mod 2) × samplesPerTick`
+- scope writeIdx = `((N mod 2) × samplesPerTick / decimation) mod
+  (scopeChunkSize × 2)` = `(N mod 2) × scopeChunkSize`
+
+So at tick `N`:
+- `N` even → `writeIdx = 0`; the second half (`[chunkSize,
+  chunkSize × 2)`) was just completed.
+- `N` odd → `writeIdx = chunkSize`; the first half (`[0, chunkSize)`)
+  was just completed.
+
+That matches the plan's `completedHalf = 1 - (tickIndex % 2)` formula.
+
+### `ClockController.probePhase(durationMs)`
+
+Replaces the dedicated `PhaseProbePanel.ts` from the original plan.
+The controller temporarily adds a `phaseProbe` synth at the tail of
+the parent group (so it reads `clockBus` *after* the clock writes
+it on each control block), collects its `/tr` replies for
+`durationMs`, frees it, and returns aggregate stats:
+
+```ts
+interface PhaseProbeResult {
+  count: number;
+  min: number;
+  max: number;
+  first: number[];   // first ~10 values in receive order
+}
+```
+
+The probe uses `PHASE_PROBE_TRIG_ID = 9001`, distinct from the
+clock's `CLOCK_TRIG_ID`, so its `/tr` replies flow through
+`WorkerClient.onReply` (not the suppressed clock-tick channel).
+
+### Group ordering invariant
+
+The clock synth is added with `AddToHead`. Every synth that reads
+`clockBus` (scopes, recorders, the probe) MUST be added with
+`AddToTail` so scsynth processes them AFTER the clock on every
+control block — otherwise they'd read the previous block's bus
+value, introducing ~1 ms lag. Documented in `ClockController`'s
+module header; to be enforced by Phase 7's `ScopeController` and
+Phase 12's `RecordingController`.
+
+### Sample-rate sanity check
+
+`AppShell.handleConnect` now reads `args[8]` off `/status.reply`
+(`actualSampleRate`) and rejects the connect if it diverges from
+`DEFAULT_ENV.sampleRate` by more than 0.5 Hz. Phase 6 is the first
+phase where a server/client SR mismatch silently miscomputes
+`samplesPerTick`, so failing loudly on connect catches the
+configuration error up front.
 
 ### Acceptance
 
-1. Start clock, start probe → phase values saw 0 → 499 → 0 at ~12 kHz (sampled at 10 Hz, so you see the saw "striped").
-2. `QueryTree` shows clock first, probe after, in the same group.
-3. Stop → probe freezes. Start → resumes from frozen value.
-4. At each clock tick, probe's subsequent samples cluster near 0 or 250 (the half boundaries).
-5. Probe with `clockBus` pointed at a wrong bus → reads zeros.
+1. Start dashboard → `[sc:app] starting global clock in group … clockBus=32`
+   in the debug log.
+2. Click **Probe** in ClockPanel → `[sc:clock] probe phase (~2000 ms)
+   bus=32 count=~20 min=… max=… first=[…]` with values roughly
+   spanning `[0, 2 × samplesPerTick)`. Count should be close to 20
+   (2 s × replyRate 10), min close to 0, max close to `samplesPerTick × 2 - 1`.
+3. Pause the clock → Probe shows `count` ≈ 0 (ticks are frozen, the
+   probe synth stops firing).
+4. Reconnect → probe still works; `clockBus` is freshly allocated.
+5. Connect against an scsynth with wrong sample rate → connect
+   fails with a clear error, dashboard doesn't mount.
 
 ---
 

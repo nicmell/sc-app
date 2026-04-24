@@ -12,6 +12,12 @@
  * `2 × tickIntervalMs`, we surface `paused` so the UI doesn't lie
  * about a silent server. Resolves back to `running` as soon as a
  * tick lands.
+ *
+ * **Group ordering invariant.** The clock synth is added with
+ * `AddToHead`; every other synth that reads the clock bus (scopes,
+ * recorders, the dev probe) MUST be added with `AddToTail` so scsynth
+ * processes them AFTER the clock on every control block — otherwise
+ * they'd read the previous block's bus value, introducing ~1 ms lag.
  */
 
 import type {
@@ -19,12 +25,20 @@ import type {
   ClockDerived,
   ClockParams,
 } from '@/config/clockConfig';
-import { CLOCK_TRIG_ID, deriveClock } from '@/config/clockConfig';
+import {
+  CLOCK_TRIG_ID,
+  PHASE_PROBE_TRIG_ID,
+  deriveClock,
+} from '@/config/clockConfig';
 import {
   CLOCK_SYNTHDEF_NAME,
   compileClockSynthDef,
 } from '@/synth/clockSynthDef';
-import { AddToHead, nFree, sNew } from '@sc-app/server-commands';
+import {
+  PHASE_PROBE_SYNTHDEF_NAME,
+  compilePhaseProbeSynthDef,
+} from '@/synth/phaseProbeSynthDef';
+import { AddToHead, AddToTail, nFree, sNew } from '@sc-app/server-commands';
 import { GroupController, type GroupState } from './GroupController';
 import type { IdAllocator } from './IdAllocator';
 import type { ReadonlyStore } from './reactiveStore';
@@ -41,11 +55,34 @@ export type ClockState = 'stopped' | 'running' | 'paused';
  *  watchdog that takes over once ticks are flowing. */
 const TICK_STARTUP_GRACE_MS = 500;
 
+/** Default duration for `ClockController.probePhase`. Two seconds
+ *  × replyRate=10 gives ~20 phase samples, enough to see the saw
+ *  sweep 0 → wrap several times. */
+const DEFAULT_PROBE_MS = 2000;
+
+/** kr reply-rate of the phase probe synth. Ten samples per second
+ *  keeps `/tr` traffic light. */
+const PROBE_REPLY_RATE = 10;
+
+/** Result of a `probePhase()` run — simple aggregate stats over the
+ *  decoded phase values delivered by the probe synth. */
+export interface PhaseProbeResult {
+  /** Number of `/tr` replies received. */
+  count: number;
+  /** Smallest phase value observed (or 0 if `count === 0`). */
+  min: number;
+  /** Largest phase value observed (or 0 if `count === 0`). */
+  max: number;
+  /** First ~10 values in receive order, for eyeballing the saw. */
+  first: number[];
+}
+
 interface ClockControllerOptions {
   client: WorkerClient;
   group: GroupController;
   registry: SynthDefRegistry;
   nodeIds: IdAllocator;
+  busIds: IdAllocator;
   env: AudioEnvironment;
   params: ClockParams;
 }
@@ -54,6 +91,9 @@ export class ClockController {
   readonly env: AudioEnvironment;
   readonly params: ClockParams;
   readonly derived: ClockDerived;
+  /** Audio bus index on which the clock publishes its shared sample
+   *  phase. Scope / recorder synths read this via `In.ar(clockBus)`. */
+  readonly clockBus: number;
 
   private readonly client: WorkerClient;
   private readonly group: GroupController;
@@ -72,12 +112,10 @@ export class ClockController {
    *  of `start` / `resume` / `reset` or any incoming tick. Null while
    *  the controller is stopped. */
   private lastSignalAt: number | null = null;
-  /** Main-thread `Date.now()` at the first tick's arrival, minus the
-   *  tick's own index-in-time. Effectively the JS ms timestamp at
-   *  which tick 0 arrived (or would have arrived if it had been the
-   *  first we saw). Used by `tickToTimetag` to convert future server
-   *  tick indices into NTP timetags for scheduled OSC bundles.
-   *  Null until the first tick arrives; reset by `reset()`. */
+  /** Main-thread `Date.now()` anchored at the first tick's arrival,
+   *  minus the tick's own index-in-time. Used by `tickToTimetag` to
+   *  convert server tick indices into NTP timetags for scheduled
+   *  OSC bundles. Null until the first tick arrives. */
   private _tick0Ms: number | null = null;
 
   constructor(opts: ClockControllerOptions) {
@@ -88,6 +126,7 @@ export class ClockController {
     this.env = opts.env;
     this.params = opts.params;
     this.derived = deriveClock(opts.env, opts.params);
+    this.clockBus = opts.busIds.next();
   }
 
   /** Monotonic pulse count from the most recent tick, or null if no
@@ -129,7 +168,13 @@ export class ClockController {
     this.clockNodeId = this.nodeIds.next();
     this.lastSignalAt = performance.now();
     await this.client.sendAndSync(
-      sNew(CLOCK_SYNTHDEF_NAME, this.clockNodeId, AddToHead, this.group.groupId),
+      sNew(
+        CLOCK_SYNTHDEF_NAME,
+        this.clockNodeId,
+        AddToHead,
+        this.group.groupId,
+        { clockBus: this.clockBus },
+      ),
     );
 
     this.started = true;
@@ -161,9 +206,73 @@ export class ClockController {
     this.lastSignalAt = performance.now();
     this.clockNodeId = this.nodeIds.next();
     await this.client.sendAndSync(
-      sNew(CLOCK_SYNTHDEF_NAME, this.clockNodeId, AddToHead, this.group.groupId),
+      sNew(
+        CLOCK_SYNTHDEF_NAME,
+        this.clockNodeId,
+        AddToHead,
+        this.group.groupId,
+        { clockBus: this.clockBus },
+      ),
     );
     this.recompute(this.group.state.get());
+  }
+
+  /** Dev-only diagnostic. Temporarily add a `phaseProbe` synth at the
+   *  tail of the parent group, collect its `/tr` replies for
+   *  `durationMs`, then free it. Returns aggregate stats over the
+   *  phase values observed — use it to confirm the clock is actually
+   *  publishing a sawtooth on `clockBus`.
+   *
+   *  The probe uses `PHASE_PROBE_TRIG_ID` which differs from the
+   *  clock's `CLOCK_TRIG_ID`, so its replies flow through
+   *  `WorkerClient.onReply` (not the suppressed clock-tick channel). */
+  async probePhase(durationMs = DEFAULT_PROBE_MS): Promise<PhaseProbeResult> {
+    if (!this.started || this.clockNodeId === null) {
+      throw new Error('probePhase: clock not started');
+    }
+
+    await this.registry.ensureLoaded(
+      PHASE_PROBE_SYNTHDEF_NAME,
+      compilePhaseProbeSynthDef(),
+    );
+
+    const values: number[] = [];
+    const offReply = this.client.onReply((reply) => {
+      if (
+        reply.address === '/tr' &&
+        reply.args[1] === PHASE_PROBE_TRIG_ID
+      ) {
+        values.push(reply.args[2] as number);
+      }
+    });
+
+    const probeNodeId = this.nodeIds.next();
+    try {
+      await this.client.sendAndSync(
+        sNew(
+          PHASE_PROBE_SYNTHDEF_NAME,
+          probeNodeId,
+          AddToTail,
+          this.group.groupId,
+          { clockBus: this.clockBus, replyRate: PROBE_REPLY_RATE },
+        ),
+      );
+      await new Promise((r) => setTimeout(r, durationMs));
+    } finally {
+      offReply();
+      try {
+        await this.client.sendAndSync(nFree(probeNodeId));
+      } catch (err) {
+        console.warn('[sc:clock] probe nFree failed', err);
+      }
+    }
+
+    return {
+      count: values.length,
+      min: values.length ? Math.min(...values) : 0,
+      max: values.length ? Math.max(...values) : 0,
+      first: values.slice(0, 10),
+    };
   }
 
   /** Full teardown — free the clock, unregister, stop the watchdog.
