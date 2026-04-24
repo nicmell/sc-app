@@ -1525,70 +1525,112 @@ configuration error up front.
 
 ## Phase 7 — Scope SynthDef, Manual Poke
 
-**Goal.** Scope synth writes its buffer correctly. Verify with manual `/b_getn`.
+**Goal.** Prove the scope SynthDef correctly taps an audio bus, writes
+to a ring buffer indexed by the clock's shared phase, and the buffer
+contents can be read back via `/b_getn`. First phase where the app
+generates and captures real audio.
 
-### Files
+### Files (as landed)
 
-- `src/synth/scopeSynthDef.ts`
-- `src/synth/testToneSynthDef.ts`
-- `src/scope/BufferPoker.ts`
-- `src/ui/ScopePokerPanel.ts`
+- `src/synth/scopeSynthDef.ts` — `scopeTap1` (mono for now; channels
+  as a compile-time parameter extended in Phase 10). Derives its
+  own `writeIdx` from the shared clock phase.
+- `src/synth/testToneSynthDef.ts` — `testTone`, a plain sine on a
+  configurable bus.
+- `src/scope/BufferPoker.ts` — one-shot `/b_getn` helper with
+  per-bufnum in-flight deduplication.
+- `src/ui/ScopeTestPanel/` — dev panel (Start tone, Start scope,
+  Poke, Stop all) replacing the plan's `ScopePokerPanel.ts`.
 
 ### `scopeSynthDef.ts`
 
-```
-SynthDef("scopeTap", {
-    arg in = 0, bufnum = 0, clockBus = 0, channels = 1;
-    var sig   = In.ar(in, channels);
-    var phase = In.ar(clockBus, 1);
-    BufWr.ar(sig, bufnum, phase);
-}).add;
+```ts
+synthdef('scopeTap1', (g, { inBus = 0, bufnum = 0, clockBus = 0 }) => {
+  const sig = g.In.ar(inBus, 1);
+  const phase = g.In.ar(clockBus, 1);
+  const writeIdx = g.mod(
+    g.div(phase, DEFAULT_PARAMS.decimation),
+    DEFAULT_PARAMS.scopeChunkSize * 2,
+  );
+  g.BufWr.ar([sig], bufnum, writeIdx);
+});
 ```
 
-No `SendReply`, no trigger output. Timing comes exclusively from the global clock's `SendTrig`.
+No `SendReply`, no trigger output of its own — timing comes entirely
+from the global clock's `SendTrig`. `decimation` and `scopeChunkSize`
+are baked at compile time (per-session config); the clock remains
+oblivious to them. `channels` is hardcoded to 1 for Phase 7; Phase 10
+adds `compileScopeSynthDef(channels: number)` keyed on channel count.
 
-**Behavior note.** `BufWr.ar` writes every audio sample, using `phase` as the index. `phase` advances once every `decimation` samples (from the clock), so each buffer slot is overwritten `decimation` times per advance. The net effect: each slot holds the *last* of those `decimation` samples (a zero-order-hold decimation). For a scope, this is fine and visually indistinguishable from proper sinc-decimated data above the alias frequency. Accept as the PoC behavior; document; revisit only if aliasing artifacts are visible.
+**Decimation behavior.** `BufWr.ar` writes every audio sample using
+`writeIdx` as the index. `writeIdx` advances once every `decimation`
+audio samples, so each buffer slot is overwritten `decimation` times
+per advance — last-write-wins zero-order-hold decimation. Fine for
+a time-domain scope; revisit only if aliasing artifacts become
+visible.
 
 ### `testToneSynthDef.ts`
 
-```
-SynthDef("testTone", {
-    arg out = 0, freq = 440, amp = 0.2;
-    Out.ar(out, SinOsc.ar(freq) * amp);
-}).add;
+```ts
+synthdef('testTone', (g, { outBus = 0, freq = 440, amp = 0.2 }) => {
+  g.Out.ar(outBus, g.mul(g.SinOsc.ar(freq, 0), amp));
+});
 ```
 
-Placed on a private bus (bus 16+) so it doesn't go to hardware.
+Placed on a private bus allocated via `ids.bus.next()` so it never
+reaches hardware outputs.
 
 ### `BufferPoker.ts`
 
 ```ts
-import { bGetn } from '../scope/cmd';
-
 export class BufferPoker {
-  constructor(private client: WorkerClient);
-  async poke(bufnum: number, offset: number, count: number): Promise<Float32Array>;
+  constructor(client: WorkerClient);
+  poke(bufnum: number, start: number, count: number, timeoutMs?: number):
+    Promise<Float32Array>;
 }
 ```
 
-Sends `bGetn(bufnum, offset, count)`; awaits a reply with
-`reply.tag === 'b-setn' && reply.val.bufnum === bufnum`. The typed
-variant (see Crate Prerequisites) gives `reply.val.samples` as a
-`Float32Array` directly — no boxing, one memcpy from the wasm side.
-Serializes pokes per bufnum (simple queue — one request in flight per
-buffer, because scsynth matches replies by bufnum only).
+Sends `bGetn(bufnum, start, count)`; awaits the first `/b_setn`
+reply whose `args[0] === bufnum`. Extracts samples via the
+`BSetnReply.samples` accessor from `@sc-app/server-commands`
+(returns a `Float32Array`, no per-sample boxing). Per-bufnum
+serialisation: a second `poke(bufnum, …)` while one is still in
+flight shares the same promise — scsynth correlates `/b_setn` by
+bufnum only, so we can't tell overlapping requests apart.
 
-### `ScopePokerPanel.ts`
+Main-thread use only. Phase 8's tick-driven chunk loop runs on
+the worker and has its own reply path.
 
-Controls: input bus, scope channels, create/destroy scope buttons, Poke button. Log shows returned array: length, min/max, first 8 values.
+### `ScopeTestPanel.tsx`
+
+Four buttons — **Start tone**, **Start scope**, **Poke**,
+**Stop all** — plus a monospace readout. On **Poke**, logs
+`length / min / max / rms / first8`. Panel-local state tracks
+the allocated node IDs, bus, and bufnum; **Stop all** frees
+them in dependency order (scope synth → tone synth → buffer).
+No dedicated controller yet — that's Phase 8+.
+
+Each synth is added to the parent group with `AddToTail`, so
+scsynth's processing order is `clock → testTone → scopeTap`:
+clock writes the phase bus, testTone writes the audio bus, and
+scopeTap reads both on the same control block.
 
 ### Acceptance
 
-1. Test tone on bus 16 (440 Hz, amp 0.2), scope on bus 16 into bufnum 1000 (`scopeRingSize=500`, channels=1). Poke → min ≈ -0.2, max ≈ 0.2, values look sinusoidal.
-2. Stop clock → poke returns same array repeatedly (buffer frozen).
-3. Start → poke returns updated values.
-4. Scope pointed at empty bus 17 → poke returns all zeros.
-5. NFree + BFree → poke returns `/fail`.
+1. Start dashboard, click **Start tone** → tone synth running on a
+   fresh private bus (logged).
+2. **Start scope** → buffer allocated (`scopeRingSize = 500`),
+   scope synth running, bufnum logged.
+3. **Poke** → `length=500, min ≈ -0.2, max ≈ 0.2, rms ≈ 0.14` for
+   a 440 Hz sine at amp 0.2. `first8` shows a slice of a sinusoid.
+4. Pause the clock (ClockPanel **Pause**) → **Poke** returns the
+   same array repeatedly (buffer writes frozen).
+5. Resume → poke returns updated values.
+6. **Stop all** → scope + tone + buffer freed; a subsequent
+   **Poke** would return `/fail` (guarded by the panel — Poke
+   button is disabled once scope is gone).
+7. Disconnect → all resources cleaned up as part of the dashboard
+   teardown path.
 
 ---
 

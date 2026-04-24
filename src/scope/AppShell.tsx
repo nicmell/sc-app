@@ -3,6 +3,7 @@ import { ClockPanel } from '@/ui/ClockPanel';
 import { ConnectScreen } from '@/ui/ConnectScreen';
 import { DebugLog } from '@/ui/DebugLog';
 import { OscConsole } from '@/ui/OscConsole';
+import { ScopeTestPanel } from '@/ui/ScopeTestPanel';
 import { SynthDefPanel } from '@/ui/SynthDefPanel';
 import { DEFAULT_ENV, DEFAULT_PARAMS } from '@/config/clockConfig';
 import {
@@ -52,6 +53,13 @@ function Dashboard({
         </button>
       </header>
       <ClockPanel clock={resources.clock} />
+      <ScopeTestPanel
+        client={resources.client}
+        clock={resources.clock}
+        group={resources.group}
+        registry={resources.registry}
+        ids={resources.ids}
+      />
       <SynthDefPanel registry={resources.registry} />
       <OscConsole client={resources.client} />
     </main>
