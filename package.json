@@ -3,20 +3,24 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "serve": "cargo run --manifest-path src-tauri/Cargo.toml -- serve",
-    "build:wasm": "yarn build:wasm:scserver-commands && yarn build:wasm:scsynthdef-compiler",
-    "build:wasm:scserver-commands": "cd crates/scserver-commands && cargo component build --release --features component --target wasm32-wasip1 && jco transpile target/wasm32-wasip1/release/scserver_commands.wasm -o pkg",
+    "build:wasm": "yarn build:wasm:scsynthdef-compiler",
     "build:wasm:scsynthdef-compiler": "cd crates/scsynthdef-compiler && cargo component build --release --features component --target wasm32-wasip1 && jco transpile target/wasm32-wasip1/release/scsynthdef_compiler.wasm -o pkg"
   },
   "dependencies": {
     "@bytecodealliance/preview2-shim": "^0.17.9",
+    "@sc-app/server-commands": "workspace:*",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
+    "osc-js": "^2.4.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

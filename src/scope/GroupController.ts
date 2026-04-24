@@ -14,18 +14,18 @@
  * only models the three real on-server states.
  */
 
+import {
+  AddToHead,
+  gFreeAll,
+  gNewOne,
+  nFree,
+  queryTree,
+  nRunOne,
+} from '@sc-app/server-commands';
 import type { ReadonlyStore } from './reactiveStore';
 import { createStore } from './reactiveStore';
 import type { WorkerClient } from './WorkerClient';
-import {
-  AddToHead,
-  gFreeAllIds,
-  gNewOne,
-  nFreeIds,
-  nRunOne,
-  queryTree,
-} from './cmd';
-import type { ServerReply } from './workerProtocol';
+import type { OscReply } from './workerProtocol';
 
 export type GroupState = 'stopped' | 'running' | 'paused';
 
@@ -67,21 +67,18 @@ export class GroupController {
   /** Frees all children, then the group itself. */
   async free(): Promise<void> {
     if (!this.created) return;
-    await this.client.sendAndSync(gFreeAllIds(this.groupId));
-    await this.client.sendAndSync(nFreeIds(this.groupId));
+    await this.client.sendAndSync(gFreeAll(this.groupId));
+    await this.client.sendAndSync(nFree(this.groupId));
     this.created = false;
     this.stateStore.set('stopped');
   }
 
-  /** `/g_queryTree` for this group. The reply comes back as a
-   *  `/g_queryTree.reply` OSC message, which `scserver-commands`
-   *  doesn't model as a dedicated variant — it surfaces as
-   *  `ServerReply { tag: 'other' }` with that address. */
-  queryTree(): Promise<ServerReply> {
+  /** `/g_queryTree` for this group. The reply comes back as
+   *  `/g_queryTree.reply`. */
+  queryTree(): Promise<OscReply> {
     return this.client.sendAndAwaitReply(
       queryTree(this.groupId, true),
-      (reply) =>
-        reply.tag === 'other' && reply.val.address === '/g_queryTree.reply',
+      (reply) => reply.address === '/g_queryTree.reply',
     );
   }
 }

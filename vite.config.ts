@@ -2,8 +2,8 @@ import path from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-const serverCmdsPkg = path.resolve(__dirname, "crates/scserver-commands/pkg");
 const synthdefPkg = path.resolve(__dirname, "crates/scsynthdef-compiler/pkg");
+const serverCommandsPkg = path.resolve(__dirname, "packages/server-commands/src");
 const preview2Browser = path.resolve(
   __dirname,
   "node_modules/@bytecodealliance/preview2-shim/lib/browser",
@@ -31,11 +31,13 @@ export default defineConfig({
     alias: [
       { find: "@", replacement: path.resolve(__dirname, "src") },
 
+      // Local workspace package (typescript source, Vite handles it
+      // directly via the alias — no build step required).
+      { find: /^@sc-app\/server-commands$/, replacement: `${serverCommandsPkg}/index.ts` },
+
       // jco-transpiled wasm components. Regenerate via `yarn
       // build:wasm`. Bare import → ESM entry; sub-paths → per-interface
       // .d.ts files used for types only.
-      { find: /^@wasm\/scserver-commands$/, replacement: `${serverCmdsPkg}/scserver_commands.js` },
-      { find: /^@wasm\/scserver-commands\/(.*)$/, replacement: `${serverCmdsPkg}/$1` },
       { find: /^@wasm\/scsynthdef-compiler$/, replacement: `${synthdefPkg}/scsynthdef_compiler.js` },
       { find: /^@wasm\/scsynthdef-compiler\/(.*)$/, replacement: `${synthdefPkg}/$1` },
 

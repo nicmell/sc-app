@@ -1,33 +1,23 @@
 /**
- * Phase 2 — typed scope worker. Owns the WebSocket to the bridge AND
- * the jco-transpiled `scserver-commands` component. Main thread sends
- * typed `ServerMessage` values; worker encodes to OSC bytes, forwards,
- * decodes replies into typed `ServerReply` values, and posts them back.
+ * Scope worker — owns the WebSocket to the bridge. Main thread does
+ * the OSC encoding (osc-js via `@sc-app/server-commands`); we just
+ * forward bytes either direction. Inbound bytes are decoded here so
+ * the main thread receives plain `{ address, args }` POJOs.
  *
- * Decode failures (malformed OSC, or a reply shape outside the typed
- * catalogue — which the crate routes to `Other` rather than throwing)
- * surface as `error` events. The stream keeps flowing.
+ * Decode failures surface as `error` events; the stream keeps flowing.
  */
 
 // Bootstrap FIRST — installs a synchronous message listener that
-// buffers incoming messages until the real handler is wired up. This
-// closes the race window between `new Worker(...)` and
-// `self.addEventListener('message', …)` getting called after the
-// jco wasm top-level await resolves.
+// buffers incoming messages until the real handler is wired up.
 import { setWorkerMessageHandler } from './workerBootstrap';
 
-// Then the console bridge (also pre-TLA, so wasm init logs forward).
+// Then the console bridge.
 import './workerConsoleBridge';
 
 console.log('[sc:worker] module loading …');
 
-import { commands, replies } from '@wasm/scserver-commands';
-console.log('[sc:worker] wasm bindings imported OK', {
-  hasEncode: typeof commands?.encode,
-  hasDecode: typeof replies?.decode,
-});
-
-import type { MainToWorker, WorkerToMain } from '../scope/workerProtocol';
+import { decode, isBundle, isMessage, type OscPacket } from '@sc-app/server-commands';
+import type { MainToWorker, OscReply, WorkerToMain } from '../scope/workerProtocol';
 import { createOscTransport, type OscTransport } from './transport';
 
 interface WorkerPost {
@@ -37,12 +27,6 @@ const post: WorkerPost['postMessage'] = (msg, transfer) => {
   (self as unknown as WorkerPost).postMessage(msg, transfer ?? []);
 };
 
-// Catch anything that would otherwise kill the worker silently — async
-// init failures, unhandled rejections, etc. The main thread adds its
-// own 'error' listener on the Worker instance, which fires *before*
-// this handler runs (browsers dispatch error events on the global
-// scope first), so we only reach here for runtime errors, not
-// module-load failures.
 self.addEventListener('error', (ev) => {
   console.error('[sc:worker] runtime error', ev);
   post({
@@ -66,6 +50,40 @@ console.log('[sc:worker] ready for messages');
 let transport: OscTransport | null = null;
 let clockTrigId: number | null = null;
 
+function emitReply(packet: OscPacket): void {
+  if (isMessage(packet)) {
+    // Clock /tr intercept: suppress the generic reply and emit a
+    // typed clockTick instead when the triggerId matches the
+    // currently-registered clock.
+    if (
+      clockTrigId !== null &&
+      packet.address === '/tr' &&
+      packet.args[1] === clockTrigId
+    ) {
+      post({
+        type: 'clockTick',
+        tick: {
+          tickIndex: (packet.args[2] as number) | 0,
+          receivedAt: performance.now(),
+        },
+      });
+      return;
+    }
+    const reply: OscReply = {
+      address: packet.address,
+      args: packet.args as OscReply['args'],
+    };
+    post({ type: 'reply', reply });
+  } else if (isBundle(packet)) {
+    // Flatten bundles: emit each inner element individually. scsynth
+    // rarely replies with bundles, but some `/done` confirmations and
+    // NRT-style responses can arrive this way.
+    for (const el of packet.bundleElements) {
+      emitReply(el as OscPacket);
+    }
+  }
+}
+
 setWorkerMessageHandler(async (msg: MainToWorker) => {
   console.log('[sc:worker] main → worker', msg.type);
   switch (msg.type) {
@@ -80,31 +98,15 @@ setWorkerMessageHandler(async (msg: MainToWorker) => {
         transport = createOscTransport(msg.url);
         transport.onMessage((bytes) => {
           try {
-            const reply = replies.decode(bytes);
-            // Route the clock's /tr replies into the dedicated
-            // tick stream and suppress the generic reply event
-            // for them. Any other /tr (unreserved trigIds) passes
-            // through unchanged.
-            if (
-              clockTrigId !== null &&
-              reply.tag === 'tr' &&
-              reply.val.triggerId === clockTrigId
-            ) {
-              post({
-                type: 'clockTick',
-                tick: {
-                  tickIndex: reply.val.value | 0,
-                  receivedAt: performance.now(),
-                },
-              });
-              return;
-            }
-            post({ type: 'reply', reply });
+            const packet = decode(bytes);
+            emitReply(packet);
           } catch (err) {
             console.error('[sc:worker] decode failed', err, bytes);
             post({
               type: 'error',
-              message: `decode failed: ${err instanceof Error ? err.message : String(err)}`,
+              message: `decode failed: ${
+                err instanceof Error ? err.message : String(err)
+              }`,
             });
           }
         });
@@ -126,26 +128,20 @@ setWorkerMessageHandler(async (msg: MainToWorker) => {
       } catch (err) {
         console.error('[sc:worker] connect failed', err);
         transport = null;
-        post({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+        post({
+          type: 'error',
+          message: err instanceof Error ? err.message : String(err),
+        });
       }
       return;
     }
 
-    case 'command': {
+    case 'send': {
       if (!transport) {
-        post({ type: 'error', message: 'command before connect' });
+        post({ type: 'error', message: 'send before connect' });
         return;
       }
-      try {
-        const bytes = commands.encode(msg.command);
-        transport.send(bytes);
-      } catch (err) {
-        console.error('[sc:worker] encode failed', err, msg.command);
-        post({
-          type: 'error',
-          message: `encode failed: ${err instanceof Error ? err.message : String(err)}`,
-        });
-      }
+      transport.send(msg.bytes);
       return;
     }
 

@@ -1,33 +1,43 @@
 /**
  * Main-thread wrapper around the scope worker.
  *
- * Phase 2 surface:
- * - `sendCommand(cmd)`          — fire-and-forget typed command
- * - `onReply(cb)`               — subscribe to typed replies
- * - `onError(cb)`               — subscribe to worker/WS errors
- * - `sendAndAwaitReply(cmd, match, timeoutMs)` — one-shot: send a
- *   command and resolve when a matching reply arrives. Used for
- *   correlation-free probes like Status.
- * - `sendAndSync(cmd, timeoutMs)` — send a command then a `/sync`,
- *   resolve when the matching `/synced` comes back. Used when the
- *   command has no reply of its own (`/d_recv`, buffer ops, etc.).
+ * Surface:
+ * - `sendCommand(msg)`            — fire-and-forget OSC message/bundle.
+ * - `onReply(cb)`                 — subscribe to decoded OSC replies
+ *   (plain `{ address, args }` POJOs; postMessage strips class methods).
+ * - `onError(cb)`                 — worker/WS error stream.
+ * - `onTick(cb)`                  — decoded clock ticks (gated by
+ *   `registerClock(trigId)`).
+ * - `sendAndAwaitReply(msg, match, timeoutMs)` — send + await first
+ *   matching reply.
+ * - `sendAndSync(msg, timeoutMs)` — send + /sync + await /synced.
+ * - `sendCommandAndAwaitSync(buildMsg, timeoutMs)` — atomic variant
+ *   for commands with an embedded `/sync` (e.g. `/d_recv`'s
+ *   `completionMsg`).
  */
+
+import type OSCClass from 'osc-js';
+import {
+  encode,
+  sync as syncMsg,
+  Synced,
+  type OscPacket,
+} from '@sc-app/server-commands';
 
 import type {
   ClockTick,
   MainToWorker,
-  ServerMessage,
-  ServerReply,
+  OscReply,
   WorkerToMain,
 } from './workerProtocol';
 
 const READY_TIMEOUT_MS = 3000;
 const DEFAULT_SYNC_TIMEOUT_MS = 2000;
 
-export type ReplyListener = (reply: ServerReply) => void;
+export type ReplyListener = (reply: OscReply) => void;
 export type ErrorListener = (message: string) => void;
 export type TickListener = (tick: ClockTick) => void;
-export type ReplyMatcher = (reply: ServerReply) => boolean;
+export type ReplyMatcher = (reply: OscReply) => boolean;
 
 export class WorkerClient {
   private readonly worker: Worker;
@@ -45,9 +55,6 @@ export class WorkerClient {
       { type: 'module' },
     );
 
-    // Module-level errors inside the worker (e.g. a failed top-level
-    // wasm init) would otherwise just kill the worker silently and
-    // leave the ready handshake to time out. Surface them loudly.
     this.worker.addEventListener('error', (ev) => {
       const message =
         ev.message || `worker module error at ${ev.filename}:${ev.lineno}:${ev.colno}`;
@@ -105,7 +112,7 @@ export class WorkerClient {
       const msg = ev.data;
       switch (msg.type) {
         case 'reply':
-          console.log('[sc:client] reply', msg.reply.tag);
+          console.log('[sc:client] reply', msg.reply.address);
           for (const cb of this.replyListeners) cb(msg.reply);
           break;
         case 'clockTick':
@@ -116,9 +123,6 @@ export class WorkerClient {
           for (const cb of this.errorListeners) cb(msg.message);
           break;
         case 'log': {
-          // Forward worker-side console calls to the main-thread
-          // console — the monkey-patched version (see `debugLog.ts`)
-          // captures them into the on-screen log panel.
           const target =
             msg.level === 'error' ? console.error
               : msg.level === 'warn' ? console.warn
@@ -134,8 +138,10 @@ export class WorkerClient {
     this.post({ type: 'connect', url });
   }
 
-  sendCommand(command: ServerMessage): void {
-    this.post({ type: 'command', command });
+  /** Encode and ship one message or bundle. */
+  sendCommand(packet: OscPacket): void {
+    const bytes = encode(packet);
+    this.post({ type: 'send', bytes });
   }
 
   onReply(cb: ReplyListener): () => void {
@@ -161,21 +167,16 @@ export class WorkerClient {
     this.post({ type: 'registerClock', trigId });
   }
 
-  /** Stop clock-tick routing; any `/tr` continues to flow through
-   *  `onReply` unchanged. */
   unregisterClock(): void {
     this.post({ type: 'unregisterClock' });
   }
 
-  /**
-   * Send `cmd` and resolve on the first reply satisfying `match`.
-   * Use for correlation-free probes (e.g. Status → StatusReply).
-   */
+  /** Send `msg` and resolve on the first reply satisfying `match`. */
   sendAndAwaitReply(
-    cmd: ServerMessage,
+    msg: OscPacket,
     match: ReplyMatcher,
     timeoutMs = DEFAULT_SYNC_TIMEOUT_MS,
-  ): Promise<ServerReply> {
+  ): Promise<OscReply> {
     return new Promise((resolve, reject) => {
       const offReply = this.onReply((reply) => {
         if (!match(reply)) return;
@@ -195,20 +196,18 @@ export class WorkerClient {
         offReply();
         offError();
       };
-      this.sendCommand(cmd);
+      this.sendCommand(msg);
     });
   }
 
-  /**
-   * Send `cmd`, then a `/sync` with a fresh id; resolve when the
-   * matching `/synced` reply arrives. Use for commands with no reply
-   * of their own (e.g. `/d_recv`, `/b_alloc`).
-   */
-  sendAndSync(cmd: ServerMessage, timeoutMs = DEFAULT_SYNC_TIMEOUT_MS): Promise<void> {
+  /** Send `msg`, then `/sync` with a fresh id; resolve when the matching
+   *  `/synced` arrives. Use for commands with no reply of their own. */
+  sendAndSync(msg: OscPacket, timeoutMs = DEFAULT_SYNC_TIMEOUT_MS): Promise<void> {
     const syncId = this.nextSyncId++;
     return new Promise((resolve, reject) => {
       const offReply = this.onReply((reply) => {
-        if (reply.tag !== 'synced' || reply.val.syncId !== syncId) return;
+        if (reply.address !== Synced.address) return;
+        if (Synced.syncId(reply as unknown as OSCClass.Message) !== syncId) return;
         cleanup();
         resolve();
       });
@@ -225,31 +224,23 @@ export class WorkerClient {
         offReply();
         offError();
       };
-      this.sendCommand(cmd);
-      this.sendCommand({ tag: 'sync', val: { aUniqueNumber: syncId } });
+      this.sendCommand(msg);
+      this.sendCommand(syncMsg(syncId));
     });
   }
 
-  /**
-   * Send a command that itself embeds a `/sync` (e.g. `/d_recv`'s
-   * `completionMsg` field), then resolve when the matching `/synced`
-   * reply arrives. The caller receives the fresh sync id via the
-   * `buildCmd` callback and is responsible for embedding it in the
-   * right place on the outgoing command.
-   *
-   * This is the atomic variant of `sendAndSync` — useful when the
-   * server should run the sync *after* an async operation completes
-   * (the synthdef is installed, the buffer is allocated, …) rather
-   * than racing it against a separate `/sync`.
-   */
+  /** Send a command that itself embeds a `/sync` (e.g. `/d_recv`'s
+   *  `completionMsg`), then resolve when the matching `/synced`
+   *  arrives. Atomic variant of `sendAndSync`. */
   sendCommandAndAwaitSync(
-    buildCmd: (syncId: number) => ServerMessage,
+    buildMsg: (syncId: number) => OscPacket,
     timeoutMs = DEFAULT_SYNC_TIMEOUT_MS,
   ): Promise<void> {
     const syncId = this.nextSyncId++;
     return new Promise((resolve, reject) => {
       const offReply = this.onReply((reply) => {
-        if (reply.tag !== 'synced' || reply.val.syncId !== syncId) return;
+        if (reply.address !== Synced.address) return;
+        if (Synced.syncId(reply as unknown as OSCClass.Message) !== syncId) return;
         cleanup();
         resolve();
       });
@@ -270,7 +261,7 @@ export class WorkerClient {
         offReply();
         offError();
       };
-      this.sendCommand(buildCmd(syncId));
+      this.sendCommand(buildMsg(syncId));
     });
   }
 

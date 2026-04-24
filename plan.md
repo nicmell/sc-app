@@ -81,11 +81,12 @@ A browser-first web app (running equally well in Tauri) that drives SuperCollide
 **Key architectural principles:**
 
 1. **Worker owns the WebSocket.** Main thread never touches `new WebSocket(...)` directly. All OSC traffic flows through typed `postMessage`.
-2. **Typed proxy.** Main ↔ worker messages use typed structs from `scserver-commands`; raw bytes are confined to the worker.
-3. **Global clock, single source of timing.** One `SendTrig` stream from a dedicated clock SynthDef. All scopes and recordings align to these ticks — no custom per-scope timing messages.
-4. **Parent group as master switch.** Every synth (clock, scopes, recorders, audio sources) lives in one group. `/n_run 0/1` on that group pauses/resumes everything in lockstep.
-5. **Alignment via shared phasor.** The clock publishes its phasor on an audio bus. Scope synths read it as their `BufWr` index → all scopes write in perfect sync → worker can derive chunk parity from `tickIndex` alone, no server-reported phase needed.
-6. **Recordings reuse the tick stream.** Recorder synths run their own full-rate phasor (local, not from the clock bus) sized to `sampleRate / tickRate`. Each tick = one completed half-buffer. Same worker dispatch path as scopes; different downstream sink.
+2. **Main thread encodes, worker forwards.** Main thread constructs `OSC.Message` / `OSC.Bundle` via `@sc-app/server-commands` and encodes to bytes locally; the worker only transports bytes and decodes inbound replies into plain `{ address, args }` POJOs.
+3. **Global clock, single source of timing.** One `SendTrig` stream from a dedicated clock SynthDef. All scopes and recordings align to these ticks — no custom per-scope timing messages. The first tick establishes a main-thread `tick0Ms` anchor that `tickToTimetag(tickIndex)` uses to convert server-side tick coordinates into NTP timetags for scheduled bundles.
+4. **Scheduling via OSC bundle timetags.** Any command that needs sample-accurate timing is wrapped in an `OSC.Bundle` with a future NTP timestamp; scsynth queues the bundle and fires it at that exact audio frame. The default live-command latency budget is 200 ms (sclang convention). Phase 12 (recording start/stop) is the phase that benefits most.
+5. **Parent group as master switch.** Every synth (clock, scopes, recorders, audio sources) lives in one group. `/n_run 0/1` on that group pauses/resumes everything in lockstep.
+6. **Alignment via shared phasor.** The clock publishes its phasor on an audio bus. Scope synths read it as their `BufWr` index → all scopes write in perfect sync → worker can derive chunk parity from `tickIndex` alone, no server-reported phase needed.
+7. **Recordings reuse the tick stream.** Recorder synths run their own full-rate phasor (local, not from the clock bus) sized to `sampleRate / tickRate`. Each tick = one completed half-buffer. Same worker dispatch path as scopes; different downstream sink.
 
 ---
 
@@ -154,41 +155,64 @@ export const DEFAULT_PARAMS: ClockParams = {
 
 ---
 
-## Crate Prerequisites
+## OSC runtime: `@sc-app/server-commands` (osc-js)
 
-Two small additions to `scserver-commands`' `replies` surface are required
-before implementation begins. Both are straightforward (~30 lines each
-across `wit/replies.wit` + `src/replies.rs`) and the current `Other`
-fallback keeps behaving for anything unrecognised:
+**Replaces the earlier wasm-bindgen runtime.** The Rust `scserver-commands`
+crate stays in `crates/` as a parity reference and potential future host,
+but the frontend no longer imports it. The runtime OSC layer is the
+local workspace package `packages/server-commands/` wrapping
+[`osc-js`](https://github.com/adzialocha/osc-js).
 
-1. **Typed `/b_setn` reply variant.** Without this, scope and recording
-   `/b_setn` responses land in `Other { args: list<osc-arg> }` — jco then
-   lowers each sample as a boxed `{ tag: 'float32', val: number }` JS
-   object. At the plan's targets (250 samples × 48 Hz × N scopes + 1000 ×
-   48 Hz × N recordings) this is tens of thousands of allocations per
-   second and will destroy sub-tick latency. Adding a typed variant with
-   `samples: list<f32>` lets jco lift the payload as `Float32Array` (one
-   memcpy, no per-element boxing):
-   ```wit
-   record b-setn-reply {
-       bufnum: s32,
-       start:  s32,
-       samples: list<f32>,
-   }
-   variant server-reply { …, b-setn(b-setn-reply), … }
-   ```
-2. **Typed `/synced` reply variant.** Needed for `sendAndSync` (Phase 2).
-   Without it, `/synced` falls through to `Other` and callers have to match
-   on `reply.tag === 'other' && reply.val.address === '/synced'`. Cleaner:
-   ```wit
-   record synced-reply { sync-id: s32 }
-   variant server-reply { …, synced(synced-reply), … }
-   ```
+Why the swap:
+- **Command scheduling with sample-accurate timing** — scsynth honours
+  NTP timetags on OSC bundles, holding them in a priority queue until
+  the exact audio frame. The earlier typed bindings didn't model
+  bundles; osc-js's `Bundle` does. This is what makes Phase 12
+  recording start/stop land on deterministic sample boundaries.
+- **Simpler bundle budget** — the worker shed ~120 KB of jco glue and
+  ~220 KB of `scserver_commands.core.wasm`; the worker chunk shrank
+  from ~168 KB to ~32 KB.
+- **No wasm TLA race on the worker's send path** — osc-js is pure JS.
 
-Both ship as non-breaking additions: any existing caller that was
-matching `Other` continues to work; new callers get the typed form.
-Do these first and the rest of the plan lands without escape-hatch
-matching in app code.
+Shape of the package surface:
+
+- **`OSC`** — the `osc-js` default export, re-exported as a named
+  symbol. `new OSC.Message(address, ...args)` and `new OSC.Bundle(
+  timetag, [packet, …])` are the primary types.
+- **`encode(packet)` / `decode(bytes)`** — thin wrappers over
+  `osc-js`. Return / accept `OSC.Message | OSC.Bundle`.
+- **Command constructors** — per-address functions in
+  `commands/{node,group,synthdef,buffer,control,misc}.ts`. Each
+  returns an `OSC.Message` with the OSC address as the discriminator
+  (`/s_new`, `/n_run`, `/d_recv`, …). Helpers accept the ergonomic
+  shape the old `cmd.ts` wrappers did (e.g. `sNew(defName, nodeId,
+  addAction, targetId, { freq: 440, bus: 'c10' })`).
+- **Reply accessors** — constant address strings (`ADDR_TR`,
+  `ADDR_SYNCED`, …) plus tiny positional readers (`Tr.nodeId(msg)`,
+  `Synced.syncId(msg)`, `BSetnReply.samples(msg)`, …) that name the
+  arg slots for callers. `BSetnReply.samples` copies into a
+  `Float32Array` so downstream code gets a tight typed array rather
+  than the boxed `number[]` osc-js decode produces.
+- **Timetag helpers** — `immediate()`, `atDate(ms)`, `inFuture(ms)`,
+  and `tickToTimetag(tick0Ms, tickIndex, tickRate)` — the last one
+  turns a server-side tickIndex into a JS ms timestamp for
+  `OSC.Bundle`'s constructor, using a one-shot calibration captured
+  when tick 0 arrives (see Phase 5's ClockController).
+
+Main ↔ worker interchange: the main thread encodes packets to bytes
+via osc-js and posts `{ type: 'send', bytes }` to the worker; the
+worker just forwards to the WebSocket. Inbound bytes are decoded in
+the worker to an `OSC.Message` / `OSC.Bundle`, flattened if a bundle,
+and posted as plain `{ address, args }` POJOs (structured-clone
+strips `OSC.Message`'s prototype). `WorkerClient.onReply(cb: (msg:
+OscReply) => void)` exposes the POJO directly — consumers match on
+`msg.address`.
+
+Why not use `WebsocketClientPlugin`: we keep our thin custom
+WebSocket transport (`src/workers/transport.ts`) because the existing
+`/tr` intercept for clock ticks is easier to express as a decode
+hook in the worker than as `osc.on('/tr', …)` with a secondary mux.
+Swap later if it buys enough.
 
 ---
 
@@ -201,28 +225,24 @@ matching in app code.
   1 UDP datagram. The backend boots in two modes: native Tauri app (GUI
   shell) or standalone HTTP server (`sc-oscilloscope serve`) — same
   bridge code path.
-- **`scsynthdef-compiler`** and **`scserver-commands`** are the two WASM
-  components under `crates/`. Exported TS surface (via jco transpile):
-  - `scsynthdef-compiler` → `core.SynthDef` resource (`new /
-    addControl(name, default, rate) → UgenInput / addUgen(className, rate,
-    inputs, numOutputs, specialIndex) → u32 / toBytes / toJson`),
-    `core.parseScgf(bytes)`, `core.registryJson()`. UGen graph is
-    stringly-typed; the 365 bundled UGens in the registry cover everything
-    this plan needs (`Impulse`, `PulseCount`, `SendTrig`, `Phasor`,
-    `BufWr`, `In`, `Out`, `SinOsc`, `SampleRate`, `A2K`, `DC`).
-  - `scserver-commands` → `commands.encode(msg: ServerMessage) →
-    Uint8Array`, `replies.decode(bytes) → ServerReply`, and
-    `nrt.NrtScore` (not used here). `ServerMessage` is a tagged union
-    with one variant per command, e.g. `{ tag: 's-new', val: { defName,
-    nodeId, addAction, targetId, tail } }`. `ServerReply` is the
-    symmetric union: `{ tag: 'tr' | 'n-go' | 'status-reply' | 'done' |
-    'fail' | 'b-setn' | 'synced' | … | 'other', val: … }`.
-- **Bundle budget.** Both wasm components load in the main thread at
-  startup: `scsynthdef_compiler.core.wasm` ~300 KB +
-  `scserver_commands.core.wasm` ~220 KB + jco JS glue ~600 KB. Vite
-  emits separate chunks. `scsynthdef-compiler` can be initialised lazily
-  on first `compile*SynthDef()` call; `scserver-commands` must be ready
-  before the worker sends anything.
+- **`scsynthdef-compiler`** (WASM component under `crates/`) — exported
+  TS surface via jco transpile: `core.SynthDef` resource (`new /
+  addControl(name, default, rate) → UgenInput / addUgen(className, rate,
+  inputs, numOutputs, specialIndex) → u32 / toBytes / toJson`),
+  `core.parseScgf(bytes)`, `core.registryJson()`, plus a typed `ugens`
+  interface. The 365 bundled UGens in the registry cover everything
+  this plan needs (`Impulse`, `PulseCount`, `SendTrig`, `Phasor`,
+  `BufWr`, `In`, `Out`, `SinOsc`, `SampleRate`, `A2K`, `DC`).
+- **`@sc-app/server-commands`** (workspace package in `packages/`) —
+  TS library wrapping `osc-js`. Replaces the earlier runtime use of
+  the `scserver-commands` crate. See the "OSC runtime" section above
+  for the surface. The `scserver-commands` Rust crate stays in
+  `crates/` as a parity reference but is no longer imported.
+- **Bundle budget.** One wasm component now loads in the main thread
+  at startup: `scsynthdef_compiler.core.wasm` ~840 KB (gzipped
+  ~200 KB) + jco JS glue. Can be initialised lazily on first
+  `compile*SynthDef()` call. The OSC runtime (osc-js) is pure JS,
+  ~6 KB gzipped, always loaded.
 - **Vite** + TypeScript strict mode.
 - **Framework-agnostic UI** in this plan. Code uses plain DOM helpers; porting to React/Solid/Svelte is a wrapper exercise.
 - **No filesystem writes.** Recordings accumulate as bytes in the
@@ -1842,6 +1862,30 @@ SynthDef("recorderTap", {
 `recChunkSize = samplesPerTick` (1000 here). The clock's tick fires every `samplesPerTick` audio samples. Recorder's phasor advances every audio sample, wraps at `2 × samplesPerTick`. Alignment: as long as the tick fires *after* the phasor crosses a half boundary, the tick marks a completed half.
 
 **Mid-run start alignment.** When the recorder synth is added mid-run, its phasor starts at 0 at that instant. The next tick is up to `samplesPerTick` samples later. The first tick's "completed half" contains the initial portion of the recording — which may be a full half or less. Safer approach: on the first tick after a recording subscribes, **skip** the read. The second tick's read is a full, clean half. Record sample 0 of the WAV file as the sample at the start of that second-tick half. Tiny startup delay (≤ ~42 ms), but guarantees clean alignment.
+
+**Sample-accurate start via scheduled bundle.** For a deterministic
+onset, the recorder's `/s_new` is wrapped in an `OSC.Bundle` whose
+timetag is `tickToTimetag(ctrl.tick0Ms, startTick, ctrl.params.tickRate)`,
+where `startTick` is the next upcoming tick boundary chosen by the
+controller. scsynth queues the bundle and fires the synth at the
+exact audio frame of `startTick`, so the phasor starts at 0 aligned
+to that tick's sample. The "skip first tick" heuristic above still
+applies as a belt-and-braces measure, but with scheduling the first
+half is already a clean chunk — callers that want zero startup delay
+can drop the skip. Symmetrically, `stopRecording` schedules
+`/n_free` at a future tick so the WAV length is exact.
+
+```ts
+// Sketch — inside RecordingController.start(startTick)
+const whenMs = tickToTimetag(clock.tick0Ms, startTick, clock.params.tickRate);
+await client.sendCommand(
+  new OSC.Bundle([
+    sNew('recorderTap', nodeId, AddToTail, parentGroupId, {
+      in: busIndex, bufnum, channels, recChunkSize: samplesPerTick,
+    }),
+  ], whenMs),
+);
+```
 
 ### Protocol additions
 

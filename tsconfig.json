@@ -24,12 +24,11 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
-      "@wasm/scserver-commands": ["crates/scserver-commands/pkg/scserver_commands.d.ts"],
-      "@wasm/scserver-commands/*": ["crates/scserver-commands/pkg/*"],
+      "@sc-app/server-commands": ["packages/server-commands/src/index.ts"],
       "@wasm/scsynthdef-compiler": ["crates/scsynthdef-compiler/pkg/scsynthdef_compiler.d.ts"],
       "@wasm/scsynthdef-compiler/*": ["crates/scsynthdef-compiler/pkg/*"]
     }
   },
-  "include": ["src"],
+  "include": ["src", "packages/server-commands/src"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

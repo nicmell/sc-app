@@ -24,7 +24,7 @@ import {
   CLOCK_SYNTHDEF_NAME,
   compileClockSynthDef,
 } from '@/synth/clockSynthDef';
-import { AddToHead, nFreeIds, sNewEasy } from './cmd';
+import { AddToHead, nFree, sNew } from '@sc-app/server-commands';
 import { GroupController, type GroupState } from './GroupController';
 import type { IdAllocator } from './IdAllocator';
 import type { ReadonlyStore } from './reactiveStore';
@@ -72,6 +72,13 @@ export class ClockController {
    *  of `start` / `resume` / `reset` or any incoming tick. Null while
    *  the controller is stopped. */
   private lastSignalAt: number | null = null;
+  /** Main-thread `Date.now()` at the first tick's arrival, minus the
+   *  tick's own index-in-time. Effectively the JS ms timestamp at
+   *  which tick 0 arrived (or would have arrived if it had been the
+   *  first we saw). Used by `tickToTimetag` to convert future server
+   *  tick indices into NTP timetags for scheduled OSC bundles.
+   *  Null until the first tick arrives; reset by `reset()`. */
+  private _tick0Ms: number | null = null;
 
   constructor(opts: ClockControllerOptions) {
     this.client = opts.client;
@@ -95,6 +102,14 @@ export class ClockController {
     return this.effectiveStateStore;
   }
 
+  /** JS ms timestamp corresponding to tick 0, anchored on the first
+   *  tick we see. Callers pair this with `params.tickRate` (or
+   *  `tickToTimetag`) to schedule OSC bundles at sample-accurate
+   *  future tick boundaries. Null until the first tick lands. */
+  get tick0Ms(): number | null {
+    return this._tick0Ms;
+  }
+
   /** First-time bring-up: load synthdef, create group, register the
    *  clock trigId, add the clock synth at head. Idempotent. */
   async start(): Promise<void> {
@@ -114,7 +129,7 @@ export class ClockController {
     this.clockNodeId = this.nodeIds.next();
     this.lastSignalAt = performance.now();
     await this.client.sendAndSync(
-      sNewEasy(CLOCK_SYNTHDEF_NAME, this.clockNodeId, AddToHead, this.group.groupId),
+      sNew(CLOCK_SYNTHDEF_NAME, this.clockNodeId, AddToHead, this.group.groupId),
     );
 
     this.started = true;
@@ -139,13 +154,14 @@ export class ClockController {
    *  Group (and other children) untouched. */
   async reset(): Promise<void> {
     if (this.clockNodeId === null) return;
-    await this.client.sendAndSync(nFreeIds(this.clockNodeId));
+    await this.client.sendAndSync(nFree(this.clockNodeId));
 
     this.lastTickStore.set(null);
+    this._tick0Ms = null;
     this.lastSignalAt = performance.now();
     this.clockNodeId = this.nodeIds.next();
     await this.client.sendAndSync(
-      sNewEasy(CLOCK_SYNTHDEF_NAME, this.clockNodeId, AddToHead, this.group.groupId),
+      sNew(CLOCK_SYNTHDEF_NAME, this.clockNodeId, AddToHead, this.group.groupId),
     );
     this.recompute(this.group.state.get());
   }
@@ -163,7 +179,7 @@ export class ClockController {
 
     if (this.clockNodeId !== null) {
       try {
-        await this.client.sendAndSync(nFreeIds(this.clockNodeId));
+        await this.client.sendAndSync(nFree(this.clockNodeId));
       } catch {
         // Best-effort — the server may already be gone.
       }
@@ -171,6 +187,7 @@ export class ClockController {
     }
     this.started = false;
     this.lastSignalAt = null;
+    this._tick0Ms = null;
     this.effectiveStateStore.set('stopped');
   }
 
@@ -183,7 +200,16 @@ export class ClockController {
     // worker's `performance.timeOrigin` is later than the window's,
     // so subtracting them gives a constant origin-skew (easily
     // 100s of ms) that would pin `isTickFresh` to false forever.
-    this.lastSignalAt = performance.now();
+    const nowMs = performance.now();
+    this.lastSignalAt = nowMs;
+    // Anchor tick0 on the first tick we see. `Date.now()` is used
+    // (not `performance.now()`) because OSC NTP timetags are aligned
+    // to wall-clock epoch; `tickToTimetag(tick0Ms, N, tickRate)`
+    // must return something scsynth's scheduler accepts as a JS
+    // timestamp-ms.
+    if (this._tick0Ms === null) {
+      this._tick0Ms = Date.now() - (tick.tickIndex * 1000) / this.params.tickRate;
+    }
     // A fresh tick while we were showing 'paused'-due-to-silence flips
     // us back to 'running'. Group-state-driven `paused` (real pause)
     // stays pinned by `recompute`.

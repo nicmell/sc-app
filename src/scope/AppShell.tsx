@@ -5,7 +5,7 @@ import { DebugLog } from '@/ui/DebugLog';
 import { OscConsole } from '@/ui/OscConsole';
 import { SynthDefPanel } from '@/ui/SynthDefPanel';
 import { DEFAULT_ENV, DEFAULT_PARAMS } from '@/config/clockConfig';
-import * as cmd from './cmd';
+import { notify, status } from '@sc-app/server-commands';
 import { ClockController } from './ClockController';
 import { GroupController } from './GroupController';
 import { IdAllocator } from './IdAllocator';
@@ -136,8 +136,8 @@ export function AppShell() {
     console.log('[sc:app] running /status probe');
     try {
       await next.sendAndAwaitReply(
-        cmd.status,
-        (reply) => reply.tag === 'status-reply',
+        status(),
+        (reply) => reply.address === '/status.reply',
         STATUS_PROBE_TIMEOUT_MS,
       );
       console.log('[sc:app] /status probe OK');
@@ -155,7 +155,7 @@ export function AppShell() {
     // Without this, SendTrig replies are never broadcast to us.
     console.log('[sc:app] enabling /notify');
     try {
-      await next.sendAndSync(cmd.notifyEnable(1));
+      await next.sendAndSync(notify(1));
       console.log('[sc:app] /notify enabled');
     } catch (err) {
       console.error('[sc:app] /notify failed', err);
