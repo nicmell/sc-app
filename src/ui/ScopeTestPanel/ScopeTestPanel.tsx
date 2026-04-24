@@ -26,6 +26,7 @@ import {
   MONITOR_SYNTHDEF_NAME,
   compileMonitorSynthDef,
 } from '@/synth/monitorSynthDef';
+import { ScopeView } from '@/ui/ScopeView';
 import './ScopeTestPanel.scss';
 
 const TONE_FREQ = 440;
@@ -100,11 +101,19 @@ export function ScopeTestPanel({
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<PokeStats | null>(null);
   const [subStats, setSubStats] = useState<SubStats | null>(null);
+  const [gain, setGain] = useState(1);
   // Subscribe state lives in refs because `unsubscribeRef` returns a
   // fresh function each subscription and we don't want to re-render
   // every time a chunk arrives just to keep the readout updated.
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const lastChunkRef = useRef<ScopeChunk | null>(null);
+  // Mirror lastChunk into a separate ref handed to ScopeView. We
+  // can't use lastChunkRef directly because that's typed as
+  // `ScopeChunk | null` and useRef<X | null>() returns RefObject<X>
+  // unless we explicitly initialise — splitting them keeps types
+  // tidy and survives a future refactor where the panel might want
+  // to reset the renderer ref independently.
+  const renderChunkRef = useRef<ScopeChunk | null>(null);
 
   const hasTone = res.toneNodeId !== null;
   const hasScope = res.scopeNodeId !== null;
@@ -227,6 +236,7 @@ export function ScopeTestPanel({
         unsubscribeRef.current();
         unsubscribeRef.current = null;
         lastChunkRef.current = null;
+        renderChunkRef.current = null;
         console.log('[sc:scope-test] unsubscribed');
         setSubStats(null);
         return;
@@ -250,6 +260,12 @@ export function ScopeTestPanel({
           recent.push(now);
           while (recent.length > 0 && recent[0] < now - 1000) recent.shift();
 
+          // Hand the chunk to the renderer FIRST — its RAF reads
+          // this ref each frame so we want it pointing at the
+          // latest array as soon as possible.
+          renderChunkRef.current = chunk;
+          lastChunkRef.current = chunk;
+
           // Continuity diagnostic — log last4(N-1) and first4(N) every
           // second so misplaced parity stands out.
           if (lastChunkData && now >= nextContinuityLogAt) {
@@ -263,14 +279,13 @@ export function ScopeTestPanel({
             );
             nextContinuityLogAt = now + 1000;
           }
-          // Copy because the original buffer was zero-copy-transferred —
-          // if we hold a reference, the next chunk arrival overwrites
-          // nothing (it's a new array), but stash a copy for the
-          // continuity check on the FOLLOWING chunk so we don't
-          // accidentally observe a transferred buffer.
+          // Stash a defensive copy for the NEXT continuity check —
+          // the original chunk.data was zero-copy-transferred from
+          // the worker; reading it again next tick is fine (new
+          // array each tick), but we need a stable snapshot of
+          // *this* tick's data to compare against.
           lastChunkData = new Float32Array(chunk.data);
 
-          lastChunkRef.current = chunk;
           setSubStats({
             tickIndex: chunk.tickIndex,
             count,
@@ -314,6 +329,7 @@ export function ScopeTestPanel({
         unsubscribeRef.current();
         unsubscribeRef.current = null;
         lastChunkRef.current = null;
+        renderChunkRef.current = null;
         setSubStats(null);
       }
       // Free scope + monitor next so nothing is still reading the
@@ -453,6 +469,36 @@ export function ScopeTestPanel({
           ? `subscribed (${subStats ? `${subStats.chunksPerSec}/s` : 'no chunks yet'})`
           : 'unsubscribed'}
       </div>
+      {hasSubscription && (
+        <>
+          <ScopeView chunkRef={renderChunkRef} gain={gain} />
+          <div className="row">
+            <label className="status">
+              gain&nbsp;
+              <input
+                type="number"
+                step={0.5}
+                min={0}
+                value={gain}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  if (Number.isFinite(v) && v >= 0) setGain(v);
+                }}
+                style={{
+                  width: '4rem',
+                  padding: '0.15rem 0.4rem',
+                  background: '#15171b',
+                  color: '#e4e6eb',
+                  border: '1px solid #2c2f36',
+                  borderRadius: 3,
+                  fontFamily: 'inherit',
+                  fontSize: '0.85rem',
+                }}
+              />
+            </label>
+          </div>
+        </>
+      )}
       {subStats && (
         <pre className="readout">
           {`SUB tick=${subStats.tickIndex} count=${subStats.count} ${subStats.chunksPerSec}/s

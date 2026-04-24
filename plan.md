@@ -1815,48 +1815,82 @@ directly.
 
 ## Phase 9 — Single-Channel Renderer
 
-**Goal.** Draw live waveform. Decouple data rate (48 Hz) from render rate (60 Hz).
+**Goal.** Draw live waveform. Decouple data rate (48 Hz) from render
+rate (60 Hz / display refresh).
 
-### Files
+### Files (as landed)
 
-- `src/scope/ScopeRenderer.ts`
-- `src/ui/ScopeView.ts`
+- `src/ui/ScopeView/ScopeView.tsx` + `.scss` + `index.ts` — pure
+  rendering React component.
+- `src/ui/ScopeTestPanel/ScopeTestPanel.tsx` — extended to mount
+  `<ScopeView>` while subscribed and to update a `chunkRef` on every
+  chunk arrival.
 
-### `ScopeRenderer.ts`
+(No standalone `ScopeRenderer.ts` class — the RAF loop is owned by
+the `ScopeView` component's `useEffect`. No `ScopeController` —
+deferred to Phase 11 along with the multi-scope hoist.)
+
+### `ScopeView` props
 
 ```ts
-export interface ScopeRendererOpts {
-  gain?: number;
-  strokeStyle?: string;
-  background?: string;
-}
-
-export class ScopeRenderer {
-  constructor(
-    private canvas: HTMLCanvasElement,
-    private scope: ScopeController,
-    opts?: ScopeRendererOpts,
-  );
-  start(): void;
-  stop(): void;
+export interface ScopeViewProps {
+  chunkRef: RefObject<ScopeChunk | null>;
+  gain?: number;            // default 1
+  strokeStyle?: string;     // default '#6ac46f'
+  background?: string;      // default '#15171b'
+  height?: number;          // CSS px, default 200
+  zeroLineStyle?: string | null; // null disables; default thin grey
 }
 ```
 
-RAF loop:
-1. Get `chunk = scope.latestChunk.get()`; if null, just clear background and return.
-2. Handle DPR: `canvas.width = cssWidth * dpr`; `canvas.height = cssHeight * dpr`; `ctx.setTransform(dpr, 0, 0, dpr, 0, 0)`.
-3. Clear.
-4. `ctx.beginPath()`; for `i` in `[0, chunkSize)`, `x = i / (chunkSize - 1) * cssWidth`, `y = (0.5 - data[i] * 0.5 * gain) * cssHeight`; `lineTo`.
-5. `ctx.stroke()`.
+### Rendering pipeline
 
-### `ScopeView.ts`
+The component's `useEffect`:
+1. Resolves CSS size (`getBoundingClientRect()`) and `devicePixelRatio`.
+2. Sizes the canvas backing store to `cssSize × dpr` and applies
+   `ctx.setTransform(dpr, 0, 0, dpr, 0, 0)` — only on actual size /
+   DPR changes (tracked via a `ResizeObserver` on the container).
+   Doing this every frame would clear the canvas and flicker.
+3. Drives a `requestAnimationFrame` loop that:
+   - Reads `chunkRef.current` — typically the most recent
+     `scopeChunk` posted from the worker, or `null` before any
+     subscription delivers.
+   - Fills the background.
+   - Optionally strokes a zero line.
+   - For chunks of length ≥ 2, traces a polyline mapping
+     `[0, chunkSize-1] → [0, cssWidth]` and `[-1, 1] → [bottom, top]`
+     scaled by `gain`. For multi-channel chunks (Phase 10), only
+     the first channel is drawn — Phase 10 will replace this with
+     stacked-lane rendering.
 
-Wraps renderer + header:
-- Label: "scope-1 · bus 16".
-- Tick stamp (small, corner): `t=596`.
-- Remove button (placeholder wired in Phase 11).
+### Why a ref, not a store / prop
 
-200px tall by default; resizable via CSS.
+The data rate (48 Hz) is independent of the render rate (60 Hz on
+most displays, 120 / 240 on others). A React state/store update
+per chunk would force the panel to re-render 48 times/second; we
+side-step that by writing to a mutable ref in the subscription
+callback and reading it inside the canvas's RAF loop. The panel
+only re-renders for *control* state changes (Subscribe/Unsubscribe,
+gain input).
+
+### `ScopeTestPanel` integration
+
+While `hasSubscription === true`, the panel mounts `<ScopeView
+chunkRef={renderChunkRef} gain={gain} />` plus a small `gain`
+number input. The subscription callback writes
+`renderChunkRef.current = chunk` first thing — before any state
+updates — so the renderer reads the freshest data on every frame.
+Unsubscribe / Stop all clears the ref.
+
+### Free behaviour
+
+- **Freeze on pause.** Pausing the clock stops chunks; `chunkRef.current`
+  keeps pointing at the last one; RAF redraws the same data.
+- **Memory.** Each chunk's `Float32Array` was zero-copy-transferred
+  from the worker. Replacing the ref drops the previous reference;
+  GC reclaims it. No long-lived retention.
+- **DPR / resize.** ResizeObserver triggers a one-shot canvas resize
+  + `setTransform`, no per-frame cost.
 
 ### Acceptance
 
