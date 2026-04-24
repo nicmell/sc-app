@@ -4,11 +4,9 @@ import { ConnectScreen } from '@/ui/ConnectScreen';
 import { DebugLog } from '@/ui/DebugLog';
 import { OscConsole } from '@/ui/OscConsole';
 import { SynthDefPanel } from '@/ui/SynthDefPanel';
-import {
-  compileSilentTestSynthDef,
-  SILENT_TEST_TRIG_ID,
-} from '@/synth/silentTestSynthDef';
+import { DEFAULT_ENV, DEFAULT_PARAMS } from '@/config/clockConfig';
 import * as cmd from './cmd';
+import { ClockController } from './ClockController';
 import { GroupController } from './GroupController';
 import { IdAllocator } from './IdAllocator';
 import { SynthDefRegistry } from './SynthDefRegistry';
@@ -22,13 +20,15 @@ interface DashboardResources {
   client: WorkerClient;
   registry: SynthDefRegistry;
   group: GroupController;
+  clock: ClockController;
   ids: { node: IdAllocator; buffer: IdAllocator; bus: IdAllocator };
 }
 
 /**
- * Phase 4 dashboard — adds the parent group, a shared SynthDefRegistry,
- * ID allocators, and the dev heartbeat synth alongside the earlier
- * OSC console / SynthDef loader.
+ * Phase 5 dashboard — the dev heartbeat is gone, replaced by the real
+ * `globalClock` synth managed by `ClockController`. ClockPanel now
+ * renders tickIndex / elapsed / pulse dot driven by the suppressed
+ * `/tr` stream.
  */
 function Dashboard({
   resources,
@@ -45,7 +45,7 @@ function Dashboard({
           Disconnect
         </button>
       </header>
-      <ClockPanel client={resources.client} group={resources.group} />
+      <ClockPanel clock={resources.clock} />
       <SynthDefPanel registry={resources.registry} />
       <OscConsole client={resources.client} />
     </main>
@@ -81,21 +81,20 @@ async function bringUpDashboard(client: WorkerClient): Promise<DashboardResource
   };
   const registry = new SynthDefRegistry(client);
   const group = new GroupController(client, PARENT_GROUP_ID);
+  const clock = new ClockController({
+    client,
+    group,
+    registry,
+    nodeIds: ids.node,
+    env: DEFAULT_ENV,
+    params: DEFAULT_PARAMS,
+  });
 
-  console.log('[sc:app] loading silentTest synthdef');
-  await registry.ensureLoaded('silentTest', compileSilentTestSynthDef());
+  console.log('[sc:app] starting global clock');
+  await clock.start();
+  console.log('[sc:app] dashboard ready');
 
-  console.log('[sc:app] creating parent group', PARENT_GROUP_ID);
-  await group.ensureCreated();
-
-  const heartbeatId = ids.node.next();
-  console.log('[sc:app] starting silentTest synth', heartbeatId);
-  await client.sendAndSync(
-    cmd.sNewEasy('silentTest', heartbeatId, cmd.AddToHead, PARENT_GROUP_ID),
-  );
-  console.log(`[sc:app] dashboard ready (heartbeat trig=${SILENT_TEST_TRIG_ID})`);
-
-  return { client, registry, group, ids };
+  return { client, registry, group, clock, ids };
 }
 
 export function AppShell() {
@@ -153,9 +152,7 @@ export function AppShell() {
     }
 
     // Subscribe to async notifications (/tr, /n_go, /n_end, /done, …).
-    // Without this, SendTrig replies are never broadcast to us, which
-    // is why the Phase 4 heartbeat read 0/s. /notify replies with
-    // /done /notify, so sendAndSync is enough to confirm it stuck.
+    // Without this, SendTrig replies are never broadcast to us.
     console.log('[sc:app] enabling /notify');
     try {
       await next.sendAndSync(cmd.notifyEnable(1));
@@ -198,6 +195,11 @@ export function AppShell() {
     const current = resources;
     if (current) {
       try {
+        await current.clock.dispose();
+      } catch (err) {
+        console.warn('[sc:app] clock.dispose on disconnect failed', err);
+      }
+      try {
         await current.group.free();
       } catch (err) {
         console.warn('[sc:app] group.free on disconnect failed', err);
@@ -208,18 +210,21 @@ export function AppShell() {
     setResources(null);
   }, [resources]);
 
-  // Expose the client in dev mode for console poking.
+  // Expose the client + clock in dev mode for console poking.
   useEffect(() => {
     if (!resources) return;
     const w = window as unknown as {
       __scClient?: WorkerClient;
       __scGroup?: GroupController;
+      __scClock?: ClockController;
     };
     w.__scClient = resources.client;
     w.__scGroup = resources.group;
+    w.__scClock = resources.clock;
     return () => {
       delete w.__scClient;
       delete w.__scGroup;
+      delete w.__scClock;
     };
   }, [resources]);
 

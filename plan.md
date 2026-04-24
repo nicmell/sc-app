@@ -1203,12 +1203,31 @@ matters for Phase 5 onwards.
 
 **Goal.** Replace the sacrificial heartbeat with the real clock. UI shows `tickIndex` and elapsed time.
 
-### Files
+### Files (as landed)
 
-- `src/config/clockConfig.ts` — imported now
-- `src/synth/clockSynthDef.ts` — v1 (ticks only)
-- `src/scope/ClockController.ts`
-- `src/ui/ClockPanel.ts` — extended
+- `src/config/clockConfig.ts` — `AudioEnvironment`, `ClockParams`,
+  `ClockDerived`, `deriveClock`, `DEFAULT_ENV`, `DEFAULT_PARAMS`,
+  plus `CLOCK_TRIG_ID = 1000` (the reserved SendTrig id).
+- `src/synth/clockSynthDef.ts` — `compileClockSynthDef(params)`,
+  result cached by `tickRate`. Exports `CLOCK_SYNTHDEF_NAME`.
+- `src/scope/ClockController.ts` — composition-based; exposes
+  `lastTick`, `effectiveState` (stale-tick watchdog folded in),
+  plus `start` / `stop` / `resume` / `reset` / `dispose`.
+- `src/scope/WorkerClient.ts` — added `registerClock(trigId)`,
+  `unregisterClock()`, `onTick(cb)`.
+- `src/scope/workerProtocol.ts` — added `ClockTick`,
+  `MainToWorker.registerClock|unregisterClock`,
+  `WorkerToMain.clockTick`.
+- `src/workers/scopeWorker.ts` — suppresses the generic `reply`
+  event for `/tr` whose `triggerId` matches the registered clock id
+  and dispatches `clockTick` instead.
+- `src/ui/ClockPanel/ClockPanel.{tsx,scss}` — rewritten as the v2
+  one-row layout: state pill · elapsed · tick N · pulse dot ·
+  Pause/Resume · Reset.
+- `src/scope/AppShell.tsx` — `bringUpDashboard` now just constructs
+  `{ GroupController, ClockController }` and calls `clock.start()`.
+  Disconnect calls `clock.dispose()` then `group.free()`.
+- *Removed:* `src/synth/silentTestSynthDef.ts` (superseded).
 
 ### `clockSynthDef.ts` v1
 

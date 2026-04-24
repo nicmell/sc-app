@@ -1,50 +1,14 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import type { GroupController, GroupState } from '@/scope/GroupController';
-import type { WorkerClient } from '@/scope/WorkerClient';
-import type { ServerReply } from '@/scope/workerProtocol';
-import { SILENT_TEST_TRIG_ID } from '@/synth/silentTestSynthDef';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import type { ClockController, ClockState } from '@/scope/ClockController';
 import './ClockPanel.scss';
 
-const HEARTBEAT_WINDOW_MS = 1000;
-const HEARTBEAT_TICK_MS = 200;
+const PULSE_FLASH_MS = 90;
 
 interface ClockPanelProps {
-  client: WorkerClient;
-  group: GroupController;
+  clock: ClockController;
 }
 
-/** Rolling count of `/tr` replies with the dev heartbeat trig id over the
- *  last `HEARTBEAT_WINDOW_MS`. Re-renders every `HEARTBEAT_TICK_MS`.
- */
-function useHeartbeatHz(client: WorkerClient): number {
-  const timestamps = useRef<number[]>([]);
-  const [hz, setHz] = useState(0);
-
-  useEffect(() => {
-    const off = client.onReply((reply: ServerReply) => {
-      if (reply.tag !== 'tr') return;
-      if (reply.val.triggerId !== SILENT_TEST_TRIG_ID) return;
-      timestamps.current.push(performance.now());
-    });
-
-    const timer = window.setInterval(() => {
-      const now = performance.now();
-      const cutoff = now - HEARTBEAT_WINDOW_MS;
-      const kept = timestamps.current.filter((t) => t >= cutoff);
-      timestamps.current = kept;
-      setHz(kept.length);
-    }, HEARTBEAT_TICK_MS);
-
-    return () => {
-      off();
-      window.clearInterval(timer);
-    };
-  }, [client]);
-
-  return hz;
-}
-
-function pillFor(state: GroupState): { className: string; label: string } {
+function pillFor(state: ClockState): { className: string; label: string } {
   switch (state) {
     case 'running':
       return { className: 'pill running', label: '● Running' };
@@ -55,36 +19,69 @@ function pillFor(state: GroupState): { className: string; label: string } {
   }
 }
 
-export function ClockPanel({ client, group }: ClockPanelProps) {
+function formatElapsed(tickIndex: number, tickRate: number): string {
+  const seconds = tickIndex / tickRate;
+  const mm = Math.floor(seconds / 60)
+    .toString()
+    .padStart(2, '0');
+  const ss = Math.floor(seconds % 60)
+    .toString()
+    .padStart(2, '0');
+  const mmm = Math.floor((seconds * 1000) % 1000)
+    .toString()
+    .padStart(3, '0');
+  return `${mm}:${ss}.${mmm}`;
+}
+
+export function ClockPanel({ clock }: ClockPanelProps) {
   const state = useSyncExternalStore(
-    (cb) => group.state.subscribe(cb),
-    () => group.state.get(),
+    (cb) => clock.effectiveState.subscribe(cb),
+    () => clock.effectiveState.get(),
   );
-  const hz = useHeartbeatHz(client);
+  const tick = useSyncExternalStore(
+    (cb) => clock.lastTick.subscribe(cb),
+    () => clock.lastTick.get(),
+  );
+
   const [busy, setBusy] = useState(false);
+  const [pulse, setPulse] = useState(false);
+
+  // Brief CSS flash on every tick. Keyed to the tick's `receivedAt`
+  // so consecutive ticks retrigger even if `tickIndex` is the same
+  // after a reset.
+  useEffect(() => {
+    if (!tick) return;
+    setPulse(true);
+    const timer = window.setTimeout(() => setPulse(false), PULSE_FLASH_MS);
+    return () => window.clearTimeout(timer);
+  }, [tick?.receivedAt, tick]);
 
   const onToggle = useCallback(async () => {
     setBusy(true);
     try {
-      if (state === 'running') await group.pause();
-      else if (state === 'paused') await group.resume();
+      if (state === 'running') await clock.stop();
+      else if (state === 'paused') await clock.resume();
     } catch (err) {
       console.error('[sc:clock] toggle failed', err);
     } finally {
       setBusy(false);
     }
-  }, [group, state]);
+  }, [clock, state]);
 
-  const onQueryTree = useCallback(async () => {
+  const onReset = useCallback(async () => {
+    setBusy(true);
     try {
-      const reply = await group.queryTree();
-      console.log('[sc:clock] queryTree →', reply);
+      await clock.reset();
     } catch (err) {
-      console.error('[sc:clock] queryTree failed', err);
+      console.error('[sc:clock] reset failed', err);
+    } finally {
+      setBusy(false);
     }
-  }, [group]);
+  }, [clock]);
 
   const pill = pillFor(state);
+  const tickIndex = tick?.tickIndex ?? 0;
+  const elapsed = formatElapsed(tickIndex, clock.params.tickRate);
   const toggleLabel = state === 'paused' ? 'Resume' : 'Pause';
 
   return (
@@ -92,6 +89,9 @@ export function ClockPanel({ client, group }: ClockPanelProps) {
       <header>Clock</header>
       <div className="row">
         <span className={pill.className}>{pill.label}</span>
+        <span className="elapsed">{elapsed}</span>
+        <span className="tick">tick {tickIndex}</span>
+        <span className={`dot ${pulse ? 'flash' : ''}`} aria-hidden="true" />
         <button
           type="button"
           onClick={onToggle}
@@ -102,13 +102,12 @@ export function ClockPanel({ client, group }: ClockPanelProps) {
         <button
           type="button"
           className="secondary"
-          onClick={onQueryTree}
-          disabled={state === 'stopped'}
+          onClick={onReset}
+          disabled={busy || state === 'stopped'}
         >
-          QueryTree
+          Reset
         </button>
       </div>
-      <div className="heartbeat">heartbeat: {hz} /s</div>
     </section>
   );
 }

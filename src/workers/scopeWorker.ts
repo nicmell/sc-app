@@ -64,6 +64,7 @@ self.addEventListener('unhandledrejection', (ev) => {
 console.log('[sc:worker] ready for messages');
 
 let transport: OscTransport | null = null;
+let clockTrigId: number | null = null;
 
 setWorkerMessageHandler(async (msg: MainToWorker) => {
   console.log('[sc:worker] main → worker', msg.type);
@@ -80,6 +81,24 @@ setWorkerMessageHandler(async (msg: MainToWorker) => {
         transport.onMessage((bytes) => {
           try {
             const reply = replies.decode(bytes);
+            // Route the clock's /tr replies into the dedicated
+            // tick stream and suppress the generic reply event
+            // for them. Any other /tr (unreserved trigIds) passes
+            // through unchanged.
+            if (
+              clockTrigId !== null &&
+              reply.tag === 'tr' &&
+              reply.val.triggerId === clockTrigId
+            ) {
+              post({
+                type: 'clockTick',
+                tick: {
+                  tickIndex: reply.val.value | 0,
+                  receivedAt: performance.now(),
+                },
+              });
+              return;
+            }
             post({ type: 'reply', reply });
           } catch (err) {
             console.error('[sc:worker] decode failed', err, bytes);
@@ -132,10 +151,23 @@ setWorkerMessageHandler(async (msg: MainToWorker) => {
 
     case 'disconnect': {
       console.log('[sc:worker] disconnect');
+      clockTrigId = null;
       if (transport) {
         await transport.close();
         transport = null;
       }
+      return;
+    }
+
+    case 'registerClock': {
+      console.log('[sc:worker] registerClock', msg.trigId);
+      clockTrigId = msg.trigId;
+      return;
+    }
+
+    case 'unregisterClock': {
+      console.log('[sc:worker] unregisterClock');
+      clockTrigId = null;
       return;
     }
   }

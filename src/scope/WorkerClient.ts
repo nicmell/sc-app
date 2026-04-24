@@ -14,6 +14,7 @@
  */
 
 import type {
+  ClockTick,
   MainToWorker,
   ServerMessage,
   ServerReply,
@@ -25,12 +26,14 @@ const DEFAULT_SYNC_TIMEOUT_MS = 2000;
 
 export type ReplyListener = (reply: ServerReply) => void;
 export type ErrorListener = (message: string) => void;
+export type TickListener = (tick: ClockTick) => void;
 export type ReplyMatcher = (reply: ServerReply) => boolean;
 
 export class WorkerClient {
   private readonly worker: Worker;
   private readonly replyListeners = new Set<ReplyListener>();
   private readonly errorListeners = new Set<ErrorListener>();
+  private readonly tickListeners = new Set<TickListener>();
   private nextSyncId = 1;
   readonly ready: Promise<void>;
 
@@ -105,6 +108,9 @@ export class WorkerClient {
           console.log('[sc:client] reply', msg.reply.tag);
           for (const cb of this.replyListeners) cb(msg.reply);
           break;
+        case 'clockTick':
+          for (const cb of this.tickListeners) cb(msg.tick);
+          break;
         case 'error':
           console.warn('[sc:client] error', msg.message);
           for (const cb of this.errorListeners) cb(msg.message);
@@ -140,6 +146,25 @@ export class WorkerClient {
   onError(cb: ErrorListener): () => void {
     this.errorListeners.add(cb);
     return () => this.errorListeners.delete(cb) as unknown as void;
+  }
+
+  /** Subscribe to decoded clock ticks. Only fires while a clock
+   *  trigId is registered via `registerClock`. */
+  onTick(cb: TickListener): () => void {
+    this.tickListeners.add(cb);
+    return () => this.tickListeners.delete(cb) as unknown as void;
+  }
+
+  /** Tell the worker which `/tr` triggerId is the clock — matching
+   *  replies are suppressed from `onReply` and emitted via `onTick`. */
+  registerClock(trigId: number): void {
+    this.post({ type: 'registerClock', trigId });
+  }
+
+  /** Stop clock-tick routing; any `/tr` continues to flow through
+   *  `onReply` unchanged. */
+  unregisterClock(): void {
+    this.post({ type: 'unregisterClock' });
   }
 
   /**
@@ -254,6 +279,7 @@ export class WorkerClient {
     this.worker.terminate();
     this.replyListeners.clear();
     this.errorListeners.clear();
+    this.tickListeners.clear();
   }
 
   private post(msg: MainToWorker): void {
