@@ -6,6 +6,10 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+# DebugLog panel exports (per-session, never tracked).
+sc-debug-*.txt
+# Scratch image used to share screenshots in chat.
+tmp.png
 
 node_modules
 dist
@@ -39,9 +43,5 @@ dist-ssr
 /target/
 **/target/
 
-# jco-transpiled component bindings — regenerated via `yarn build:wasm`.
-/crates/scserver-commands/pkg/
-/crates/scserver-commands/src/bindings.rs
-/crates/scsynthdef-compiler/pkg/
-/crates/scsynthdef-compiler/src/bindings.rs
+# Stale TypeScript incremental-build artefacts.
 *.tsbuildinfo
