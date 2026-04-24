@@ -98,6 +98,13 @@ export class SynthDef {
     return this._name;
   }
 
+  /** Calculation rate of a previously-added UGen node. */
+  getNodeRate(nodeIndex: number): Rate {
+    const node = this.nodes[nodeIndex];
+    if (!node) throw new CompileError(`UGen index ${nodeIndex} out of range`);
+    return node.rate;
+  }
+
   /**
    * Add a named control (parameter). The returned `UGenInput` can be used
    * directly as an input to other UGens; it resolves to the right output

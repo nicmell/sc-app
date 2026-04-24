@@ -23,3 +23,5 @@ export type {
 export { lookupUgen, ugensByCategory } from './registry.js';
 export type { UGenRegistryEntry, UGenRegistryDefault } from './registry.js';
 export * as builders from './builders/index.js';
+export { synthdef, ar, kr, ir } from './sugar/index.js';
+export type { Graph, GraphUGens, GraphOperators, ControlWrapper } from './sugar/index.js';

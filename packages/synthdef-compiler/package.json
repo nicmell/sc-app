@@ -10,12 +10,14 @@
     ".": "./src/index.ts",
     "./builders": "./src/builders/index.ts",
     "./registry": "./src/registry.ts",
+    "./sugar": "./src/sugar/index.ts",
     "./package.json": "./package.json"
   },
   "scripts": {
     "generate:specs": "node scripts/generate_specs.mjs",
     "generate:builders": "node scripts/generate_builders.mjs",
-    "generate": "npm run generate:specs && npm run generate:builders",
+    "generate:graph-types": "node scripts/generate_graph_types.mjs",
+    "generate": "npm run generate:specs && npm run generate:builders && npm run generate:graph-types",
     "test": "vitest run",
     "test:watch": "vitest",
     "parity": "tsx examples/node/sclang_parity.ts",
