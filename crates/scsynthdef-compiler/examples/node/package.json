@@ -1,0 +1,17 @@
+{
+  "name": "scsynthdef-compiler-node-parity",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Node harness that mirrors examples/sclang_parity.rs using the jco-generated TypeScript bindings.",
+  "scripts": {
+    "build:wasm": "cd ../.. && cargo component build --release --features component --target wasm32-wasip1 && jco transpile ../../target/wasm32-wasip1/release/scsynthdef_compiler.wasm -o examples/node/pkg",
+    "parity": "tsx sclang_parity.ts"
+  },
+  "devDependencies": {
+    "@bytecodealliance/jco": "^1",
+    "@types/node": "^22",
+    "tsx": "^4",
+    "typescript": "^5"
+  }
+}

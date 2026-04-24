@@ -1,0 +1,30 @@
+[package]
+name = "scsynthdef-compiler"
+version = "0.0.1"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "SuperCollider SynthDef (SCgf v2) compiler in pure Rust"
+repository = "https://github.com/nicmell/scsynthdef-compiler"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+wasm-bindgen = { version = "0.2", optional = true }
+serde-wasm-bindgen = { version = "0.6", optional = true }
+wit-bindgen-rt = { version = "0.44", features = ["bitflags"], optional = true }
+
+[features]
+default = []
+wasm = ["dep:wasm-bindgen", "dep:serde-wasm-bindgen"]
+component = ["dep:wit-bindgen-rt"]
+
+[package.metadata.component]
+package = "scsynthdef:compiler"
+
+[package.metadata.component.target]
+path = "wit"
+world = "scsynthdef"

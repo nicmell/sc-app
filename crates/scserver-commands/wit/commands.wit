@@ -1,0 +1,602 @@
+package scserver:commands@0.1.0;
+
+/// Typed command surface for the SuperCollider server protocol.
+///
+/// Each command has an `x-args` record describing its payload; the
+/// `server-message` variant discriminates across them. `encode` is the
+/// one exported function — it serialises a typed `server-message` to OSC
+/// wire bytes. NRT score assembly is in the sibling `nrt` interface,
+/// which consumes the same `server-message` values.
+interface commands {
+    use core.{osc-arg};
+
+    /// Control identifier: index or name.
+    variant control-id { index(s32), name(string) }
+
+    /// Numeric value: `int` or `float`.
+    variant numeric-value { float(f32), int(s32) }
+
+    /// `/s_new` control value: `int` / `float` / bus reference string.
+    variant control-value { float(f32), int(s32), bus(string) }
+
+    /// Allocate buffer space.
+    record b-alloc-args {
+        /// buffer number
+        bufnum: s32,
+        /// number of frames
+        num-frames: s32,
+        /// number of channels (optional. default = 1 channel)
+        num-channels: option<s32>,
+        /// an OSC message to execute upon completion. (optional)
+        completion-msg: option<list<u8>>,
+        /// the required sample rate (optional. default (or 0) = the server's
+        /// sample rate)
+        sample-rate: option<f32>,
+    }
+
+    /// Allocate buffer space and read a sound file.
+    record b-alloc-read-args {
+        /// buffer number
+        bufnum: s32,
+        /// path name of a sound file.
+        path: string,
+        /// starting frame in file (optional. default = 0)
+        start-frame: option<s32>,
+        /// number of frames to read (optional. default = 0, see below)
+        number-of-frames: option<s32>,
+        /// an OSC message to execute upon completion. (optional)
+        completion-msg: option<list<u8>>,
+    }
+
+    /// Allocate buffer space and read channels from a sound file.
+    record b-alloc-read-channel-args {
+        /// buffer number
+        bufnum: s32,
+        /// path name of a sound file
+        path: string,
+        /// starting frame in file
+        start-frame: s32,
+        /// number of frames to read
+        number-of-frames: s32,
+        /// source file channel indices (one or more) to read
+        channels: list<s32>,
+        /// an OSC message to execute upon completion. (optional)
+        completion-msg: option<list<u8>>,
+    }
+
+    /// Close soundfile.
+    record b-close-args {
+        /// buffer number
+        bufnum: s32,
+        /// an OSC message to execute upon completion. (optional)
+        completion-msg: option<list<u8>>,
+    }
+
+    /// Fill ranges of sample value(s).
+    record b-fill-args {
+        /// buffer number
+        bufnum: s32,
+        /// Repeated tuples (sample_starting_index: sample starting index; number_of_samples: number of samples to fill (M); value: value).
+        tail: list<tuple<s32, s32, f32>>,
+    }
+
+    /// Free buffer data.
+    record b-free-args {
+        /// buffer number
+        bufnum: s32,
+        /// an OSC message to execute upon completion. (optional)
+        completion-msg: option<list<u8>>,
+    }
+
+    /// Call a command to fill a buffer.
+    record b-gen-args {
+        /// buffer number
+        bufnum: s32,
+        /// command name
+        cmd: string,
+        /// variadic trailing args — types depend on the `/b_gen` command
+        /// being invoked.
+        command-arguments: list<osc-arg>,
+    }
+
+    /// Get sample value(s).
+    record b-get-args {
+        /// buffer number
+        bufnum: s32,
+        /// sample indices (one or more)
+        sample-indices: list<s32>,
+    }
+
+    /// Get ranges of sample value(s).
+    record b-getn-args {
+        /// buffer number
+        bufnum: s32,
+        /// Repeated tuples (start_index: starting sample index; number_of_sequential: number of sequential samples to get (M)).
+        tail: list<tuple<s32, s32>>,
+    }
+
+    /// Get buffer info.
+    record b-query-args {
+        /// buffer numbers to query
+        bufnums: list<s32>,
+    }
+
+    /// Read sound file data into an existing buffer.
+    record b-read-args {
+        /// buffer number
+        bufnum: s32,
+        /// path name of a sound file.
+        path: string,
+        /// starting frame in file (optional. default = 0)
+        start-frame: option<s32>,
+        /// number of frames to read (optional. default = -1, see below)
+        number-of-frames: option<s32>,
+        /// starting frame in buffer (optional. default = 0)
+        starting-frame: option<s32>,
+        /// leave file open (optional. default = 0)
+        leave-file-open: option<s32>,
+        /// an OSC message to execute upon completion. (optional)
+        completion-msg: option<list<u8>>,
+    }
+
+    /// Read sound file channel data into an existing buffer.
+    record b-read-channel-args {
+        /// buffer number
+        bufnum: s32,
+        /// path name of a sound file
+        path: string,
+        /// starting frame in file
+        start-frame: s32,
+        /// number of frames to read
+        number-of-frames: s32,
+        /// starting frame in buffer
+        starting-frame: s32,
+        /// leave file open
+        leave-file-open: s32,
+        /// source file channel indices (one or more) to read
+        channels: list<s32>,
+        /// an OSC message to execute upon completion. (optional)
+        completion-msg: option<list<u8>>,
+    }
+
+    /// Set sample value(s).
+    record b-set-args {
+        /// buffer number
+        bufnum: s32,
+        /// Repeated tuples (a_sample_index: a sample index; a_sample_value: a sample value).
+        tail: list<tuple<s32, f32>>,
+    }
+
+    /// Set the sampling rate of the buffer.
+    record b-set-sample-rate-args {
+        /// buffer number
+        bufnum: s32,
+        /// the desired sampling rate. 0 or nil will set to the Server's sample
+        /// rate.
+        the-desired-sampling: f32,
+    }
+
+    /// Set ranges of sample value(s).
+    record b-setn-args {
+        /// buffer number
+        bufnum: s32,
+        /// Repeated ranges — each `(start, samples)` writes `samples.len()`
+        /// consecutive samples starting at `start`. The count is encoded
+        /// on the wire from the list length.
+        tail: list<tuple<s32, list<f32>>>,
+    }
+
+    /// Write sound file data.
+    record b-write-args {
+        /// buffer number
+        bufnum: s32,
+        /// path name of a sound file.
+        path: string,
+        /// header format.
+        header-format: string,
+        /// sample format.
+        sample-format: string,
+        /// number of frames to write (optional. default = -1, see below)
+        number-of-frames: option<s32>,
+        /// starting frame in buffer (optional. default = 0)
+        starting-frame: option<s32>,
+        /// leave file open (optional. default = 0)
+        leave-file-open: option<s32>,
+        /// an OSC message to execute upon completion. (optional)
+        completion-msg: option<list<u8>>,
+    }
+
+    /// Zero sample data.
+    record b-zero-args {
+        /// buffer number
+        bufnum: s32,
+        /// an OSC message to execute upon completion. (optional)
+        completion-msg: option<list<u8>>,
+    }
+
+    /// Fill ranges of bus value(s).
+    record c-fill-args {
+        /// Repeated tuples (starting_bus_index: starting bus index; number_of_buses: number of buses to fill (M); value: value).
+        tail: list<tuple<s32, s32, numeric-value>>,
+    }
+
+    /// Get bus value(s).
+    record c-get-args {
+        /// bus indices (one or more)
+        bus-indices: list<s32>,
+    }
+
+    /// Get ranges of bus value(s).
+    record c-getn-args {
+        /// Repeated tuples (starting_bus_index: starting bus index; number_of_sequential: number of sequential buses to get (M)).
+        tail: list<tuple<s32, s32>>,
+    }
+
+    /// Set bus value(s).
+    record c-set-args {
+        /// Repeated tuples (a_bus_index: a bus index; value: a control value).
+        tail: list<tuple<s32, numeric-value>>,
+    }
+
+    /// Set ranges of bus value(s).
+    record c-setn-args {
+        /// Repeated ranges — each `(start_bus, values)` writes `values.len()`
+        /// consecutive buses starting at `start_bus`. The count is encoded
+        /// on the wire from the list length.
+        tail: list<tuple<s32, list<numeric-value>>>,
+    }
+
+    /// Plug-in defined command.
+    record cmd-args {
+        /// command name
+        cmd: string,
+        /// variadic trailing OSC args — types depend on the plug-in command.
+        any-arguments: list<osc-arg>,
+    }
+
+    /// Delete synth definition(s).
+    record d-free-args {
+        /// synthdef names (one or more) to delete
+        synth-def-names: list<string>,
+    }
+
+    /// Load synth definition.
+    record d-load-args {
+        /// pathname of file. Can be a pattern like "synthdefs/perc-*"
+        pathname-of-file: string,
+        /// an OSC message to execute upon completion. (optional)
+        completion-msg: option<list<u8>>,
+    }
+
+    /// Load a directory of synth definitions.
+    record d-load-dir-args {
+        /// pathname of directory.
+        pathname-of-directory: string,
+        /// an OSC message to execute upon completion. (optional)
+        completion-msg: option<list<u8>>,
+    }
+
+    /// Receive a synth definition file.
+    record d-recv-args {
+        /// buffer of data.
+        buffer-of-data: list<u8>,
+        /// an OSC message to execute upon completion. (optional)
+        completion-msg: option<list<u8>>,
+    }
+
+    /// Display incoming OSC messages.
+    record dump-osc-args {
+        /// code
+        code: s32,
+    }
+
+    /// Enable/disable error message posting.
+    record error-args {
+        /// mode
+        mode: s32,
+    }
+
+    /// Free all synths in this group and all its sub-groups.
+    record g-deep-free-args {
+        /// group IDs (one or more)
+        group-ids: list<s32>,
+    }
+
+    /// Post a representation of this group's node subtree.
+    record g-dump-tree-args {
+        /// Repeated tuples (group_id: group ID; flag_if_not: flag; if not 0 the current control (arg) values for synths will be posted).
+        tail: list<tuple<s32, s32>>,
+    }
+
+    /// Delete all nodes in a group.
+    record g-free-all-args {
+        /// group IDs (one or more)
+        group-ids: list<s32>,
+    }
+
+    /// Add node to head of group.
+    record g-head-args {
+        /// Repeated tuples (group_id: group ID; node_id: node ID).
+        tail: list<tuple<s32, s32>>,
+    }
+
+    /// Create a new group.
+    record g-new-args {
+        /// Repeated tuples (new_group_id: new group ID; add_action: add action (0,1,2, 3 or 4 see below); target_id: add target ID).
+        tail: list<tuple<s32, s32, s32>>,
+    }
+
+    /// Get a representation of this group's node subtree.
+    record g-query-tree-args {
+        /// Repeated tuples (group_id: group ID; flag_if_not: flag: if not 0 the current control (arg) values for synths will be included).
+        tail: list<tuple<s32, s32>>,
+    }
+
+    /// Add node to tail of group.
+    record g-tail-args {
+        /// Repeated tuples (group_id: group ID; node_id: node ID).
+        tail: list<tuple<s32, s32>>,
+    }
+
+    /// Place a node after another.
+    record n-after-args {
+        /// Repeated tuples (the_id_of: the ID of the node to place (A); the_id_of: the ID of the node after which the above is placed (B)).
+        tail: list<tuple<s32, s32>>,
+    }
+
+    /// Place a node before another.
+    record n-before-args {
+        /// Repeated tuples (the_id_of: the ID of the node to place (A); the_id_of: the ID of the node before which the above is placed (B)).
+        tail: list<tuple<s32, s32>>,
+    }
+
+    /// Fill ranges of a node's control value(s).
+    record n-fill-args {
+        /// node ID
+        node-id: s32,
+        /// Repeated tuples (control: a control index or name; number_of_values: number of values to fill (M); value: value).
+        tail: list<tuple<control-id, s32, numeric-value>>,
+    }
+
+    /// Delete a node.
+    record n-free-args {
+        /// node IDs (one or more)
+        node-ids: list<s32>,
+    }
+
+    /// Map a node's controls to read from a bus.
+    record n-map-args {
+        /// node ID
+        node-id: s32,
+        /// Repeated tuples (control: a control index or name; control_bus_index: control bus index).
+        tail: list<tuple<control-id, s32>>,
+    }
+
+    /// Map a node's controls to read from an audio bus.
+    record n-mapa-args {
+        /// node ID
+        node-id: s32,
+        /// Repeated tuples (control: a control index or name; audio_bus_index: audio bus index).
+        tail: list<tuple<control-id, s32>>,
+    }
+
+    /// Map a node's controls to read from audio buses.
+    record n-mapan-args {
+        /// node ID
+        node-id: s32,
+        /// Repeated tuples (control: a control index or name; audio_bus_index: audio bus index; number_of_controls: number of controls to map).
+        tail: list<tuple<control-id, s32, s32>>,
+    }
+
+    /// Map a node's controls to read from buses.
+    record n-mapn-args {
+        /// node ID
+        node-id: s32,
+        /// Repeated tuples (control: a control index or name; control_bus_index: control bus index; number_of_controls: number of controls to map).
+        tail: list<tuple<control-id, s32, s32>>,
+    }
+
+    /// Move and order a list of nodes.
+    record n-order-args {
+        /// add action (0,1,2 or 3 see below)
+        add-action: s32,
+        /// add target ID
+        target-id: s32,
+        /// node IDs (one or more) to reorder
+        node-ids: list<s32>,
+    }
+
+    /// Get info about a node.
+    record n-query-args {
+        /// node IDs (one or more) to query
+        node-ids: list<s32>,
+    }
+
+    /// Turn node on or off.
+    record n-run-args {
+        /// Repeated tuples (node_id: node ID; run_flag: run flag).
+        tail: list<tuple<s32, s32>>,
+    }
+
+    /// Set a node's control value(s).
+    record n-set-args {
+        /// node ID
+        node-id: s32,
+        /// Repeated tuples (control: a control index or name; value: a control value).
+        tail: list<tuple<control-id, numeric-value>>,
+    }
+
+    /// Set ranges of a node's control value(s).
+    record n-setn-args {
+        /// node ID
+        node-id: s32,
+        /// Repeated ranges — each `(control, values)` writes `values.len()`
+        /// consecutive controls starting at `control`. The count is encoded
+        /// on the wire from the list length.
+        tail: list<tuple<control-id, list<numeric-value>>>,
+    }
+
+    /// Trace a node.
+    record n-trace-args {
+        /// node IDs (one or more)
+        node-ids: list<s32>,
+    }
+
+    /// Register to receive notifications from server.
+    record notify-args {
+        /// 1 to receive notifications, 0 to stop receiving them.
+        enable: s32,
+        /// client ID (optional)
+        client-id: option<s32>,
+    }
+
+    /// Create a new parallel group.
+    record p-new-args {
+        /// Repeated tuples (new_group_id: new group ID; add_action: add action (0,1,2, 3 or 4 see below); target_id: add target ID).
+        tail: list<tuple<s32, s32, s32>>,
+    }
+
+    /// Get control value(s).
+    record s-get-args {
+        /// synth ID
+        node-id: s32,
+        /// controls (one or more) — each by index or name
+        controls: list<control-id>,
+    }
+
+    /// Get ranges of control value(s).
+    record s-getn-args {
+        /// synth ID
+        node-id: s32,
+        /// Repeated tuples (control: a control index or name; number_of_sequential: number of sequential controls to get (M)).
+        tail: list<tuple<control-id, s32>>,
+    }
+
+    /// Create a new synth.
+    record s-new-args {
+        /// synth definition name
+        def-name: string,
+        /// synth ID
+        node-id: s32,
+        /// add action (0,1,2, 3 or 4 see below)
+        add-action: s32,
+        /// add target ID
+        target-id: s32,
+        /// Repeated tuples (control: a control index or name; floating_point_and: floating point and integer arguments are interpreted as control value. a symbol argument consisting of the letter 'c' or 'a' (for control or audio) followed by the bus's index.).
+        tail: list<tuple<control-id, control-value>>,
+    }
+
+    /// Auto-reassign synth's ID to a reserved value.
+    record s-noid-args {
+        /// synth IDs (one or more) to reassign
+        synth-ids: list<s32>,
+    }
+
+    /// Notify when async commands have completed.
+    record sync-args {
+        /// a unique number identifying this command.
+        a-unique-number: s32,
+    }
+
+    /// Send a command to a unit generator.
+    record u-cmd-args {
+        /// node ID
+        node-id: s32,
+        /// unit generator index
+        unit-generator-index: s32,
+        /// command name
+        cmd: string,
+        /// variadic trailing OSC args — types depend on the UGen command.
+        any-arguments: list<osc-arg>,
+    }
+
+    /// Escape hatch for sending an OSC message whose address isn't in the
+    /// catalogue (e.g. an SC extension or plug-in command). Carries a raw
+    /// address + arg list.
+    record other-msg {
+        address: string,
+        args: list<osc-arg>,
+    }
+
+    /// Typed dispatch over every SC server command plus an `other` catch-all.
+    /// One variant case per address. Six argless commands carry no payload
+    /// (clear-sched, nrt-end, quit, rt-memory-status, status, version).
+    variant server-message {
+        b-alloc(b-alloc-args),
+        b-alloc-read(b-alloc-read-args),
+        b-alloc-read-channel(b-alloc-read-channel-args),
+        b-close(b-close-args),
+        b-fill(b-fill-args),
+        b-free(b-free-args),
+        b-gen(b-gen-args),
+        b-get(b-get-args),
+        b-getn(b-getn-args),
+        b-query(b-query-args),
+        b-read(b-read-args),
+        b-read-channel(b-read-channel-args),
+        b-set(b-set-args),
+        b-set-sample-rate(b-set-sample-rate-args),
+        b-setn(b-setn-args),
+        b-write(b-write-args),
+        b-zero(b-zero-args),
+        c-fill(c-fill-args),
+        c-get(c-get-args),
+        c-getn(c-getn-args),
+        c-set(c-set-args),
+        c-setn(c-setn-args),
+        /// `/clearSched` — Clear all scheduled bundles.
+        clear-sched,
+        cmd(cmd-args),
+        d-free(d-free-args),
+        d-load(d-load-args),
+        d-load-dir(d-load-dir-args),
+        d-recv(d-recv-args),
+        dump-osc(dump-osc-args),
+        error(error-args),
+        g-deep-free(g-deep-free-args),
+        g-dump-tree(g-dump-tree-args),
+        g-free-all(g-free-all-args),
+        g-head(g-head-args),
+        g-new(g-new-args),
+        g-query-tree(g-query-tree-args),
+        g-tail(g-tail-args),
+        n-after(n-after-args),
+        n-before(n-before-args),
+        n-fill(n-fill-args),
+        n-free(n-free-args),
+        n-map(n-map-args),
+        n-mapa(n-mapa-args),
+        n-mapan(n-mapan-args),
+        n-mapn(n-mapn-args),
+        n-order(n-order-args),
+        n-query(n-query-args),
+        n-run(n-run-args),
+        n-set(n-set-args),
+        n-setn(n-setn-args),
+        n-trace(n-trace-args),
+        notify(notify-args),
+        /// `/nrt_end` — End NRT mode, close the score file.
+        nrt-end,
+        p-new(p-new-args),
+        /// `/quit` — Exit the synthesis server.
+        quit,
+        /// `/rtMemoryStatus` — Query free real-time memory.
+        rt-memory-status,
+        s-get(s-get-args),
+        s-getn(s-getn-args),
+        s-new(s-new-args),
+        s-noid(s-noid-args),
+        /// `/status` — Query the server status.
+        status,
+        sync(sync-args),
+        u-cmd(u-cmd-args),
+        /// `/version` — Query the SC version string.
+        version,
+        /// Escape hatch: raw address + arg list for messages outside the
+        /// catalogue.
+        other(other-msg),
+    }
+
+    /// Serialise a typed command to raw OSC wire bytes.
+    encode: func(msg: server-message) -> result<list<u8>, string>;
+}

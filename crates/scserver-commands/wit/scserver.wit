@@ -1,0 +1,22 @@
+package scserver:commands@0.1.0;
+
+/// Encoders and parsers for the SuperCollider server command protocol.
+/// https://doc.sccode.org/Reference/Server-Command-Reference.html
+interface core {
+    /// One OSC-encoded argument. Mirrors rosc::OscType for the subset of
+    /// types SC commands actually use.
+    variant osc-arg {
+        int32(s32),
+        float32(f32),
+        float64(f64),
+        %string(string),
+        blob(list<u8>),
+    }
+}
+
+world scserver {
+    export core;
+    export commands;
+    export nrt;
+    export replies;
+}
