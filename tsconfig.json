@@ -23,7 +23,9 @@
     /* Path aliases */
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@wasm/scserver-commands": ["crates/scserver-commands/pkg/scserver_commands.d.ts"],
+      "@wasm/scserver-commands/*": ["crates/scserver-commands/pkg/*"]
     }
   },
   "include": ["src"],

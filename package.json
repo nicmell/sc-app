@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:wasm": "yarn build:wasm:scserver-commands",
+    "build:wasm:scserver-commands": "cd crates/scserver-commands && cargo component build --release --features component --target wasm32-wasip1 && jco transpile target/wasm32-wasip1/release/scserver_commands.wasm -o pkg"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -16,6 +18,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@bytecodealliance/jco": "^1.19.0",
     "@tauri-apps/cli": "^2",
     "@types/node": "^25.6.0",
     "@types/react": "^18.3.1",

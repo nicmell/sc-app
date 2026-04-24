@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ConnectScreen } from '@/ui/ConnectScreen';
 import { OscConsole } from '@/ui/OscConsole';
+import * as cmd from './cmd';
 import { WorkerClient } from './WorkerClient';
 
 const STORAGE_KEY = 'sc.address';
+const STATUS_PROBE_TIMEOUT_MS = 1000;
 
 /**
  * Phase 1 dashboard shell — placeholder until Phase 4 brings the real
@@ -72,6 +74,25 @@ export function AppShell() {
     } catch (err) {
       next.dispose();
       throw err;
+    }
+
+    // Status probe — proves the full chain (worker → bridge → UDP →
+    // scsynth → back) is actually responsive before mounting the
+    // dashboard. Silent UDP "nothing listening" can only be detected
+    // here, because UDP sends don't fail.
+    try {
+      await next.sendAndAwaitReply(
+        cmd.status,
+        (reply) => reply.tag === 'status-reply',
+        STATUS_PROBE_TIMEOUT_MS,
+      );
+    } catch (err) {
+      next.dispose();
+      throw new Error(
+        `scsynth didn't reply to /status at ${address}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
     }
 
     // Wire disconnection handler: any error event after we're "open"

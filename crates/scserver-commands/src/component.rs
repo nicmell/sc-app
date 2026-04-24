@@ -22,8 +22,8 @@ use bindings::exports::scserver::commands::commands::{
 use bindings::exports::scserver::commands::core::OscArg as WitOscArg;
 use bindings::exports::scserver::commands::nrt::{Guest as NrtGuest, GuestNrtScore};
 use bindings::exports::scserver::commands::replies::{
-    DoneInfo, FailInfo, Guest as RepliesGuest, LateInfo, NodeInfo as WitNodeInfo, OtherReply,
-    ServerReply as WitServerReply, StatusReplyInfo, TrInfo,
+    BSetnReply, DoneInfo, FailInfo, Guest as RepliesGuest, LateInfo, NodeInfo as WitNodeInfo,
+    OtherReply, ServerReply as WitServerReply, StatusReplyInfo, SyncedReply, TrInfo,
 };
 
 use crate::commands::*;
@@ -197,6 +197,12 @@ fn reply_to_wit(reply: ServerReply) -> WitServerReply {
             trigger_id,
             value,
         }),
+        ServerReply::BSetn(b) => WitServerReply::BSetn(BSetnReply {
+            bufnum: b.bufnum,
+            start: b.start,
+            samples: b.samples,
+        }),
+        ServerReply::Synced { sync_id } => WitServerReply::Synced(SyncedReply { sync_id }),
         ServerReply::Other { address, args } => WitServerReply::Other(OtherReply {
             address,
             args: osc_args_to_wit(&args),

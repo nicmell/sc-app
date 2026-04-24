@@ -1,19 +1,18 @@
 /**
- * Phase 1 — scope worker entry. Owns the WebSocket to the WS↔UDP
- * bridge. Main thread talks to this worker via typed `postMessage`;
- * the worker forwards bytes both ways.
+ * Phase 2 — typed scope worker. Owns the WebSocket to the bridge AND
+ * the jco-transpiled `scserver-commands` component. Main thread sends
+ * typed `ServerMessage` values; worker encodes to OSC bytes, forwards,
+ * decodes replies into typed `ServerReply` values, and posts them back.
  *
- * Later phases will expand this file to parse typed `ServerReply`
- * values, drive the subscription table, etc. Phase 1 is byte-only.
+ * Decode failures (malformed OSC, or a reply shape outside the typed
+ * catalogue — which the crate routes to `Other` rather than throwing)
+ * surface as `error` events. The stream keeps flowing.
  */
 
+import { commands, replies } from '@wasm/scserver-commands';
 import type { MainToWorker, WorkerToMain } from '../scope/workerProtocol';
 import { createOscTransport, type OscTransport } from './transport';
 
-// The worker-side postMessage. `self` in a Worker context has a
-// two-arg postMessage but the DOM lib typing only sees the window
-// overload; cast through `unknown` to keep the protocol tight at the
-// boundary without pulling the whole WebWorker lib into tsconfig.
 interface WorkerPost {
   postMessage(msg: WorkerToMain, transfer?: Transferable[]): void;
 }
@@ -34,20 +33,25 @@ self.addEventListener('message', async (ev: MessageEvent<MainToWorker>) => {
       try {
         transport = createOscTransport(msg.url);
         transport.onMessage((bytes) => {
-          // Transfer the underlying ArrayBuffer to avoid copying.
-          const buf = bytes.buffer.slice(
-            bytes.byteOffset,
-            bytes.byteOffset + bytes.byteLength,
-          );
-          post({ type: 'recv', bytes: new Uint8Array(buf) }, [buf]);
+          try {
+            const reply = replies.decode(bytes);
+            post({ type: 'reply', reply });
+          } catch (err) {
+            post({
+              type: 'error',
+              message: `decode failed: ${err instanceof Error ? err.message : String(err)}`,
+            });
+          }
         });
         transport.onError(() => {
           post({ type: 'error', message: 'websocket error' });
         });
-        transport.onClose((ev) => {
+        transport.onClose((closeEv) => {
           post({
             type: 'error',
-            message: `websocket closed (code=${ev.code}${ev.reason ? `, reason=${ev.reason}` : ''})`,
+            message: `websocket closed (code=${closeEv.code}${
+              closeEv.reason ? `, reason=${closeEv.reason}` : ''
+            })`,
           });
         });
         await transport.ready;
@@ -59,15 +63,19 @@ self.addEventListener('message', async (ev: MessageEvent<MainToWorker>) => {
       return;
     }
 
-    case 'send': {
+    case 'command': {
       if (!transport) {
-        post({ type: 'error', message: 'send before connect' });
+        post({ type: 'error', message: 'command before connect' });
         return;
       }
       try {
-        transport.send(msg.bytes);
+        const bytes = commands.encode(msg.command);
+        transport.send(bytes);
       } catch (err) {
-        post({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+        post({
+          type: 'error',
+          message: `encode failed: ${err instanceof Error ? err.message : String(err)}`,
+        });
       }
       return;
     }

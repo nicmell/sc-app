@@ -1,22 +1,37 @@
 /**
- * Main-thread wrapper around the scope worker. Owns the Worker
- * instance and exposes a tight, typed API.
+ * Main-thread wrapper around the scope worker.
  *
- * Phase 1: bytes-in / bytes-out. Later phases will add typed command
- * / reply methods on top of the same transport.
+ * Phase 2 surface:
+ * - `sendCommand(cmd)`          — fire-and-forget typed command
+ * - `onReply(cb)`               — subscribe to typed replies
+ * - `onError(cb)`               — subscribe to worker/WS errors
+ * - `sendAndAwaitReply(cmd, match, timeoutMs)` — one-shot: send a
+ *   command and resolve when a matching reply arrives. Used for
+ *   correlation-free probes like Status.
+ * - `sendAndSync(cmd, timeoutMs)` — send a command then a `/sync`,
+ *   resolve when the matching `/synced` comes back. Used when the
+ *   command has no reply of its own (`/d_recv`, buffer ops, etc.).
  */
 
-import type { MainToWorker, WorkerToMain } from './workerProtocol';
+import type {
+  MainToWorker,
+  ServerMessage,
+  ServerReply,
+  WorkerToMain,
+} from './workerProtocol';
 
 const READY_TIMEOUT_MS = 3000;
+const DEFAULT_SYNC_TIMEOUT_MS = 2000;
 
-export type RecvListener = (bytes: Uint8Array) => void;
-export type ErrorListener = (err: string) => void;
+export type ReplyListener = (reply: ServerReply) => void;
+export type ErrorListener = (message: string) => void;
+export type ReplyMatcher = (reply: ServerReply) => boolean;
 
 export class WorkerClient {
   private readonly worker: Worker;
-  private readonly recvListeners = new Set<RecvListener>();
+  private readonly replyListeners = new Set<ReplyListener>();
   private readonly errorListeners = new Set<ErrorListener>();
+  private nextSyncId = 1;
   readonly ready: Promise<void>;
 
   /** `url` is the full WS URL including the `?scsynth=HOST:PORT` param. */
@@ -50,12 +65,11 @@ export class WorkerClient {
       this.worker.addEventListener('message', handleReady);
     });
 
-    // Long-lived dispatcher for non-handshake messages.
     this.worker.addEventListener('message', (ev: MessageEvent<WorkerToMain>) => {
       const msg = ev.data;
       switch (msg.type) {
-        case 'recv':
-          for (const cb of this.recvListeners) cb(msg.bytes);
+        case 'reply':
+          for (const cb of this.replyListeners) cb(msg.reply);
           break;
         case 'error':
           for (const cb of this.errorListeners) cb(msg.message);
@@ -66,18 +80,13 @@ export class WorkerClient {
     this.post({ type: 'connect', url });
   }
 
-  send(bytes: Uint8Array): void {
-    // Copy into a fresh buffer so we can transfer it without
-    // surprising the caller by detaching their Uint8Array.
-    const copy = new Uint8Array(bytes);
-    this.worker.postMessage({ type: 'send', bytes: copy } satisfies MainToWorker, [
-      copy.buffer,
-    ]);
+  sendCommand(command: ServerMessage): void {
+    this.post({ type: 'command', command });
   }
 
-  onRecv(cb: RecvListener): () => void {
-    this.recvListeners.add(cb);
-    return () => this.recvListeners.delete(cb) as unknown as void;
+  onReply(cb: ReplyListener): () => void {
+    this.replyListeners.add(cb);
+    return () => this.replyListeners.delete(cb) as unknown as void;
   }
 
   onError(cb: ErrorListener): () => void {
@@ -85,10 +94,73 @@ export class WorkerClient {
     return () => this.errorListeners.delete(cb) as unknown as void;
   }
 
+  /**
+   * Send `cmd` and resolve on the first reply satisfying `match`.
+   * Use for correlation-free probes (e.g. Status → StatusReply).
+   */
+  sendAndAwaitReply(
+    cmd: ServerMessage,
+    match: ReplyMatcher,
+    timeoutMs = DEFAULT_SYNC_TIMEOUT_MS,
+  ): Promise<ServerReply> {
+    return new Promise((resolve, reject) => {
+      const offReply = this.onReply((reply) => {
+        if (!match(reply)) return;
+        cleanup();
+        resolve(reply);
+      });
+      const offError = this.onError((message) => {
+        cleanup();
+        reject(new Error(message));
+      });
+      const timer = window.setTimeout(() => {
+        cleanup();
+        reject(new Error(`timed out after ${timeoutMs} ms waiting for reply`));
+      }, timeoutMs);
+      const cleanup = () => {
+        window.clearTimeout(timer);
+        offReply();
+        offError();
+      };
+      this.sendCommand(cmd);
+    });
+  }
+
+  /**
+   * Send `cmd`, then a `/sync` with a fresh id; resolve when the
+   * matching `/synced` reply arrives. Use for commands with no reply
+   * of their own (e.g. `/d_recv`, `/b_alloc`).
+   */
+  sendAndSync(cmd: ServerMessage, timeoutMs = DEFAULT_SYNC_TIMEOUT_MS): Promise<void> {
+    const syncId = this.nextSyncId++;
+    return new Promise((resolve, reject) => {
+      const offReply = this.onReply((reply) => {
+        if (reply.tag !== 'synced' || reply.val.syncId !== syncId) return;
+        cleanup();
+        resolve();
+      });
+      const offError = this.onError((message) => {
+        cleanup();
+        reject(new Error(message));
+      });
+      const timer = window.setTimeout(() => {
+        cleanup();
+        reject(new Error(`sendAndSync(${syncId}) timed out after ${timeoutMs} ms`));
+      }, timeoutMs);
+      const cleanup = () => {
+        window.clearTimeout(timer);
+        offReply();
+        offError();
+      };
+      this.sendCommand(cmd);
+      this.sendCommand({ tag: 'sync', val: { aUniqueNumber: syncId } });
+    });
+  }
+
   dispose(): void {
     this.post({ type: 'disconnect' });
     this.worker.terminate();
-    this.recvListeners.clear();
+    this.replyListeners.clear();
     this.errorListeners.clear();
   }
 

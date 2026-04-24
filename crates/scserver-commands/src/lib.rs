@@ -14,6 +14,6 @@ pub use commands::{ControlId, ControlValue, NumericValue, ServerMessage};
 pub use error::CommandError;
 pub use nrt::NrtScore;
 pub use osc::OscMessage;
-pub use replies::{NodeInfo, ServerReply, StatusReply};
+pub use replies::{BSetnReply, NodeInfo, ServerReply, StatusReply};
 
 pub use rosc::OscType;

@@ -70,6 +70,21 @@ interface replies {
         value: f32,
     }
 
+    /// Payload for a `/b_setn` reply — samples read from a buffer in
+    /// response to `/b_getn`. `samples` is a typed `list<f32>` so the
+    /// component boundary lifts it as `Float32Array` with one memcpy.
+    record b-setn-reply {
+        bufnum: s32,
+        start: s32,
+        samples: list<f32>,
+    }
+
+    /// Payload for a `/synced` reply — the sync id supplied with the
+    /// originating `/sync` command, so callers can correlate roundtrips.
+    record synced-reply {
+        sync-id: s32,
+    }
+
     /// Fallback for any reply whose address doesn't match a known shape
     /// — carries the raw decoded message.
     record other-reply {
@@ -91,6 +106,8 @@ interface replies {
         n-info(node-info),
         status-reply(status-reply-info),
         tr(tr-info),
+        b-setn(b-setn-reply),
+        synced(synced-reply),
         other(other-reply),
     }
 

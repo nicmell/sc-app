@@ -50,6 +50,15 @@ pub enum ServerReply {
         trigger_id: i32,
         value: f32,
     },
+    /// Samples read from a buffer in response to `/b_getn`. The payload
+    /// is extracted as a typed `Vec<f32>` so the component boundary can
+    /// lift it as a `Float32Array` without per-element boxing.
+    BSetn(BSetnReply),
+    /// Response to a `/sync` command — carries the sync id supplied by
+    /// the client so callers can correlate request ↔ reply.
+    Synced {
+        sync_id: i32,
+    },
     /// Any OSC message whose address doesn't match a known reply shape.
     /// Mirrors the `other-reply` WIT record: raw address + args.
     Other {
@@ -84,6 +93,18 @@ pub struct StatusReply {
     pub peak_cpu: f32,
     pub nominal_sample_rate: f64,
     pub actual_sample_rate: f64,
+}
+
+/// Payload of a `/b_setn` reply — samples read from a buffer.
+///
+/// The SC wire format is: `/b_setn bufnum startIndex N sample0 sample1 … sampleN-1`.
+/// Exposing `samples` as a typed `Vec<f32>` means the WIT surface lifts
+/// as `Float32Array` (one memcpy) rather than a boxed per-element list.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BSetnReply {
+    pub bufnum: i32,
+    pub start: i32,
+    pub samples: Vec<f32>,
 }
 
 impl ServerReply {
@@ -132,6 +153,22 @@ impl ServerReply {
                 node_id: take_int(&msg, 0, "/tr")?,
                 trigger_id: take_int(&msg, 1, "/tr")?,
                 value: take_float(&msg, 2, "/tr")?,
+            }),
+            "/b_setn" => {
+                // /b_setn bufnum startIndex N sample0 sample1 … sampleN-1
+                // When emitted as a reply by the server (in response to
+                // /b_getn), the count + samples trail the header.
+                let bufnum = take_int(&msg, 0, "/b_setn")?;
+                let start = take_int(&msg, 1, "/b_setn")?;
+                let count = take_int(&msg, 2, "/b_setn")? as usize;
+                let mut samples = Vec::with_capacity(count);
+                for i in 0..count {
+                    samples.push(take_float(&msg, 3 + i, "/b_setn")?);
+                }
+                Ok(Self::BSetn(BSetnReply { bufnum, start, samples }))
+            }
+            "/synced" => Ok(Self::Synced {
+                sync_id: take_int(&msg, 0, "/synced")?,
             }),
             _ => Ok(Self::Other {
                 address: msg.address,
@@ -280,5 +317,35 @@ mod tests {
         let m = OscMessage::new("/some/random/addr").arg(42i32);
         let reply = ServerReply::from_message(m).unwrap();
         assert!(matches!(reply, ServerReply::Other { .. }));
+    }
+
+    #[test]
+    fn b_setn_reply_lifts_samples() {
+        // /b_setn bufnum=7, start=16, count=4, values 0.1..0.4
+        let m = OscMessage::new("/b_setn")
+            .arg(7i32)
+            .arg(16i32)
+            .arg(4i32)
+            .arg(0.1f32)
+            .arg(0.2f32)
+            .arg(0.3f32)
+            .arg(0.4f32);
+        match ServerReply::from_message(m).unwrap() {
+            ServerReply::BSetn(b) => {
+                assert_eq!(b.bufnum, 7);
+                assert_eq!(b.start, 16);
+                assert_eq!(b.samples, vec![0.1, 0.2, 0.3, 0.4]);
+            }
+            other => panic!("expected BSetn, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn synced_reply_carries_id() {
+        let m = OscMessage::new("/synced").arg(42i32);
+        match ServerReply::from_message(m).unwrap() {
+            ServerReply::Synced { sync_id } => assert_eq!(sync_id, 42),
+            other => panic!("expected Synced, got {:?}", other),
+        }
     }
 }

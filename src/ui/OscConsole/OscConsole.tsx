@@ -1,134 +1,135 @@
 import { useEffect, useRef, useState } from 'react';
 import type { WorkerClient } from '@/scope/WorkerClient';
+import type { ServerMessage, ServerReply } from '@/scope/workerProtocol';
+import * as cmd from '@/scope/cmd';
 import './OscConsole.scss';
 
 interface LogEntry {
   id: number;
   direction: 'tx' | 'rx' | 'err';
   timestamp: number;
-  length: number;
-  hex: string;
-  message?: string;
+  summary: string;
+  detail?: string;
 }
 
 interface OscConsoleProps {
   client: WorkerClient;
 }
 
-function hexOf(bytes: Uint8Array, limit = 32): string {
-  const n = Math.min(bytes.length, limit);
-  const parts: string[] = [];
-  for (let i = 0; i < n; i++) parts.push(bytes[i].toString(16).padStart(2, '0'));
-  return parts.join(' ') + (bytes.length > limit ? ' …' : '');
+function summariseCommand(msg: ServerMessage): string {
+  const val = 'val' in msg ? (msg as { val: unknown }).val : undefined;
+  return val === undefined ? msg.tag : `${msg.tag} ${JSON.stringify(val)}`;
 }
 
-function parseHexInput(text: string): Uint8Array | Error {
-  const cleaned = text.replace(/[\s,]+/g, '');
-  if (cleaned.length === 0) return new Error('empty input');
-  if (cleaned.length % 2 !== 0) return new Error('odd number of hex digits');
-  if (!/^[0-9a-fA-F]+$/.test(cleaned)) return new Error('invalid hex characters');
-  const out = new Uint8Array(cleaned.length / 2);
-  for (let i = 0; i < out.length; i++) {
-    out[i] = parseInt(cleaned.slice(i * 2, i * 2 + 2), 16);
+function summariseReply(reply: ServerReply): { summary: string; detail?: string } {
+  switch (reply.tag) {
+    case 'status-reply': {
+      const s = reply.val;
+      return {
+        summary: `status-reply ugens=${s.numUgens} synths=${s.numSynths} groups=${s.numGroups}`,
+        detail: `avg-cpu=${s.avgCpu.toFixed(2)}% peak=${s.peakCpu.toFixed(2)}% sr=${s.actualSampleRate.toFixed(0)}`,
+      };
+    }
+    case 'synced':
+      return { summary: `synced id=${reply.val.syncId}` };
+    case 'done':
+      return {
+        summary: `done ${reply.val.address}`,
+        detail: reply.val.extras.length ? JSON.stringify(reply.val.extras) : undefined,
+      };
+    case 'fail':
+      return { summary: `fail ${reply.val.address}: ${reply.val.error}` };
+    case 'tr':
+      return {
+        summary: `tr node=${reply.val.nodeId} id=${reply.val.triggerId} v=${reply.val.value.toFixed(3)}`,
+      };
+    case 'b-setn':
+      return {
+        summary: `b-setn bufnum=${reply.val.bufnum} start=${reply.val.start} n=${reply.val.samples.length}`,
+      };
+    case 'n-go':
+    case 'n-end':
+    case 'n-on':
+    case 'n-off':
+    case 'n-move':
+    case 'n-info': {
+      const n = reply.val;
+      return { summary: `${reply.tag} node=${n.nodeId} parent=${n.parentId} group=${n.isGroup}` };
+    }
+    case 'late':
+      return { summary: `late ${reply.val.lateSecs}.${reply.val.lateFracs}` };
+    case 'other':
+      return {
+        summary: `other ${reply.val.address}`,
+        detail: reply.val.args.length ? JSON.stringify(reply.val.args) : undefined,
+      };
   }
-  return out;
 }
 
 export function OscConsole({ client }: OscConsoleProps) {
-  const [input, setInput] = useState(
-    // /status as hex — zero-arg OSC message
-    '2f 73 74 61 74 75 73 00 2c 00 00 00',
-  );
   const [log, setLog] = useState<LogEntry[]>([]);
-  const [inputError, setInputError] = useState<string | null>(null);
   const nextId = useRef(0);
 
+  const append = (entry: Omit<LogEntry, 'id' | 'timestamp'>) => {
+    setLog((prev) =>
+      [{ id: nextId.current++, timestamp: performance.now(), ...entry }, ...prev].slice(0, 100),
+    );
+  };
+
   useEffect(() => {
-    const offRecv = client.onRecv((bytes) => {
-      setLog((prev) =>
-        [
-          {
-            id: nextId.current++,
-            direction: 'rx' as const,
-            timestamp: performance.now(),
-            length: bytes.length,
-            hex: hexOf(bytes),
-          },
-          ...prev,
-        ].slice(0, 100),
-      );
+    const offReply = client.onReply((reply) => {
+      const { summary, detail } = summariseReply(reply);
+      append({ direction: 'rx', summary, detail });
     });
     const offErr = client.onError((message) => {
-      setLog((prev) =>
-        [
-          {
-            id: nextId.current++,
-            direction: 'err' as const,
-            timestamp: performance.now(),
-            length: 0,
-            hex: '',
-            message,
-          },
-          ...prev,
-        ].slice(0, 100),
-      );
+      append({ direction: 'err', summary: message });
     });
     return () => {
-      offRecv();
+      offReply();
       offErr();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client]);
 
-  const handleSend = () => {
-    const result = parseHexInput(input);
-    if (result instanceof Error) {
-      setInputError(result.message);
-      return;
+  const send = (msg: ServerMessage) => {
+    client.sendCommand(msg);
+    append({ direction: 'tx', summary: summariseCommand(msg) });
+  };
+
+  const probe = async () => {
+    append({ direction: 'tx', summary: 'status (sendAndAwaitReply)' });
+    try {
+      const t0 = performance.now();
+      const reply = await client.sendAndAwaitReply(
+        cmd.status,
+        (r) => r.tag === 'status-reply',
+        1000,
+      );
+      const elapsed = (performance.now() - t0).toFixed(1);
+      const { summary, detail } = summariseReply(reply);
+      append({ direction: 'rx', summary: `[${elapsed}ms] ${summary}`, detail });
+    } catch (err) {
+      append({ direction: 'err', summary: err instanceof Error ? err.message : String(err) });
     }
-    setInputError(null);
-    client.send(result);
-    setLog((prev) =>
-      [
-        {
-          id: nextId.current++,
-          direction: 'tx' as const,
-          timestamp: performance.now(),
-          length: result.length,
-          hex: hexOf(result),
-        },
-        ...prev,
-      ].slice(0, 100),
-    );
   };
 
   return (
     <section className="osc-console">
       <header>OSC console</header>
-      <div className="input-row">
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.currentTarget.value)}
-          rows={3}
-          spellCheck={false}
-          aria-label="OSC bytes, hex-encoded"
-          placeholder="hex bytes, e.g. 2f 73 74 61 74 75 73 00 2c 00 00 00"
-        />
-        <button onClick={handleSend}>Send</button>
+      <div className="quick-actions">
+        <button onClick={() => send(cmd.status)}>Status</button>
+        <button onClick={() => send(cmd.dumpOsc(1))}>DumpOSC on</button>
+        <button onClick={() => send(cmd.dumpOsc(0))}>DumpOSC off</button>
+        <button onClick={() => send(cmd.queryTree(0))}>QueryTree(0)</button>
+        <button onClick={probe}>sendAndAwaitReply(Status)</button>
       </div>
-      {inputError && <p className="input-error">{inputError}</p>}
       <ol className="log">
         {log.map((e) => (
           <li key={e.id} data-dir={e.direction}>
             <span className="dir">{e.direction.toUpperCase()}</span>
             <span className="t">{(e.timestamp / 1000).toFixed(3)}s</span>
-            {e.direction === 'err' ? (
-              <span className="msg">{e.message}</span>
-            ) : (
-              <>
-                <span className="len">{e.length}B</span>
-                <code className="hex">{e.hex}</code>
-              </>
-            )}
+            <span className="summary">{e.summary}</span>
+            {e.detail && <span className="detail">{e.detail}</span>}
           </li>
         ))}
       </ol>

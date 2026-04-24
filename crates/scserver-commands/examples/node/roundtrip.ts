@@ -17,9 +17,9 @@
 //   npm run build:wasm
 //   npm run roundtrip
 
-import { commands, nrt, replies } from './pkg/scserver_commands.js';
-import type { OscArg } from './pkg/interfaces/scserver-commands-core.js';
-import type { ServerMessage } from './pkg/interfaces/scserver-commands-commands.js';
+import { commands, nrt, replies } from '../../pkg/scserver_commands.js';
+import type { OscArg } from '../../pkg/interfaces/scserver-commands-core.js';
+import type { ServerMessage } from '../../pkg/interfaces/scserver-commands-commands.js';
 
 const { encode } = commands;
 const { NrtScore } = nrt;

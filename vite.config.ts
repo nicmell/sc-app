@@ -9,11 +9,41 @@ export default defineConfig(async () => ({
   plugins: [react()],
   build: {
     manifest: "manifest.json",
+    // jco's wasm bootstrap uses top-level await, which needs a modern
+    // target. All browsers since ~2022 plus Tauri's webview are fine.
+    target: "es2022",
+  },
+  // The jco-generated bindings import sub-modules (WASI shims, per-
+  // interface glue), and Vite can only code-split worker bundles when
+  // their output is ES modules. Force `es` format; all modern browsers
+  // plus Tauri's webview support module workers.
+  worker: {
+    format: "es",
+  },
+  esbuild: {
+    // Dev transpile target must match too, otherwise Vite's dev server
+    // serves a module with top-level-await that the browser can't load.
+    target: "es2022",
   },
   resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "src"),
-    },
+    alias: [
+      { find: "@", replacement: path.resolve(__dirname, "src") },
+      // jco-transpiled scserver-commands component. Regenerate via
+      // `yarn build:wasm`. The main alias resolves the top-level ESM
+      // entry; the `/...` form lets us import typed sub-interfaces
+      // (e.g. `@wasm/scserver-commands/interfaces/...d.ts`).
+      {
+        find: /^@wasm\/scserver-commands$/,
+        replacement: path.resolve(
+          __dirname,
+          "crates/scserver-commands/pkg/scserver_commands.js",
+        ),
+      },
+      {
+        find: /^@wasm\/scserver-commands\/(.*)$/,
+        replacement: path.resolve(__dirname, "crates/scserver-commands/pkg") + "/$1",
+      },
+    ],
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
