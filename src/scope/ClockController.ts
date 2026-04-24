@@ -178,7 +178,12 @@ export class ClockController {
 
   private handleTick(tick: ClockTick): void {
     this.lastTickStore.set(tick);
-    this.lastSignalAt = tick.receivedAt;
+    // Stamp freshness on the MAIN-thread clock, not the worker's —
+    // `tick.receivedAt` is the worker's `performance.now()`, and a
+    // worker's `performance.timeOrigin` is later than the window's,
+    // so subtracting them gives a constant origin-skew (easily
+    // 100s of ms) that would pin `isTickFresh` to false forever.
+    this.lastSignalAt = performance.now();
     // A fresh tick while we were showing 'paused'-due-to-silence flips
     // us back to 'running'. Group-state-driven `paused` (real pause)
     // stays pinned by `recompute`.
