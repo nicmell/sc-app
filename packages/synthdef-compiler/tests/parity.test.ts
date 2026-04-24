@@ -1,8 +1,7 @@
 // End-to-end tests for the spec-level SynthDef encoder / decoder.
 //
 // Every test exercises the programmatic builder (`SynthDef.addControl`,
-// `SynthDef.addUgen`) and the encode / parse round-trips. Ported from
-// crates/scsynthdef-compiler/tests/parity.rs.
+// `SynthDef.addUgen`) and the encode / parse round-trips.
 
 import { describe, expect, test } from 'vitest';
 

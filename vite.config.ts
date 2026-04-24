@@ -2,27 +2,20 @@ import path from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-const synthdefPkg = path.resolve(__dirname, "crates/scsynthdef-compiler/pkg");
 const serverCommandsPkg = path.resolve(__dirname, "packages/server-commands/src");
-const preview2Browser = path.resolve(
-  __dirname,
-  "node_modules/@bytecodealliance/preview2-shim/lib/browser",
-);
+const synthdefCompilerPkg = path.resolve(__dirname, "packages/synthdef-compiler/src");
 
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
 
-  // jco's wasm bootstrap uses top-level await; `target: modules`
-  // (Vite's default) predates TLA in module workers. Dev uses `esnext`
-  // which already supports it, so only `build.target` needs bumping.
   build: {
     manifest: "manifest.json",
+    // ES2022 for module-worker support.
     target: "es2022",
   },
 
-  // jco's transpiled output splits into multiple chunks per interface;
-  // Vite can only code-split worker bundles when their output is ESM.
+  // Workers are ESM so Vite can code-split their bundles.
   worker: {
     format: "es",
   },
@@ -31,21 +24,10 @@ export default defineConfig({
     alias: [
       { find: "@", replacement: path.resolve(__dirname, "src") },
 
-      // Local workspace package (typescript source, Vite handles it
-      // directly via the alias — no build step required).
+      // Local workspace packages — resolved directly to their TS
+      // sources, no pre-build step.
       { find: /^@sc-app\/server-commands$/, replacement: `${serverCommandsPkg}/index.ts` },
-
-      // jco-transpiled wasm components. Regenerate via `yarn
-      // build:wasm`. Bare import → ESM entry; sub-paths → per-interface
-      // .d.ts files used for types only.
-      { find: /^@wasm\/scsynthdef-compiler$/, replacement: `${synthdefPkg}/scsynthdef_compiler.js` },
-      { find: /^@wasm\/scsynthdef-compiler\/(.*)$/, replacement: `${synthdefPkg}/$1` },
-
-      // jco's preview2-shim has a `{ node, default }` exports map; Vite
-      // otherwise resolves the `node` branch, which imports
-      // `node:fs/promises` and crashes the worker at init. Pin every
-      // subpath to the browser build.
-      { find: /^@bytecodealliance\/preview2-shim\/(.*)$/, replacement: `${preview2Browser}/$1.js` },
+      { find: /^@sc-app\/synthdef-compiler$/, replacement: `${synthdefCompilerPkg}/index.ts` },
     ],
   },
 

@@ -1,11 +1,9 @@
 import { CompileError } from './error.js';
 
 /**
- * Calculation rate of a UGen, matching the SCgf binary encoding.
- *
- * Mirrors `Rate` in crates/scsynthdef-compiler/src/rate.rs — same integer
- * values on the wire (scalar=0, control=1, audio=2), but surfaced as a
- * string union for ergonomic TS usage (matches the WIT component API).
+ * Calculation rate of a UGen. The on-wire encoding is a single i8
+ * (scalar=0, control=1, audio=2); the API surface is a string union
+ * for ergonomics.
  */
 export type Rate = 'scalar' | 'control' | 'audio';
 

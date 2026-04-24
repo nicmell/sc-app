@@ -1,4 +1,4 @@
-// Ported from crates/scsynthdef-compiler/src/operators.rs `#[cfg(test)] mod tests`.
+// BinaryOpUGen / UnaryOpUGen special-index lookups.
 
 import { expect, test } from 'vitest';
 

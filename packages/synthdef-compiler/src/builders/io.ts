@@ -1,6 +1,6 @@
 // @generated — DO NOT EDIT. Regenerate with scripts/generate_builders.mjs.
 //
-// Ported from crates/scsynthdef-compiler/src/builders/io.rs.
+// Auto-generated builders — one class per bundled UGen.
 
 import { Rate } from '../rate.js';
 import { SynthDef } from '../synthdef.js';

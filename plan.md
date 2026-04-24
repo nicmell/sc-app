@@ -44,8 +44,8 @@ A browser-first web app (running equally well in Tauri) that drives SuperCollide
 │                                       │                         │   │
 │  ┌────────────┐  ┌─────────────────┐  │    Scope Worker         │   │
 │  │ WAV Blobs  │◄─┤RecordingMgr     │◄─┤    - owns WebSocket     │   │
-│  │ (download) │  └─────────────────┘  │    - scserver-commands  │   │
-│  └────────────┘                       │      (encode + decode)  │   │
+│  │ (download) │  └─────────────────┘  │    - osc-js decode      │   │
+│  └────────────┘                       │      + clock /tr mux    │   │
 │  ┌────────────┐  ┌─────────────────┐  │    - clock tick router  │   │
 │  │ Clock UI   │◄─┤ ClockController │◄─┤    - subscription table │   │
 │  └────────────┘  └─────────────────┘  │    - recording writers  │   │
@@ -155,26 +155,22 @@ export const DEFAULT_PARAMS: ClockParams = {
 
 ---
 
-## OSC runtime: `@sc-app/server-commands` (osc-js)
+## Workspace packages
 
-**Replaces the earlier wasm-bindgen runtime.** The Rust `scserver-commands`
-crate stays in `crates/` as a parity reference and potential future host,
-but the frontend no longer imports it. The runtime OSC layer is the
-local workspace package `packages/server-commands/` wrapping
-[`osc-js`](https://github.com/adzialocha/osc-js).
+The app is a yarn workspace with two local TS packages under
+`packages/`; the Rust crates that used to back them live in a
+sister repo at `git@github.com:nicmell/sc-crates.git` and are no
+longer referenced from this project.
 
-Why the swap:
-- **Command scheduling with sample-accurate timing** — scsynth honours
-  NTP timetags on OSC bundles, holding them in a priority queue until
-  the exact audio frame. The earlier typed bindings didn't model
-  bundles; osc-js's `Bundle` does. This is what makes Phase 12
-  recording start/stop land on deterministic sample boundaries.
-- **Simpler bundle budget** — the worker shed ~120 KB of jco glue and
-  ~220 KB of `scserver_commands.core.wasm`; the worker chunk shrank
-  from ~168 KB to ~32 KB.
-- **No wasm TLA race on the worker's send path** — osc-js is pure JS.
+### `@sc-app/server-commands` (OSC layer)
 
-Shape of the package surface:
+Wraps [`osc-js`](https://github.com/adzialocha/osc-js). scsynth
+honours NTP timetags on OSC bundles, queueing them internally and
+firing at the exact audio frame — this package exposes that
+primitive via `OSC.Bundle` + `tickToTimetag`, which is what
+Phase 12 recording start/stop uses for sample-accurate alignment.
+
+Shape of the surface:
 
 - **`OSC`** — the `osc-js` default export, re-exported as a named
   symbol. `new OSC.Message(address, ...args)` and `new OSC.Bundle(
@@ -214,6 +210,43 @@ WebSocket transport (`src/workers/transport.ts`) because the existing
 hook in the worker than as `osc.on('/tr', …)` with a secondary mux.
 Swap later if it buys enough.
 
+### `@sc-app/synthdef-compiler` (SynthDef compiler)
+
+Pure-TS compiler for the [SynthDef File Format v2][scgf] binary
+that scsynth accepts. Byte-identical output to sclang's compiler for
+every fixture in the test suite.
+
+[scgf]: https://doc.sccode.org/Reference/Synth-Definition-File-Format.html
+
+Three API layers — all produce the same SCgf v2 bytes:
+
+- **`synthdef(name, fn)`** (recommended) — sclang-style callback:
+
+  ```ts
+  const def = synthdef('sine', (g, { freq = 440, amp = 0.5 }) => {
+    const osc = g.SinOsc.ar(freq, 0);
+    g.Out.ar(0, g.mul(osc, amp));
+  });
+  ```
+
+  Controls are declared by the callback's second-argument
+  destructuring pattern. `ar(v)` / `ir(v)` wrappers override the
+  default control rate (kr). The `g` namespace exposes every
+  bundled UGen with positional `.ar()` / `.kr()` / `.ir()` methods
+  plus arithmetic helpers (`mul`, `add`, `neg`, …).
+
+- **Typed chainable builders** (`@sc-app/synthdef-compiler/builders`)
+  — one class per bundled UGen with arg-setter methods and a
+  `.build(def)` terminal. The composable primitive the sugar form
+  is built on.
+
+- **Low-level `SynthDef.addControl` / `addUgen`** — stringly-typed
+  direct API for programmatic construction outside a callback.
+
+Also exports `SynthDef.fromBytes` / `toJson` / `fromJson` for
+round-trip / inspection, and `lookupUgen` / `ugensByCategory` for
+the bundled registry (365 UGens shipped).
+
 ---
 
 ## Assumptions & Dependencies
@@ -225,24 +258,17 @@ Swap later if it buys enough.
   1 UDP datagram. The backend boots in two modes: native Tauri app (GUI
   shell) or standalone HTTP server (`sc-oscilloscope serve`) — same
   bridge code path.
-- **`scsynthdef-compiler`** (WASM component under `crates/`) — exported
-  TS surface via jco transpile: `core.SynthDef` resource (`new /
-  addControl(name, default, rate) → UgenInput / addUgen(className, rate,
-  inputs, numOutputs, specialIndex) → u32 / toBytes / toJson`),
-  `core.parseScgf(bytes)`, `core.registryJson()`, plus a typed `ugens`
-  interface. The 365 bundled UGens in the registry cover everything
-  this plan needs (`Impulse`, `PulseCount`, `SendTrig`, `Phasor`,
-  `BufWr`, `In`, `Out`, `SinOsc`, `SampleRate`, `A2K`, `DC`).
-- **`@sc-app/server-commands`** (workspace package in `packages/`) —
-  TS library wrapping `osc-js`. Replaces the earlier runtime use of
-  the `scserver-commands` crate. See the "OSC runtime" section above
-  for the surface. The `scserver-commands` Rust crate stays in
-  `crates/` as a parity reference but is no longer imported.
-- **Bundle budget.** One wasm component now loads in the main thread
-  at startup: `scsynthdef_compiler.core.wasm` ~840 KB (gzipped
-  ~200 KB) + jco JS glue. Can be initialised lazily on first
-  `compile*SynthDef()` call. The OSC runtime (osc-js) is pure JS,
-  ~6 KB gzipped, always loaded.
+- **`@sc-app/server-commands`** (workspace package) — osc-js-based
+  OSC layer; see the Workspace Packages section above.
+- **`@sc-app/synthdef-compiler`** (workspace package) — pure-TS
+  SynthDef compiler; see the Workspace Packages section above. The
+  365 bundled UGens cover everything this plan needs (`Impulse`,
+  `PulseCount`, `SendTrig`, `Phasor`, `BufWr`, `In`, `Out`,
+  `SinOsc`, `SampleRate`, `A2K`, `DC`).
+- **Bundle budget.** Both packages are pure JS. `osc-js` is ~6 KB
+  gzipped; `@sc-app/synthdef-compiler` ships the UGen registry
+  (~250 KB source) that gets tree-shaken to the callers'
+  actually-used UGens by Vite. No wasm in the main or worker chunks.
 - **Vite** + TypeScript strict mode.
 - **Framework-agnostic UI** in this plan. Code uses plain DOM helpers; porting to React/Solid/Svelte is a wrapper exercise.
 - **No filesystem writes.** Recordings accumulate as bytes in the
@@ -259,6 +285,28 @@ Swap later if it buys enough.
 Final structure after all phases:
 
 ```
+packages/                             # yarn workspace — pure-TS libs
+  server-commands/                    # osc-js-based OSC layer
+    src/
+      index.ts
+      encode.ts                      # bytes ↔ OSC.Message / OSC.Bundle
+      timetag.ts                     # immediate / atDate / inFuture / tickToTimetag
+      types.ts                       # OscArg, ControlKey, ControlValue
+      replies.ts                     # Tr / Synced / Fail / StatusReply / …
+      commands/                      # per-category message constructors
+        {node,group,synthdef,buffer,control,misc}.ts
+  synthdef-compiler/                  # SCgf v2 compiler (pure TS)
+    src/
+      index.ts
+      synthdef.ts                    # SynthDef class + parseScgf
+      rate.ts, operators.ts, registry.ts, ugen-input.ts, error.ts
+      sugar/                          # `synthdef(name, fn)` callback form
+        {synthdef,controls,graph,parse-fn,graph.types}.ts
+      builders/                      # typed chainable builders (365 UGens)
+      specs/                          # UGen registry data
+    tests/                            # vitest suite (41 tests)
+    examples/node/sclang_parity.ts   # optional sclang byte-diff harness
+
 src-tauri/                            # Phase 0 — Rust backend
   Cargo.toml
   tauri.conf.json
@@ -270,23 +318,23 @@ src-tauri/                            # Phase 0 — Rust backend
       mod.rs                         # Hyper HTTP: static assets + SPA fallback + /ws upgrade
       ws_bridge.rs                   # WebSocket ↔ UDP bridge (tokio)
 
-src/
+src/                                  # app frontend (React)
   config/
     clockConfig.ts                   # ClockParams, deriveClock, defaults
   workers/
     scopeWorker.ts                   # Vite ?worker entry
+    workerBootstrap.ts               # pre-import buffer + osc-js window shim
     transport.ts                     # WS wrapper (worker-internal)
     subscriptionTable.ts             # scope + recording subscription registry
     wavWriter.ts                     # in-memory WAV encoder (worker-side)
   scope/
     AppShell.tsx                     # connect ↔ dashboard orchestration (React)
-    cmd.ts                           # typed command helpers (sNew, nFree, …)
-    workerProtocol.ts                # typed main ↔ worker messages
+    workerProtocol.ts                # main ↔ worker message shapes
     WorkerClient.ts                  # main-thread wrapper around Worker
     IdAllocator.ts                   # node / buffer / bus ID counters
     SynthDefRegistry.ts              # tracks loaded SynthDefs
     GroupController.ts               # parent group lifecycle
-    ClockController.ts               # extends GroupController; owns clock synth
+    ClockController.ts               # composes GroupController; owns clock synth
     ScopeController.ts               # one per scope
     ScopeManager.ts                  # collection of scopes
     ScopeRenderer.ts                 # canvas RAF loop
@@ -295,33 +343,22 @@ src/
     RecordingController.ts           # one per recording
     RecordingManager.ts              # collection of recordings
     download.ts                      # Blob → download link helper
-  synth/
+  synth/                              # per-SynthDef compile + cache
     clockSynthDef.ts                 # globalClock
     scopeSynthDef.ts                 # scopeTap
     recorderSynthDef.ts              # recorderTap
     testToneSynthDef.ts              # dev: sine on a bus
     testToneStereoSynthDef.ts        # dev: asymmetric stereo
     phaseProbeSynthDef.ts            # dev: reads clockBus via SendTrig
-    silentTestSynthDef.ts            # dev: heartbeat via SendTrig
-  ui/
+    noopSynthDef.ts                  # dev: /d_recv smoke-test stub
+  ui/                                 # React components
     ConnectScreen/                   # initial scsynth-address form (Phase 1)
-      ConnectScreen.tsx
-      ConnectScreen.scss
-      index.ts
-    OscConsole/                      # dev: raw byte / typed command console
-      OscConsole.tsx
-      OscConsole.scss
-      index.ts
-    SynthDefPanel.tsx                # dev: load synthdefs button
-    PhaseProbePanel.tsx              # dev: clockBus readout
-    ScopePokerPanel.tsx              # dev: manual /b_getn
-    ScopeDebugPanel.tsx              # dev: chunk numeric readout
-    ClockPanel.tsx                   # Start/Stop + tick + elapsed
-    ScopeView.tsx                    # one canvas + header
-    ScopeList.tsx                    # add/remove scopes
-    RecordingPanel.tsx               # recording controls + progress
-    styles.css
-  main.ts                            # boots AppShell — AppShell mounts the rest
+    OscConsole/                      # dev: OSC message console
+    DebugLog/                        # dev: captured console output
+    SynthDefPanel/                   # dev: load synthdefs button
+    ClockPanel/                      # Start/Stop + tick + elapsed
+    RecordingPanel/                  # recording controls + progress
+  main.tsx                           # React root — boots AppShell
 ```
 
 Files prefixed `dev:` should be gated behind a `?debug` URL flag or a `VITE_DEBUG=1` env flag.
@@ -715,137 +752,126 @@ export class WorkerClient {
 - `src/scope/WorkerClient.ts` — typed API
 - `src/ui/OscConsole.ts` — structured form UI
 
-### `workerProtocol.ts` (typed)
+### `workerProtocol.ts` (as landed after the osc-js migration)
 
-Types come from the jco-transpiled crate under `crates/scserver-commands/pkg/`
-via the `@wasm/scserver-commands` Vite alias (set up in `vite.config.ts`;
-see "Build pipeline" below). A `log` channel is added so worker-side
-`console.*` calls cross the postMessage boundary into the main-thread
-on-screen debug log.
+The main thread constructs `OSC.Message` / `OSC.Bundle` via
+`@sc-app/server-commands` and encodes to bytes locally. The worker
+only transports bytes and decodes inbound replies. `OSC.Message`'s
+prototype doesn't survive `postMessage`'s structured clone, so
+inbound replies are flattened to plain `{ address, args }` POJOs
+(`OscReply`) before posting to main.
 
 ```ts
-import type { ServerMessage } from '@wasm/scserver-commands/interfaces/scserver-commands-commands';
-import type { ServerReply } from '@wasm/scserver-commands/interfaces/scserver-commands-replies';
+import type { OscArg } from '@sc-app/server-commands';
+
+export interface OscReply {
+  address: string;
+  args: ReadonlyArray<OscArg>;
+}
+
+export interface ClockTick {
+  tickIndex: number;
+  receivedAt: number;
+}
 
 export type MainToWorker =
   | { type: 'connect'; url: string }
   | { type: 'disconnect' }
-  | { type: 'command'; command: ServerMessage };
+  | { type: 'send'; bytes: Uint8Array }
+  | { type: 'registerClock'; trigId: number }
+  | { type: 'unregisterClock' };
 
 export type WorkerToMain =
   | { type: 'ready' }
   | { type: 'error'; message: string }
-  | { type: 'reply'; reply: ServerReply }
+  | { type: 'reply'; reply: OscReply }
+  | { type: 'clockTick'; tick: ClockTick }
   | { type: 'log'; level: 'log' | 'info' | 'warn' | 'error'; message: string };
 ```
 
 ### Worker changes
 
-On `command`: `transport.send(commands.encode(command))`. On incoming
-bytes: try `replies.decode(bytes)` → `reply`; on failure post `error`,
-don't crash. `decode` is tolerant — unknown reply addresses round-trip
-through `ServerReply.Other { address, args }` rather than throwing.
+On `send`: `transport.send(msg.bytes)`. On incoming bytes:
+`decode(bytes)` from `@sc-app/server-commands`, flatten bundles,
+dispatch clock-tagged `/tr` to `clockTick` (gated by a registered
+trigId), post everything else as `reply`. Decode failures surface
+as `error` events; the stream keeps flowing.
 
-**Race fix for wasm TLA init** — jco's transpiled module uses a
-module-level `await $init`. ESM evaluates imports in dependency order
-before any top-level code, so `self.addEventListener('message', …)` in
-`scopeWorker.ts` only runs *after* the wasm bootstrap resolves. If the
-main thread posts `connect` immediately after `new Worker(...)`, that
+**Race fix for async module worker init** — module workers resolve
+their import graph asynchronously, so `self.addEventListener('message', …)`
+in `scopeWorker.ts` only runs after all imports finish. If the main
+thread posts `connect` immediately after `new Worker(...)`, that
 message is delivered to an EventTarget with no listeners yet — and
-silently dropped. A small `src/workers/workerBootstrap.ts` module with
-zero imports registers a synchronous buffering listener during its own
-evaluation phase (which runs first); the main worker module calls
-`setWorkerMessageHandler(real)` after init, draining the buffer in
-order.
+silently dropped. A small `src/workers/workerBootstrap.ts` module
+with zero imports registers a synchronous buffering listener during
+its own evaluation phase (which runs first); the main worker module
+calls `setWorkerMessageHandler(real)` after the rest of its imports
+resolve, draining the buffer in order. The same bootstrap aliases
+`globalThis.window = globalThis` so osc-js's `typeof global !==
+'undefined' ? global : window` lookup resolves in the Worker scope.
 
-A companion `src/workers/workerConsoleBridge.ts` (also pre-TLA)
-forwards `console.*` calls to the main thread via the new `log`
-protocol channel, so the on-screen debug log surfaces worker
-diagnostics even before wasm init completes.
+A companion `src/workers/workerConsoleBridge.ts` forwards
+`console.*` calls to the main thread via the `log` protocol
+channel, so the on-screen debug log surfaces worker diagnostics
+before the worker is fully wired up.
 
 ### `WorkerClient` changes
 
 ```ts
-sendCommand(cmd: ServerMessage): void;
-onReply(cb: (reply: ServerReply) => void): () => void;
+sendCommand(packet: OscPacket): void;
+onReply(cb: (reply: OscReply) => void): () => void;
 
 // Correlation-free probe: await the first reply matching a predicate.
 // Used for one-shot queries like Status → StatusReply.
 async sendAndAwaitReply(
-  cmd: ServerMessage,
-  match: (reply: ServerReply) => boolean,
+  packet: OscPacket,
+  match: (reply: OscReply) => boolean,
   timeoutMs?: number,
-): Promise<ServerReply>;
+): Promise<OscReply>;
 
-// Primary correlation helper: send cmd, post a separate /sync, resolve
-// on the matching /synced.
-async sendAndSync(cmd: ServerMessage, timeoutMs?: number): Promise<void>;
+// Primary correlation helper: send the packet, post a separate /sync,
+// resolve on the matching /synced.
+async sendAndSync(packet: OscPacket, timeoutMs?: number): Promise<void>;
 
 // Atomic variant — the command itself embeds the /sync (e.g. /d_recv's
 // `completionMsg` field) so the server runs the sync *after* the async
 // op completes, no race. Used by SynthDefRegistry (Phase 3) and the
 // buffer-alloc flows (Phase 7+).
 async sendCommandAndAwaitSync(
-  buildCmd: (syncId: number) => ServerMessage,
+  buildPacket: (syncId: number) => OscPacket,
   timeoutMs?: number,
 ): Promise<void>;
 ```
 
-All three match the typed `Synced` variant (see Crate Prerequisites).
-The status probe in `AppShell.onConnect` uses `sendAndAwaitReply(cmd.status,
-r => r.tag === 'status-reply', 1000)`. SynthDef loading uses
-`sendCommandAndAwaitSync`.
+The status probe in `AppShell.onConnect` uses
+`sendAndAwaitReply(status(), r => r.address === '/status.reply', 1000)`.
+SynthDef loading uses `sendCommandAndAwaitSync`.
 
 ### Thin command helpers
 
-Constructing `{ tag: 's-new', val: { defName, nodeId, addAction, targetId, tail: [...] } }` for every call is verbose. A small `src/scope/cmd.ts` module
-exports named constructors the rest of the app uses — typed on top of
-the jco-generated `ServerMessage`:
+Per-address constructors live in `@sc-app/server-commands/commands/*.ts`;
+callers import what they need:
 
 ```ts
-import type { ServerMessage } from '@sc-app/scserver-commands-pkg/interfaces/scserver-commands-commands';
-import type { ControlId, ControlValue } from '@sc-app/scserver-commands-pkg/interfaces/scserver-commands-commands';
+import { sNew, nRun, nFree, gFreeAll, AddToHead, status } from '@sc-app/server-commands';
 
-export const AddToHead = 0;
-export const AddToTail = 1;
+// sNew(defName, nodeId, addAction, targetId, controls?)
+const m = sNew('sine', 1001, AddToHead, 100, { freq: 440, amp: 0.5 });
+client.sendCommand(m);
 
-const ctrl = (name: string): ControlId => ({ tag: 'name', val: name });
-const asCtrlVal = (v: number): ControlValue =>
-  Number.isInteger(v) ? { tag: 'int', val: v } : { tag: 'float', val: v };
+// Variadic / positional for the simple cases.
+client.sendCommand(nRun([1001, 1]));
+client.sendCommand(nFree(1001));
+client.sendCommand(gFreeAll(100));
 
-export const sNew = (
-  defName: string, nodeId: number, addAction: number, targetId: number,
-  controls: Record<string, number> = {},
-): ServerMessage => ({
-  tag: 's-new',
-  val: {
-    defName, nodeId, addAction, targetId,
-    tail: Object.entries(controls).map(([k, v]) => [ctrl(k), asCtrlVal(v)] as const),
-  },
-});
-
-export const nRun   = (nodeId: number, flag: 0 | 1): ServerMessage =>
-  ({ tag: 'n-run',   val: { tail: [[nodeId, flag]] } });
-export const nFree  = (...nodeIds: number[]): ServerMessage =>
-  ({ tag: 'n-free',  val: { nodeIds } });
-export const gFreeAll = (...groupIds: number[]): ServerMessage =>
-  ({ tag: 'g-free-all', val: { groupIds } });
-export const bAlloc = (bufnum: number, numFrames: number, numChannels = 1): ServerMessage =>
-  ({ tag: 'b-alloc', val: { bufnum, numFrames, numChannels } });
-export const bFree  = (bufnum: number): ServerMessage =>
-  ({ tag: 'b-free',  val: { bufnum } });
-export const bGetn  = (bufnum: number, start: number, count: number): ServerMessage =>
-  ({ tag: 'b-getn',  val: { bufnum, tail: [[start, count]] } });
-export const gNew   = (newId: number, addAction: number, targetId: number): ServerMessage =>
-  ({ tag: 'g-new',   val: { tail: [[newId, addAction, targetId]] } });
-export const status: ServerMessage = { tag: 'status' };
-export const sync   = (id: number): ServerMessage =>
-  ({ tag: 'sync',    val: { aUniqueNumber: id } });
-export const dRecv  = (bytes: Uint8Array, completionMsg?: Uint8Array): ServerMessage =>
-  ({ tag: 'd-recv',  val: { bufferOfData: bytes, completionMsg } });
+// Scheduled via OSC bundle.
+import OSC, { inFuture } from '@sc-app/server-commands';
+client.sendCommand(new OSC.Bundle([sNew(…)], inFuture(200)));
 ```
 
-Now the whole plan uses readable constructors: `client.sendCommand(sNew('sine', 1001, AddToHead, 100, { freq: 440 }))`.
+Constructors live in `commands/{node,group,synthdef,buffer,control,misc}.ts`
+and re-export through the package barrel. Each returns a configured
+`OSC.Message`; bundles are regular `OSC.Bundle` instances.
 
 ### `OscConsole` upgraded
 
@@ -855,25 +881,16 @@ with buttons: **Status**, **DumpOSC on**, **DumpOSC off**, **QueryTree(0)**,
 `ServerReply` variant (`status-reply` shows ugens/synths/CPU; `b-setn`
 shows bufnum/start/count; `synced` shows the sync id; etc.).
 
-### Build pipeline (added in Phase 2)
+### Build pipeline (as landed)
 
-- Root `package.json` script `build:wasm` chains `build:wasm:scserver-commands`
-  (and `build:wasm:scsynthdef-compiler` once Phase 3 brings it online). Each
-  runs `cargo component build --release --features component --target
-  wasm32-wasip1` and `jco transpile … -o pkg`. jco's output lives at
-  the crate root `pkg/` (gitignored; regenerated on demand).
-- `vite.config.ts` aliases `@wasm/scserver-commands` → the crate's
-  `pkg/scserver_commands.js`, plus a `@wasm/scserver-commands/…`
-  sub-path form. Tsconfig mirrors with `paths`.
-- `worker.format: "es"` + `build.target: "es2022"` — jco's generated
-  module worker has multiple chunks (ESM code-split requirement) and a
-  module-level `await $init` (TLA needs at least ES2022).
-- Explicit alias to pin every `@bytecodealliance/preview2-shim/*`
-  import to the *browser* branch — the package's export map otherwise
-  resolves `node:fs/promises` in Vite, which crashes the worker at
-  init.
-- `@bytecodealliance/preview2-shim` is a direct dep so Vite's
-  resolution pipeline sees it deterministically.
+- Both packages resolve to their TS sources via workspace aliases in
+  `vite.config.ts` (`@sc-app/server-commands` →
+  `packages/server-commands/src/index.ts`, same for
+  `@sc-app/synthdef-compiler`). Tsconfig mirrors with `paths`. No
+  pre-build step — Vite transpiles TS on the fly.
+- `worker.format: "es"` + `build.target: "es2022"` — module workers
+  need ES2022 for full syntax support; `es` format lets Vite
+  code-split the worker bundle.
 
 ### On-screen debug log (added in Phase 2)
 
@@ -979,22 +996,12 @@ ugens.sinOsc(def, 'audio', { freq: k(220) });          // phase → 0 (registry)
 ugens.out(def, 'audio', { bus: k(0), channelsArray: [osc] });
 ```
 
-Housekeeping (post-Phase 3):
-- `Rate::parse` in `src/rate.rs` now only admits the SC short forms
-  `ar` / `kr` / `ir`. The long-form `audio` / `control` / `scalar`
-  strings are no longer accepted Rust-side.
-- The per-category UGen registry tables moved from `src/ugens/*.rs`
-  to `src/specs/*.rs` (same module API via `mod specs`); the generator
-  `scripts/generate_ugens_component.mjs` now reads the new path.
-  `registry.rs` imports `crate::specs` instead of `crate::ugens`.
-
-### Build pipeline (extended from Phase 2)
-
-- `yarn build:wasm` now chains `build:wasm:scserver-commands` *and*
-  `build:wasm:scsynthdef-compiler`.
-- `vite.config.ts` adds the `@wasm/scsynthdef-compiler` alias plus
-  sub-path variant, mirroring the scserver-commands setup. Tsconfig
-  paths follow.
+Later ports (superseded during the jco → TS migration):
+- The SynthDef compiler was re-implemented in pure TypeScript as
+  `@sc-app/synthdef-compiler` (workspace package). `noopSynthDef.ts`
+  and `clockSynthDef.ts` now use the `synthdef(name, (g, …) => …)`
+  sugar form; the wasm component, jco glue, and `@wasm/*` aliases
+  are gone.
 
 ### Files
 
@@ -1006,31 +1013,28 @@ Housekeeping (post-Phase 3):
 
 ### `noopSynthDef.ts`
 
-Trivial graph: `Out.ar(0, DC.ar(0))`. Compiled once via the typed
-`ugens` interface (not the stringly-typed `core.SynthDef.addUgen`);
-result cached at module scope so subsequent calls are free.
+Trivial graph: `Out.ar(0, DC.ar(0))`. Compiled once via the
+`synthdef(name, fn)` sugar form; result cached at module scope so
+subsequent calls are free.
 
 ```ts
-import { core, ugens } from '@wasm/scsynthdef-compiler';
-import type { UgenInput } from '@wasm/scsynthdef-compiler/interfaces/scsynthdef-compiler-core';
-
-const k = (v: number): UgenInput => ({ tag: 'constant', val: v });
+import { synthdef } from '@sc-app/synthdef-compiler';
 
 let cached: Uint8Array | null = null;
 
 export function compileNoopSynthDef(): Uint8Array {
   if (cached) return cached;
-  const def = new core.SynthDef('noop');
-  const dc = ugens.dc(def, 'audio', { in: k(0) });
-  ugens.out(def, 'audio', { bus: k(0), channelsArray: [dc] });
+  const def = synthdef('noop', (g) => {
+    g.Out.ar(0, g.DC.ar(0));
+  });
   cached = def.toBytes();
   return cached;
 }
 ```
 
-Every subsequent `src/synth/*.ts` follows the same pattern — module-scope
-cached, typed per-UGen calls. The 365-UGen catalogue covers everything
-the plan needs.
+Every subsequent `src/synth/*.ts` follows the same pattern —
+module-scope cached, `synthdef` sugar body. The 365-UGen catalogue
+covers everything the plan needs.
 
 ### `SynthDefRegistry.ts`
 
@@ -2193,13 +2197,16 @@ is reloaded.
 
 1. **Crate type surfaces — resolved.** See "Crate Prerequisites" for the
    two typed reply variants (`BSetn`, `Synced`) to add before starting.
-   The command side is fully typed via `ServerMessage`; UGens in the
-   plan (`Impulse`, `PulseCount`, `SendTrig`, `Phasor`, `BufWr`, `In`,
-   `Out`, `SinOsc`, `SampleRate`, `A2K`, `DC`) all exist in the 365-UGen
-   catalogue baked into `scsynthdef-compiler`.
-2. **`/b_setn` payload — resolved by typed variant.** With the typed
-   `BSetn` variant in place, jco lifts `samples: list<f32>` as
-   `Float32Array` directly — one memcpy, no per-sample boxing.
+   The command side is the osc-js-based `@sc-app/server-commands`;
+   UGens in the plan (`Impulse`, `PulseCount`, `SendTrig`, `Phasor`,
+   `BufWr`, `In`, `Out`, `SinOsc`, `SampleRate`, `A2K`, `DC`) all
+   exist in the 365-UGen catalogue baked into
+   `@sc-app/synthdef-compiler`.
+2. **`/b_setn` payload — resolved by `BSetnReply.samples` helper.**
+   osc-js lifts the message as `{ address, args }` with args
+   numbers; the reply accessor `BSetnReply.samples(msg)` copies
+   into a `Float32Array` once at decode time, avoiding per-sample
+   boxing in hot paths downstream.
 3. **Reply correlation for `b-getn`** — scsynth matches replies by bufnum, not by explicit request id. The "one read in flight per bufnum" invariant is what makes this safe; the worker enforces it. Dev-only assertion recommended.
 4. **Parent group ID.** Hardcoded 100 in examples; promote to `IdAllocator` allocation (e.g. base 100, one group per app instance).
 5. **Clock bus ID.** Allocated from `ids.bus`; starts at 32 to skip hardware-reserved buses. Confirm against scsynth boot config.
@@ -2221,17 +2228,16 @@ is reloaded.
 
 ## Milestone Summary
 
-Both `scserver-commands` and `scsynthdef-compiler` are already
-implemented and tested (typed encode/decode, SynthDef builder, jco
-bindings, parity harness against sclang). This eliminates the largest
-sources of risk the original plan was sized for — no typed-variant
-bring-up, no SynthDef wire-format debugging, no stringly-typed guess-
-work. Estimates below reflect that.
+Both `@sc-app/server-commands` and `@sc-app/synthdef-compiler` are
+already implemented and tested (OSC encode/decode + bundle/timetag
+support, SynthDef builder + sugar API, parity harness against
+sclang). This eliminates the largest sources of risk the original
+plan was sized for — no encoder/decoder bring-up, no SynthDef
+wire-format debugging. Estimates below reflect that.
 
 | Phase | What ships | Duration |
 |---|---|---|
 | 0 | Tauri skeleton + WS↔UDP bridge (per-session scsynth) + `serve` CLI | 1 day |
-| — | **Crate prerequisites** (`BSetn` + `Synced` reply variants) | ¼ day |
 | 1 | Connect Screen + Worker transport + OSC console (bytes) | ½ day |
 | 2 | Typed command/reply proxy + `cmd.ts` helpers + `sendAndSync` | ½ day |
 | 3 | SynthDef compile via `core.SynthDef`, registry + `/d_recv` correlation | ¼ day |

@@ -25,10 +25,13 @@
     "paths": {
       "@/*": ["src/*"],
       "@sc-app/server-commands": ["packages/server-commands/src/index.ts"],
-      "@wasm/scsynthdef-compiler": ["crates/scsynthdef-compiler/pkg/scsynthdef_compiler.d.ts"],
-      "@wasm/scsynthdef-compiler/*": ["crates/scsynthdef-compiler/pkg/*"]
+      "@sc-app/synthdef-compiler": ["packages/synthdef-compiler/src/index.ts"]
     }
   },
-  "include": ["src", "packages/server-commands/src"],
+  "include": [
+    "src",
+    "packages/server-commands/src",
+    "packages/synthdef-compiler/src"
+  ],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

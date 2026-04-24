@@ -11,13 +11,11 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "serve": "cargo run --manifest-path src-tauri/Cargo.toml -- serve",
-    "build:wasm": "yarn build:wasm:scsynthdef-compiler",
-    "build:wasm:scsynthdef-compiler": "cd crates/scsynthdef-compiler && cargo component build --release --features component --target wasm32-wasip1 && jco transpile target/wasm32-wasip1/release/scsynthdef_compiler.wasm -o pkg"
+    "serve": "cargo run --manifest-path src-tauri/Cargo.toml -- serve"
   },
   "dependencies": {
-    "@bytecodealliance/preview2-shim": "^0.17.9",
     "@sc-app/server-commands": "workspace:*",
+    "@sc-app/synthdef-compiler": "workspace:*",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
     "osc-js": "^2.4.1",
@@ -25,7 +23,6 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@bytecodealliance/jco": "^1.19.0",
     "@tauri-apps/cli": "^2",
     "@types/node": "^25.6.0",
     "@types/react": "^18.3.1",

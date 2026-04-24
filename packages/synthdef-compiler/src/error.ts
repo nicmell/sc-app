@@ -1,6 +1,6 @@
 /**
- * Errors surfaced by the SynthDef compiler. Mirrors the Rust crate's
- * `CompileError` enum as a single class with a discriminated `kind`.
+ * Error class thrown by the SynthDef compiler (unknown UGen names,
+ * rate mismatches, malformed SCgf bytes).
  */
 export class CompileError extends Error {
   constructor(message: string) {

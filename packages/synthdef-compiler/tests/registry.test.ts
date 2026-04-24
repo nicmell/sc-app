@@ -1,4 +1,4 @@
-// Ported from crates/scsynthdef-compiler/src/registry.rs `#[cfg(test)] mod tests`.
+// Registry invariants: slice sortedness, presence of common UGens.
 
 import { expect, test } from 'vitest';
 

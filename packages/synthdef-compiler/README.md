@@ -1,23 +1,27 @@
 # @sc-app/synthdef-compiler
 
-Pure TypeScript port of `crates/scsynthdef-compiler`. Compiles `.scsyndef`
-bytes in the [SuperCollider SynthDef File Format v2][spec] that scsynth
-accepts, and parses them back. Byte-for-byte identical output to sclang's
-compiler for every bundled UGen.
+Pure TypeScript SynthDef compiler for
+[SuperCollider](https://supercollider.github.io/). Emits the
+[SynthDef File Format v2][spec] binary that `scsynth` accepts, parses
+it back, and ships a typed builder per bundled UGen. Byte-identical
+output to `sclang`'s own compiler for every fixture in the test suite.
 
 [spec]: https://doc.sccode.org/Reference/Synth-Definition-File-Format.html
 
-## Layers
+## Install
 
-- **`SynthDef`** — the builder / reader. `toBytes` / `fromBytes` /
-  `toJson` / `fromJson` cover the four round-trip entry points.
-- **`builders/*`** — a typed class per bundled UGen (365 total),
-  generated from the Rust crate's builder sources. Each class exposes
-  `ar()` / `kr()` / `ir()` static constructors (only those rates the
-  UGen supports), setter methods per arg (with JSDoc from the source
-  catalogue), and `build(def): UGenInput`.
-- **`lookupUgen` + `ugensByCategory`** — registry access for
-  documentation browsers.
+Workspace-local — referenced from the host app via
+`"@sc-app/synthdef-compiler": "workspace:*"`.
+
+## Three API layers
+
+- **`synthdef(name, fn)`** — sclang-style callback form (recommended).
+- **`SynthDef` + `builders/*`** — typed chainable builders, one class
+  per bundled UGen (365 shipped).
+- **`SynthDef.addControl` / `addUgen`** — low-level stringly-typed
+  API for programmatic graph construction.
+
+All three produce the same SCgf v2 bytes.
 
 ## Usage
 
@@ -70,7 +74,7 @@ This lower-level API threads `def` explicitly and is the composable
 primitive the sclang-style wrapper is built on top of. Use it when you
 want to construct graphs programmatically outside a callback.
 
-Round-trip a compiled binary back into a `SynthDef` for inspection:
+### Round-trip / inspection
 
 ```ts
 import { SynthDef } from '@sc-app/synthdef-compiler';
@@ -80,7 +84,7 @@ const json = def.toJson();          // for diffs / debugging
 const back = SynthDef.fromJson(json);
 ```
 
-Introspect the bundled UGen catalogue (365 UGens shipped):
+### UGen catalogue access
 
 ```ts
 import { lookupUgen, ugensByCategory } from '@sc-app/synthdef-compiler';
@@ -93,8 +97,8 @@ for (const [category, ugens] of ugensByCategory()) {
 }
 ```
 
-For callers who prefer the string-addressable low-level API, `SynthDef`
-also exposes `addUgen(className, rate, inputs, numOutputs, specialIndex)`
+For callers who prefer the stringly-typed low-level API, `SynthDef`
+exposes `addUgen(className, rate, inputs, numOutputs, specialIndex)`
 and `addControl(name, default, rate)` directly.
 
 ## Tests
@@ -103,34 +107,20 @@ and `addControl(name, default, rate)` directly.
 yarn workspace @sc-app/synthdef-compiler test
 ```
 
-41 tests cover: low-level builder, typed-builder parity with low-level
-path, JSON round-trip, SCgf byte round-trip, operator tables, registry
-invariants, `fn.toString()` parser edge cases, `synthdef()` sugar byte
-parity against the low-level path, control-rate wrappers, operator
+Tests cover: low-level builder, typed-builder parity with the
+low-level path, JSON round-trip, SCgf byte round-trip, operator
+tables, registry invariants, `fn.toString()` parser edge cases,
+`synthdef()` sugar byte parity, control-rate wrappers, operator
 helpers, and three fixture graphs (`sine`, `sc_test_recorder`,
-`global_clock_phase`) that mirror the Rust crate's parity harness.
+`global_clock_phase`).
 
 ## sclang parity
 
-If sclang is on `$PATH`, the parity harness runs the same three fixtures
+If sclang is on `$PATH`, the parity harness runs the three fixtures
 through sclang and byte-diffs the result:
 
 ```bash
 yarn workspace @sc-app/synthdef-compiler parity
 ```
 
-Equivalent to `cargo run --example sclang_parity` in the Rust crate.
-
-## Regeneration
-
-`src/specs/*.ts`, `src/builders/*.ts`, and `src/sugar/graph.types.ts`
-are all generated. To refresh them after a Rust-side catalogue update:
-
-```bash
-yarn workspace @sc-app/synthdef-compiler generate
-```
-
-The scripts under `scripts/` parse
-`crates/scsynthdef-compiler/src/{specs,builders}/*.rs` and emit matching
-TypeScript, then read the generated specs to emit the typed `Graph`
-interface used by `synthdef()`. No runtime dependency on the Rust crate.
+Skips cleanly if sclang isn't installed.

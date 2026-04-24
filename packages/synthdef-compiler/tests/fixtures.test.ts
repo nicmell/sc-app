@@ -1,5 +1,5 @@
 // Byte-parity between typed builders and the low-level addUgen path for
-// the three fixtures shared with the Rust crate's `sclang_parity.rs`.
+// the three fixtures in the fixture set.
 // This doesn't need sclang — it proves the generated builders produce
 // the exact same bytes as the hand-assembled reference graphs.
 

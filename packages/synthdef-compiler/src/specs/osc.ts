@@ -1,6 +1,6 @@
 // @generated — DO NOT EDIT. Regenerate with scripts/generate_specs.mjs.
 //
-// Ported from crates/scsynthdef-compiler/src/specs/osc.rs.
+// Auto-generated UGen spec data — one file per source category.
 
 import { UGenRegistryEntry } from '../registry.js';
 

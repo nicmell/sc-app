@@ -1,8 +1,8 @@
 #!/usr/bin/env tsx
-// Parity harness mirroring crates/scsynthdef-compiler/examples/sclang_parity.rs.
-// Builds the three fixtures (sine, sc_test_recorder, global_clock_phase) via
-// the typed `builders/*` API and byte-diffs the output against sclang's
-// SCgf v2 encoder. Skips cleanly if sclang is not on $PATH.
+// sclang parity harness. Builds the three fixtures (sine,
+// sc_test_recorder, global_clock_phase) via the typed `builders/*`
+// API and byte-diffs the output against sclang's SCgf v2 encoder.
+// Skips cleanly if sclang is not on $PATH.
 //
 // Usage:
 //     yarn parity

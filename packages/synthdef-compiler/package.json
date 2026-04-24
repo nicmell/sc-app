@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "SuperCollider SynthDef (SCgf v2) compiler in pure TypeScript. TS port of crates/scsynthdef-compiler.",
+  "description": "Pure TypeScript SuperCollider SynthDef (SCgf v2) compiler.",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
@@ -14,10 +14,6 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "generate:specs": "node scripts/generate_specs.mjs",
-    "generate:builders": "node scripts/generate_builders.mjs",
-    "generate:graph-types": "node scripts/generate_graph_types.mjs",
-    "generate": "npm run generate:specs && npm run generate:builders && npm run generate:graph-types",
     "test": "vitest run",
     "test:watch": "vitest",
     "parity": "tsx examples/node/sclang_parity.ts",

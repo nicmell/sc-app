@@ -1,9 +1,8 @@
 /**
  * Binary/unary operator tables for BinaryOpUGen and UnaryOpUGen.
  *
- * Values are `specialIndex` indices used by scsynth to dispatch to the
- * correct operator implementation. Verbatim port of
- * `crates/scsynthdef-compiler/src/operators.rs`.
+ * Values are the `specialIndex` slot scsynth uses to dispatch to the
+ * correct operator implementation.
  */
 
 const BINARY_OPS: Record<string, number> = {

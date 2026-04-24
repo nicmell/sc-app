@@ -1,6 +1,6 @@
 // @generated — DO NOT EDIT. Regenerate with scripts/generate_builders.mjs.
 //
-// Ported from crates/scsynthdef-compiler/src/builders/mod.rs.
+// Auto-generated builders — one class per bundled UGen.
 
 export * from './basicops.js';
 export * from './beq_suite.js';

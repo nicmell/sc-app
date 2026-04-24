@@ -1,31 +1,30 @@
 /**
- * Pre-TLA bootstrap — imported FIRST in the worker entry (before the
- * jco wasm bindings, which use a module-level `await $init`).
+ * Worker bootstrap — imported FIRST in the worker entry. Two jobs,
+ * both executed synchronously during this module's evaluation so
+ * nothing else runs ahead of them:
  *
- * Why: when the main thread posts a `connect` message right after
- * `new Worker(...)`, the worker's wasm bootstrap is still in progress
- * (suspended at the top-level await). The `self.addEventListener(
- * 'message', …)` call only happens after `await $init` resolves, by
- * which time any early `postMessage`s have been delivered to an
- * EventTarget with no listeners — and silently discarded.
- * (Note: this is specific to `addEventListener`; the `self.onmessage`
- * property queues, but we use the event-listener form.)
+ * 1. **Message buffer.** When the main thread posts messages right
+ *    after `new Worker(...)`, the worker's module graph may still be
+ *    loading (module workers resolve imports async). Listeners
+ *    registered later would miss those early events entirely, since
+ *    `addEventListener('message')` doesn't backfill. We install a
+ *    buffering listener here, then drain it once the real handler
+ *    is wired up by `setWorkerMessageHandler`.
  *
- * Fix: install a listener synchronously during this module's
- * evaluation. Since ESM evaluates imports in dependency order before
- * top-level code and this module has no imports, it runs first. The
- * listener buffers incoming messages until the real handler is wired
- * up by the main worker module, at which point it drains in order.
+ * 2. **`window` shim.** osc-js uses `typeof global !== 'undefined' ?
+ *    global : window` to locate runtime globals. In a Worker neither
+ *    `global` nor `window` is defined, so the lookup throws. Aliasing
+ *    `globalThis.window = globalThis` here — before any osc-js
+ *    import — lets that expression resolve cleanly. Workers expose
+ *    `TextDecoder` on the global scope already, which is all osc-js
+ *    actually needs from `window`.
+ *
+ * This module intentionally has no imports, so ESM evaluation order
+ * guarantees it runs before everything else in the worker.
  */
 
 import type { MainToWorker } from '../scope/workerProtocol';
 
-// osc-js has a helper that does `typeof global !== 'undefined' ? global
-// : window`, which in a Web Worker throws "Can't find variable: window"
-// (workers have `self`/`globalThis`, not `window`). Shim `window` to
-// `globalThis` before osc-js loads — the lookup then finds the worker
-// global scope, which has `TextDecoder` available as expected.
-// Must run before any import that pulls in osc-js.
 if (typeof (globalThis as { window?: unknown }).window === 'undefined') {
   (globalThis as { window?: unknown }).window = globalThis;
 }
@@ -45,15 +44,12 @@ self.addEventListener('message', (ev: MessageEvent<MainToWorker>) => {
 
 /**
  * Install the real message handler and replay any messages that
- * arrived during the pre-TLA window. Call exactly once from the
- * main worker module after initialisation.
+ * arrived while the worker was still loading. Call exactly once
+ * from the main worker module after initialisation.
  */
 export function setWorkerMessageHandler(handler: Handler): void {
   realHandler = handler;
   if (buffer.length > 0) {
-    // `postMessage` uses the 'log' channel too — console calls are now
-    // mirrored to the main thread, so this console.log surfaces in
-    // the on-screen debug log.
     console.log(`[sc:worker] draining ${buffer.length} buffered message(s)`);
   }
   const drained = buffer.splice(0);
