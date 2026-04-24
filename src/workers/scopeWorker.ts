@@ -96,12 +96,22 @@ const subsByScopeId = new Map<string, number /* bufnum */>();
  *  up as a vertical step inside an otherwise-smooth chunk. */
 function fireReads(tickIndex: number): void {
   if (!transport || subscriptions.size === 0) return;
-  // Phase 6 derivation: at tick N, scope's writeIdx is
-  //   (N % 2) * chunkSize
-  // …so the JUST-COMPLETED half starts at the OPPOSITE offset.
-  //   N odd  → just finished [0, chunkSize)            (offset 0)
-  //   N even → just finished [chunkSize, chunkSize*2)  (offset chunkSize)
-  const completedHalf = 1 - (tickIndex % 2); // 1 when N even, 0 when N odd
+  // `Impulse.kr(tickRate, 0)` fires at t=0 (tick 1, audio frame 0),
+  // then every `samplesPerTick` ar frames. So tick N fires at frame
+  // `(N-1) × samplesPerTick`, and the scope's `writeIdx` at that
+  // moment is `((N-1) × samplesPerTick / decimation) mod (chunkSize ×
+  // 2)` = `((N-1) % 2) × chunkSize`.
+  //
+  //   N=2 (even): writeIdx = chunkSize  → just finished [0, chunkSize)
+  //                                        — the FIRST half. Read offset 0.
+  //   N=3 (odd):  writeIdx = 0          → just finished [chunkSize, chunkSize×2)
+  //                                        — the SECOND half. Read offset chunkSize.
+  //
+  // So `completedHalf = tickIndex % 2`. Tick 1 reads offset chunkSize
+  // and lands on whatever was in the buffer at /b_alloc time
+  // (silence). That's expected — the first useful chunk arrives at
+  // tick 2.
+  const completedHalf = tickIndex % 2; // 0 when N even, 1 when N odd
   const fireAt = Date.now() + READ_DELAY_MS;
   for (const entry of subscriptions.values()) {
     const { bufnum, chunkSize, channels } = entry.sub;

@@ -1,0 +1,89 @@
+    25.887  log    [sc:app] handleConnect 127.0.0.1:57110
+    25.888  log    [sc:app] ws url ws://127.0.0.1:3000/ws?scsynth=127.0.0.1%3A57110
+    25.888  log    [sc:client] constructing WorkerClient ws://127.0.0.1:3000/ws?scsynth=127.0.0.1%3A57110
+    25.888  log    [sc:client] posting connect
+    25.902  log    [sc:worker] module loading …
+    25.903  log    [sc:worker] ready for messages
+    25.904  log    [sc:worker] main → worker connect
+    25.904  log    [sc:worker] creating transport ws://127.0.0.1:3000/ws?scsynth=127.0.0.1%3A57110
+    25.905  log    [sc:transport] opening ws ws://127.0.0.1:3000/ws?scsynth=127.0.0.1%3A57110
+    25.905  log    [sc:worker] awaiting ws open …
+    25.907  log    [sc:transport] ws open
+    25.907  log    [sc:worker] posting ready
+    25.907  log    [sc:client] ready ✓
+    25.907  log    [sc:app] running /status probe
+    25.907  log    [sc:worker] main → worker send
+    25.914  log    [sc:client] reply /status.reply
+    25.914  log    [sc:app] /status probe OK (sr=48000.16195445676)
+    25.914  log    [sc:app] enabling /notify
+    25.915  log    [sc:worker] main → worker send
+    25.921  log    [sc:client] reply /done
+    25.921  log    [sc:app] /notify enabled, clientId=0, maxLogins=64
+    25.922  warn   [sc:app] scsynth returned clientId=0; using fallback group 100
+    25.922  log    [sc:app] starting global clock in group 100, clockBus=32
+    25.924  log    [sc:worker] main → worker send
+    25.942  log    [sc:client] reply /done
+    25.953  log    [sc:client] reply /synced
+    25.954  log    [sc:worker] main → worker send
+    25.954  log    [sc:worker] main → worker send
+    25.963  log    [sc:client] reply /n_go
+    25.974  log    [sc:client] reply /synced
+    25.975  log    [sc:worker] main → worker registerClock
+    25.975  log    [sc:worker] registerClock 1000
+    25.975  log    [sc:worker] main → worker send
+    25.975  log    [sc:worker] main → worker send
+    25.985  log    [sc:client] reply /n_go
+    25.995  log    [sc:client] reply /synced
+    25.995  log    [sc:app] dashboard ready
+    35.852  log    [sc:worker] main → worker send
+    35.864  log    [sc:client] reply /done
+    35.873  log    [sc:client] reply /synced
+    35.874  log    [sc:worker] main → worker send
+    35.874  log    [sc:worker] main → worker send
+    35.883  log    [sc:client] reply /n_go
+    35.895  log    [sc:client] reply /synced
+    35.895  log    [sc:scope-test] started tone node=1001 bus=33 (440 Hz, amp 0.2)
+    36.925  log    [sc:worker] main → worker send
+    36.940  log    [sc:client] reply /done
+    36.950  log    [sc:client] reply /synced
+    36.951  log    [sc:worker] main → worker send
+    36.951  log    [sc:worker] main → worker send
+    36.972  log    [sc:client] reply /done
+    36.972  log    [sc:client] reply /synced
+    36.973  log    [sc:worker] main → worker send
+    36.973  log    [sc:worker] main → worker send
+    36.983  log    [sc:client] reply /n_go
+    36.993  log    [sc:client] reply /synced
+    36.993  log    [sc:scope-test] started scope node=1002 bufnum=1000 inBus=33 clockBus=32
+    38.506  log    [sc:scope-test] subscribed scopeId=ad7ae2c7-40bb-41c4-a076-ec89b5eb8bf7 bufnum=1000
+    38.517  log    [sc:worker] main → worker subscribeScope
+    38.518  log    [sc:worker] subscribeScope id=ad7ae2c7-40bb-41c4-a076-ec89b5eb8bf7 bufnum=1000 chunkSize=250 channels=1
+    38.553  log    [sc:scope-test] continuity tick=604 last4=[-0.149, -0.176, -0.193, -0.200] first4=[0.131, 0.162, 0.185, 0.197]
+    39.554  log    [sc:scope-test] continuity tick=652 last4=[-0.149, -0.176, -0.193, -0.200] first4=[0.131, 0.162, 0.185, 0.197]
+    40.561  log    [sc:scope-test] continuity tick=700 last4=[-0.149, -0.176, -0.193, -0.200] first4=[0.131, 0.162, 0.185, 0.197]
+    41.581  log    [sc:scope-test] continuity tick=749 last4=[-0.190, -0.171, -0.142, -0.107] first4=[0.196, 0.182, 0.159, 0.127]
+    42.596  log    [sc:scope-test] continuity tick=798 last4=[-0.041, 0.005, 0.050, 0.093] first4=[0.065, 0.020, -0.026, -0.070]
+    43.599  log    [sc:scope-test] continuity tick=846 last4=[-0.041, 0.005, 0.050, 0.093] first4=[0.065, 0.020, -0.026, -0.070]
+    44.620  log    [sc:scope-test] continuity tick=895 last4=[0.149, 0.175, 0.193, 0.200] first4=[-0.131, -0.162, -0.185, -0.197]
+    45.634  log    [sc:scope-test] continuity tick=944 last4=[0.190, 0.171, 0.143, 0.107] first4=[-0.196, -0.183, -0.159, -0.127]
+    46.637  log    [sc:scope-test] continuity tick=992 last4=[0.190, 0.171, 0.143, 0.107] first4=[-0.196, -0.183, -0.159, -0.127]
+    47.641  log    [sc:scope-test] continuity tick=1040 last4=[0.190, 0.171, 0.143, 0.107] first4=[-0.196, -0.183, -0.159, -0.127]
+    48.643  log    [sc:scope-test] continuity tick=1088 last4=[0.190, 0.171, 0.143, 0.107] first4=[-0.196, -0.183, -0.159, -0.127]
+    49.656  log    [sc:scope-test] continuity tick=1137 last4=[0.042, -0.004, -0.050, -0.093] first4=[-0.066, -0.021, 0.025, 0.070]
+    50.657  log    [sc:scope-test] continuity tick=1185 last4=[0.042, -0.004, -0.050, -0.093] first4=[-0.066, -0.021, 0.025, 0.070]
+    50.726  log    [sc:worker] main → worker unsubscribeScope
+    50.726  log    [sc:worker] unsubscribeScope id=ad7ae2c7-40bb-41c4-a076-ec89b5eb8bf7 bufnum=1000
+    50.727  log    [sc:worker] main → worker send
+    50.727  log    [sc:worker] main → worker send
+    50.727  log    [sc:client] reply /b_setn
+    50.732  log    [sc:client] reply /n_end
+    50.742  log    [sc:client] reply /synced
+    50.743  log    [sc:worker] main → worker send
+    50.743  log    [sc:worker] main → worker send
+    50.753  log    [sc:client] reply /n_end
+    50.764  log    [sc:client] reply /synced
+    50.765  log    [sc:worker] main → worker send
+    50.765  log    [sc:worker] main → worker send
+    50.785  log    [sc:client] reply /done
+    50.785  log    [sc:client] reply /synced
+    50.785  log    [sc:scope-test] stopped

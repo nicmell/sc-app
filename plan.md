@@ -1452,20 +1452,30 @@ BufWr.ar(sig, bufnum, phase);     // no mod / div needed
 
 ### Parity math (feeds Phase 8)
 
-At server audio frame `N × samplesPerTick` (= tick `N`, assuming tick 0
-aligned to frame 0):
+`Impulse.kr(tickRate, 0)` fires at **t=0** (tick 1 = audio frame 0),
+then every `samplesPerTick` ar frames. So tick `N` fires at frame
+`(N-1) × samplesPerTick`. At that moment:
 
-- clock phase = `(N mod 2) × samplesPerTick`
-- scope writeIdx = `((N mod 2) × samplesPerTick / decimation) mod
-  (scopeChunkSize × 2)` = `(N mod 2) × scopeChunkSize`
+- clock phase = `((N-1) × samplesPerTick) mod (2 × samplesPerTick) =
+  ((N-1) mod 2) × samplesPerTick`
+- scope writeIdx = `((N-1) % 2) × scopeChunkSize`
 
 So at tick `N`:
-- `N` even → `writeIdx = 0`; the second half (`[chunkSize,
-  chunkSize × 2)`) was just completed.
-- `N` odd → `writeIdx = chunkSize`; the first half (`[0, chunkSize)`)
-  was just completed.
+- `N=2, 4, …` (even): `writeIdx = chunkSize` — the first half
+  `[0, chunkSize)` was just completed. Read offset 0.
+- `N=3, 5, …` (odd): `writeIdx = 0` — the second half
+  `[chunkSize, chunkSize × 2)` was just completed. Read offset
+  `chunkSize`.
 
-That matches the plan's `completedHalf = 1 - (tickIndex % 2)` formula.
+So **`completedHalf = tickIndex % 2`** — `0` when `N` is even,
+`1` when `N` is odd. Tick 1 (the very first /tr at t=0) reads
+whatever was in the buffer at `/b_alloc` time (silence); the
+first useful chunk arrives at tick 2.
+
+(The original plan text had `1 - (tickIndex % 2)` — that was based
+on an assumption that the first tick fires at frame `samplesPerTick`,
+not `0`. Empirically verified by the continuity log showing
+half-cycle phase jumps at every chunk boundary, then fixed.)
 
 ### `ClockController.probePhase(durationMs)`
 
@@ -1714,11 +1724,12 @@ On `/tr` matching the registered clock trigId:
 ```
 tickIndex = packet.args[2] | 0
 post clockTick
-completedHalf = 1 - (tickIndex % 2)        // see parity derivation
+completedHalf = tickIndex % 2              // see parity derivation
+fireAt = Date.now() + READ_DELAY_MS
 for each subscription:
     offset = completedHalf * chunkSize * channels
     count  = chunkSize * channels
-    transport.send(encode(bGetn(bufnum, offset, count)))
+    transport.send(encode(new OSC.Bundle([bGetn(bufnum, offset, count)], fireAt)))
     entry.pendingTickIndex = tickIndex
 ```
 
@@ -2378,7 +2389,11 @@ is reloaded.
 3. **Reply correlation for `b-getn`** — scsynth matches replies by bufnum, not by explicit request id. The "one read in flight per bufnum" invariant is what makes this safe; the worker enforces it. Dev-only assertion recommended.
 4. **Parent group ID.** Hardcoded 100 in examples; promote to `IdAllocator` allocation (e.g. base 100, one group per app instance).
 5. **Clock bus ID.** Allocated from `ids.bus`; starts at 32 to skip hardware-reserved buses. Confirm against scsynth boot config.
-6. **Phase boundary parity derivation.** The `completedHalf = 1 - (tickIndex % 2)` formula is an educated guess; verify empirically and flip if wrong.
+6. **Phase boundary parity derivation.** The correct formula is
+   `completedHalf = tickIndex % 2` (because `Impulse.kr` fires at
+   t=0, so tick `N` corresponds to audio frame `(N-1) ×
+   samplesPerTick`). The original plan had it inverted; verified
+   empirically by the continuity log and corrected.
 7. **`BufWr` decimation behavior.** The scope synth relies on `BufWr.ar` at a slow-advancing phase to effectively decimate; this is zero-order-hold, not a proper anti-aliased decimation. Fine for visual scope; revisit if aliasing becomes visible.
 8. **Recording memory ceiling.** Float32 stereo at 48 kHz is ~23 MB/min;
    Blob accumulation means a practical 10–15 min comfortable ceiling
@@ -2429,7 +2444,7 @@ is rendering, UX, and recording. A bare-minimum demo (one scope,
 numeric readout, no recording) is reachable in ~4 days through Phase 8.
 
 Risk notes:
-- Phase 8's parity derivation (`completedHalf = 1 - (tickIndex % 2)`)
+- Phase 8's parity derivation (`completedHalf = tickIndex % 2`)
   is the one acceptance test most likely to need a bit-flip; budget a
   half-day slip here if you want to be conservative.
 - Phase 12's WAV header-patching and interleaving work is boring but
