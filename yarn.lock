@@ -2887,6 +2887,7 @@ __metadata:
   resolution: "sc-app@workspace:."
   dependencies:
     "@bytecodealliance/jco": "npm:^1.19.0"
+    "@bytecodealliance/preview2-shim": "npm:^0.17.9"
     "@tauri-apps/api": "npm:^2"
     "@tauri-apps/cli": "npm:^2"
     "@tauri-apps/plugin-opener": "npm:^2"

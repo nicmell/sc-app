@@ -41,10 +41,29 @@ export class WorkerClient {
       { type: 'module' },
     );
 
+    // Module-level errors inside the worker (e.g. a failed top-level
+    // wasm init) would otherwise just kill the worker silently and
+    // leave the ready handshake to time out. Surface them loudly.
+    this.worker.addEventListener('error', (ev) => {
+      const message =
+        ev.message || `worker module error at ${ev.filename}:${ev.lineno}:${ev.colno}`;
+      console.error('[WorkerClient] worker error:', ev);
+      for (const cb of this.errorListeners) cb(message);
+    });
+    this.worker.addEventListener('messageerror', (ev) => {
+      console.error('[WorkerClient] messageerror:', ev);
+      for (const cb of this.errorListeners) cb('worker messageerror (uncloneable payload)');
+    });
+
     this.ready = new Promise<void>((resolve, reject) => {
       const timeout = window.setTimeout(() => {
         cleanup();
-        reject(new Error(`worker/WS did not become ready within ${READY_TIMEOUT_MS} ms`));
+        reject(
+          new Error(
+            `worker/WS did not become ready within ${READY_TIMEOUT_MS} ms ` +
+              `(open DevTools → Application → Workers to inspect the scope worker)`,
+          ),
+        );
       }, READY_TIMEOUT_MS);
 
       const handleReady = (ev: MessageEvent<WorkerToMain>) => {
@@ -56,13 +75,23 @@ export class WorkerClient {
           reject(new Error(ev.data.message));
         }
       };
+      const handleErrorEvent = (ev: ErrorEvent) => {
+        cleanup();
+        reject(
+          new Error(
+            ev.message || `worker module crashed at ${ev.filename}:${ev.lineno}`,
+          ),
+        );
+      };
 
       const cleanup = () => {
         window.clearTimeout(timeout);
         this.worker.removeEventListener('message', handleReady);
+        this.worker.removeEventListener('error', handleErrorEvent);
       };
 
       this.worker.addEventListener('message', handleReady);
+      this.worker.addEventListener('error', handleErrorEvent);
     });
 
     this.worker.addEventListener('message', (ev: MessageEvent<WorkerToMain>) => {

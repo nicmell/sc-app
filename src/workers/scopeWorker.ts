@@ -20,6 +20,28 @@ const post: WorkerPost['postMessage'] = (msg, transfer) => {
   (self as unknown as WorkerPost).postMessage(msg, transfer ?? []);
 };
 
+// Catch anything that would otherwise kill the worker silently — async
+// init failures, unhandled rejections, etc. The main thread adds its
+// own 'error' listener on the Worker instance, which fires *before*
+// this handler runs (browsers dispatch error events on the global
+// scope first), so we only reach here for runtime errors, not
+// module-load failures.
+self.addEventListener('error', (ev) => {
+  post({
+    type: 'error',
+    message: `worker runtime error: ${ev.message || String(ev)}`,
+  });
+});
+self.addEventListener('unhandledrejection', (ev) => {
+  const reason = (ev as PromiseRejectionEvent).reason;
+  post({
+    type: 'error',
+    message: `worker unhandled rejection: ${
+      reason instanceof Error ? reason.message : String(reason)
+    }`,
+  });
+});
+
 let transport: OscTransport | null = null;
 
 self.addEventListener('message', async (ev: MessageEvent<MainToWorker>) => {

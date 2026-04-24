@@ -43,6 +43,17 @@ export default defineConfig(async () => ({
         find: /^@wasm\/scserver-commands\/(.*)$/,
         replacement: path.resolve(__dirname, "crates/scserver-commands/pkg") + "/$1",
       },
+      // jco emits `import … from '@bytecodealliance/preview2-shim/cli'`
+      // etc. The shim package's `exports` map prefers the `node`
+      // condition, which pulls in `node:fs/promises` and crashes the
+      // worker at init time. Pin every subpath to the browser build.
+      {
+        find: /^@bytecodealliance\/preview2-shim\/(.*)$/,
+        replacement: path.resolve(
+          __dirname,
+          "node_modules/@bytecodealliance/preview2-shim/lib/browser",
+        ) + "/$1.js",
+      },
     ],
   },
 
