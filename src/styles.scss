@@ -1,0 +1,54 @@
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #12141a;
+  color: #e4e6eb;
+  font-family: system-ui, sans-serif;
+}
+
+.dashboard-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  min-height: 100vh;
+
+  > header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+
+    .badge {
+      padding: 0.25rem 0.6rem;
+      background: #1f3a2a;
+      border: 1px solid #2f6b47;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #a0e7b7;
+    }
+
+    button {
+      margin-left: auto;
+      padding: 0.4rem 0.8rem;
+      background: transparent;
+      border: 1px solid #3a3f4b;
+      border-radius: 4px;
+      color: inherit;
+      cursor: pointer;
+      font: inherit;
+
+      &:hover {
+        background: #242832;
+      }
+    }
+  }
+}

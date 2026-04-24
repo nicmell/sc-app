@@ -1,0 +1,80 @@
+.connect-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 2rem;
+  background: #1b1d22;
+  color: #e4e6eb;
+  font-family: system-ui, sans-serif;
+
+  h1 {
+    font-size: 1.6rem;
+    margin: 0 0 1.5rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
+
+  form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    width: min(320px, 90vw);
+  }
+
+  label {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.7;
+  }
+
+  input {
+    padding: 0.55rem 0.7rem;
+    background: #242832;
+    border: 1px solid #3a3f4b;
+    border-radius: 4px;
+    color: inherit;
+    font: inherit;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+    &:focus {
+      outline: none;
+      border-color: #5a8fd8;
+    }
+    &:disabled {
+      opacity: 0.5;
+    }
+  }
+
+  button {
+    padding: 0.6rem;
+    background: #3d6ab5;
+    border: none;
+    border-radius: 4px;
+    color: white;
+    font: inherit;
+    font-weight: 500;
+    cursor: pointer;
+
+    &:disabled {
+      background: #3a3f4b;
+      cursor: not-allowed;
+      opacity: 0.7;
+    }
+    &:not(:disabled):hover {
+      background: #4878c4;
+    }
+  }
+
+  .error {
+    margin: 0.25rem 0 0;
+    padding: 0.5rem 0.7rem;
+    background: #3d1f22;
+    border: 1px solid #6a2d33;
+    border-radius: 4px;
+    color: #f2b5ba;
+    font-size: 0.85rem;
+  }
+}

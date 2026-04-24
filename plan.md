@@ -259,7 +259,7 @@ src/
     subscriptionTable.ts             # scope + recording subscription registry
     wavWriter.ts                     # in-memory WAV encoder (worker-side)
   scope/
-    AppShell.ts                      # connect ↔ dashboard orchestration
+    AppShell.tsx                     # connect ↔ dashboard orchestration (React)
     cmd.ts                           # typed command helpers (sNew, nFree, …)
     workerProtocol.ts                # typed main ↔ worker messages
     WorkerClient.ts                  # main-thread wrapper around Worker
@@ -284,16 +284,22 @@ src/
     phaseProbeSynthDef.ts            # dev: reads clockBus via SendTrig
     silentTestSynthDef.ts            # dev: heartbeat via SendTrig
   ui/
-    ConnectScreen.ts                 # initial scsynth-address form (Phase 1)
-    OscConsole.ts                    # dev: raw byte / typed command console
-    SynthDefPanel.ts                 # dev: load synthdefs button
-    PhaseProbePanel.ts               # dev: clockBus readout
-    ScopePokerPanel.ts               # dev: manual /b_getn
-    ScopeDebugPanel.ts               # dev: chunk numeric readout
-    ClockPanel.ts                    # Start/Stop + tick + elapsed
-    ScopeView.ts                     # one canvas + header
-    ScopeList.ts                     # add/remove scopes
-    RecordingPanel.ts                # recording controls + progress
+    ConnectScreen/                   # initial scsynth-address form (Phase 1)
+      ConnectScreen.tsx
+      ConnectScreen.scss
+      index.ts
+    OscConsole/                      # dev: raw byte / typed command console
+      OscConsole.tsx
+      OscConsole.scss
+      index.ts
+    SynthDefPanel.tsx                # dev: load synthdefs button
+    PhaseProbePanel.tsx              # dev: clockBus readout
+    ScopePokerPanel.tsx              # dev: manual /b_getn
+    ScopeDebugPanel.tsx              # dev: chunk numeric readout
+    ClockPanel.tsx                   # Start/Stop + tick + elapsed
+    ScopeView.tsx                    # one canvas + header
+    ScopeList.tsx                    # add/remove scopes
+    RecordingPanel.tsx               # recording controls + progress
     styles.css
   main.ts                            # boots AppShell — AppShell mounts the rest
 ```
@@ -490,49 +496,50 @@ worker plumbing in isolation from OSC typing.
 
 ### Files
 
-- `src/ui/ConnectScreen.ts` — initial UI (scsynth address form)
-- `src/scope/AppShell.ts` — orchestrates connect-screen ↔ dashboard swap
+- `src/ui/ConnectScreen/ConnectScreen.tsx` + `ConnectScreen.scss` + `index.ts` — initial UI (scsynth address form, React)
+- `src/scope/AppShell.tsx` — orchestrates connect-screen ↔ dashboard swap (React)
 - `src/workers/scopeWorker.ts` — worker entry
 - `src/workers/transport.ts` — WS wrapper, worker-internal
 - `src/scope/workerProtocol.ts` — shared types (bytes-only version)
 - `src/scope/WorkerClient.ts` — main-thread handle
 - `src/scope/reactiveStore.ts` — minimal observable
-- `src/ui/OscConsole.ts` — dev console
+- `src/ui/OscConsole/OscConsole.tsx` + `index.ts` — dev console
 
-### `ConnectScreen.ts`
+**Stack note.** Phase 1 (and everything after) is written directly for
+React + TypeScript — the scaffold is already React, so `ConnectScreen`
+is a proper `.tsx` component with typed props/state rather than an
+abstract `mount(root, props)` factory. The DOM-agnostic signatures in
+earlier drafts of this plan are superseded.
 
-A single-form initial screen, same shape as the current sc-app's
-`src/components/ConnectScreen/ConnectScreen.tsx` (referenced as the
-pattern). Fields:
+### `ConnectScreen.tsx`
+
+A single-form initial screen, React component. Fields:
 
 - **`scsynth address`** input, default `127.0.0.1:57110`, validated
   against `/^([^\s:]+):(\d{1,5})$/` (host + port).
 - **Connect** button, disabled while invalid or already connecting.
-- Inline error text if the first `/status` round-trip times out.
+- Inline error text if the WS fails to open (malformed address rejected
+  by the bridge's HTTP 400, or nothing listening on the target).
 
-```ts
+```tsx
 interface ConnectScreenProps {
-  defaultAddress?: string;                  // e.g. from localStorage / URL param
+  defaultAddress?: string;                  // from localStorage / URL param
   onConnect: (address: string) => Promise<void>;
+  error?: string | null;                    // surfaced from AppShell
 }
 
-export function mountConnectScreen(root: HTMLElement, props: ConnectScreenProps): void;
+export function ConnectScreen(props: ConnectScreenProps): JSX.Element;
 ```
 
 Behaviour:
 1. Render form; populate input with `defaultAddress` or `'127.0.0.1:57110'`.
-2. On submit: call `props.onConnect(address)`; that promise does the
-   actual `WorkerClient` construction + `/status` probe (see `AppShell`
-   below).
+2. On submit: call `props.onConnect(address)`. `AppShell` does the
+   actual `WorkerClient` construction.
 3. While the promise is pending, disable the form and show
    `"Connecting…"`.
-4. On reject: re-enable, show the error message.
+4. On reject: re-enable; error surfaced via `props.error`.
 5. On resolve: `AppShell` unmounts the connect screen and mounts the
    dashboard in its place.
-
-Framework-agnostic signature; trivial to wrap in React/Solid/Svelte if
-you pick one (the referenced sc-app's version is the React
-implementation).
 
 ### `AppShell.ts`
 
@@ -549,19 +556,30 @@ export class AppShell {
 ```
 
 Internals:
-1. `start()` reads the last-used address from `localStorage['sc.address']`
-   (or URL `?scsynth=` param, or default); mounts `ConnectScreen` with it.
+1. On mount, reads the last-used address from `localStorage['sc.address']`
+   (or URL `?scsynth=` param, or default); renders `ConnectScreen` with it.
 2. `onConnect(address)`:
    - Persist `localStorage['sc.address'] = address`.
-   - Build the WS URL:
-     `const wsUrl = new URL('/ws', import.meta.env.VITE_OSC_WS_URL); wsUrl.searchParams.set('scsynth', address); this.client = new WorkerClient(wsUrl.href);`
-   - `await this.client.ready` (times out at ~3 s).
-   - Send `/status` through the worker (bytes form in Phase 1; typed
-     later). Await reply within ~500 ms. This proves the bridge → UDP →
-     scsynth path works before surfacing the main UI.
-   - Unmount `ConnectScreen`; mount the dashboard.
-3. On WS close / error mid-session: unmount the dashboard, remount the
-   connect screen with the error surfaced. User clicks Connect to retry.
+   - Build the WS URL — fall back to `window.location.origin` when
+     `VITE_OSC_WS_URL` isn't set (so production `sc-app serve` works
+     with no env config):
+     ```ts
+     const base = import.meta.env.VITE_OSC_WS_URL ?? window.location.origin;
+     const wsUrl = new URL('/ws', base);
+     // Convert http(s): origins to ws(s): scheme.
+     wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+     wsUrl.searchParams.set('scsynth', address);
+     this.client = new WorkerClient(wsUrl.href);
+     ```
+   - `await this.client.ready` (times out at ~3 s). A successful `open`
+     event already implies the bridge parsed `?scsynth=` without a 400,
+     so the address is at least syntactically valid. **No OSC `/status`
+     round-trip in Phase 1** — that probe moves to Phase 2 where we
+     have typed encode/decode. The bytes-only Phase 1 only proves
+     worker plumbing.
+   - Switch state to show the dashboard shell.
+3. On WS close / error mid-session: switch back to the connect screen,
+   surface the error via `props.error`. User clicks Connect to retry.
 
 ### Why gate the dashboard
 
@@ -648,15 +666,18 @@ export class WorkerClient {
 3. Click Connect with a good address → form disabled, "Connecting…"
    label. DevTools → Application → Workers shows `scopeWorker`; Network
    tab shows the WS URL including `?scsynth=127.0.0.1:57110`.
-4. `/status` probe succeeds → connect screen unmounts, dashboard shell
+4. WS opens cleanly → connect screen unmounts, dashboard shell
    appears. Refresh page → previously-used address is prefilled.
 5. Paste hex for `/status` in the OSC console, click Send → `recv` log
-   entry within ~100 ms.
+   entry within ~100 ms (scsynth must be running — this is the Phase 1
+   stand-in for the typed round-trip that Phase 2 will automate).
 6. Call `client.dispose()` via DevTools → WS closes; Connect Screen
    remounts; reconnecting works from scratch.
-7. Bad scsynth address at connect time (nothing listening) → probe
-   times out → error surfaced on the connect screen; user can correct
-   and retry.
+7. Syntactically-invalid scsynth address (e.g. `:nope`) → bridge
+   rejects the upgrade with HTTP 400 → WS `error` event → connect
+   screen shows the error. "Nothing listening" on a syntactically-valid
+   address can't be detected in Phase 1 (UDP is fire-and-forget); that
+   check becomes Phase 2's `sendAndSync(Status)` with a timeout.
 8. Kill the bridge mid-session → `error` event logged; dashboard
    unmounts; Connect Screen shown with last address prefilled.
 
