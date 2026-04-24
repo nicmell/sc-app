@@ -1,5 +1,5 @@
-// @generated — DO NOT EDIT.
-// Regenerate with `node scripts/generate_ugens_rust.mjs`.
+// UGen specs — one module per source category, each exporting a
+// `const UGENS: &[UGenRegistryEntry]` slice sorted by UGen name.
 
 use crate::registry::UGenRegistryEntry;
 

@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::{ugens, Rate};
+use crate::{specs, Rate};
 
 /// One UGen's registry entry — every field preserved verbatim from the
 /// curated JSON specs in `src/assets/ugens/*.json`. All payloads are
@@ -38,7 +38,7 @@ pub fn lookup_ugen(name: &str) -> Option<&'static UGenRegistryEntry> {
     // Each per-category slice is independently sorted, so binary-search each
     // until one yields a hit. 24 slices × ~O(log 32) ≈ 120 comparisons
     // worst-case — still cheap and avoids concatenating into one slice.
-    for (_, slice) in ugens::ALL_SLICES {
+    for (_, slice) in specs::ALL_SLICES {
         if let Ok(i) = slice.binary_search_by(|e| e.name.cmp(name)) {
             return Some(&slice[i]);
         }
@@ -50,7 +50,7 @@ pub fn lookup_ugen(name: &str) -> Option<&'static UGenRegistryEntry> {
 /// UGen came from). Each inner slice is sorted by UGen name. Useful for
 /// callers that want to browse / document the dataset.
 pub fn ugens_by_category() -> &'static [(&'static str, &'static [UGenRegistryEntry])] {
-    ugens::ALL_SLICES
+    specs::ALL_SLICES
 }
 
 #[cfg(test)]
@@ -58,7 +58,7 @@ mod tests {
     use super::*;
 
     fn total_entries() -> usize {
-        ugens::ALL_SLICES.iter().map(|(_, s)| s.len()).sum()
+        specs::ALL_SLICES.iter().map(|(_, s)| s.len()).sum()
     }
 
     #[test]
@@ -68,7 +68,7 @@ mod tests {
 
     #[test]
     fn every_slice_is_sorted_by_name() {
-        for (_, slice) in ugens::ALL_SLICES {
+        for (_, slice) in specs::ALL_SLICES {
             for pair in slice.windows(2) {
                 assert!(
                     pair[0].name < pair[1].name,

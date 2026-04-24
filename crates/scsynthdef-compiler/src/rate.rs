@@ -14,13 +14,13 @@ impl Rate {
         self as i8
     }
 
-    /// Parse from string form (`ar` / `kr` / `ir`, plus long names `audio` /
-    /// `control` / `scalar`). Case-insensitive.
+    /// Parse from string form. Only the SC short forms `ar` / `kr` / `ir`
+    /// are accepted; case-insensitive.
     pub fn parse(s: &str) -> Option<Rate> {
         match s.to_ascii_lowercase().as_str() {
-            "ar" | "audio" => Some(Rate::Audio),
-            "kr" | "control" => Some(Rate::Control),
-            "ir" | "scalar" => Some(Rate::Scalar),
+            "ar" => Some(Rate::Audio),
+            "kr" => Some(Rate::Control),
+            "ir" => Some(Rate::Scalar),
             _ => None,
         }
     }

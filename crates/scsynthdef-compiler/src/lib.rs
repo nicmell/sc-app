@@ -11,8 +11,8 @@ mod error;
 mod operators;
 mod rate;
 mod registry;
+mod specs;
 mod synthdef;
-mod ugens;
 
 #[cfg(feature = "wasm")]
 mod wasm;

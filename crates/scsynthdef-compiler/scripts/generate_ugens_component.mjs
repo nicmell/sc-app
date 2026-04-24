@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Generate the `interface ugens { ... }` block in wit/scsynthdef.wit and
 // the matching src/ugens_component.rs Guest impl, both from the bundled
-// UGen registry (src/ugens/*.rs) and the canonical PascalCase names
+// UGen registry (src/specs/*.rs) and the canonical PascalCase names
 // pulled from src/builders/*.rs.
 //
 // The WIT surface exposes each UGen as
@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CRATE_ROOT = join(__dirname, "..");
 const WIT_PATH = join(CRATE_ROOT, "wit", "scsynthdef.wit");
-const UGENS_DIR = join(CRATE_ROOT, "src", "ugens");
+const UGENS_DIR = join(CRATE_ROOT, "src", "specs");
 const BUILDERS_DIR = join(CRATE_ROOT, "src", "builders");
 const OUT_PATH = join(CRATE_ROOT, "src", "ugens_component.rs");
 
@@ -134,7 +134,7 @@ function buildKebabToPascal(pascalNames) {
     return normToPascal;
 }
 
-// ── Registry parser (src/ugens/*.rs) ───────────────────────────────────────
+// ── Registry parser (src/specs/*.rs) ───────────────────────────────────────
 // Build Pascal-name → [{ kebab, default: number|null }, ...] by parsing
 // each UGenRegistryEntry's `name:` and `defaults:` lines. All defaults
 // arrays fit on one line; the name line precedes the defaults line.

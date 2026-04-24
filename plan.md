@@ -927,7 +927,7 @@ Wiring steps applied:
   348 UGens get an arg record; 17 argless ones still take only
   `(def, ugen-rate)`. 145 UGens have at least one required field.
 - `scripts/generate_ugens_component.mjs` (zero-dep Node ESM) parses
-  the `defaults:` entries out of `src/ugens/*.rs`, cross-references
+  the `defaults:` entries out of `src/specs/*.rs`, cross-references
   `src/builders/*.rs` for canonical PascalCase class names,
   regenerates the `interface ugens { … }` block of the WIT in place
   (preserving `core` above and the `world` below byte-identical), and
@@ -958,6 +958,15 @@ const k = (v: number): UgenInput => ({ tag: 'constant', val: v });
 ugens.sinOsc(def, 'audio', { freq: k(220) });          // phase → 0 (registry)
 ugens.out(def, 'audio', { bus: k(0), channelsArray: [osc] });
 ```
+
+Housekeeping (post-Phase 3):
+- `Rate::parse` in `src/rate.rs` now only admits the SC short forms
+  `ar` / `kr` / `ir`. The long-form `audio` / `control` / `scalar`
+  strings are no longer accepted Rust-side.
+- The per-category UGen registry tables moved from `src/ugens/*.rs`
+  to `src/specs/*.rs` (same module API via `mod specs`); the generator
+  `scripts/generate_ugens_component.mjs` now reads the new path.
+  `registry.rs` imports `crate::specs` instead of `crate::ugens`.
 
 ### Build pipeline (extended from Phase 2)
 

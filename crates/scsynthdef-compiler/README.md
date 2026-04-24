@@ -178,7 +178,7 @@ node scripts/generate_ugens_rust.mjs
 node scripts/generate_wit.mjs
 ```
 
-`src/ugens/*.rs` (registry data), `src/builders/*.rs` (typed
+`src/specs/*.rs` (registry data), `src/builders/*.rs` (typed
 builders), and `wit/scsynthdef.wit` are all generated artifacts —
 edit the JSON catalogue, then re-run steps 2 and 3.
 
