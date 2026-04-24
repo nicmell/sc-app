@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { clearDebugLog, debugLog, type DebugEntry } from '@/scope/debugLog';
+import { IS_TAURI } from '@/scope/runtime';
 import './DebugLog.scss';
 
 function formatEntries(entries: ReadonlyArray<DebugEntry>): string {
@@ -10,21 +11,56 @@ function formatEntries(entries: ReadonlyArray<DebugEntry>): string {
   return lines.join('\n') + '\n';
 }
 
-function downloadEntries(entries: ReadonlyArray<DebugEntry>): void {
-  if (entries.length === 0) return;
-  const blob = new Blob([formatEntries(entries)], {
-    type: 'text/plain;charset=utf-8',
-  });
-  const url = URL.createObjectURL(blob);
-  // Filename: sc-debug-YYYYMMDD-HHmmss.txt — sortable, easy to grep.
+/** `sc-debug-YYYYMMDD-HHmmss.txt` — sortable, easy to grep. */
+function buildFilename(): string {
   const d = new Date();
   const pad = (n: number) => n.toString().padStart(2, '0');
   const stamp =
     `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}` +
     `-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  return `sc-debug-${stamp}.txt`;
+}
+
+/**
+ * In serve / browser mode we let the browser navigate to the
+ * `<a href download>` element — the blob URL plus the `download`
+ * attribute trigger the standard download dialog.
+ *
+ * In native (Tauri) mode we open a save-as dialog defaulted to the
+ * platform Documents directory and write the text via the `fs`
+ * plugin. This gets us the OS-native picker (with sidebar shortcuts,
+ * recent locations, etc.) instead of a browser-y "downloads"
+ * detour.
+ */
+async function downloadEntries(entries: ReadonlyArray<DebugEntry>): Promise<void> {
+  if (entries.length === 0) return;
+  const text = formatEntries(entries);
+  const filename = buildFilename();
+
+  if (IS_TAURI) {
+    try {
+      const { documentDir, join } = await import('@tauri-apps/api/path');
+      const defaultPath = await join(await documentDir(), filename);
+      const { save } = await import('@tauri-apps/plugin-dialog');
+      const dest = await save({
+        defaultPath,
+        filters: [{ name: 'Text', extensions: ['txt'] }],
+      });
+      if (!dest) return; // user cancelled
+      const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+      await writeTextFile(dest, text);
+    } catch (err) {
+      console.error('[sc:debugLog] tauri save failed', err);
+    }
+    return;
+  }
+
+  // Browser fallback — `<a href download>` over a blob URL.
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `sc-debug-${stamp}.txt`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -55,7 +91,9 @@ export function DebugLog() {
         </button>
         <button
           type="button"
-          onClick={() => downloadEntries(entries)}
+          onClick={() => {
+            void downloadEntries(entries);
+          }}
           disabled={entries.length === 0}
           title="Download the buffered log entries as a text file"
         >
