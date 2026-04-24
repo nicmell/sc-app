@@ -9,9 +9,14 @@
  * surface as `error` events. The stream keeps flowing.
  */
 
-// Install the console → main-thread bridge FIRST — ESM runs imports
-// in source order, so anything earlier in this file than the wasm
-// import is guaranteed to execute before `await $init` fires.
+// Bootstrap FIRST — installs a synchronous message listener that
+// buffers incoming messages until the real handler is wired up. This
+// closes the race window between `new Worker(...)` and
+// `self.addEventListener('message', …)` getting called after the
+// jco wasm top-level await resolves.
+import { setWorkerMessageHandler } from './workerBootstrap';
+
+// Then the console bridge (also pre-TLA, so wasm init logs forward).
 import './workerConsoleBridge';
 
 console.log('[sc:worker] module loading …');
@@ -60,8 +65,7 @@ console.log('[sc:worker] ready for messages');
 
 let transport: OscTransport | null = null;
 
-self.addEventListener('message', async (ev: MessageEvent<MainToWorker>) => {
-  const msg = ev.data;
+setWorkerMessageHandler(async (msg: MainToWorker) => {
   console.log('[sc:worker] main → worker', msg.type);
   switch (msg.type) {
     case 'connect': {
