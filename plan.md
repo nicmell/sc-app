@@ -1067,13 +1067,14 @@ then logs the elapsed time via the debug log panel.
 
 **Goal.** Prove group create/pause/resume/free. First visual state indicator in the UI.
 
-### Files
+### Files (as landed)
 
 - `src/scope/IdAllocator.ts`
 - `src/scope/GroupController.ts`
 - `src/synth/silentTestSynthDef.ts` (dev)
-- `src/ui/ClockPanel.ts` (first version)
-- `src/ui/styles.css`
+- `src/ui/ClockPanel/{ClockPanel.tsx, ClockPanel.scss, index.ts}`
+- `src/scope/AppShell.tsx` (extended)
+- `src/ui/SynthDefPanel/SynthDefPanel.tsx` (registry hoisted out)
 
 ### `IdAllocator.ts`
 
@@ -1084,7 +1085,7 @@ export class IdAllocator {
 }
 ```
 
-Three instances in `main.ts`:
+Three instances are created per-connection inside `AppShell.bringUpDashboard`:
 ```ts
 const ids = {
   node: new IdAllocator(1000),
@@ -1095,82 +1096,106 @@ const ids = {
 
 ### `silentTestSynthDef.ts`
 
-Heartbeat synth: `SendTrig.kr(Impulse.kr(5), 9999, PulseCount.kr(Impulse.kr(5)))`. Used only in this phase to visually prove `/n_run` affects its children.
+Dev heartbeat. The idiomatic sclang form shares one `Impulse.kr` between
+the trigger and the counter so they stay phase-locked:
+
+```ts
+const imp = ugens.impulse(def, 'control', { freq: k(5) });
+const count = ugens.pulseCount(def, 'control', { trig: imp });
+ugens.sendTrig(def, 'control', { in: imp, id: k(9999), value: count });
+```
+
+Result compiled bytes cached at module scope, same shape as
+`noopSynthDef`. `SILENT_TEST_TRIG_ID = 9999` is exported so the panel
+can filter incoming `/tr` replies.
 
 ### `GroupController.ts`
 
 ```ts
-export type GroupState = 'stopped' | 'running' | 'paused' | 'disconnected';
+export type GroupState = 'stopped' | 'running' | 'paused';
 
 export class GroupController {
-  constructor(
-    protected client: WorkerClient,
-    protected parentGroupId: number,
-  );
+  constructor(client: WorkerClient, groupId: number);
   readonly state: ReadonlyStore<GroupState>;
 
   async ensureCreated(): Promise<void>;   // idempotent; creates group as running
-  async pause(): Promise<void>;           // NRun(parentGroupId, 0); state → 'paused'
-  async resume(): Promise<void>;          // NRun(parentGroupId, 1); state → 'running'
-  async free(): Promise<void>;            // GFreeAll + NFree; state → 'stopped'
+  async pause(): Promise<void>;           // n-run(groupId, 0)
+  async resume(): Promise<void>;          // n-run(groupId, 1)
+  async free(): Promise<void>;            // g-freeAll + n-free
   async queryTree(): Promise<ServerReply>;
 }
 ```
 
-Convention: group is created as running. "Start/Stop" toggles `/n_run`. Disconnection is tracked by listening to `WorkerClient.onError` → state → `'disconnected'`.
+Convention: group is created as running. `Pause`/`Resume` toggles
+`/n_run`. **No `'disconnected'` state** — `AppShell` already unmounts
+the whole dashboard on `WorkerClient.onError`, so carrying a disconnect
+branch inside the controller would only ever flash for ~1 frame before
+the component goes away.
 
-### `ClockPanel.ts` — v1
+`queryTree()` matches the `/g_queryTree.reply` OSC message which
+`scserver-commands` surfaces as `ServerReply { tag: 'other' }` (no
+dedicated variant in the typed surface).
 
-Renders:
-- **State pill.** `● Running` / `⏸ Paused` / `○ Stopped` / `⚠ Disconnected`. Colored.
-- **Start/Stop button.** Label and action depend on state. Disabled when `disconnected`.
-- **Heartbeat readout** (dev only). Count of `/tr` with `trigId === 9999` in the last second.
+### `ClockPanel.tsx` (React)
 
-Fixed position, top-right. CSS in `styles.css`.
+Rendered inline inside `Dashboard`, *not* fixed-position — the dashboard
+already stacks panels vertically (ClockPanel → SynthDefPanel → OscConsole).
+
+- **State pill.** `● Running` / `⏸ Paused` / `○ Stopped`. Colored via
+  `.pill.running|paused|stopped` SCSS modifiers.
+- **Pause/Resume button.** Label depends on state; disabled when
+  `stopped` or while an awaited `/sync` is in flight.
+- **QueryTree button.** Calls `group.queryTree()` and logs the raw
+  `ServerReply` to the console.
+- **Heartbeat readout.** Count of `/tr` replies whose
+  `triggerId === SILENT_TEST_TRIG_ID` in the last 1 s. Ring-buffer of
+  timestamps, re-rendered on a 200 ms `setInterval`.
+
+State subscription via `useSyncExternalStore` against
+`group.state` (which is a `ReadonlyStore<GroupState>` from the existing
+`reactiveStore.ts`).
 
 ### Dashboard wiring (Phase 4 state)
 
-`main.ts` stays trivial — it just instantiates `AppShell`:
+`AppShell` holds a `resources` object — `{ client, registry, group, ids }`
+— created once per connection by `bringUpDashboard(client)`:
 
 ```ts
-// src/main.ts
-import { AppShell } from './scope/AppShell';
-new AppShell(document.getElementById('root')!).start();
+async function bringUpDashboard(client: WorkerClient): Promise<DashboardResources> {
+  const ids = { node: new IdAllocator(1000), buffer: new IdAllocator(1000), bus: new IdAllocator(32) };
+  const registry = new SynthDefRegistry(client);
+  const group    = new GroupController(client, PARENT_GROUP_ID); // = 100
+
+  await registry.ensureLoaded('silentTest', compileSilentTestSynthDef());
+  await group.ensureCreated();
+  await client.sendAndSync(
+    cmd.sNewEasy('silentTest', ids.node.next(), cmd.AddToHead, PARENT_GROUP_ID),
+  );
+  return { client, registry, group, ids };
+}
 ```
 
-`AppShell.onConnect(address)` is where the connected `WorkerClient` is
-constructed. After the `/status` probe succeeds, it mounts the
-dashboard and wires up the controllers — this Phase's acceptance
-exercises that path:
+On disconnect (user-initiated), `handleDisconnect` awaits
+`group.free()` before `client.dispose()` so the server is left clean.
+On unexpected disconnect (WebSocket error), the onError handler just
+disposes the client — the group is abandoned but the scsynth process is
+being torn down by the same event.
 
-```ts
-// inside AppShell.mountDashboard(client)
-import { sNew, AddToHead } from './cmd';
+`SynthDefPanel` no longer owns its own `SynthDefRegistry`; it receives
+the hoisted instance from the dashboard. Both panels share state, which
+matters for Phase 5 onwards.
 
-const registry = new SynthDefRegistry(client);
-const group    = new GroupController(client, 100);  // group 100, placeholder
-
-await registry.ensureLoaded('silentTest', compileSilentTestSynthDef());
-await group.ensureCreated();
-await client.sendAndSync(sNew('silentTest', ids.node.next(), AddToHead, 100));
-
-const panel = new ClockPanel(group, client);
-this.root.append(panel.el);
-```
-
-`GroupController` internals use the same helpers — e.g. `pause()` sends
-`nRun(this.parentGroupId, 0)`, `free()` sends `gFreeAll(groupId)` then
-`nFree(groupId)`. Note `nFree` now takes a list of node IDs (post
-SC-reference audit fix); pass single IDs as `nFree(nodeId)` — the helper
-spreads them.
+`PARENT_GROUP_ID = 100` is a named constant inside `AppShell.tsx`
+(sclang convention for the default user group).
 
 ### Acceptance
 
-1. First Start → state → `Running`; heartbeat ~5 Hz.
-2. Stop → state → `Paused`; heartbeat → 0 within ~200 ms.
-3. Start again → heartbeat resumes at ~5 Hz; underlying counter continues (visible in logs if displayed).
-4. `QueryTree` button → confirms group 100 contains the heartbeat synth.
-5. Kill bridge → state → `Disconnected` within ~1 s; buttons disabled.
+1. Connect → dashboard mounts with `● Running` + heartbeat ~5 /s.
+2. `Pause` → `⏸ Paused`; heartbeat drops to 0 within ~200 ms.
+3. `Resume` → back to ~5 /s; underlying PulseCount continues (visible in the `value` field of subsequent `/tr` replies in the debug log).
+4. `QueryTree` → `[sc:clock] queryTree → { tag: 'other', val: { address: '/g_queryTree.reply', args: [...] } }` in the console, with group 100 containing the heartbeat synth.
+5. Manual `Disconnect` → `group.free()` fires cleanly (group removed server-side); dashboard → connect screen.
+6. Kill bridge → dashboard unmounts within ~1 s via the existing `onError` path.
 
 ---
 

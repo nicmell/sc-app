@@ -1,20 +1,15 @@
-import { useMemo, useState } from 'react';
-import type { WorkerClient } from '@/scope/WorkerClient';
-import { SynthDefRegistry } from '@/scope/SynthDefRegistry';
+import { useState } from 'react';
+import type { SynthDefRegistry } from '@/scope/SynthDefRegistry';
 import { compileNoopSynthDef } from '@/synth/noopSynthDef';
 import './SynthDefPanel.scss';
 
 type Status = 'idle' | 'loading' | 'loaded' | 'error';
 
 interface SynthDefPanelProps {
-  client: WorkerClient;
+  registry: SynthDefRegistry;
 }
 
-export function SynthDefPanel({ client }: SynthDefPanelProps) {
-  // One registry per client instance — lives as long as this panel's
-  // parent dashboard does.
-  const registry = useMemo(() => new SynthDefRegistry(client), [client]);
-
+export function SynthDefPanel({ registry }: SynthDefPanelProps) {
   const [status, setStatus] = useState<Status>('idle');
   const [error, setError] = useState<string | null>(null);
 

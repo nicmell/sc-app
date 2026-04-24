@@ -1,20 +1,42 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { ClockPanel } from '@/ui/ClockPanel';
 import { ConnectScreen } from '@/ui/ConnectScreen';
 import { DebugLog } from '@/ui/DebugLog';
 import { OscConsole } from '@/ui/OscConsole';
 import { SynthDefPanel } from '@/ui/SynthDefPanel';
+import {
+  compileSilentTestSynthDef,
+  SILENT_TEST_TRIG_ID,
+} from '@/synth/silentTestSynthDef';
 import * as cmd from './cmd';
+import { GroupController } from './GroupController';
+import { IdAllocator } from './IdAllocator';
+import { SynthDefRegistry } from './SynthDefRegistry';
 import { WorkerClient } from './WorkerClient';
 
 const STORAGE_KEY = 'sc.address';
 const STATUS_PROBE_TIMEOUT_MS = 1000;
+const PARENT_GROUP_ID = 100;
+
+interface DashboardResources {
+  client: WorkerClient;
+  registry: SynthDefRegistry;
+  group: GroupController;
+  ids: { node: IdAllocator; buffer: IdAllocator; bus: IdAllocator };
+}
 
 /**
- * Phase 1 dashboard shell — placeholder until Phase 4 brings the real
- * ClockPanel / ScopeList / RecordingPanel. Today it just exposes the
- * OSC console so the acceptance tests can manually exercise the bridge.
+ * Phase 4 dashboard — adds the parent group, a shared SynthDefRegistry,
+ * ID allocators, and the dev heartbeat synth alongside the earlier
+ * OSC console / SynthDef loader.
  */
-function Dashboard({ client, onDisconnect }: { client: WorkerClient; onDisconnect: () => void }) {
+function Dashboard({
+  resources,
+  onDisconnect,
+}: {
+  resources: DashboardResources;
+  onDisconnect: () => void;
+}) {
   return (
     <main className="dashboard-shell">
       <header>
@@ -23,8 +45,9 @@ function Dashboard({ client, onDisconnect }: { client: WorkerClient; onDisconnec
           Disconnect
         </button>
       </header>
-      <SynthDefPanel client={client} />
-      <OscConsole client={client} />
+      <ClockPanel client={resources.client} group={resources.group} />
+      <SynthDefPanel registry={resources.registry} />
+      <OscConsole client={resources.client} />
     </main>
   );
 }
@@ -50,17 +73,42 @@ function wsUrlFor(address: string): string {
   return url.href;
 }
 
+async function bringUpDashboard(client: WorkerClient): Promise<DashboardResources> {
+  const ids = {
+    node: new IdAllocator(1000),
+    buffer: new IdAllocator(1000),
+    bus: new IdAllocator(32),
+  };
+  const registry = new SynthDefRegistry(client);
+  const group = new GroupController(client, PARENT_GROUP_ID);
+
+  console.log('[sc:app] loading silentTest synthdef');
+  await registry.ensureLoaded('silentTest', compileSilentTestSynthDef());
+
+  console.log('[sc:app] creating parent group', PARENT_GROUP_ID);
+  await group.ensureCreated();
+
+  const heartbeatId = ids.node.next();
+  console.log('[sc:app] starting silentTest synth', heartbeatId);
+  await client.sendAndSync(
+    cmd.sNewEasy('silentTest', heartbeatId, cmd.AddToHead, PARENT_GROUP_ID),
+  );
+  console.log(`[sc:app] dashboard ready (heartbeat trig=${SILENT_TEST_TRIG_ID})`);
+
+  return { client, registry, group, ids };
+}
+
 export function AppShell() {
   const [defaultAddress] = useState(readInitialAddress);
-  const [client, setClient] = useState<WorkerClient | null>(null);
+  const [resources, setResources] = useState<DashboardResources | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Keep the latest client in a ref so the error-handler effect can
   // tear it down on a stale event without re-subscribing every render.
   const clientRef = useRef<WorkerClient | null>(null);
   useEffect(() => {
-    clientRef.current = client;
-  }, [client]);
+    clientRef.current = resources?.client ?? null;
+  }, [resources]);
 
   const handleConnect = useCallback(async (address: string) => {
     console.log('[sc:app] handleConnect', address);
@@ -104,42 +152,63 @@ export function AppShell() {
       );
     }
 
-    // Wire disconnection handler: any error event after we're "open"
-    // means the server went away — kick back to the connect screen.
+    // Wire disconnection handler *before* the async bring-up so a
+    // mid-bring-up WebSocket error still unwinds cleanly.
     next.onError((message) => {
       if (clientRef.current === next) {
         setError(message);
         next.dispose();
         clientRef.current = null;
-        setClient(null);
+        setResources(null);
       }
     });
 
+    let built: DashboardResources;
+    try {
+      built = await bringUpDashboard(next);
+    } catch (err) {
+      console.error('[sc:app] dashboard bring-up failed', err);
+      next.dispose();
+      throw err;
+    }
+
     setError(null);
-    setClient(next);
+    setResources(built);
   }, []);
 
-  const handleDisconnect = useCallback(() => {
-    if (clientRef.current) {
-      clientRef.current.dispose();
+  const handleDisconnect = useCallback(async () => {
+    const current = resources;
+    if (current) {
+      try {
+        await current.group.free();
+      } catch (err) {
+        console.warn('[sc:app] group.free on disconnect failed', err);
+      }
+      current.client.dispose();
       clientRef.current = null;
     }
-    setClient(null);
-  }, []);
+    setResources(null);
+  }, [resources]);
 
   // Expose the client in dev mode for console poking.
   useEffect(() => {
-    if (!client) return;
-    (window as unknown as { __scClient?: WorkerClient }).__scClient = client;
-    return () => {
-      delete (window as unknown as { __scClient?: WorkerClient }).__scClient;
+    if (!resources) return;
+    const w = window as unknown as {
+      __scClient?: WorkerClient;
+      __scGroup?: GroupController;
     };
-  }, [client]);
+    w.__scClient = resources.client;
+    w.__scGroup = resources.group;
+    return () => {
+      delete w.__scClient;
+      delete w.__scGroup;
+    };
+  }, [resources]);
 
   return (
     <>
-      {client ? (
-        <Dashboard client={client} onDisconnect={handleDisconnect} />
+      {resources ? (
+        <Dashboard resources={resources} onDisconnect={handleDisconnect} />
       ) : (
         <ConnectScreen
           defaultAddress={defaultAddress}
