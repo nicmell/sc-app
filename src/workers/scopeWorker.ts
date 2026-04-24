@@ -22,6 +22,7 @@ import './workerConsoleBridge';
 console.log('[sc:worker] module loading …');
 
 import {
+  OSC,
   bGetn,
   decode,
   encode,
@@ -29,6 +30,7 @@ import {
   isMessage,
   type OscPacket,
 } from '@sc-app/server-commands';
+import { READ_DELAY_MS } from '../config/clockConfig';
 import type {
   MainToWorker,
   OscReply,
@@ -83,7 +85,15 @@ const subsByScopeId = new Map<string, number /* bufnum */>();
 
 /** Send `/b_getn` for every subscribed bufnum, asking for the half
  *  that just completed at the given tick. Must be called from the
- *  `/tr` decode path so `tickIndex` is fresh. */
+ *  `/tr` decode path so `tickIndex` is fresh.
+ *
+ *  Each `/b_getn` is wrapped in an `OSC.Bundle` with timetag
+ *  `Date.now() + READ_DELAY_MS` so scsynth's scheduler holds the
+ *  read until past the kr-vs-ar drift between the `Impulse.kr`-driven
+ *  `/tr` and the `Phasor.ar`-driven `writeIdx`. Without this delay,
+ *  some ticks land 1–32 ar samples short of the half-boundary and
+ *  the read includes stale samples from the previous cycle, showing
+ *  up as a vertical step inside an otherwise-smooth chunk. */
 function fireReads(tickIndex: number): void {
   if (!transport || subscriptions.size === 0) return;
   // Phase 6 derivation: at tick N, scope's writeIdx is
@@ -92,11 +102,13 @@ function fireReads(tickIndex: number): void {
   //   N odd  → just finished [0, chunkSize)            (offset 0)
   //   N even → just finished [chunkSize, chunkSize*2)  (offset chunkSize)
   const completedHalf = 1 - (tickIndex % 2); // 1 when N even, 0 when N odd
+  const fireAt = Date.now() + READ_DELAY_MS;
   for (const entry of subscriptions.values()) {
     const { bufnum, chunkSize, channels } = entry.sub;
     const offset = completedHalf * chunkSize * channels;
     const count = chunkSize * channels;
-    transport.send(encode(bGetn(bufnum, offset, count)));
+    const bundle = new OSC.Bundle([bGetn(bufnum, offset, count)], fireAt);
+    transport.send(encode(bundle));
     entry.pendingTickIndex = tickIndex;
   }
 }

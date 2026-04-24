@@ -1739,6 +1739,24 @@ later reply just wins and we attribute it to the latest tick.
 Acceptable for the scope use case; revisit if real overlap is
 observed.
 
+**kr-vs-ar drift between `/tr` and the scope `writeIdx`.** The
+clock's `Impulse.kr` is kr-quantised (control-block-aligned, ≤ 64
+ar samples = ~1.3 ms of jitter at sr 48 k), but the scope's
+`writeIdx` advances against `Phasor.ar` which wraps at exactly
+`2 × samplesPerTick` ar frames. Some ticks fire 1–32 ar samples
+*short* of the half-boundary, so a same-instant `/b_getn` arriving
+at scsynth includes a few "stale" samples from the previous cycle
+at the tail of the read. Visible as a vertical step inside an
+otherwise-smooth chunk, at a position that varies frame-to-frame
+in a periodic pattern (period 8 ticks at the default config).
+
+**Fix: `/b_getn` is sent as an `OSC.Bundle` with timetag
+`Date.now() + READ_DELAY_MS` (5 ms).** scsynth's scheduler holds
+the bundle until the timetag, by which time the targeted half is
+fully written; the read is clean. Adds ~5 ms of display latency,
+invisible to the eye. `READ_DELAY_MS` lives in `clockConfig.ts`
+so it's tunable in one spot.
+
 ### `/b_setn` dispatch
 
 ```

@@ -87,3 +87,22 @@ export const PHASE_PROBE_TRIG_ID = 9001;
  *  completed. Any consumer whose ring size divides
  *  `CLOCK_WRAP_TICKS × samplesPerTick` sees clean wraps. */
 export const CLOCK_WRAP_TICKS = 2;
+
+/** How far in the future the worker schedules each `/b_getn` after
+ *  receiving a `/tr`, expressed as a JS-ms offset added to
+ *  `Date.now()`.
+ *
+ *  The `/tr` fires from `Impulse.kr` which is kr-quantised to a
+ *  control-block boundary (≤ 64 ar samples ≈ 1.3 ms of jitter at
+ *  sr 48 k), but the scope's `writeIdx` advances at ar rate against
+ *  an exactly-aligned `Phasor.ar` wrap. If `/b_getn` arrives at
+ *  scsynth before the targeted half has fully been written, the
+ *  read includes a few "stale" samples from the previous cycle and
+ *  the chunk shows a step at the boundary.
+ *
+ *  Wrapping `/b_getn` in an `OSC.Bundle` with timetag
+ *  `Date.now() + READ_DELAY_MS` lets scsynth's scheduler hold the
+ *  read until well past the worst-case kr-vs-ar drift (~1.3 ms),
+ *  guaranteeing a clean read. 5 ms is comfortable; tune up if you
+ *  ever see remaining artefacts, down if the added latency matters. */
+export const READ_DELAY_MS = 5;
