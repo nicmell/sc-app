@@ -1,81 +1,60 @@
-import path from "path";
+import path from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-const host = process.env.TAURI_DEV_HOST;
+const pkgDir = path.resolve(__dirname, "crates/scserver-commands/pkg");
+const preview2Browser = path.resolve(
+  __dirname,
+  "node_modules/@bytecodealliance/preview2-shim/lib/browser",
+);
 
 // https://vitejs.dev/config/
-export default defineConfig(async () => ({
+export default defineConfig({
   plugins: [react()],
+
+  // jco's wasm bootstrap uses top-level await; `target: modules`
+  // (Vite's default) predates TLA in module workers. Dev uses `esnext`
+  // which already supports it, so only `build.target` needs bumping.
   build: {
     manifest: "manifest.json",
-    // jco's wasm bootstrap uses top-level await, which needs a modern
-    // target. All browsers since ~2022 plus Tauri's webview are fine.
     target: "es2022",
   },
-  // The jco-generated bindings import sub-modules (WASI shims, per-
-  // interface glue), and Vite can only code-split worker bundles when
-  // their output is ES modules. Force `es` format; all modern browsers
-  // plus Tauri's webview support module workers.
+
+  // jco's transpiled output splits into multiple chunks per interface;
+  // Vite can only code-split worker bundles when their output is ESM.
   worker: {
     format: "es",
   },
-  esbuild: {
-    // Dev transpile target must match too, otherwise Vite's dev server
-    // serves a module with top-level-await that the browser can't load.
-    target: "es2022",
-  },
+
   resolve: {
     alias: [
       { find: "@", replacement: path.resolve(__dirname, "src") },
+
       // jco-transpiled scserver-commands component. Regenerate via
-      // `yarn build:wasm`. The main alias resolves the top-level ESM
-      // entry; the `/...` form lets us import typed sub-interfaces
-      // (e.g. `@wasm/scserver-commands/interfaces/...d.ts`).
-      {
-        find: /^@wasm\/scserver-commands$/,
-        replacement: path.resolve(
-          __dirname,
-          "crates/scserver-commands/pkg/scserver_commands.js",
-        ),
-      },
-      {
-        find: /^@wasm\/scserver-commands\/(.*)$/,
-        replacement: path.resolve(__dirname, "crates/scserver-commands/pkg") + "/$1",
-      },
-      // jco emits `import … from '@bytecodealliance/preview2-shim/cli'`
-      // etc. The shim package's `exports` map prefers the `node`
-      // condition, which pulls in `node:fs/promises` and crashes the
-      // worker at init time. Pin every subpath to the browser build.
-      {
-        find: /^@bytecodealliance\/preview2-shim\/(.*)$/,
-        replacement: path.resolve(
-          __dirname,
-          "node_modules/@bytecodealliance/preview2-shim/lib/browser",
-        ) + "/$1.js",
-      },
+      // `yarn build:wasm`. Bare import → ESM entry; sub-paths →
+      // per-interface .d.ts files used for types only.
+      { find: /^@wasm\/scserver-commands$/, replacement: `${pkgDir}/scserver_commands.js` },
+      { find: /^@wasm\/scserver-commands\/(.*)$/, replacement: `${pkgDir}/$1` },
+
+      // jco's preview2-shim has a `{ node, default }` exports map; Vite
+      // otherwise resolves the `node` branch, which imports
+      // `node:fs/promises` and crashes the worker at init. Pin every
+      // subpath to the browser build.
+      { find: /^@bytecodealliance\/preview2-shim\/(.*)$/, replacement: `${preview2Browser}/$1.js` },
     ],
   },
 
-  // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
-  //
-  // 1. prevent vite from obscuring rust errors
+  // Tauri dev server config: fixed port, no clobbering Rust stderr.
   clearScreen: false,
-  // 2. tauri expects a fixed port, fail if that port is not available
   server: {
     port: 1420,
     strictPort: true,
-    host: host || false,
-    hmr: host
-      ? {
-          protocol: "ws",
-          host,
-          port: 1421,
-        }
+    host: process.env.TAURI_DEV_HOST || false,
+    hmr: process.env.TAURI_DEV_HOST
+      ? { protocol: "ws", host: process.env.TAURI_DEV_HOST, port: 1421 }
       : undefined,
     watch: {
-      // 3. tell vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],
     },
   },
-}));
+});
