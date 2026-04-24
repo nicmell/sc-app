@@ -35,6 +35,12 @@ import type { ClockTick } from './workerProtocol';
 
 export type ClockState = 'stopped' | 'running' | 'paused';
 
+/** Grace window applied to the freshness check before any tick has
+ *  been seen — covers scsynth scheduling latency right after `start`
+ *  / `resume` / `reset`. Comfortably larger than the 2 × tickInterval
+ *  watchdog that takes over once ticks are flowing. */
+const TICK_STARTUP_GRACE_MS = 500;
+
 interface ClockControllerOptions {
   client: WorkerClient;
   group: GroupController;
@@ -62,6 +68,10 @@ export class ClockController {
   private offGroupState: (() => void) | null = null;
   private watchdog: number | null = null;
   private started = false;
+  /** Most recent "we expect ticks to be flowing" moment — the latest
+   *  of `start` / `resume` / `reset` or any incoming tick. Null while
+   *  the controller is stopped. */
+  private lastSignalAt: number | null = null;
 
   constructor(opts: ClockControllerOptions) {
     this.client = opts.client;
@@ -102,6 +112,7 @@ export class ClockController {
     this.startWatchdog();
 
     this.clockNodeId = this.nodeIds.next();
+    this.lastSignalAt = performance.now();
     await this.client.sendAndSync(
       sNewEasy(CLOCK_SYNTHDEF_NAME, this.clockNodeId, AddToHead, this.group.groupId),
     );
@@ -116,7 +127,12 @@ export class ClockController {
   }
 
   async resume(): Promise<void> {
+    // Reset the freshness clock so the warmup grace kicks in again —
+    // the old `lastTick` predates the pause and would otherwise make
+    // the UI flicker `paused` for one watchdog period after resume.
+    this.lastSignalAt = performance.now();
     await this.group.resume();
+    this.recompute(this.group.state.get());
   }
 
   /** Free the clock synth and re-add it, returning tickIndex to 0.
@@ -126,6 +142,7 @@ export class ClockController {
     await this.client.sendAndSync(nFreeIds(this.clockNodeId));
 
     this.lastTickStore.set(null);
+    this.lastSignalAt = performance.now();
     this.clockNodeId = this.nodeIds.next();
     await this.client.sendAndSync(
       sNewEasy(CLOCK_SYNTHDEF_NAME, this.clockNodeId, AddToHead, this.group.groupId),
@@ -153,6 +170,7 @@ export class ClockController {
       this.clockNodeId = null;
     }
     this.started = false;
+    this.lastSignalAt = null;
     this.effectiveStateStore.set('stopped');
   }
 
@@ -160,6 +178,7 @@ export class ClockController {
 
   private handleTick(tick: ClockTick): void {
     this.lastTickStore.set(tick);
+    this.lastSignalAt = tick.receivedAt;
     // A fresh tick while we were showing 'paused'-due-to-silence flips
     // us back to 'running'. Group-state-driven `paused` (real pause)
     // stays pinned by `recompute`.
@@ -182,9 +201,16 @@ export class ClockController {
   }
 
   private isTickFresh(): boolean {
-    const tick = this.lastTickStore.get();
-    if (!tick) return false;
-    return performance.now() - tick.receivedAt < this.derived.tickIntervalMs * 2;
+    if (this.lastSignalAt === null) return false;
+    const ageMs = performance.now() - this.lastSignalAt;
+    // Before the first tick ever arrives, grant a startup grace so
+    // the UI doesn't immediately claim 'paused' during scsynth's
+    // scheduling latency window. Once a tick has been seen, the
+    // normal 2 × tickIntervalMs watchdog takes over.
+    const allowance = this.lastTickStore.get()
+      ? this.derived.tickIntervalMs * 2
+      : TICK_STARTUP_GRACE_MS;
+    return ageMs < allowance;
   }
 
   private startWatchdog(): void {
