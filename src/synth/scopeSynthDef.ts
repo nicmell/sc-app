@@ -18,33 +18,45 @@
  * `clockBus` on the same control block. Inputs (e.g. testTone)
  * must also be at-or-before this synth in the group order.
  *
- * Phase 7 only compiles the mono (channels = 1) form. Multi-channel
- * is deferred to Phase 10.
+ * Compiled per channel count: SC's `In.ar(bus, channels)` and
+ * `BufWr.ar` need a fixed channel count at compile time. We cache
+ * one SynthDef per `channels` value seen.
  */
 
 import { synthdef } from '@sc-app/synthdef-compiler';
 import { DEFAULT_PARAMS } from '@/config/clockConfig';
 
-export const SCOPE_SYNTHDEF_NAME = 'scopeTap1';
+export function scopeSynthDefName(channels: number): string {
+  return `scopeTap${channels}ch`;
+}
 
-let cached: Uint8Array | null = null;
+const cache = new Map<number, Uint8Array>();
 
-export function compileScopeSynthDef(): Uint8Array {
+export function compileScopeSynthDef(channels = 1): Uint8Array {
+  if (channels < 1 || !Number.isInteger(channels)) {
+    throw new Error(
+      `compileScopeSynthDef: channels must be a positive integer, got ${channels}`,
+    );
+  }
+  const cached = cache.get(channels);
   if (cached) return cached;
 
   const decimation = DEFAULT_PARAMS.decimation;
   const ring = DEFAULT_PARAMS.scopeChunkSize * 2;
 
   const def = synthdef(
-    SCOPE_SYNTHDEF_NAME,
+    scopeSynthDefName(channels),
     (g, { inBus = 0, bufnum = 0, clockBus = 0 }) => {
-      const sig = g.In.ar(inBus, 1);
+      // `In.ar(bus, channels)` returns a multichannel UGen — its
+      // expansion is what BufWr writes interleaved into the buffer.
+      const sig = g.In.ar(inBus, channels);
       const phase = g.In.ar(clockBus, 1);
       const writeIdx = g.mod(g.div(phase, decimation), ring);
-      g.BufWr.ar([sig], bufnum, writeIdx);
+      g.BufWr.ar(sig, bufnum, writeIdx);
     },
   );
 
-  cached = def.toBytes();
-  return cached;
+  const bytes = def.toBytes();
+  cache.set(channels, bytes);
+  return bytes;
 }

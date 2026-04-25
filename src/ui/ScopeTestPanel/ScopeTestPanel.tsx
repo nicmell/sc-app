@@ -15,12 +15,14 @@ import type { WorkerClient } from '@/scope/WorkerClient';
 import type { ScopeChunk } from '@/scope/workerProtocol';
 import { DEFAULT_PARAMS } from '@/config/clockConfig';
 import {
-  SCOPE_SYNTHDEF_NAME,
+  scopeSynthDefName,
   compileScopeSynthDef,
 } from '@/synth/scopeSynthDef';
 import {
   TEST_TONE_SYNTHDEF_NAME,
+  TEST_TONE_STEREO_SYNTHDEF_NAME,
   compileTestToneSynthDef,
+  compileTestToneStereoSynthDef,
 } from '@/synth/testToneSynthDef';
 import {
   MONITOR_SYNTHDEF_NAME,
@@ -29,11 +31,15 @@ import {
 import { ScopeView } from '@/ui/ScopeView';
 import './ScopeTestPanel.scss';
 
-const TONE_FREQ = 440;
+const TONE_FREQ_MONO = 440;
+const TONE_FREQ_STEREO_L = 440;
+const TONE_FREQ_STEREO_R = 660;
 const TONE_AMP = 0.2;
 const MONITOR_AMP = 0.5;
 const HARDWARE_OUT_BUS = 0;
 const SCOPE_RING = DEFAULT_PARAMS.scopeChunkSize * 2;
+
+type Channels = 1 | 2;
 
 interface ScopeTestPanelProps {
   client: WorkerClient;
@@ -50,7 +56,9 @@ interface ScopeTestPanelProps {
 interface Resources {
   toneNodeId: number | null;
   toneBus: number | null;
+  toneChannels: Channels | null;
   scopeNodeId: number | null;
+  scopeChannels: Channels | null;
   bufnum: number | null;
   monitorNodeId: number | null;
 }
@@ -64,18 +72,12 @@ interface PokeStats {
 }
 
 interface SubStats {
-  /** Most recent chunk's tickIndex. */
   tickIndex: number;
-  /** Number of chunks delivered since subscribe. */
   count: number;
-  /** Rolling chunks-per-second (windowed over the last second). */
   chunksPerSec: number;
-  /** Snapshot summary of the most recent chunk. */
   last: PokeStats;
 }
 
-/** Used to derive a stable scopeId per panel instance — survives
- *  Subscribe→Unsubscribe→Subscribe cycles in the same panel. */
 function freshScopeId(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? crypto.randomUUID()
@@ -93,7 +95,9 @@ export function ScopeTestPanel({
   const [res, setRes] = useState<Resources>({
     toneNodeId: null,
     toneBus: null,
+    toneChannels: null,
     scopeNodeId: null,
+    scopeChannels: null,
     bufnum: null,
     monitorNodeId: null,
   });
@@ -102,17 +106,12 @@ export function ScopeTestPanel({
   const [stats, setStats] = useState<PokeStats | null>(null);
   const [subStats, setSubStats] = useState<SubStats | null>(null);
   const [gain, setGain] = useState(1);
-  // Subscribe state lives in refs because `unsubscribeRef` returns a
-  // fresh function each subscription and we don't want to re-render
-  // every time a chunk arrives just to keep the readout updated.
+  /** User-selected channel count for the *next* tone+scope pair.
+   *  Locked once anything is running; reset when Stop All clears
+   *  the panel. */
+  const [channels, setChannels] = useState<Channels>(1);
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const lastChunkRef = useRef<ScopeChunk | null>(null);
-  // Mirror lastChunk into a separate ref handed to ScopeView. We
-  // can't use lastChunkRef directly because that's typed as
-  // `ScopeChunk | null` and useRef<X | null>() returns RefObject<X>
-  // unless we explicitly initialise — splitting them keeps types
-  // tidy and survives a future refactor where the panel might want
-  // to reset the renderer ref independently.
   const renderChunkRef = useRef<ScopeChunk | null>(null);
 
   const hasTone = res.toneNodeId !== null;
@@ -121,6 +120,7 @@ export function ScopeTestPanel({
   const hasSubscription = unsubscribeRef.current !== null;
   const hasAny =
     hasTone || hasScope || hasMonitor || res.bufnum !== null;
+  const channelsLocked = hasAny;
 
   const guard = useCallback(
     async <T,>(op: () => Promise<T>): Promise<T | undefined> => {
@@ -143,58 +143,117 @@ export function ScopeTestPanel({
   const onStartTone = useCallback(() => {
     void guard(async () => {
       if (res.toneNodeId !== null) return;
+      const ch: Channels = channels;
+      if (ch === 1) {
+        await registry.ensureLoaded(
+          TEST_TONE_SYNTHDEF_NAME,
+          compileTestToneSynthDef(),
+        );
+        const bus = ids.bus.next();
+        const nodeId = ids.node.next();
+        await client.sendAndSync(
+          sNew(TEST_TONE_SYNTHDEF_NAME, nodeId, AddToTail, group.groupId, {
+            outBus: bus,
+            freq: TONE_FREQ_MONO,
+            amp: TONE_AMP,
+          }),
+        );
+        console.log(
+          `[sc:scope-test] started mono tone node=${nodeId} bus=${bus} ` +
+            `(${TONE_FREQ_MONO} Hz, amp ${TONE_AMP})`,
+        );
+        setRes((r) => ({
+          ...r,
+          toneNodeId: nodeId,
+          toneBus: bus,
+          toneChannels: 1,
+        }));
+        return;
+      }
+      // Stereo: allocate a contiguous 2-bus block (Out.ar(b, [L, R])
+      // writes L→b, R→b+1; we need to ensure b+1 isn't reused).
       await registry.ensureLoaded(
-        TEST_TONE_SYNTHDEF_NAME,
-        compileTestToneSynthDef(),
+        TEST_TONE_STEREO_SYNTHDEF_NAME,
+        compileTestToneStereoSynthDef(),
       );
-      const bus = ids.bus.next();
+      const bus = ids.bus.nextBlock(2);
       const nodeId = ids.node.next();
       await client.sendAndSync(
-        sNew(TEST_TONE_SYNTHDEF_NAME, nodeId, AddToTail, group.groupId, {
-          outBus: bus,
-          freq: TONE_FREQ,
-          amp: TONE_AMP,
-        }),
+        sNew(
+          TEST_TONE_STEREO_SYNTHDEF_NAME,
+          nodeId,
+          AddToTail,
+          group.groupId,
+          {
+            outBus: bus,
+            freqL: TONE_FREQ_STEREO_L,
+            freqR: TONE_FREQ_STEREO_R,
+            amp: TONE_AMP,
+          },
+        ),
       );
       console.log(
-        `[sc:scope-test] started tone node=${nodeId} bus=${bus} (${TONE_FREQ} Hz, amp ${TONE_AMP})`,
+        `[sc:scope-test] started stereo tone node=${nodeId} buses=${bus},${bus + 1} ` +
+          `(${TONE_FREQ_STEREO_L}L / ${TONE_FREQ_STEREO_R}R Hz, amp ${TONE_AMP})`,
       );
-      setRes((r) => ({ ...r, toneNodeId: nodeId, toneBus: bus }));
+      setRes((r) => ({
+        ...r,
+        toneNodeId: nodeId,
+        toneBus: bus,
+        toneChannels: 2,
+      }));
     });
-  }, [client, group, ids, registry, res.toneNodeId, guard]);
+  }, [client, group, ids, registry, channels, res.toneNodeId, guard]);
 
   const onStartScope = useCallback(() => {
     void guard(async () => {
       if (res.scopeNodeId !== null) return;
-      if (res.toneBus === null) {
+      if (res.toneBus === null || res.toneChannels === null) {
         throw new Error('start the tone first');
       }
-      await registry.ensureLoaded(
-        SCOPE_SYNTHDEF_NAME,
-        compileScopeSynthDef(),
-      );
+      const ch = res.toneChannels;
+      const synthName = scopeSynthDefName(ch);
+      await registry.ensureLoaded(synthName, compileScopeSynthDef(ch));
       const bufnum = ids.buffer.next();
-      await client.sendAndSync(bAlloc(bufnum, SCOPE_RING, 1));
+      // bAlloc takes (bufnum, numFrames, numChannels). For multi-
+      // channel scopes the buffer holds N samples × C channels
+      // interleaved, so numFrames is still SCOPE_RING — scsynth
+      // multiplies internally by numChannels.
+      await client.sendAndSync(bAlloc(bufnum, SCOPE_RING, ch));
       const nodeId = ids.node.next();
       await client.sendAndSync(
-        sNew(SCOPE_SYNTHDEF_NAME, nodeId, AddToTail, group.groupId, {
+        sNew(synthName, nodeId, AddToTail, group.groupId, {
           inBus: res.toneBus,
           bufnum,
           clockBus: clock.clockBus,
         }),
       );
       console.log(
-        `[sc:scope-test] started scope node=${nodeId} bufnum=${bufnum} ` +
+        `[sc:scope-test] started ${ch}-ch scope node=${nodeId} bufnum=${bufnum} ` +
           `inBus=${res.toneBus} clockBus=${clock.clockBus}`,
       );
-      setRes((r) => ({ ...r, scopeNodeId: nodeId, bufnum }));
+      setRes((r) => ({
+        ...r,
+        scopeNodeId: nodeId,
+        scopeChannels: ch,
+        bufnum,
+      }));
     });
-  }, [client, clock, group, ids, registry, res.scopeNodeId, res.toneBus, guard]);
+  }, [
+    client,
+    clock,
+    group,
+    ids,
+    registry,
+    res.scopeNodeId,
+    res.toneBus,
+    res.toneChannels,
+    guard,
+  ]);
 
   const onToggleMonitor = useCallback(() => {
     void guard(async () => {
       if (res.monitorNodeId !== null) {
-        // Stop monitor
         try {
           await client.sendAndSync(nFree(res.monitorNodeId));
           console.log(
@@ -206,9 +265,13 @@ export function ScopeTestPanel({
         setRes((r) => ({ ...r, monitorNodeId: null }));
         return;
       }
-      // Start monitor
       if (res.toneBus === null) {
         throw new Error('start the tone first');
+      }
+      // Mono monitor only — stereo monitoring would need a 2-channel
+      // monitor SynthDef; deferred until we actually want to listen.
+      if (res.toneChannels !== 1) {
+        throw new Error('monitor is mono-only for now');
       }
       await registry.ensureLoaded(
         MONITOR_SYNTHDEF_NAME,
@@ -228,7 +291,16 @@ export function ScopeTestPanel({
       );
       setRes((r) => ({ ...r, monitorNodeId: nodeId }));
     });
-  }, [client, group, ids, registry, res.monitorNodeId, res.toneBus, guard]);
+  }, [
+    client,
+    group,
+    ids,
+    registry,
+    res.monitorNodeId,
+    res.toneBus,
+    res.toneChannels,
+    guard,
+  ]);
 
   const onToggleSubscribe = useCallback(() => {
     void guard(async () => {
@@ -241,49 +313,60 @@ export function ScopeTestPanel({
         setSubStats(null);
         return;
       }
-      if (res.bufnum === null) {
+      if (res.bufnum === null || res.scopeChannels === null) {
         throw new Error('start the scope first');
       }
       const scopeId = freshScopeId();
-      // Per-second rolling window: timestamps of recent chunk arrivals.
+      const ch = res.scopeChannels;
       const recent: number[] = [];
-      // Continuity check: log boundary samples once per second.
       let lastChunkData: Float32Array | null = null;
       let nextContinuityLogAt = 0;
       let count = 0;
 
       const off = client.subscribeScope(
-        { scopeId, bufnum: res.bufnum, chunkSize: DEFAULT_PARAMS.scopeChunkSize, channels: 1 },
+        {
+          scopeId,
+          bufnum: res.bufnum,
+          chunkSize: DEFAULT_PARAMS.scopeChunkSize,
+          channels: ch,
+        },
         (chunk) => {
           count += 1;
           const now = performance.now();
           recent.push(now);
           while (recent.length > 0 && recent[0] < now - 1000) recent.shift();
 
-          // Hand the chunk to the renderer FIRST — its RAF reads
-          // this ref each frame so we want it pointing at the
-          // latest array as soon as possible.
           renderChunkRef.current = chunk;
           lastChunkRef.current = chunk;
 
-          // Continuity diagnostic — log last4(N-1) and first4(N) every
-          // second so misplaced parity stands out.
           if (lastChunkData && now >= nextContinuityLogAt) {
-            const lastN = lastChunkData.length;
-            const last4 = Array.from(lastChunkData.slice(lastN - 4, lastN));
-            const first4 = Array.from(chunk.data.slice(0, 4));
+            // Channel-0 boundary check (other channels follow the
+            // same audio time so just one is representative).
+            const lastN = lastChunkData.length / chunk.channels;
+            const last4: number[] = [];
+            const first4: number[] = [];
+            for (let i = lastN - 4; i < lastN; i++) {
+              last4.push(lastChunkData[i * chunk.channels]);
+            }
+            for (let i = 0; i < 4; i++) {
+              first4.push(chunk.data[i * chunk.channels]);
+            }
             console.log(
-              `[sc:scope-test] continuity tick=${chunk.tickIndex} ` +
+              `[sc:scope-test] continuity tick=${chunk.tickIndex} ch=${chunk.channels} ` +
                 `last4=[${last4.map((v) => v.toFixed(3)).join(', ')}] ` +
                 `first4=[${first4.map((v) => v.toFixed(3)).join(', ')}]`,
             );
+            if (count <= 2 && chunk.channels === 2) {
+              // Spot-check interleave order on the first stereo chunk
+              // (Phase 10 acceptance #3): expect [L0, R0, L1, R1, …].
+              const slice = Array.from(chunk.data.slice(0, 6));
+              console.log(
+                `[sc:scope-test] interleave (L0,R0,L1,R1,L2,R2) = ` +
+                  `[${slice.map((v) => v.toFixed(3)).join(', ')}]`,
+              );
+            }
             nextContinuityLogAt = now + 1000;
           }
-          // Stash a defensive copy for the NEXT continuity check —
-          // the original chunk.data was zero-copy-transferred from
-          // the worker; reading it again next tick is fine (new
-          // array each tick), but we need a stable snapshot of
-          // *this* tick's data to compare against.
           lastChunkData = new Float32Array(chunk.data);
 
           setSubStats({
@@ -296,35 +379,36 @@ export function ScopeTestPanel({
       );
       unsubscribeRef.current = off;
       console.log(
-        `[sc:scope-test] subscribed scopeId=${scopeId} bufnum=${res.bufnum}`,
+        `[sc:scope-test] subscribed scopeId=${scopeId} bufnum=${res.bufnum} channels=${ch}`,
       );
     });
-  }, [client, res.bufnum, guard]);
+  }, [client, res.bufnum, res.scopeChannels, guard]);
 
   const onPoke = useCallback(() => {
     void guard(async () => {
-      if (res.bufnum === null) throw new Error('no buffer allocated');
+      if (res.bufnum === null || res.scopeChannels === null) {
+        throw new Error('no buffer allocated');
+      }
       const t0 = performance.now();
-      const samples = await poker.poke(res.bufnum, 0, SCOPE_RING);
+      const samples = await poker.poke(
+        res.bufnum,
+        0,
+        SCOPE_RING * res.scopeChannels,
+      );
       const elapsedMs = performance.now() - t0;
       const s = summarize(samples);
       console.log(
-        `[sc:scope-test] poke bufnum=${res.bufnum} (${elapsedMs.toFixed(
-          1,
-        )} ms) len=${s.length} min=${s.min.toFixed(4)} max=${s.max.toFixed(
-          4,
-        )} rms=${s.rms.toFixed(4)} first8=[${s.first8
-          .map((v) => v.toFixed(3))
-          .join(', ')}]`,
+        `[sc:scope-test] poke bufnum=${res.bufnum} ch=${res.scopeChannels} ` +
+          `(${elapsedMs.toFixed(1)} ms) len=${s.length} ` +
+          `min=${s.min.toFixed(4)} max=${s.max.toFixed(4)} rms=${s.rms.toFixed(4)} ` +
+          `first8=[${s.first8.map((v) => v.toFixed(3)).join(', ')}]`,
       );
       setStats(s);
     });
-  }, [poker, res.bufnum, guard]);
+  }, [poker, res.bufnum, res.scopeChannels, guard]);
 
   const onStopAll = useCallback(() => {
     void guard(async () => {
-      // Drop any active subscription first so the worker stops
-      // firing /b_getn for a buffer we're about to free.
       if (unsubscribeRef.current !== null) {
         unsubscribeRef.current();
         unsubscribeRef.current = null;
@@ -332,8 +416,6 @@ export function ScopeTestPanel({
         renderChunkRef.current = null;
         setSubStats(null);
       }
-      // Free scope + monitor next so nothing is still reading the
-      // tone bus / writing the buffer when those go away.
       if (res.monitorNodeId !== null) {
         try {
           await client.sendAndSync(nFree(res.monitorNodeId));
@@ -366,7 +448,9 @@ export function ScopeTestPanel({
       setRes({
         toneNodeId: null,
         toneBus: null,
+        toneChannels: null,
         scopeNodeId: null,
+        scopeChannels: null,
         bufnum: null,
         monitorNodeId: null,
       });
@@ -374,11 +458,6 @@ export function ScopeTestPanel({
     });
   }, [client, res, guard]);
 
-  // Automatic teardown if the panel unmounts while resources exist
-  // (usually means the dashboard itself is going away; the dashboard
-  // already frees the whole group, so this is just belt-and-braces
-  // for hot-reload in dev). Always drop the subscription on unmount
-  // so the worker doesn't keep firing /b_getn into nothing.
   useEffect(() => {
     return () => {
       if (unsubscribeRef.current !== null) {
@@ -396,6 +475,22 @@ export function ScopeTestPanel({
     <section className="scope-test-panel">
       <header>Scope test</header>
       <div className="row">
+        <label className="status">
+          channels&nbsp;
+          <select
+            value={channels}
+            disabled={busy || channelsLocked}
+            onChange={(e) => setChannels(Number(e.target.value) as Channels)}
+            title={
+              channelsLocked
+                ? 'Stop all to change channel count'
+                : 'Number of channels for the next tone + scope'
+            }
+          >
+            <option value={1}>1 (mono)</option>
+            <option value={2}>2 (stereo)</option>
+          </select>
+        </label>
         <button
           type="button"
           onClick={onStartTone}
@@ -414,8 +509,12 @@ export function ScopeTestPanel({
           type="button"
           className="secondary"
           onClick={onToggleMonitor}
-          disabled={busy || !hasTone}
-          title={`Toggle hardware-out monitor on bus ${HARDWARE_OUT_BUS}`}
+          disabled={busy || !hasTone || res.toneChannels !== 1}
+          title={
+            res.toneChannels === 2
+              ? 'Mono monitor only — stereo monitoring not yet implemented'
+              : `Toggle hardware-out monitor on bus ${HARDWARE_OUT_BUS}`
+          }
         >
           {hasMonitor ? 'Stop monitor' : 'Monitor'}
         </button>
@@ -432,8 +531,6 @@ export function ScopeTestPanel({
           type="button"
           className="secondary"
           onClick={onPoke}
-          // Worker intercepts /b_setn for subscribed bufnums, so a
-          // BufferPoker against the same bufnum would hang.
           disabled={busy || !hasScope || hasSubscription}
           title={
             hasSubscription
@@ -454,11 +551,13 @@ export function ScopeTestPanel({
       </div>
       <div className="status">
         {hasTone
-          ? `tone on bus ${res.toneBus}`
+          ? `tone ${res.toneChannels}ch on bus ${res.toneBus}${
+              res.toneChannels === 2 ? `..${(res.toneBus ?? 0) + 1}` : ''
+            }`
           : 'tone idle'}
         {' · '}
         {hasScope
-          ? `scope → bufnum ${res.bufnum}`
+          ? `scope ${res.scopeChannels}ch → bufnum ${res.bufnum}`
           : 'scope idle'}
         {' · '}
         {hasMonitor
@@ -471,7 +570,13 @@ export function ScopeTestPanel({
       </div>
       {hasSubscription && (
         <>
-          <ScopeView chunkRef={renderChunkRef} gain={gain} />
+          <ScopeView
+            chunkRef={renderChunkRef}
+            effectiveRate={clock.derived.scopeEffectiveRate}
+            samplesPerChunk={DEFAULT_PARAMS.scopeChunkSize}
+            gain={gain}
+            defaultLayout="stacked"
+          />
           <div className="row">
             <label className="status">
               gain&nbsp;

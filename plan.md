@@ -1934,43 +1934,70 @@ Unsubscribe / Stop all clears the ref.
 
 ## Phase 10 — Multi-Channel
 
-**Goal.** Interleaved multi-channel scope; stacked lanes.
+**Goal.** Interleaved multi-channel scope; stacked + overlay lanes,
+runtime-switchable. Scope-internal zoom + window-size readout.
 
-### Files
+### Files (as landed)
 
-- `src/synth/testToneStereoSynthDef.ts`
-- `src/scope/ScopeRenderer.ts` — extended
+- `src/synth/scopeSynthDef.ts` — now `compileScopeSynthDef(channels)`,
+  cached per channel count. SynthDef name: `scopeTap${N}ch`. The
+  body is identical except `g.In.ar(inBus, channels)` and
+  `g.BufWr.ar(sig, ...)` of the multichannel UGen — SC's expansion
+  writes interleaved into the buffer.
+- `src/synth/testToneSynthDef.ts` — keeps `compileTestToneSynthDef()`
+  (mono, freq=440) for backward compat; adds
+  `compileTestToneStereoSynthDef()` (freqL=440, freqR=660). Both
+  cached at module scope. N-channel deferred.
+- `src/scope/IdAllocator.ts` — adds `nextBlock(n)` for reserving
+  `n` contiguous IDs, used to allocate the stereo bus pair so a
+  later `next()` doesn't collide with the right channel.
+- `src/ui/ScopeView/ScopeView.tsx` — extended significantly:
+  - **Stacked + overlay** layouts, runtime-selectable.
+  - **4 zoom levels** (`1×, 1/2×, 1/4×, 1/8×`) with `[−] [+] [1×]`
+    buttons. Without a rolling history buffer there's no zoom-out
+    beyond `1×`; zoom-in shows the most-recent `chunkSize × factor`
+    samples of the latest chunk stretched across the canvas.
+  - **Window-size readout** ("X.XX ms") in a small monospace pill
+    overlaid on the top-right corner of the canvas.
+  - Internal state for layout and zoom mirrored to refs so the RAF
+    loop reads them per frame without re-mounting on every tweak.
+  - Per-channel stroke colours from a built-in 4-colour palette
+    (cyclic).
+- `src/ui/ScopeTestPanel/ScopeTestPanel.tsx` — adds a
+  `channels: 1 | 2` selector locked while resources are running.
+  `Start tone` branches: mono uses the existing path; stereo uses
+  `nextBlock(2)` for the bus pair and `compileTestToneStereoSynthDef`.
+  `Start scope` parameterises `compileScopeSynthDef(channels)` and
+  `bAlloc(bufnum, ringSize, channels)`. Subscription carries
+  `channels: ch`. `Monitor` is mono-only and disabled when stereo
+  (a stereo monitor would need its own SynthDef — deferred).
 
-### `testToneStereoSynthDef.ts`
+### Pipeline changes
 
-```
-SynthDef("testToneStereo", {
-    arg out = 0, freqL = 440, freqR = 660, ampL = 0.2, ampR = 0.2;
-    Out.ar(out, [SinOsc.ar(freqL) * ampL, SinOsc.ar(freqR) * ampR]);
-}).add;
-```
-
-### `ScopeRenderer` extended
-
-```ts
-interface ScopeRendererOpts {
-  // ...previous...
-  layout?: 'stacked' | 'overlay';
-  channelColors?: string[];
-}
-```
-
-Stacked layout: divide canvas vertically into `channels` lanes. For channel `c`, lane top = `c * laneHeight`, zero line at `laneTop + laneHeight/2`; draw polyline using `data[i * channels + c]`.
-
-Pipeline changes: none — `BufWr.ar` of a multi-channel signal into a `channels`-channel buffer writes interleaved natively; worker's `/b_setn` extract is already a flat `Float32Array` of length `chunkSize * channels`.
+None at the worker / WorkerClient layer. `BufWr.ar` of a multi-channel
+signal into an `N`-channel buffer writes interleaved natively;
+`/b_setn` returns a flat `Float32Array` of length `chunkSize ×
+channels`; the existing `subscribeScope({ chunkSize, channels })`
+already conveys both numbers, and the worker reads
+`chunkSize × channels` samples per tick at the parity offset
+without caring about channel layout.
 
 ### Acceptance
 
-1. Stereo `[440, 660]` → two visibly distinct lanes.
-2. Swap L/R → lanes swap.
-3. Interleaving check: log first 6 samples, expect `[L0, R0, L1, R1, L2, R2]`.
-4. Mono regression still works.
-5. 4-channel `[220, 330, 440, 550]` → 4 stacked lanes.
+1. Pick `channels = 2` → **Start tone → Start scope → Subscribe**:
+   two visibly distinct lanes (440 Hz top, 660 Hz bottom).
+2. Switch layout select to **overlay**: both waves on a shared
+   axis, distinguishable by colour.
+3. Continuity log on first stereo chunk reports
+   `interleave (L0, R0, L1, R1, L2, R2) = [...]` — verifies
+   the buffer's interleave order.
+4. Pick `channels = 1`, restart → mono path identical to Phase 7/8/9.
+5. Zoom buttons step `1× → 1/2× → 1/4× → 1/8×` with the corner
+   readout updating to `20.83 → 10.42 → 5.21 → 2.60 ms`. Wave
+   stretches horizontally; pixel-per-sample density grows.
+6. 4-channel: deferrable. The SynthDef factories are
+   parameterised, so `compileScopeSynthDef(4)` works as soon as
+   we wire a 4-channel test-tone SynthDef. Not in the panel UI.
 
 ---
 
