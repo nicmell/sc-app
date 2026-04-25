@@ -64,6 +64,65 @@ export interface ScopeChunk {
   tickIndex: number;
 }
 
+/** Per-recording subscription registered with the worker. Each tick
+ *  the worker fires `/b_getn` for the just-completed half of `bufnum`,
+ *  appends the resulting samples to an internal `WavMemoryWriter`
+ *  keyed by `recordingId`, and notifies main via
+ *  `recordingChunkWritten`. On `stopRecording` the worker finalises
+ *  the WAV and posts `recordingDone` with the buffer transferred. */
+export interface RecordingSubscription {
+  recordingId: string;
+  bufnum: number;
+  channels: number;
+  /** Sampled at start, stamped into the WAV header verbatim — must
+   *  match scsynth's actual sample rate (`AppShell` validates this
+   *  against `DEFAULT_ENV.sampleRate` at /status time). */
+  sampleRate: number;
+  /** How many audio samples-per-channel the recorder synth's
+   *  `Phasor.ar` covers in one half (i.e. one tick's worth). The
+   *  worker requests `samplesPerTick × channels` words on each
+   *  `/b_getn`. */
+  samplesPerTick: number;
+  /** Retry policy for missing `/b_setn` replies. `maxAttempts = 1`
+   *  disables retries and goes straight to gap-fill on first
+   *  timeout. `deadlineMs` should be well under `tickIntervalMs` so a
+   *  retry can land before the next tick races it. */
+  retry: { maxAttempts: number; deadlineMs: number };
+}
+
+/** Live progress update sent after each successfully-appended chunk. */
+export interface RecordingChunkWritten {
+  recordingId: string;
+  tickIndex: number;
+  /** Cumulative frames (frames = samples-per-channel) written to the
+   *  WAV so far, including any gap zero-fills. */
+  framesWritten: number;
+}
+
+/** A run of zero-filled frames written in lieu of a missing
+ *  `/b_setn`. The chunk is replaced with `framesMissing × channels`
+ *  zeros so WAV time math stays linear; the gap is recorded in a
+ *  sidecar JSON for downstream forensics. */
+export interface RecordingGap {
+  recordingId: string;
+  tickIndex: number;
+  framesMissing: number;
+}
+
+/** Final payload posted on `stopRecording`. Both `wav` and
+ *  `gapsJson` are intended to land on the main thread as a unit
+ *  ready for download. `wav` is sent as a `Transferable` — its
+ *  ArrayBuffer is detached on the worker side after postMessage. */
+export interface RecordingDone {
+  recordingId: string;
+  totalFrames: number;
+  gaps: ReadonlyArray<{ tickIndex: number; framesMissing: number }>;
+  wav: ArrayBuffer;
+  /** Pre-stringified sidecar containing the gap list. Empty string if
+   *  no gaps occurred — main side decides whether to offer it. */
+  gapsJson: string;
+}
+
 export type MainToWorker =
   | { type: 'connect'; url: string }
   | { type: 'disconnect' }
@@ -71,7 +130,9 @@ export type MainToWorker =
   | { type: 'registerClock'; trigId: number }
   | { type: 'unregisterClock' }
   | { type: 'subscribeScope'; subscription: ScopeSubscription }
-  | { type: 'unsubscribeScope'; scopeId: string };
+  | { type: 'unsubscribeScope'; scopeId: string }
+  | { type: 'startRecording'; subscription: RecordingSubscription }
+  | { type: 'stopRecording'; recordingId: string };
 
 export type WorkerToMain =
   | { type: 'ready' }
@@ -79,4 +140,7 @@ export type WorkerToMain =
   | { type: 'reply'; reply: OscReply }
   | { type: 'clockTick'; tick: ClockTick }
   | { type: 'scopeChunk'; chunk: ScopeChunk }
+  | { type: 'recordingChunkWritten'; info: RecordingChunkWritten }
+  | { type: 'recordingGap'; gap: RecordingGap }
+  | { type: 'recordingDone'; done: RecordingDone }
   | { type: 'log'; level: 'log' | 'info' | 'warn' | 'error'; message: string };
