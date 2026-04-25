@@ -23,7 +23,7 @@
  * one SynthDef per `channels` value seen.
  */
 
-import { synthdef } from '@sc-app/synthdef-compiler';
+import { synthdef, ugenIndex, uo, type UGenInput } from '@sc-app/synthdef-compiler';
 import { DEFAULT_PARAMS } from '@/config/clockConfig';
 
 export function scopeSynthDefName(channels: number): string {
@@ -47,12 +47,27 @@ export function compileScopeSynthDef(channels = 1): Uint8Array {
   const def = synthdef(
     scopeSynthDefName(channels),
     (g, { inBus = 0, bufnum = 0, clockBus = 0 }) => {
-      // `In.ar(bus, channels)` returns a multichannel UGen — its
-      // expansion is what BufWr writes interleaved into the buffer.
-      const sig = g.In.ar(inBus, channels);
+      // `In.ar(bus, channels)` registers an N-output UGen, but the
+      // sugar returns a single `UGenInput` pointing at output 0
+      // only. Passing that directly to `BufWr.ar(sig)` would wire
+      // up channel 0 and silently drop the rest, leaving every
+      // other lane flat. Explicitly fan the In UGen's outputs into
+      // an array of UGenInputs (one per output) so BufWr writes
+      // all channels interleaved into the N-channel buffer.
+      const inUgen = g.In.ar(inBus, channels);
+      const inIdx = ugenIndex(inUgen);
+      if (inIdx === null) {
+        // Defensive — ugenIndex returns null only for `constant`
+        // inputs, which `In.ar` never produces.
+        throw new Error('compileScopeSynthDef: In.ar did not return a UGen ref');
+      }
+      const sigs: UGenInput[] = [];
+      for (let c = 0; c < channels; c++) {
+        sigs.push(uo(inIdx, c));
+      }
       const phase = g.In.ar(clockBus, 1);
       const writeIdx = g.mod(g.div(phase, decimation), ring);
-      g.BufWr.ar(sig, bufnum, writeIdx);
+      g.BufWr.ar(sigs, bufnum, writeIdx);
     },
   );
 
