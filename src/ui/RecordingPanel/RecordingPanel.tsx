@@ -9,12 +9,19 @@ import type {
   RecordingState,
 } from '@/recording/RecordingController';
 import type { RecordingManager } from '@/recording/RecordingManager';
+import type { ClockController } from '@/scope/ClockController';
+import { RecordingWaveformView } from './RecordingWaveformView';
 import './RecordingPanel.scss';
 
 type Channels = 1 | 2;
 
+const WINDOW_SECONDS_OPTIONS = [1, 5, 15, 60] as const;
+type WindowSeconds = (typeof WINDOW_SECONDS_OPTIONS)[number];
+const DEFAULT_WINDOW_SECONDS: WindowSeconds = 5;
+
 interface RecordingPanelProps {
   manager: RecordingManager;
+  clock: ClockController;
   /** sampleRate captured from the clock at mount — used purely for
    *  the elapsed-time and memory-estimate readouts. */
   sampleRate: number;
@@ -22,7 +29,11 @@ interface RecordingPanelProps {
 
 const DEFAULT_INPUT_BUS = 16;
 
-export function RecordingPanel({ manager, sampleRate }: RecordingPanelProps) {
+export function RecordingPanel({
+  manager,
+  clock,
+  sampleRate,
+}: RecordingPanelProps) {
   const recordings = useSyncExternalStore(
     (cb) => manager.recordings.subscribe(cb),
     () => manager.recordings.get(),
@@ -131,6 +142,7 @@ export function RecordingPanel({ manager, sampleRate }: RecordingPanelProps) {
             <RecordingItem
               key={rec.recordingId}
               rec={rec}
+              clock={clock}
               sampleRate={sampleRate}
               onRemove={() => manager.remove(rec.recordingId)}
             />
@@ -143,13 +155,18 @@ export function RecordingPanel({ manager, sampleRate }: RecordingPanelProps) {
 
 function RecordingItem({
   rec,
+  clock,
   sampleRate,
   onRemove,
 }: {
   rec: RecordingController;
+  clock: ClockController;
   sampleRate: number;
   onRemove: () => void;
 }) {
+  const [windowSeconds, setWindowSeconds] = useState<WindowSeconds>(
+    DEFAULT_WINDOW_SECONDS,
+  );
   const state = useSyncExternalStore(
     (cb) => rec.state.subscribe(cb),
     () => rec.state.get(),
@@ -235,6 +252,11 @@ function RecordingItem({
           )}
         </span>
         <div className="actions">
+          <WindowSelector
+            value={windowSeconds}
+            onChange={setWindowSeconds}
+            disabled={state === 'idle' || state === 'preparing'}
+          />
           {(state === 'recording' || state === 'preparing') && (
             <button
               type="button"
@@ -286,8 +308,44 @@ function RecordingItem({
           )}
         </div>
       </div>
+      {(state === 'recording' ||
+        state === 'finalizing' ||
+        state === 'done') && (
+        <RecordingWaveformView
+          recording={rec}
+          clock={clock}
+          windowSeconds={windowSeconds}
+        />
+      )}
       {error && <p className="error">{error}</p>}
     </li>
+  );
+}
+
+function WindowSelector({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: WindowSeconds;
+  onChange: (next: WindowSeconds) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="window-selector" role="group" aria-label="Window size">
+      {WINDOW_SECONDS_OPTIONS.map((sec) => (
+        <button
+          key={sec}
+          type="button"
+          className={`window-option small${value === sec ? ' active' : ''}`}
+          disabled={disabled}
+          onClick={() => onChange(sec)}
+          title={`Show last ${sec} second${sec === 1 ? '' : 's'} of audio`}
+        >
+          {sec}s
+        </button>
+      ))}
+    </div>
   );
 }
 

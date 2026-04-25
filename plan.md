@@ -2550,6 +2550,244 @@ is reloaded.
 
 ---
 
+## Phase 14 — Recording Waveform View
+
+**Goal.** Each recording's panel card carries a horizontally-scrollable
+waveform canvas with a playhead, second-tick gridlines, and a per-card
+window-size selector. Auto-advances while the clock is running and the
+recording is in the `recording` state; scrollable when the clock is
+paused or the recording has finished. After `stop()`, the canvas stays
+visible so the user can scrub the entire captured history.
+
+### Files
+
+- `src/recording/RecordingController.ts` (modified) — internal "tap
+  scope" instance + envelope-buffer accumulation.
+- `src/recording/envelopeBuffer.ts` (new) — typed-array storage for
+  per-tick min/max envelopes per channel.
+- `src/ui/RecordingPanel/RecordingWaveformView.tsx` (new) — canvas
+  component with RAF render loop + scroll handling.
+- `src/ui/RecordingPanel/RecordingPanel.tsx` (modified) — embeds the
+  waveform view above each card's metadata line + toolbar additions.
+- `src/ui/RecordingPanel/RecordingPanel.scss` (modified) — canvas
+  styling.
+
+### Design
+
+#### Data source
+
+A **parallel scope synth** runs on the recording's `inputBus`,
+allocated and lifecycled by `RecordingController` (composition with an
+internal `ScopeController` instance). Decimation-by-4 from
+`compileScopeSynthDef` is plenty for a visual-only display; the
+recorder's own buffer remains the source of truth for the WAV.
+
+**Why not extend `recordingChunkWritten` to carry samples?** The
+parallel scope reuses the entire scope pipeline (synth, buffer, worker
+subscription, /b_setn dispatch) without protocol changes. The extra
+worker traffic is one /b_getn per tick per recording — same order as a
+user-managed scope.
+
+#### Envelope buffer
+
+For each scope chunk that lands, the controller computes per-channel
+min/max over the chunk's samples (a single tight loop) and appends a
+column to a typed-array-backed buffer:
+
+```ts
+class EnvelopeBuffer {
+  // [channels] arrays, each holding `count` per-tick min/max values.
+  // Pre-allocated capacity grows by doubling.
+  private mins: Float32Array[];
+  private maxs: Float32Array[];
+  private firstTickIndex: number;
+  private count: number;
+  readonly channels: number;
+
+  append(tickIndex: number, chunk: Float32Array): void;
+  /** Returns immutable views for rendering — caller must not write. */
+  snapshot(): { mins: Float32Array[]; maxs: Float32Array[];
+               firstTickIndex: number; count: number };
+}
+```
+
+Memory cost: 8 bytes/tick/channel. 48 ticks/sec → ~23 KB/min mono,
+~46 KB/min stereo. Uncapped per spec — a 30-minute stereo recording
+holds ~1.4 MB of envelope data, dwarfed by the WAV itself.
+
+The full samples are not retained on main; the canvas always renders
+the envelope. Sub-tick sample resolution is available only via the
+WAV after stop.
+
+#### Controller surface
+
+```ts
+class RecordingController {
+  // ... existing surface ...
+  readonly envelopes: ReadonlyStore<EnvelopeBufferSnapshot>;
+}
+```
+
+The controller's `start()` allocates and starts the internal scope
+*after* the recorder synth (so /s_new of the scope happens at group
+tail, after the recorder which is also at tail — ordering between two
+tail-adds matches /s_new send order). `stop()` tears the internal
+scope down before the recorder so a final scope chunk doesn't race
+the WAV finalisation.
+
+#### View component
+
+`RecordingWaveformView` props:
+
+```ts
+interface RecordingWaveformViewProps {
+  recording: RecordingController;
+  clock: ClockController;
+  /** seconds visible at once. Default 5. */
+  windowSeconds: number;
+  /** canvas pixel height. Default 120. */
+  height?: number;
+}
+```
+
+Internal state:
+
+- `scrollOffsetTicks: number` — how many ticks back from the
+  recording's current tick the right edge of the visible window is.
+  Default 0 (live).
+- `isLive: boolean` — derived: `scrollOffsetTicks === 0`.
+
+RAF loop:
+
+1. Read `recording.envelopes` snapshot, `recording.framesWritten`,
+   and `clock.effectiveState`.
+2. Compute current tick from `framesWritten / samplesPerTick`.
+3. If `clock.effectiveState === 'running'` AND
+   `recording.state === 'recording'` AND `isLive`: scrollOffsetTicks
+   stays 0, viewport's right edge tracks the current tick.
+4. Otherwise: viewport's right edge is at
+   `currentTick - scrollOffsetTicks`.
+5. Draw min/max polylines per channel, gridlines every 1 s, playhead
+   at the current tick's x-position.
+
+User interaction:
+
+- Mousewheel-horizontal / click-drag: only enabled when *not*
+  auto-advancing (clock paused or recording done). Updates
+  `scrollOffsetTicks`.
+- Toolbar **Live** button: snaps scrollOffsetTicks back to 0.
+- On clock state transition `paused → running` while recording is
+  active: snap to live (reset scrollOffsetTicks to 0 — see
+  decision in chat: "scroll position is a feature of the
+  paused/stopped state, not a parallel timeline").
+
+#### Toolbar (per card)
+
+Existing `RecordingItem` toolbar gets two new controls:
+
+- Window size: `[1s] [5s] [15s] [60s]` segmented buttons. Default
+  `5s`. Controls per-card.
+- **Live** button: visible only when `!isLive`. Snaps to live.
+
+#### Multi-channel
+
+For mono: single waveform spanning the canvas height.
+For stereo: two stacked lanes, like `ScopeView`'s 'stacked' layout.
+Lane height = `canvas.height / channels`.
+
+### Acceptance
+
+1. Start a recording on a 440 Hz tone bus → waveform renders the sine
+   peaks within ~1 tick of the first scope chunk landing.
+2. Pause clock → playhead freezes; mousewheel scrolls left through
+   recorded history.
+3. Resume clock → playhead snaps to live (right edge); auto-advance
+   resumes.
+4. Stop the recording → state == `done`, canvas remains visible, full
+   recorded duration scrollable.
+5. Window-size toolbar `[1s, 5s, 15s, 60s]` → re-renders correctly;
+   visible duration matches the seconds label.
+6. Two simultaneous recordings → independent waveforms, scroll, and
+   zoom levels.
+7. 30-minute recording → envelope buffer < 5 MB; canvas redraw stays
+   in RAF budget.
+8. Stereo recording → two stacked lanes, both live-updating.
+
+### Non-goals
+
+- Full-resolution scrubbing (the canvas is envelope-only).
+- Drag-to-zoom / box-select.
+- Persistence across reconnects.
+
+### Files (as landed)
+
+- **`src/recording/envelopeBuffer.ts`** (new) — `EnvelopeBuffer`
+  class. Two `Float32Array`s per channel (mins / maxs) indexed by
+  ordinal column, doubling capacity. `append(tickIndex, chunk)`
+  computes per-channel min/max in a single pass; `snapshot()`
+  returns subarray views over the filled prefix (no allocation).
+- **`src/recording/RecordingController.ts`** (modified) — composes
+  an internal `ScopeController` on the recording's input bus during
+  `start()`. Subscribes to `latestChunk`, appends per-tick envelope
+  columns to a private `EnvelopeBuffer`, exposes
+  `envelopes: ReadonlyStore<EnvelopeBufferSnapshot>`. The internal
+  scope is fire-and-forget-stopped during the recorder's `stop()`
+  (no need to await — the envelope buffer survives, the WAV
+  finalisation latency stays unaffected). Error path cleans up the
+  scope alongside the recorder's partial state.
+- **`src/ui/RecordingPanel/RecordingWaveformView.tsx`** (new) —
+  canvas component with RAF render loop. Reads the controller's
+  envelope snapshot fresh each frame; renders min/max polylines per
+  channel, second-tick gridlines (skipped when columns < 16 px
+  apart), and a vertical playhead at the latest envelope column.
+  Handles wheel + pointer-drag scrolling when `canScroll` (clock
+  paused or recording done); snaps `scrollOffsetTicks` back to 0
+  when the clock resumes mid-recording. **Live** button visible
+  only when scrolled away from the right edge.
+- **`src/ui/RecordingPanel/RecordingPanel.tsx`** (modified) — embeds
+  `<RecordingWaveformView>` below each card's header (only while
+  state is `recording` / `finalizing` / `done`). Adds per-card
+  `WindowSelector` (1s / 5s / 15s / 60s segmented buttons) inline
+  with the existing actions row; default 5s. Threads `clock`
+  through from `AppShell` so the waveform can read effective
+  state.
+- **`src/ui/RecordingPanel/RecordingPanel.scss`** (modified) —
+  `.recording-waveform` container styling (relative-positioned for
+  the live button, `cursor: grab` while scrollable),
+  `.window-selector` segmented buttons, `.waveform-live-button`
+  overlay.
+- **`src/scope/AppShell.tsx`** (modified) — passes `clock` prop to
+  `<RecordingPanel>`.
+
+### Adaptations
+
+- **Scope chunk subscription via `latestChunk` store, not chunkRef.**
+  ScopeController's `chunkRef` is mutable-ref-style (overwritten in
+  place for the canvas RAF reader); we want a per-chunk callback
+  instead, so we use `latestChunk.subscribe`. Each subscription
+  callback computes envelope columns synchronously — cheap enough
+  not to need async handling.
+- **Internal scope teardown is fire-and-forget on stop.** The
+  envelope buffer holds the rendered history in main memory; it
+  doesn't depend on the scope still running. Awaiting the scope's
+  `nFree` round-trip would add ~10ms to `recordingController.stop()`
+  for no user-visible benefit.
+- **Envelope buffer init on construction, not first append.** The
+  `envelopes` store always returns a valid snapshot (with `count: 0`)
+  — simplifies the canvas RAF (it always has something to read,
+  even before the recorder fires).
+- **Canvas redraws via single-shape `fillRect` per pixel column**,
+  not stroked paths. Cheaper than `beginPath` + `moveTo` + `lineTo`
+  per column at our typical column counts, and visually identical
+  for envelope rendering.
+- **Snap-to-live on resume**, per chat decision: clock state
+  transition `paused → running` while recording resets
+  `scrollOffsetTicks` to 0. Scroll position is treated as a feature
+  of the stopped state, not a parallel timeline that survives
+  resume.
+
+---
+
 ## Open Points
 
 1. **Crate type surfaces — resolved.** See "Crate Prerequisites" for the

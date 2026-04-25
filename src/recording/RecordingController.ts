@@ -36,9 +36,14 @@ import {
 import type { ClockController } from '@/scope/ClockController';
 import type { GroupController } from '@/scope/GroupController';
 import type { IdAllocator } from '@/scope/IdAllocator';
+import { ScopeController } from '@/scope/ScopeController';
 import type { SynthDefRegistry } from '@/scope/SynthDefRegistry';
 import type { WorkerClient } from '@/scope/WorkerClient';
 import { createStore, type ReadonlyStore } from '@/scope/reactiveStore';
+import {
+  EnvelopeBuffer,
+  type EnvelopeBufferSnapshot,
+} from './envelopeBuffer';
 
 export type RecordingState =
   | 'idle'
@@ -115,6 +120,21 @@ export class RecordingController {
   private resolveDone: ((result: RecordingResult) => void) | null = null;
   /** Wall-clock at start, for filename generation. */
   private startedAt: Date | null = null;
+  /** Internal scope for the per-tick waveform envelope. Composes a
+   *  full ScopeController on the recording's input bus — separate
+   *  buffer + synth from the recorder so chunk reads don't fight,
+   *  and so the scope's existing pipeline does the /b_setn → main
+   *  hand-off for free. */
+  private internalScope: ScopeController | null = null;
+  private envelopeUnsubscribe: (() => void) | null = null;
+  private readonly envelopeBuffer: EnvelopeBuffer;
+  private readonly envelopesStore = createStore<EnvelopeBufferSnapshot>({
+    mins: [],
+    maxs: [],
+    firstTickIndex: -1,
+    count: 0,
+    channels: 1,
+  });
 
   constructor(opts: RecordingControllerOptions) {
     this.client = opts.client;
@@ -128,6 +148,8 @@ export class RecordingController {
     this.channels = opts.channels;
     this.inputBus = opts.inputBus;
     this.retry = opts.retry ?? DEFAULT_RETRY;
+    this.envelopeBuffer = new EnvelopeBuffer(this.channels);
+    this.envelopesStore.set(this.envelopeBuffer.snapshot());
   }
 
   get state(): ReadonlyStore<RecordingState> {
@@ -148,6 +170,12 @@ export class RecordingController {
   /** Last error message, or null. Set when state transitions to 'error'. */
   get error(): ReadonlyStore<string | null> {
     return this.errorStore;
+  }
+  /** Per-tick envelope (min/max per channel) accumulated for the
+   *  recording's lifetime. Updated as scope chunks land; persists
+   *  after `stop()` so the panel can scroll the full history. */
+  get envelopes(): ReadonlyStore<EnvelopeBufferSnapshot> {
+    return this.envelopesStore;
   }
 
   /** Allocate buffer, /s_new the recorder synth (sample-accurate when
@@ -232,6 +260,35 @@ export class RecordingController {
         this.client.sendCommand(sNewMsg);
       }
 
+      // Internal "tap scope" on the same input bus. It runs the
+      // existing scope pipeline (decimated /b_getn, /b_setn → main
+      // via scopeChunk events) so we don't have to add a new worker
+      // path. We compute per-tick min/max envelopes from each
+      // incoming chunk and append to the envelope buffer that the
+      // panel renders. Started AFTER the recorder /s_new is queued
+      // so the recorder lands first in the parent group's tail
+      // ordering — both are AddToTail so order = /s_new send order.
+      const internalScope = new ScopeController({
+        client: this.client,
+        clock: this.clock,
+        group: this.group,
+        registry: this.registry,
+        ids: { node: this.nodeIds, buffer: this.bufferIds },
+        inputBus: this.inputBus,
+        channels: this.channels,
+        scopeId: `rec-tap-${this.recordingId}`,
+        label: `${this.label} (waveform tap)`,
+      });
+      this.internalScope = internalScope;
+      this.envelopeUnsubscribe = internalScope.latestChunk.subscribe(
+        (chunk) => {
+          if (!chunk) return;
+          this.envelopeBuffer.append(chunk.tickIndex, chunk.data);
+          this.envelopesStore.set(this.envelopeBuffer.snapshot());
+        },
+      );
+      await internalScope.start();
+
       this.stateStore.set('recording');
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -242,6 +299,18 @@ export class RecordingController {
       if (this.unsubscribe) {
         this.unsubscribe();
         this.unsubscribe = null;
+      }
+      if (this.envelopeUnsubscribe) {
+        this.envelopeUnsubscribe();
+        this.envelopeUnsubscribe = null;
+      }
+      if (this.internalScope) {
+        try {
+          await this.internalScope.stop();
+        } catch {
+          /* best effort */
+        }
+        this.internalScope = null;
       }
       if (this.bufnum !== null) {
         try {
@@ -275,6 +344,27 @@ export class RecordingController {
     if (this.donePromise === null) {
       this.donePromise = new Promise<RecordingResult>((resolve) => {
         this.resolveDone = resolve;
+      });
+    }
+
+    // Tear down the waveform tap scope alongside the recorder. Fire-
+    // and-forget — the envelope buffer (held in main memory) survives
+    // for post-stop scrolling, and we don't want the user to wait an
+    // extra round-trip before the WAV finalises. The scope's own
+    // stop() handles its synth + buffer + worker subscription cleanup
+    // independently from the recorder's path.
+    if (this.envelopeUnsubscribe) {
+      this.envelopeUnsubscribe();
+      this.envelopeUnsubscribe = null;
+    }
+    if (this.internalScope) {
+      const scope = this.internalScope;
+      this.internalScope = null;
+      void scope.stop().catch((err) => {
+        console.warn(
+          `[sc:rec ${this.recordingId}] internal scope stop failed`,
+          err,
+        );
       });
     }
 

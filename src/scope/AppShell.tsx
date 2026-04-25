@@ -62,6 +62,7 @@ function Dashboard({
       <ScopeList manager={resources.scopeManager} clock={resources.clock} />
       <RecordingPanel
         manager={resources.recordingManager}
+        clock={resources.clock}
         sampleRate={resources.clock.env.sampleRate}
       />
       <ScopeTestPanel
