@@ -88,15 +88,15 @@ interface ScopeEntry {
 }
 
 /** Tracks one in-flight `/b_getn` for a recording entry, including
- *  retry state. Replaced by null once a matching `/b_setn` lands or
- *  the gap path runs. */
+ *  retry state. Stored in `RecordingEntry.pendingByOffset` keyed by
+ *  the read's sample-frame offset so two reads at *different* offsets
+ *  (the two halves of the ring) can coexist in flight when the
+ *  network occasionally takes longer than `tickIntervalMs` to round
+ *  trip — without that, every late reply bumped into the next tick's
+ *  pendingRead slot and got discarded. */
 interface RecordingPendingRead {
   tickIndex: number;
-  /** Sample-frame offset on the buffer this read was issued for.
-   *  Cross-checked against incoming `/b_setn` so a stale (post-retry)
-   *  reply can't double-count. */
   offset: number;
-  /** Word count requested = `samplesPerTick × channels`. */
   count: number;
   attempts: number;
   timeoutHandle: ReturnType<typeof setTimeout>;
@@ -107,12 +107,26 @@ interface RecordingEntry {
   sub: RecordingSubscription;
   writer: WavMemoryWriter;
   /** When true, the worker silently skips firing a `/b_getn` on the
-   *  next tick. Lets the recorder's `Phasor.ar` (which starts at 0
-   *  the moment /s_new fires) accumulate one full half before we
-   *  start reading. Cleared on the first tick observed. */
+   *  next tick. Lets the recorder's local-state phasor settle on a
+   *  half boundary before we start reading. Cleared on the first
+   *  tick observed. */
   skipFirstTick: boolean;
-  pendingRead: RecordingPendingRead | null;
-  /** Audited gap log shipped back as a `.gaps.json` sidecar. */
+  /** Map from buffer offset (0 = first half, samplesPerTick × channels
+   *  = second half) to the in-flight pending read at that offset.
+   *  Two slots max; collisions on the same offset mean a tick's read
+   *  is two ticks behind, which we treat as a hard gap. */
+  pendingByOffset: Map<number, RecordingPendingRead>;
+  /** Reorder buffer keyed by `tickIndex`. Replies can arrive out of
+   *  order across the two offsets; we hold them here and drain in
+   *  tick order so the WAV stays linear. `null` entries mark gaps
+   *  whose zero-fill is owed to the WAV when their tick is next. */
+  reorderBuffer: Map<number, Float32Array | null>;
+  /** Next `tickIndex` we're going to append to the WAV. Drains all
+   *  contiguous tickIndices from this point each time the buffer
+   *  receives a new entry. */
+  nextTickToWrite: number;
+  /** Audited gap log shipped back as a `.gaps.json` sidecar. Filled
+   *  in tick order alongside the WAV writes. */
   gaps: Array<{ tickIndex: number; framesMissing: number }>;
   /** True after `stopRecording` is received — suppresses any further
    *  read issuance / gap accounting until the worker fully unwinds. */
@@ -184,30 +198,32 @@ function fireRecordingRead(
   if (!transport) return;
   if (entry.stopping) return;
 
-  // If we still have a pendingRead from the previous tick when a new
-  // tick arrives, the previous read missed even after retries —
-  // declare a gap and move on so we never have two reads in flight
-  // for the same bufnum (scsynth reply matching is by bufnum +
-  // offset; two reads at *different* offsets are safe but messy).
-  if (entry.pendingRead !== null) {
-    clearTimeout(entry.pendingRead.timeoutHandle);
-    finishGap(entry, entry.pendingRead.tickIndex);
-  }
-
   if (entry.skipFirstTick) {
     entry.skipFirstTick = false;
+    // Anchor the WAV's first tick at the first read we actually
+    // issue. Reads start landing in the reorder buffer indexed by
+    // tickIndex, and `nextTickToWrite` is what gates draining.
+    entry.nextTickToWrite = tickIndex + 1;
     return;
   }
 
   const { channels, samplesPerTick } = entry.sub;
   const offset = completedHalf * samplesPerTick * channels;
   const count = samplesPerTick * channels;
-  // No bundle / READ_DELAY_MS for recordings: the recorder's
-  // Phasor.ar isn't aligned to the global clockBus, so the kr-vs-ar
-  // race the scope path mitigates doesn't directly apply. Adding
-  // delay here would just push every retry deadline closer to the
-  // next tick boundary — wait until we see actual artefacts before
-  // re-introducing it.
+
+  // Same-offset collision: a previous tick's read at this offset
+  // never landed AND its retries are still in flight. That's >2
+  // ticks of latency on a single half — declare it a gap and
+  // overwrite the slot so we don't leak the timeout. Different-
+  // offset overlap is fine and expected: it's exactly what lets a
+  // late tick-N reply land while tick-N+1's read at the other
+  // offset is in flight.
+  const collision = entry.pendingByOffset.get(offset);
+  if (collision !== undefined) {
+    clearTimeout(collision.timeoutHandle);
+    recordGap(entry, collision.tickIndex);
+  }
+
   sendRecordingGetn(entry, tickIndex, offset, count);
 }
 
@@ -221,23 +237,30 @@ function sendRecordingGetn(
   if (!transport) return;
   transport.send(encode(bGetn(entry.sub.bufnum, offset, count)));
   const timeoutHandle = setTimeout(
-    () => onRecordingReadTimeout(entry),
+    () => onRecordingReadTimeout(entry, offset),
     entry.sub.retry.deadlineMs,
   );
-  entry.pendingRead = {
+  entry.pendingByOffset.set(offset, {
     tickIndex,
     offset,
     count,
     attempts,
     timeoutHandle,
-  };
+  });
 }
 
-function onRecordingReadTimeout(entry: RecordingEntry): void {
-  if (entry.stopping || entry.pendingRead === null) return;
-  const pending = entry.pendingRead;
+function onRecordingReadTimeout(
+  entry: RecordingEntry,
+  offset: number,
+): void {
+  if (entry.stopping) return;
+  const pending = entry.pendingByOffset.get(offset);
+  if (!pending) return;
+
   if (pending.attempts < entry.sub.retry.maxAttempts) {
-    // Re-send — same bufnum, same offset, same count.
+    // Re-send: same offset, same count. The closure preserves which
+    // offset slot this timeout belongs to so we don't accidentally
+    // step on the *other* half's pending read.
     sendRecordingGetn(
       entry,
       pending.tickIndex,
@@ -247,37 +270,62 @@ function onRecordingReadTimeout(entry: RecordingEntry): void {
     );
     return;
   }
-  finishGap(entry, pending.tickIndex);
+  // Retries exhausted — register the gap and let drainReorderBuffer
+  // emit it in tick order alongside any chunks that arrived for
+  // *later* ticks while this one was failing.
+  entry.pendingByOffset.delete(offset);
+  recordGap(entry, pending.tickIndex);
 }
 
-/** Write `samplesPerTick × channels` zeros to the WAV (so wall-clock
- *  position stays linear), record the gap in the audit log, post a
- *  notification to main, and clear `pendingRead`. */
-function finishGap(entry: RecordingEntry, tickIndex: number): void {
+/** Mark `tickIndex` as a gap. The actual zero-fill + WAV append + UI
+ *  notification happens in `drainReorderBuffer` so the WAV's
+ *  framesWritten still advances strictly in tick order, even when a
+ *  later tick's reply has already arrived. */
+function recordGap(entry: RecordingEntry, tickIndex: number): void {
+  if (entry.reorderBuffer.has(tickIndex)) return;
+  entry.reorderBuffer.set(tickIndex, null);
+  drainReorderBuffer(entry);
+}
+
+/** Append every contiguous reorder-buffer entry starting at
+ *  `nextTickToWrite`, in tick order, until we hit a tick whose
+ *  reply / gap hasn't materialised yet. Each entry produces exactly
+ *  one `recordingChunkWritten` notification (and a `recordingGap`
+ *  for the null slots). */
+function drainReorderBuffer(entry: RecordingEntry): void {
   const { samplesPerTick, channels } = entry.sub;
-  const framesMissing = samplesPerTick;
-  const zeros = new Float32Array(samplesPerTick * channels); // zeroed by spec
-  entry.writer.append(zeros);
-  entry.gaps.push({ tickIndex, framesMissing });
-  entry.pendingRead = null;
-  post({
-    type: 'recordingGap',
-    gap: {
-      recordingId: entry.sub.recordingId,
-      tickIndex,
-      framesMissing,
-    },
-  });
-  // After a gap we still notify "framesWritten advanced" so the UI's
-  // elapsed counter doesn't freeze.
-  post({
-    type: 'recordingChunkWritten',
-    info: {
-      recordingId: entry.sub.recordingId,
-      tickIndex,
-      framesWritten: entry.writer.framesWritten,
-    },
-  });
+  while (entry.reorderBuffer.has(entry.nextTickToWrite)) {
+    const tickIndex = entry.nextTickToWrite;
+    const chunk = entry.reorderBuffer.get(tickIndex)!;
+    entry.reorderBuffer.delete(tickIndex);
+    entry.nextTickToWrite = tickIndex + 1;
+
+    if (chunk === null) {
+      // Gap: write `samplesPerTick × channels` zeros so wall-clock
+      // position stays linear.
+      const zeros = new Float32Array(samplesPerTick * channels);
+      entry.writer.append(zeros);
+      entry.gaps.push({ tickIndex, framesMissing: samplesPerTick });
+      post({
+        type: 'recordingGap',
+        gap: {
+          recordingId: entry.sub.recordingId,
+          tickIndex,
+          framesMissing: samplesPerTick,
+        },
+      });
+    } else {
+      entry.writer.append(chunk);
+    }
+    post({
+      type: 'recordingChunkWritten',
+      info: {
+        recordingId: entry.sub.recordingId,
+        tickIndex,
+        framesWritten: entry.writer.framesWritten,
+      },
+    });
+  }
 }
 
 function emitReply(packet: OscPacket): void {
@@ -358,41 +406,30 @@ function handleRecordingBSetn(
   const replyOffset = packet.args[1] as number;
   const count = packet.args[2] as number;
 
-  if (entry.pendingRead === null) {
-    // Stale reply (e.g. retry succeeded after we declared the gap).
-    // Discard — the WAV already has zeros for that tick.
-    console.warn(
-      `[sc:worker] /b_setn for recording ${entry.sub.recordingId} with no pendingRead`,
-    );
-    return;
-  }
-  if (replyOffset !== entry.pendingRead.offset) {
-    // Out-of-band /b_setn (BufferPoker against same bufnum, or an
-    // exotic timing race). Ignore so we don't poison the WAV.
-    console.warn(
-      `[sc:worker] /b_setn offset mismatch for ${entry.sub.recordingId}: ` +
-        `got ${replyOffset}, expected ${entry.pendingRead.offset}`,
-    );
+  const pending = entry.pendingByOffset.get(replyOffset);
+  if (!pending) {
+    // Stale reply — most likely a retry that landed after the gap
+    // was already booked, or an out-of-band /b_setn (BufferPoker
+    // against this bufnum etc.). Discarding is safe because either
+    // the gap is already in the reorder buffer or the recording
+    // doesn't care about this offset.
     return;
   }
 
-  clearTimeout(entry.pendingRead.timeoutHandle);
-  const tickIndex = entry.pendingRead.tickIndex;
-  entry.pendingRead = null;
+  clearTimeout(pending.timeoutHandle);
+  entry.pendingByOffset.delete(replyOffset);
 
   const samples = new Float32Array(count);
   for (let i = 0; i < count; i++) {
     samples[i] = packet.args[3 + i] as number;
   }
-  entry.writer.append(samples);
-  post({
-    type: 'recordingChunkWritten',
-    info: {
-      recordingId: entry.sub.recordingId,
-      tickIndex,
-      framesWritten: entry.writer.framesWritten,
-    },
-  });
+  // Don't append directly to the writer — the chunk goes into the
+  // reorder buffer keyed by tickIndex, and `drainReorderBuffer`
+  // appends in strict tick order. This way an out-of-order arrival
+  // (e.g. tick N+1's reply landing before tick N's late retry) waits
+  // until the gap or the late chunk for tick N has been resolved.
+  entry.reorderBuffer.set(pending.tickIndex, samples);
+  drainReorderBuffer(entry);
 }
 
 setWorkerMessageHandler(async (msg: MainToWorker) => {
@@ -462,8 +499,11 @@ setWorkerMessageHandler(async (msg: MainToWorker) => {
       // Clear any pending recording timers so they don't fire after
       // teardown and try to re-send through a closed transport.
       for (const entry of subscriptions.values()) {
-        if (entry.kind === 'recording' && entry.pendingRead !== null) {
-          clearTimeout(entry.pendingRead.timeoutHandle);
+        if (entry.kind === 'recording') {
+          for (const pending of entry.pendingByOffset.values()) {
+            clearTimeout(pending.timeoutHandle);
+          }
+          entry.pendingByOffset.clear();
         }
       }
       subscriptions.clear();
@@ -527,8 +567,11 @@ setWorkerMessageHandler(async (msg: MainToWorker) => {
       const previousBufnum = subsByRecordingId.get(sub.recordingId);
       if (previousBufnum !== undefined) {
         const stale = subscriptions.get(previousBufnum);
-        if (stale && stale.kind === 'recording' && stale.pendingRead) {
-          clearTimeout(stale.pendingRead.timeoutHandle);
+        if (stale && stale.kind === 'recording') {
+          for (const pending of stale.pendingByOffset.values()) {
+            clearTimeout(pending.timeoutHandle);
+          }
+          stale.pendingByOffset.clear();
         }
         subscriptions.delete(previousBufnum);
       }
@@ -541,7 +584,9 @@ setWorkerMessageHandler(async (msg: MainToWorker) => {
         sub,
         writer,
         skipFirstTick: true,
-        pendingRead: null,
+        pendingByOffset: new Map(),
+        reorderBuffer: new Map(),
+        nextTickToWrite: 0,
         gaps: [],
         stopping: false,
       };
@@ -570,12 +615,16 @@ setWorkerMessageHandler(async (msg: MainToWorker) => {
           `frames=${entry.writer.framesWritten} gaps=${entry.gaps.length}`,
       );
       entry.stopping = true;
-      if (entry.pendingRead !== null) {
-        // Reads issued after the recorder synth was /n_free'd will
-        // never come back. Don't account them as gaps — silent drop.
-        clearTimeout(entry.pendingRead.timeoutHandle);
-        entry.pendingRead = null;
+      // Reads issued after the recorder synth was /n_free'd will
+      // never come back. Drop them silently rather than accounting
+      // them as gaps. Likewise drop anything still in the reorder
+      // buffer beyond `nextTickToWrite` — the WAV's tail is wherever
+      // it landed when stop was called.
+      for (const pending of entry.pendingByOffset.values()) {
+        clearTimeout(pending.timeoutHandle);
       }
+      entry.pendingByOffset.clear();
+      entry.reorderBuffer.clear();
       subscriptions.delete(bufnum);
       subsByRecordingId.delete(msg.recordingId);
 
