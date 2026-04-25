@@ -8,6 +8,9 @@ pnpm-debug.log*
 lerna-debug.log*
 # DebugLog panel exports (per-session, never tracked).
 sc-debug-*.txt
+# Local debug-log scratch directory (DebugLog downloads + recording
+# gaps.json sidecars users drop here for sharing in issues).
+dbg-logs/
 # Scratch image used to share screenshots in chat.
 tmp.png
 
