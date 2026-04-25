@@ -2417,6 +2417,105 @@ is reloaded.
 8. **Teardown.** `stopAll` during recording → WAVs finalize for each
    controller; results accumulate in the panel; server clean.
 
+### Files (as landed)
+
+- **`src/synth/recorderSynthDef.ts`** (new) — `recorderTap{N}ch`
+  per-channel-count compiled SynthDef. Full audio rate (no
+  decimation), local `Phasor.ar(0, 1, 0, 2 × samplesPerTick)`. No
+  clockBus dependency — alignment handled by skip-first-chunk and
+  the controller's optional sample-accurate /s_new bundle.
+
+- **`src/workers/wavWriter.ts`** (new) — `WavMemoryWriter` class:
+  doubling-capacity `Uint8Array`, IEEE float32 (format code 3) WAV,
+  header placeholder + `finalise()` patches RIFF / data sizes and
+  returns a tightly-sliced `ArrayBuffer` ready for zero-copy
+  postMessage. Defensive BE fallback (vanishingly unlikely to fire).
+
+- **`src/scope/workerProtocol.ts`** (modified) — adds
+  `RecordingSubscription`, `RecordingChunkWritten`, `RecordingGap`,
+  `RecordingDone`. New `MainToWorker` variants
+  `startRecording` / `stopRecording`. New `WorkerToMain` variants
+  `recordingChunkWritten` / `recordingGap` / `recordingDone`.
+
+- **`src/workers/scopeWorker.ts`** (modified) — `subscriptions` map
+  generalised to a tagged union of `ScopeEntry` / `RecordingEntry`.
+  /b_setn dispatch branches by kind. Recording path verifies the
+  reply offset matches `pendingRead.offset` (so a stale retry can't
+  double-count), appends to the per-recording `WavMemoryWriter`,
+  emits `recordingChunkWritten`. Per-tick read pipeline runs retries
+  up to `maxAttempts` at `deadlineMs` intervals; on exhaustion writes
+  `samplesPerTick × channels` zeros and emits `recordingGap`.
+  `skipFirstTick` keeps the first half of the recorder's `Phasor.ar`
+  out of the WAV. `stopRecording` silently drains any in-flight
+  `pendingRead` (post-/n_free reads will never come back) and posts
+  `recordingDone` with the WAV `ArrayBuffer` transferred zero-copy.
+
+- **`src/scope/WorkerClient.ts`** (modified) — adds
+  `subscribeRecording(sub, { onChunk, onGap, onDone })` returning a
+  cleanup function, plus `stopRecording(id)`. Listener sets keyed by
+  `recordingId` so multiple controllers don't cross-talk. `dispose()`
+  clears them.
+
+- **`src/recording/RecordingController.ts`** (new) — per-recording
+  lifecycle. `start()` ensures the recorder synthdef is loaded,
+  /b_alloc's a `2 × samplesPerTick` buffer, registers the worker
+  subscription, then schedules /s_new in an `OSC.Bundle` with
+  timetag = `tickToTimetag(clock.tick0Ms, lastTick + 2, tickRate)`
+  (falling back to immediate /s_new before the clock has anchored).
+  `stop()` runs /n_free → /b_free → `client.stopRecording(id)` and
+  awaits `recordingDone` via a stored `resolve` handle. State /
+  framesWritten / gaps / result exposed as `ReadonlyStore`s.
+
+- **`src/recording/RecordingManager.ts`** (new) — reactive list
+  wrapper with `add` / `remove` / `stopAll`. Recordings stay in the
+  list after they finalise so the user can download the WAV.
+
+- **`src/recording/download.ts`** (new) — Tauri-aware Blob saver.
+  Browser path uses `<a href download>` + object URL; Tauri path
+  opens a save-as dialog defaulted to `$AUDIO` / `$DOCUMENT` and
+  writes via `plugin-fs` `writeFile` (capability already permitted).
+
+- **`src/ui/RecordingPanel/`** (new) — `RecordingPanel.tsx` + `.scss`
+  + `index.ts`. Toolbar (bus, channels, label, New recording, Stop
+  all). Per-recording cards with state pill, elapsed `mm:ss.mmm`,
+  frame count, memory estimate, gap count + tooltip, Stop button
+  (active recordings), Download WAV / Download gaps.json / Dismiss
+  buttons (done recordings).
+
+- **`src/scope/AppShell.tsx`** (modified) — constructs
+  `RecordingManager` in `bringUpDashboard`. `Dashboard` renders
+  `<RecordingPanel>` between the scope list and the test panel.
+  `handleDisconnect` calls `recordingManager.stopAll()` *first*, so
+  WAVs finalise (and stay in memory as Blobs) before scope teardown
+  and group cleanup.
+
+### Adaptations
+
+- **No auto-allocated bus for recordings** — they tap an existing
+  bus the user types in (typical usage: record a scope's input bus
+  or hardware out). Symmetric to scopes' "every scope gets its own
+  bus" rule but pointing the other direction.
+- **Sample-accurate start with a 2-tick lead** — `START_TICK_LEAD =
+  2` gives the bundle ~42 ms (at 48 Hz) to land in scsynth's
+  scheduler queue; smaller leads risk the "late" warning that drops
+  the timetag and breaks multi-bus alignment.
+- **Recording retries are simple, not seq+reorder** — original plan
+  proposed `seq` + `reorderBuffer` to handle out-of-order replies. In
+  practice scsynth replies in microseconds and the per-tick window
+  is wide enough that retries land in order. The simpler "single
+  pendingRead per bufnum, declare gap if a new tick fires while
+  pendingRead is still set" model passes the acceptance tests with
+  far less state.
+- **No `READ_DELAY_MS` bundle on recording reads** — the recorder's
+  `Phasor.ar` isn't aligned to `clockBus`, so the kr-vs-ar drift
+  the scope path mitigates doesn't apply directly. Adding delay
+  would just push the retry deadline closer to the next tick. Can
+  re-introduce if artefacts appear in practice.
+- **Tauri-aware Blob download** — plan suggested a browser-only
+  `<a download>` helper. We extend it with an `IS_TAURI` branch
+  using the same dynamic-import pattern as `DebugLog.tsx`, defaulted
+  to `$AUDIO` for WAVs and `$DOCUMENT` for gaps.json sidecars.
+
 ---
 
 ## Phase 13 — UI Polish & Teardown

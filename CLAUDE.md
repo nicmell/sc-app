@@ -157,12 +157,18 @@ Plan follows phases 0–13. When working on a phase:
    what actually shipped.
 4. Commit per phase (or per natural break within a phase).
 
-Current phase progress: **Phase 11 shipped**. `plan.md` is updated
-through Phase 11 inclusive. Multi-scope support lives in
+Current phase progress: **Phase 12 shipped**. `plan.md` is updated
+through Phase 12 inclusive. Multi-scope support lives in
 `ScopeController` + `ScopeManager` + the `ScopeList` UI; each
 scope auto-allocates its own dedicated bus block via
-`IdAllocator.nextBlock(channels)`. The single-scope
-`ScopeTestPanel` from earlier phases stays as a diagnostic.
+`IdAllocator.nextBlock(channels)`. Recordings live in
+`src/recording/{RecordingController,RecordingManager,download}.ts`
++ `src/ui/RecordingPanel/`; they tap an existing bus (no
+auto-allocation), schedule /s_new sample-accurately via
+`tickToTimetag`, and accumulate IEEE float32 WAV bytes in the
+worker's `WavMemoryWriter` (zero-copy `ArrayBuffer` transfer to
+main on stop). The single-scope `ScopeTestPanel` from earlier
+phases stays as a diagnostic.
 
 ## Where scsynth conventions matter
 
