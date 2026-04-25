@@ -210,6 +210,7 @@ export class RecordingController {
       const sNewMsg = sNew(synthName, nodeId, AddToTail, this.group.groupId, {
         inBus: this.inputBus,
         bufnum,
+        clockBus: this.clock.clockBus,
       });
 
       // Sample-accurate start: schedule /s_new at a known future tick

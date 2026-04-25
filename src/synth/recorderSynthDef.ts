@@ -5,15 +5,21 @@
  * one half of the buffer has just completed: the worker reads that
  * half via `/b_getn` and appends it to an in-memory WAV.
  *
- * Differs from `scopeSynthDef` in two ways:
+ * Mirrors `scopeSynthDef`'s clockBus-driven `writeIdx` — same shape,
+ * but no decimation (the recorder writes every audio sample). Reading
+ * the global `clockBus` phasor instead of a local `Phasor.ar` is what
+ * lets the worker reuse the scope's `completedHalf = tickIndex % 2`
+ * parity formula: clockBus has been advancing since clock /s_new at
+ * session start, so absolute tick parity always aligns with the half
+ * boundaries. A local Phasor would have its own zero (the moment
+ * /s_new fires for *this* recorder), and depending on whether
+ * `startTick` was even or odd, every read would land on the wrong
+ * half — which is exactly the bug we hit before this rewrite.
  *
- *  - **No clock bus dependency.** The recorder uses a *local* `Phasor.ar`
- *    starting at 0 when /s_new fires. Combined with the worker's
- *    "skip first chunk" heuristic (and optional sample-accurate
- *    bundle scheduling against `tickToTimetag`), each tick still
- *    marks a clean completed half.
- *  - **No decimation.** The recorder writes every sample (`step = 1`),
- *    so the WAV is full-rate audio.
+ * Group-tail placement is required: the clock synth (at head) must
+ * have written `clockBus` on the same control block before this
+ * synth reads it. Inputs (e.g. testTone) must also be at-or-before
+ * this synth in the group order — same constraint as the scope.
  *
  * Compiled per channel count: `In.ar(bus, channels)` and `BufWr.ar`
  * need a fixed channel count at SynthDef compile time. We cache one
@@ -43,16 +49,16 @@ export function compileRecorderSynthDef(channels = 1): Uint8Array {
   const cached = cache.get(channels);
   if (cached) return cached;
 
-  // recChunkSize × 2 = ring length in samples-per-channel. We bake
-  // samplesPerTick from DEFAULT_PARAMS — the worker's tick-driven read
-  // loop is parameterised by this same value, so the synthdef and
-  // worker must agree at compile time.
+  // Ring length = `2 × samplesPerTick` samples-per-channel — matches
+  // the clockBus phasor's wrap. The worker's tick-driven read loop is
+  // parameterised by the same value, so the synthdef and worker must
+  // agree at compile time.
   const samplesPerTick = DEFAULT_ENV.sampleRate / DEFAULT_PARAMS.tickRate;
   const ring = samplesPerTick * 2;
 
   const def = synthdef(
     recorderSynthDefName(channels),
-    (g, { inBus = 0, bufnum = 0 }) => {
+    (g, { inBus = 0, bufnum = 0, clockBus = 0 }) => {
       // Same fan-out trick as the scope synth: `In.ar(bus, channels)`
       // returns a single UGenInput pointing at output 0; `BufWr.ar`
       // would silently drop the rest. Walk the UGen's outputs
@@ -68,12 +74,15 @@ export function compileRecorderSynthDef(channels = 1): Uint8Array {
       for (let c = 0; c < channels; c++) {
         sigs.push(uo(inIdx, c));
       }
-      // Phasor.ar(trig, rate, start, end) — local sawtooth from 0 to
-      // `ring - 1`, advancing one sample per audio frame, wrapping
-      // at `ring`. trig=0 means "free-running, never reset after the
-      // initial zero sample".
-      const phase = g.Phasor.ar(0, 1, 0, ring);
-      g.BufWr.ar(sigs, bufnum, phase);
+      // Read the shared clockBus phasor and use it directly as the
+      // write index. clockBus advances by 1 per audio frame and wraps
+      // at `2 × samplesPerTick` (CLOCK_WRAP_TICKS=2), so this gives
+      // exactly one full audio-rate write per frame, with the wrap
+      // perfectly aligned to tick boundaries. No decimation — the
+      // recorder captures every sample.
+      const phase = g.In.ar(clockBus, 1);
+      const writeIdx = g.mod(phase, ring);
+      g.BufWr.ar(sigs, bufnum, writeIdx);
     },
   );
 
