@@ -28,6 +28,10 @@ import type {
   ClockTick,
   MainToWorker,
   OscReply,
+  RecordingChunkWritten,
+  RecordingDone,
+  RecordingGap,
+  RecordingSubscription,
   ScopeChunk,
   ScopeSubscription,
   WorkerToMain,
@@ -41,6 +45,9 @@ export type ErrorListener = (message: string) => void;
 export type TickListener = (tick: ClockTick) => void;
 export type ChunkListener = (chunk: ScopeChunk) => void;
 export type ReplyMatcher = (reply: OscReply) => boolean;
+export type RecordingChunkListener = (info: RecordingChunkWritten) => void;
+export type RecordingGapListener = (gap: RecordingGap) => void;
+export type RecordingDoneListener = (done: RecordingDone) => void;
 
 export class WorkerClient {
   private readonly worker: Worker;
@@ -48,6 +55,18 @@ export class WorkerClient {
   private readonly errorListeners = new Set<ErrorListener>();
   private readonly tickListeners = new Set<TickListener>();
   private readonly chunkListeners = new Map<string, Set<ChunkListener>>();
+  private readonly recordingChunkListeners = new Map<
+    string,
+    Set<RecordingChunkListener>
+  >();
+  private readonly recordingGapListeners = new Map<
+    string,
+    Set<RecordingGapListener>
+  >();
+  private readonly recordingDoneListeners = new Map<
+    string,
+    Set<RecordingDoneListener>
+  >();
   private nextSyncId = 1;
   readonly ready: Promise<void>;
 
@@ -130,6 +149,21 @@ export class WorkerClient {
           // No listener registered → drop on the floor; the worker
           // already paid the cost of decoding, but holding onto an
           // orphan chunk would just leak the Float32Array.
+          break;
+        }
+        case 'recordingChunkWritten': {
+          const cbs = this.recordingChunkListeners.get(msg.info.recordingId);
+          if (cbs) for (const cb of cbs) cb(msg.info);
+          break;
+        }
+        case 'recordingGap': {
+          const cbs = this.recordingGapListeners.get(msg.gap.recordingId);
+          if (cbs) for (const cb of cbs) cb(msg.gap);
+          break;
+        }
+        case 'recordingDone': {
+          const cbs = this.recordingDoneListeners.get(msg.done.recordingId);
+          if (cbs) for (const cb of cbs) cb(msg.done);
           break;
         }
         case 'error':
@@ -215,6 +249,71 @@ export class WorkerClient {
         }
       }
     };
+  }
+
+  /** Register a recording with the worker — it'll start firing
+   *  `/b_getn` at every tick and accumulating samples into a private
+   *  in-memory `WavMemoryWriter`. Pair every call with
+   *  `stopRecording(recordingId)` to drain and finalise the WAV.
+   *
+   *  `onChunk` / `onGap` fire as samples land or gaps are filled;
+   *  `onDone` fires exactly once after `stopRecording`. The returned
+   *  function clears all three listener sets — invoke it to detach
+   *  before the controller is garbage-collected. */
+  subscribeRecording(
+    sub: RecordingSubscription,
+    callbacks: {
+      onChunk?: RecordingChunkListener;
+      onGap?: RecordingGapListener;
+      onDone?: RecordingDoneListener;
+    },
+  ): () => void {
+    this.post({ type: 'startRecording', subscription: sub });
+    if (callbacks.onChunk) {
+      const set =
+        this.recordingChunkListeners.get(sub.recordingId) ?? new Set();
+      set.add(callbacks.onChunk);
+      this.recordingChunkListeners.set(sub.recordingId, set);
+    }
+    if (callbacks.onGap) {
+      const set = this.recordingGapListeners.get(sub.recordingId) ?? new Set();
+      set.add(callbacks.onGap);
+      this.recordingGapListeners.set(sub.recordingId, set);
+    }
+    if (callbacks.onDone) {
+      const set =
+        this.recordingDoneListeners.get(sub.recordingId) ?? new Set();
+      set.add(callbacks.onDone);
+      this.recordingDoneListeners.set(sub.recordingId, set);
+    }
+    let disposed = false;
+    return () => {
+      if (disposed) return;
+      disposed = true;
+      const cb = callbacks;
+      const ck = this.recordingChunkListeners.get(sub.recordingId);
+      if (ck && cb.onChunk) {
+        ck.delete(cb.onChunk);
+        if (ck.size === 0) this.recordingChunkListeners.delete(sub.recordingId);
+      }
+      const gp = this.recordingGapListeners.get(sub.recordingId);
+      if (gp && cb.onGap) {
+        gp.delete(cb.onGap);
+        if (gp.size === 0) this.recordingGapListeners.delete(sub.recordingId);
+      }
+      const dn = this.recordingDoneListeners.get(sub.recordingId);
+      if (dn && cb.onDone) {
+        dn.delete(cb.onDone);
+        if (dn.size === 0) this.recordingDoneListeners.delete(sub.recordingId);
+      }
+    };
+  }
+
+  /** Tell the worker to drain the named recording, finalise the WAV,
+   *  and post a `recordingDone`. Idempotent — repeated calls after
+   *  the first go through to the worker which warns and ignores. */
+  stopRecording(recordingId: string): void {
+    this.post({ type: 'stopRecording', recordingId });
   }
 
   /** Send `msg` and resolve on the first reply satisfying `match`. */
@@ -318,6 +417,9 @@ export class WorkerClient {
     this.errorListeners.clear();
     this.tickListeners.clear();
     this.chunkListeners.clear();
+    this.recordingChunkListeners.clear();
+    this.recordingGapListeners.clear();
+    this.recordingDoneListeners.clear();
   }
 
   private post(msg: MainToWorker): void {
