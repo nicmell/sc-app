@@ -2042,6 +2042,58 @@ Toolbar: bus input, channels input, label input, Add button. Body: vertical list
 5. 8 scopes (some sharing buses) → ~384 chunks/sec combined; no queue buildup.
 6. Clear → only clock synth remains in parent group.
 
+### Files (as landed)
+
+- **`src/scope/ScopeController.ts`** (new) — per-scope class. Owns
+  scope synth nodeId, optional source synth nodeId, bufnum, worker
+  subscription, plus `chunkRef` / `latestChunk` / `chunksPerSec`
+  stores. `start()` ensures the scopeTap{N}ch SynthDef is loaded,
+  optionally /s_new's a `testTone` / `testToneStereo` source, /b_alloc's
+  the buffer, /s_new's the scope synth at group tail, and registers
+  the worker subscription. `stop()` runs the inverse, best-effort.
+  Skip-first-chunk flag drops the first incoming chunk (which would
+  contain /b_alloc zeros + a partial half).
+
+- **`src/scope/ScopeManager.ts`** (new) — `add()` /
+  `remove(scopeId)` / `clear()` over a `ReadonlyStore<ScopeController[]>`.
+  Auto-allocates each scope's input bus block via
+  `ids.bus.nextBlock(channels)`, so callers never deal with bus
+  numbers. Shares the parent group, clock, registry, and id
+  allocators across every scope.
+
+- **`src/ui/ScopeList/`** (new) — `ScopeList.tsx` + `.scss` + `index.ts`.
+  Toolbar with channels select, freq inputs (mono / stereo L+R), label
+  input, Add, Clear all. Body lists each live scope with a header
+  (label, channels, bus block, source description, live chunks/s) and
+  an embedded `ScopeView` whose `chunkRef` is the controller's. Footer
+  aggregates scope count + total chunks/s across all scopes.
+
+- **`src/scope/AppShell.tsx`** (modified) — `bringUpDashboard`
+  constructs a `ScopeManager` and exposes it in `DashboardResources`.
+  `Dashboard` renders `<ScopeList manager={resources.scopeManager}
+  clock={resources.clock} />` above the existing single-scope
+  `ScopeTestPanel`. `handleDisconnect` now calls
+  `scopeManager.clear()` first, so live worker subscriptions tear
+  down cleanly before `group.free()` removes the scope synths server-
+  side.
+
+### Adaptations
+
+- **No bus input field on the toolbar.** Originally specced as a
+  user-typed bus number. The user asked for auto-allocation instead,
+  so each Add reserves a fresh `channels`-wide block via
+  `IdAllocator.nextBlock`. No two scopes share a bus.
+- **Per-scope source synth.** Each scope can bundle its own tone
+  source (mono `testTone` or stereo `testToneStereo`) wired to its
+  bus, freed together with the scope. Lets the dev panel show
+  recognisable signal without a separate "start tone" step. Pass
+  `source: 'none'` to skip.
+- **Skip-first-chunk in `ScopeController` itself.** Worker is
+  oblivious; the skip is a per-controller boolean. Survives
+  intentionally-skipped subscriptions during reconnect / mid-run add.
+- **`ScopeTestPanel` left in place** as the existing single-scope
+  diagnostic. Multi-scope use lives in `ScopeList`.
+
 ---
 
 ## Phase 12 — Recording Pipeline

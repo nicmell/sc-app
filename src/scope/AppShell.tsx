@@ -3,6 +3,7 @@ import { ClockPanel } from '@/ui/ClockPanel';
 import { ConnectScreen } from '@/ui/ConnectScreen';
 import { DebugLog } from '@/ui/DebugLog';
 import { OscConsole } from '@/ui/OscConsole';
+import { ScopeList } from '@/ui/ScopeList';
 import { ScopeTestPanel } from '@/ui/ScopeTestPanel';
 import { SynthDefPanel } from '@/ui/SynthDefPanel';
 import { DEFAULT_ENV, DEFAULT_PARAMS } from '@/config/clockConfig';
@@ -15,6 +16,7 @@ import {
 import { ClockController } from './ClockController';
 import { GroupController } from './GroupController';
 import { IdAllocator } from './IdAllocator';
+import { ScopeManager } from './ScopeManager';
 import { SynthDefRegistry } from './SynthDefRegistry';
 import { WorkerClient } from './WorkerClient';
 
@@ -29,6 +31,7 @@ interface DashboardResources {
   group: GroupController;
   clock: ClockController;
   ids: { node: IdAllocator; buffer: IdAllocator; bus: IdAllocator };
+  scopeManager: ScopeManager;
 }
 
 /**
@@ -53,6 +56,7 @@ function Dashboard({
         </button>
       </header>
       <ClockPanel clock={resources.clock} />
+      <ScopeList manager={resources.scopeManager} clock={resources.clock} />
       <ScopeTestPanel
         client={resources.client}
         clock={resources.clock}
@@ -113,9 +117,16 @@ async function bringUpDashboard(
       `clockBus=${clock.clockBus}`,
   );
   await clock.start();
+  const scopeManager = new ScopeManager({
+    client,
+    clock,
+    group,
+    registry,
+    ids,
+  });
   console.log('[sc:app] dashboard ready');
 
-  return { client, registry, group, clock, ids };
+  return { client, registry, group, clock, ids, scopeManager };
 }
 
 export function AppShell() {
@@ -256,10 +267,17 @@ export function AppShell() {
   const handleDisconnect = useCallback(async () => {
     const current = resources;
     if (current) {
-      // Free server-side state in dependency order: clock synth →
-      // parent group + descendants → unregister notifications → tear
-      // down the worker. Each step is best-effort so a single
-      // failure doesn't strand the rest.
+      // Free server-side state in dependency order: live scopes →
+      // clock synth → parent group + descendants → unregister
+      // notifications → tear down the worker. Scopes go first so
+      // their worker subscriptions tear down cleanly *before* the
+      // group.free below frees the scope synths under us. Each step
+      // is best-effort so a single failure doesn't strand the rest.
+      try {
+        await current.scopeManager.clear();
+      } catch (err) {
+        console.warn('[sc:app] scopeManager.clear on disconnect failed', err);
+      }
       try {
         await current.clock.dispose();
       } catch (err) {

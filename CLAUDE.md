@@ -157,11 +157,12 @@ Plan follows phases 0–13. When working on a phase:
    what actually shipped.
 4. Commit per phase (or per natural break within a phase).
 
-Current phase progress: **Phase 9 shipped**. `plan.md` is updated
-through Phase 9 inclusive. ScopeController is intentionally
-deferred to Phase 11 (multi-scope) — Phase 8/9 use
-`WorkerClient.subscribeScope` directly from the panel, no
-per-scope class yet.
+Current phase progress: **Phase 11 shipped**. `plan.md` is updated
+through Phase 11 inclusive. Multi-scope support lives in
+`ScopeController` + `ScopeManager` + the `ScopeList` UI; each
+scope auto-allocates its own dedicated bus block via
+`IdAllocator.nextBlock(channels)`. The single-scope
+`ScopeTestPanel` from earlier phases stays as a diagnostic.
 
 ## Where scsynth conventions matter
 
