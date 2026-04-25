@@ -20,7 +20,11 @@ function pillFor(state: ClockState): { className: string; label: string } {
 }
 
 function formatElapsed(tickIndex: number, tickRate: number): string {
-  const seconds = tickIndex / tickRate;
+  // `Impulse.kr(rate, phase=0)` fires at audio frame 0, so tick 1
+  // corresponds to elapsed=0. Audio time at tick N is therefore
+  // `(N - 1) / rate`, not `N / rate`. Clamp to 0 so a 0/null tick
+  // doesn't display a negative time.
+  const seconds = Math.max(0, tickIndex - 1) / tickRate;
   const mm = Math.floor(seconds / 60)
     .toString()
     .padStart(2, '0');
