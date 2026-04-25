@@ -273,3 +273,28 @@ phases stays as a diagnostic.
   `$DOWNLOAD`, `$AUDIO`, `$DESKTOP`, `$HOME`. If a save target
   outside those roots starts failing in Tauri, extend the scope
   list there — not by removing the gate altogether.
+- **Tap synths must read `clockBus`, not a local `Phasor.ar`** —
+  the worker's `completedHalf = tickIndex % 2` parity formula is
+  only valid when the buffer's half boundaries align with global
+  tick parity. A clockBus-driven `writeIdx` inherits that
+  alignment for free (clockBus has been advancing since session
+  start). A local `Phasor.ar` started by `/s_new` has its own zero
+  point — depending on whether the start tick happened to be even
+  or odd, every read lands on the wrong half and `/b_setn` replies
+  echo back with offsets that don't match `pendingRead`. Cost us
+  a Phase 12 debug cycle. Both `scopeSynthDef` and
+  `recorderSynthDef` follow the clockBus-divide-mod pattern; any
+  new tap synth should too.
+- **Tick-driven `/b_getn` needs offset-keyed pending tracking, not
+  a single slot** — scsynth's `/b_setn` sometimes round-trips in
+  >`tickIntervalMs`, especially under load. With a single
+  `pendingRead` slot, the next tick's read overwrites the
+  previous tick's pending and the late reply mismatches the
+  current offset. The recording worker keeps
+  `pendingByOffset: Map<offset, PendingRead>` (max two entries —
+  one per ring half) so a late reply at offset 0 can land while a
+  fresh read at offset N is in flight. A `reorderBuffer:
+  Map<tickIndex, ...>` then drains chunks in tick order so the
+  WAV stays linear regardless of arrival order. Don't replicate
+  the scope's single-slot pattern for any subscription that
+  cares about strict per-tick ordering.
