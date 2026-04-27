@@ -1,32 +1,27 @@
 /**
- * Multi-scope orchestrator. Owns the list of live `ScopeController`s
- * and the buffer / node id allocators they share.
+ * Multi-scope orchestrator. Owns the live list of `ScopeController`s
+ * and acquires shared `BufferHandle`s from `BufferManager` on each
+ * `add()`.
  *
- * The caller supplies `inputBus` per add — same model as
- * `RecordingManager`. Synth-side bus allocation lives in
- * `SynthManager`; scopes are pure consumers that read whatever bus
- * the user types in.
- *
- * Shared across all scopes: parent group, global clock + clockBus,
- * OSC worker (one tick-driven /b_getn loop multiplexed by
- * `scopeId`), and the compiled `scopeTap{N}ch_{chunkSize}` SynthDef
- * bytes.
+ * Phase 19 simplified the manager dramatically: it no longer holds
+ * `client` / `group` / `registry` / `ids` — those moved into
+ * `BufferManager`. A scope is now strictly a chunk-stream consumer.
+ * Two scopes added on the same `(inputBus, channels, chunkSize)`
+ * triple share one tap synth + buffer; the manager / controller
+ * pair never sees that — they just hand back a fresh handle wrapper
+ * each time.
  */
 
+import type { BufferManager } from '@/buffer/BufferManager';
 import type { ClockController } from '@/clock/ClockController';
-import type { GroupController } from '@/server/GroupController';
-import type { IdAllocator } from '@/server/IdAllocator';
 import { createStore, type ReadonlyStore } from '@/util/reactiveStore';
 import { ScopeController } from './ScopeController';
-import type { SynthDefRegistry } from '@/server/SynthDefRegistry';
-import type { WorkerClient } from '@/server/WorkerClient';
 
 export interface ScopeManagerOptions {
-  client: WorkerClient;
+  bufferManager: BufferManager;
+  /** For `chunkSize` (= `clock.derived.samplesPerTick`) and
+   *  `sampleRate` (= `clock.env.sampleRate`) at acquire time. */
   clock: ClockController;
-  group: GroupController;
-  registry: SynthDefRegistry;
-  ids: { node: IdAllocator; buffer: IdAllocator };
 }
 
 export interface AddScopeOptions {
@@ -45,20 +40,13 @@ function freshScopeId(): string {
 }
 
 export class ScopeManager {
-  private readonly client: WorkerClient;
+  private readonly bufferManager: BufferManager;
   private readonly clock: ClockController;
-  private readonly group: GroupController;
-  private readonly registry: SynthDefRegistry;
-  private readonly ids: ScopeManagerOptions['ids'];
-
   private readonly scopesStore = createStore<ScopeController[]>([]);
 
   constructor(opts: ScopeManagerOptions) {
-    this.client = opts.client;
+    this.bufferManager = opts.bufferManager;
     this.clock = opts.clock;
-    this.group = opts.group;
-    this.registry = opts.registry;
-    this.ids = opts.ids;
   }
 
   /** Live list of running scopes. UI subscribes and re-renders on
@@ -67,30 +55,30 @@ export class ScopeManager {
     return this.scopesStore;
   }
 
-  /** Spin up a new scope on the caller-supplied `inputBus`. Starts
-   *  the scope synth and registers its worker subscription. */
+  /** Acquire a shared buffer for the spec, wrap it in a
+   *  `ScopeController`, start chunk subscription. */
   async add(opts: AddScopeOptions): Promise<ScopeController> {
     const scopeId = freshScopeId();
-    const ctrl = new ScopeController({
-      client: this.client,
-      clock: this.clock,
-      group: this.group,
-      registry: this.registry,
-      ids: { node: this.ids.node, buffer: this.ids.buffer },
+    const handle = await this.bufferManager.acquire({
       inputBus: opts.inputBus,
       channels: opts.channels,
+      chunkSize: this.clock.derived.samplesPerTick,
+    });
+    const ctrl = new ScopeController({
+      buffer: handle,
       scopeId,
       label: opts.label,
+      effectiveRate: this.clock.env.sampleRate,
     });
     try {
       await ctrl.start();
     } catch (err) {
-      // Best-effort: if start failed mid-way the controller may
-      // still hold partial server-side state. Try to stop cleanly.
+      // Best-effort: stop() releases the handle. Original error
+      // propagates so the caller sees the meaningful failure.
       try {
         await ctrl.stop();
       } catch {
-        /* swallow — original error is the meaningful one */
+        /* swallow — original error wins */
       }
       throw err;
     }
@@ -99,7 +87,9 @@ export class ScopeManager {
   }
 
   /** Stop and remove the matching scope. Silent no-op if not found
-   *  (already removed elsewhere). */
+   *  (already removed elsewhere). Calls `ctrl.stop()` which
+   *  releases the buffer handle — the buffer is torn down only when
+   *  the last consumer releases it. */
   async remove(scopeId: string): Promise<void> {
     const ctrl = this.scopesStore.get().find((s) => s.scopeId === scopeId);
     if (!ctrl) return;
@@ -113,9 +103,8 @@ export class ScopeManager {
   }
 
   /** Stop every scope and empty the list. Run as part of the
-   *  disconnect sequence before `group.free()` — the group cleanup
-   *  would otherwise free the synths under us and leave dangling
-   *  worker subscriptions / nFree errors in the log. */
+   *  disconnect sequence before `bufferManager.clear()` — releases
+   *  the handles so the buffer manager sees a clean shutdown. */
   async clear(): Promise<void> {
     const list = this.scopesStore.get();
     this.scopesStore.set([]);

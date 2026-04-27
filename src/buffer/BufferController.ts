@@ -107,6 +107,10 @@ export class BufferController {
 
   private readonly subscribers = new Set<(chunk: BufferChunk) => void>();
 
+  /** Worker-subscription unsubscribe handle. Set during `start()` after
+   *  /b_alloc + /s_new + /sync resolve; cleared in `dispose()`. */
+  private workerUnsubscribe: (() => void) | null = null;
+
   private started = false;
   private disposed = false;
 
@@ -173,9 +177,21 @@ export class BufferController {
       );
       this.nodeIdStore.set(nodeId);
 
-      // TODO Phase 17: register worker subscription routing chunks
-      // to `deliverChunk`. Until then the tap writes the buffer
-      // every tick but no main-thread consumer sees anything.
+      // Register the tick-driven /b_getn loop on the worker. Inbound
+      // /b_setn replies route through `deliverChunk` → push fan-out
+      // + pull store. The worker's default `skipFirstTick: true`
+      // drops the partial half between /b_alloc and the first tick
+      // boundary, so consumers see only clean half-completed chunks.
+      const handle = this.client.subscribeBuffer(
+        {
+          bufferId: this.bufferId,
+          bufnum,
+          channels,
+          chunkSize,
+        },
+        (chunk) => this.deliverChunk(chunk),
+      );
+      this.workerUnsubscribe = handle.unsubscribe;
 
       this.started = true;
     } catch (err) {
@@ -202,12 +218,17 @@ export class BufferController {
     if (this.disposed) return;
     this.disposed = true;
 
+    // Unsubscribe FIRST so the worker stops firing /b_getn against a
+    // soon-to-be-freed bufnum, and any in-flight /b_setn reply lands
+    // at a removed local listener (and is dropped) rather than
+    // routing into a torn-down `deliverChunk`.
+    if (this.workerUnsubscribe) {
+      this.workerUnsubscribe();
+      this.workerUnsubscribe = null;
+    }
+
     this.subscribers.clear();
     this.latestChunkStore.set(null);
-
-    // TODO Phase 17: unregister the worker subscription before
-    //  freeing the node, so a late /b_setn reply doesn't try to
-    //  route to a freed buffer.
 
     const nodeId = this.nodeIdStore.get();
     if (nodeId !== null) {

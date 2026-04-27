@@ -14,6 +14,7 @@
  * still offer the Download button — the user removes them explicitly.
  */
 
+import type { BufferManager } from '@/buffer/BufferManager';
 import type { ClockController } from '@/clock/ClockController';
 import type { GroupController } from '@/server/GroupController';
 import type { IdAllocator } from '@/server/IdAllocator';
@@ -31,6 +32,11 @@ export interface RecordingManagerOptions {
   group: GroupController;
   registry: SynthDefRegistry;
   ids: { node: IdAllocator; buffer: IdAllocator };
+  /** Forwarded to each `RecordingController` so its internal
+   *  waveform-tap scope can acquire a shared buffer. The
+   *  recording's own WAV-source buffer is still allocated locally
+   *  until Phase 20. */
+  bufferManager: BufferManager;
 }
 
 export interface AddRecordingOptions {
@@ -52,6 +58,7 @@ export class RecordingManager {
   private readonly group: GroupController;
   private readonly registry: SynthDefRegistry;
   private readonly ids: { node: IdAllocator; buffer: IdAllocator };
+  private readonly bufferManager: BufferManager;
 
   private readonly recordingsStore = createStore<RecordingController[]>([]);
 
@@ -61,6 +68,7 @@ export class RecordingManager {
     this.group = opts.group;
     this.registry = opts.registry;
     this.ids = opts.ids;
+    this.bufferManager = opts.bufferManager;
   }
 
   get recordings(): ReadonlyStore<RecordingController[]> {
@@ -78,6 +86,7 @@ export class RecordingManager {
       group: this.group,
       registry: this.registry,
       ids: this.ids,
+      bufferManager: this.bufferManager,
       recordingId,
       inputBus: opts.inputBus,
       channels: opts.channels,

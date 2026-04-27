@@ -11,6 +11,7 @@ import {
   DEFAULT_PARAMS,
   practicalChunkSizes,
 } from '@/config/clockConfig';
+import { BufferManager } from '@/buffer/BufferManager';
 import { RecordingManager } from '@/recording/RecordingManager';
 import {
   gFreeAll,
@@ -45,6 +46,7 @@ interface DashboardResources {
   group: GroupController;
   clock: ClockController;
   ids: { node: IdAllocator; buffer: IdAllocator; bus: IdAllocator };
+  bufferManager: BufferManager;
   synthManager: SynthManager;
   scopeManager: ScopeManager;
   recordingManager: RecordingManager;
@@ -208,12 +210,16 @@ async function setupDashboard(
     registry,
     ids: { node: ids.node, bus: ids.bus },
   });
-  const scopeManager = new ScopeManager({
+  const bufferManager = new BufferManager({
     client,
     clock,
     group,
     registry,
     ids: { node: ids.node, buffer: ids.buffer },
+  });
+  const scopeManager = new ScopeManager({
+    bufferManager,
+    clock,
   });
   const recordingManager = new RecordingManager({
     client,
@@ -221,6 +227,7 @@ async function setupDashboard(
     group,
     registry,
     ids: { node: ids.node, buffer: ids.buffer },
+    bufferManager,
   });
 
   // One-shot /version fetch. Informational only — fail open with
@@ -252,6 +259,7 @@ async function setupDashboard(
     group,
     clock,
     ids,
+    bufferManager,
     synthManager,
     scopeManager,
     recordingManager,
@@ -278,6 +286,17 @@ async function teardownServerState(resources: DashboardResources): Promise<void>
     await resources.scopeManager.clear();
   } catch (err) {
     console.warn('[sc:app] scopeManager.clear failed', err);
+  }
+  // Buffer manager runs after both consumer-side managers have
+  // released their handles. By this point the map should be empty;
+  // a warning logs to the console if it's not (refcount-leak
+  // canary). Either way the controllers it still holds are
+  // disposed (`/n_free` + `/b_free`) here, before `group.free()`
+  // would have done a coarser /g_freeAll.
+  try {
+    await resources.bufferManager.clear();
+  } catch (err) {
+    console.warn('[sc:app] bufferManager.clear failed', err);
   }
   try {
     await resources.synthManager.clear();

@@ -822,6 +822,39 @@ one `/b_alloc` and one `/s_new tap`. Remove one — tap stays alive.
 Remove the second — `/n_free tap` + `/b_free` fire. The
 "scope-before-synth" caveat from CLAUDE.md still applies.
 
+#### Files (as landed)
+
+| File | Change |
+|---|---|
+| `src/buffer/BufferController.ts` | Wired the real worker subscription. `start()` now appends a `client.subscribeBuffer({bufferId, bufnum, channels, chunkSize}, deliverChunk)` call after /s_new + /sync; `dispose()` calls the returned `unsubscribe` BEFORE freeing the node so a late /b_setn reply doesn't route through a torn-down `deliverChunk`. The Phase 16 TODOs are gone. |
+| `src/scope/ScopeController.ts` | Rewritten as a pure consumer. `ScopeControllerOptions = { buffer: BufferHandle, scopeId, label?, effectiveRate }`. No more `client`, `clock`, `group`, `registry`, `ids`. `start()` subscribes to `buffer.subscribe(cb)`; `stop()` unsubscribes + `await buffer.release()`. `inputBus`, `channels`, `samplesPerChunk` are read from `buffer.spec`. |
+| `src/scope/ScopeManager.ts` | Rewritten. `ScopeManagerOptions = { bufferManager, clock }`. `add()` calls `bufferManager.acquire(spec)` + constructs `ScopeController(handle)`. `remove()` → `ctrl.stop()` (releases handle). `clear()` for teardown. |
+| `src/recording/RecordingController.ts` | Internal waveform-tap scope now uses the new-style `ScopeController` — acquires a `BufferHandle` from `BufferManager` for it. Recording's own WAV-source buffer + tap synth still owned locally (Phase 17 adapter shim path); Phase 20 migrates that. |
+| `src/recording/RecordingManager.ts` | Accepts `bufferManager` in options, forwards to each `RecordingController`. |
+| `src/AppShell.tsx` | `setupDashboard` constructs `BufferManager` after the registry, passes it to both `ScopeManager` and `RecordingManager`. `bufferManager` added to `DashboardResources`. `teardownServerState` runs `bufferManager.clear()` after both consumer-side managers (refcount-leak canary surfaces here). |
+
+**Adaptations / notes.**
+
+- `RecordingController` is *partially* migrated. It owns its own
+  WAV-source buffer + recorder tap synth + worker subscription
+  (Phase 17 adapter shim). Its internal envelope-tap scope uses
+  the new shared-buffer path. So during an active recording in
+  this phase, **two buffers + two tap synths** are alive on the
+  same bus (recording's own + internal scope's). Phase 20
+  collapses them to one (kills the internal scope, recording
+  acquires a single shared handle for both WAV and envelope).
+- `BufferController.workerUnsubscribe` is unsubscribed BEFORE
+  `/n_free` + `/b_free` so late /b_setn replies don't route into
+  a torn-down chunk dispatcher. Mirrors the same ordering
+  established in Phase 17 for the per-controller adapter shim.
+- `bufferManager.clear()` lands in `teardownServerState` here
+  rather than waiting for Phase 21 — the manager already exists
+  in this phase, so wiring its teardown belongs alongside its
+  setup. Phase 21 will refine the order across the whole chain
+  and update CLAUDE.md.
+- Main bundle: 537.61 KB → 541.24 KB (BufferManager is now
+  linked, ScopeController shrunk).
+
 ### Phase 20 — Migrate `RecordingController` onto `BufferManager`
 
 **Goal.** `RecordingController` becomes a pure consumer. WAV writer

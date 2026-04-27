@@ -47,6 +47,7 @@ import {
   bufferTapSynthDefName,
   compileBufferTapSynthDef,
 } from '@/synthdefs/bufferTapSynthDef';
+import type { BufferManager } from '@/buffer/BufferManager';
 import type { ClockController } from '@/clock/ClockController';
 import type { GroupController } from '@/server/GroupController';
 import type { IdAllocator } from '@/server/IdAllocator';
@@ -88,6 +89,10 @@ export interface RecordingControllerOptions {
   group: GroupController;
   registry: SynthDefRegistry;
   ids: { node: IdAllocator; buffer: IdAllocator };
+  /** Used to acquire a shared `BufferHandle` for the internal
+   *  waveform-tap scope. The recording's own WAV-source buffer is
+   *  still allocated locally until Phase 20 migrates it. */
+  bufferManager: BufferManager;
   recordingId: string;
   inputBus: number;
   channels: number;
@@ -118,6 +123,7 @@ export class RecordingController {
   private readonly registry: SynthDefRegistry;
   private readonly nodeIds: IdAllocator;
   private readonly bufferIds: IdAllocator;
+  private readonly bufferManager: BufferManager;
   private readonly retry: { maxAttempts: number; deadlineMs: number };
 
   private readonly stateStore = createStore<RecordingState>('idle');
@@ -164,6 +170,7 @@ export class RecordingController {
     this.registry = opts.registry;
     this.nodeIds = opts.ids.node;
     this.bufferIds = opts.ids.buffer;
+    this.bufferManager = opts.bufferManager;
     this.recordingId = opts.recordingId;
     this.label = opts.label ?? `recording ${opts.recordingId.slice(0, 6)}`;
     this.channels = opts.channels;
@@ -277,24 +284,25 @@ export class RecordingController {
         this.client.sendCommand(sNewMsg);
       }
 
-      // Internal "tap scope" on the same input bus. It runs the
-      // existing scope pipeline (decimated /b_getn, /b_setn → main
-      // via bufferChunk events) so we don't have to add a new worker
-      // path. We compute per-tick min/max envelopes from each
-      // incoming chunk and append to the envelope buffer that the
-      // panel renders. Started AFTER the recorder /s_new is queued
-      // so the recorder lands first in the parent group's tail
-      // ordering — both are AddToTail so order = /s_new send order.
-      const internalScope = new ScopeController({
-        client: this.client,
-        clock: this.clock,
-        group: this.group,
-        registry: this.registry,
-        ids: { node: this.nodeIds, buffer: this.bufferIds },
+      // Internal "tap scope" on the same input bus. Acquires a
+      // shared `BufferHandle` from `BufferManager` — Phase 20 will
+      // also migrate the recorder's WAV-source onto a handle, at
+      // which point both consumers share *one* buffer + tap synth
+      // (same `(inputBus, channels, chunkSize)` triple). Until
+      // then, the recording itself owns a separate buffer (above)
+      // and the internal scope owns this shared one — one extra
+      // tap synth in the active recording's lifetime, removed
+      // automatically in Phase 20.
+      const internalScopeBuffer = await this.bufferManager.acquire({
         inputBus: this.inputBus,
         channels: this.channels,
+        chunkSize: samplesPerTick,
+      });
+      const internalScope = new ScopeController({
+        buffer: internalScopeBuffer,
         scopeId: `rec-tap-${this.recordingId}`,
         label: `${this.label} (waveform tap)`,
+        effectiveRate: this.clock.env.sampleRate,
       });
       this.internalScope = internalScope;
       this.envelopeUnsubscribe = internalScope.latestChunk.subscribe(
