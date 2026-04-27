@@ -43,6 +43,9 @@ import type { IdAllocator } from '@/server/IdAllocator';
 import { createStore, type ReadonlyStore } from '@/util/reactiveStore';
 import type { SynthDefRegistry } from '@/server/SynthDefRegistry';
 import type { WorkerClient } from '@/server/WorkerClient';
+import type { BufferChunk } from '@/server/workerProtocol';
+
+export type { BufferChunk };
 
 /** Sharing key for `BufferManager`: any two consumers with the same
  *  `(inputBus, channels, chunkSize)` triple share one underlying
@@ -52,16 +55,6 @@ export interface BufferSpec {
   inputBus: number;
   channels: number;
   chunkSize: number;
-}
-
-/** One chunk of audio delivered to consumers. Field shape mirrors
- *  `ScopeChunk` from `workerProtocol.ts`; Phase 17 will unify them
- *  by re-keying the worker protocol on `bufferId`. */
-export interface BufferChunk {
-  bufferId: string;
-  data: Float32Array;
-  channels: number;
-  tickIndex: number;
 }
 
 /** Read-only consumer-facing surface of a `BufferController`.

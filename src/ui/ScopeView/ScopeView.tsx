@@ -6,7 +6,7 @@ import {
   useState,
   type RefObject,
 } from 'react';
-import type { ScopeChunk } from '@/server/workerProtocol';
+import type { BufferChunk } from '@/server/workerProtocol';
 import './ScopeView.scss';
 
 type ScopeLayout = 'stacked' | 'overlay';
@@ -31,7 +31,7 @@ export interface ScopeViewProps {
    *  (typically the panel managing the subscription) writes new
    *  chunks here as they arrive; this component reads `current`
    *  once per animation frame and redraws. */
-  chunkRef: RefObject<ScopeChunk | null>;
+  chunkRef: RefObject<BufferChunk | null>;
   /** Effective sample rate — used to display the visible window
    *  size in milliseconds in the corner readout. Typically
    *  `scope.effectiveRate`. */

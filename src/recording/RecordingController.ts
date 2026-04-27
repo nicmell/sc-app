@@ -1,10 +1,9 @@
 /**
  * Per-recording lifecycle controller. Owns one recorder synth, its
- * dedicated buffer, and the worker subscription that funnels samples
- * into an in-memory WAV. State is exposed as `ReadonlyStore`s so the
- * UI re-renders only on real change events; `chunksPerSec`-style
- * derivatives are intentionally not built here — the panel can derive
- * them from `framesWritten` deltas if needed.
+ * dedicated buffer, the worker subscription that funnels samples
+ * back, and the in-memory WAV writer that materialises them. State
+ * is exposed as `ReadonlyStore`s so the UI re-renders only on real
+ * change events.
  *
  * Sample-accurate start: when the clock has anchored `tick0Ms`, the
  * controller schedules `/s_new` in an `OSC.Bundle` with timetag at
@@ -13,11 +12,26 @@
  * 0 aligned to a known tick — and multi-bus recordings started in
  * the same call window share a tick origin and stay phase-locked.
  *
- * Stop is sequenced as `/n_free` (stops sample writes immediately)
- * → `/b_free` → `stopRecording` to the worker. The worker drains any
- * in-flight read silently (it'd never come back post-/n_free), then
- * finalises the WAV and posts `recordingDone`. The controller awaits
- * that event and resolves `stop()` with the finalised result.
+ * Stop is sequenced as `unsubscribeBuffer` → `/n_free` → `/b_free`
+ * → finalise WAV on main. The unsubscribe fires first so any late
+ * chunks landing in flight are dropped at the WorkerClient's
+ * main-side fan-out before they reach this controller.
+ *
+ * Phase 17 relocated WAV writing from the worker to main: the worker
+ * is now subscription-kind-agnostic and just emits `bufferChunk`
+ * events (with `isGap: true` on retry exhaustion). This controller
+ * runs the `WavMemoryWriter` directly, materialises gap chunks into
+ * the sidecar JSON list, and finalises synchronously on stop —
+ * eliminating the round-trip wait on `recordingDone` that the
+ * Phase 12 worker-side pipeline required. The `wavWriter.ts` file
+ * still lives under `src/workers/` and physically moves to
+ * `src/recording/` in Phase 20; until then we import it from there
+ * (it's pure ArrayBuffer manipulation, works equally on both
+ * threads).
+ *
+ * Phase 17 adapter shim: we still own our own buffer + tap synth +
+ * worker subscription. Phase 20 will move the buffer + tap behind
+ * `BufferManager.acquire` and let scopes share the tap.
  */
 
 import {
@@ -39,7 +53,9 @@ import type { IdAllocator } from '@/server/IdAllocator';
 import { ScopeController } from '@/scope/ScopeController';
 import type { SynthDefRegistry } from '@/server/SynthDefRegistry';
 import type { WorkerClient } from '@/server/WorkerClient';
+import type { BufferChunk } from '@/server/workerProtocol';
 import { createStore, type ReadonlyStore } from '@/util/reactiveStore';
+import { WavMemoryWriter } from '@/workers/wavWriter';
 import {
   EnvelopeBuffer,
   type EnvelopeBufferSnapshot,
@@ -115,9 +131,14 @@ export class RecordingController {
   private nodeId: number | null = null;
   private bufnum: number | null = null;
   private unsubscribe: (() => void) | null = null;
-  /** Resolves on the next `recordingDone`, set up by `stop()`. */
-  private donePromise: Promise<RecordingResult> | null = null;
-  private resolveDone: ((result: RecordingResult) => void) | null = null;
+  /** WAV writer owns the in-memory buffer that grows chunk-by-chunk.
+   *  Created fresh per controller; finalise() runs once on stop and
+   *  hands back the underlying ArrayBuffer for the result Blob. */
+  private writer: WavMemoryWriter | null = null;
+  /** Mutable gap accumulator — updated as `bufferChunk` events with
+   *  `isGap: true` arrive. Mirrored into `gapsStore` for the UI. */
+  private readonly gapList: Array<{ tickIndex: number; framesMissing: number }> =
+    [];
   /** Wall-clock at start, for filename generation. */
   private startedAt: Date | null = null;
   /** Internal scope for the per-tick waveform envelope. Composes a
@@ -207,33 +228,29 @@ export class RecordingController {
       const nodeId = this.nodeIds.next();
       this.nodeId = nodeId;
 
+      // Construct the WAV writer fresh per start cycle. Holds the
+      // entire in-memory recording until finalise() runs in stop().
+      this.writer = new WavMemoryWriter({
+        sampleRate: this.clock.env.sampleRate,
+        channels: this.channels,
+      });
+
       // Register the worker subscription *before* /s_new so the first
       // /b_setn (whichever tick it lands on) is routed through the
-      // recording dispatch path. The skipFirstTick flag in the worker
-      // ensures we don't read the partial-half written between
-      // /s_new and the next tick boundary.
-      this.unsubscribe = this.client.subscribeRecording(
+      // recording dispatch path. The worker's default
+      // `skipFirstTick: true` ensures we don't read the partial-half
+      // written between /s_new and the next tick boundary.
+      const handle = this.client.subscribeBuffer(
         {
-          recordingId: this.recordingId,
+          bufferId: `rec-${this.recordingId}`,
           bufnum,
           channels: this.channels,
-          sampleRate: this.clock.env.sampleRate,
-          samplesPerTick,
+          chunkSize: samplesPerTick,
           retry: this.retry,
         },
-        {
-          onChunk: (info) => {
-            this.framesWrittenStore.set(info.framesWritten);
-          },
-          onGap: (gap) => {
-            this.gapsStore.update((list) => [
-              ...list,
-              { tickIndex: gap.tickIndex, framesMissing: gap.framesMissing },
-            ]);
-          },
-          onDone: (done) => this.handleDone(done),
-        },
+        (chunk) => this.handleChunk(chunk),
       );
+      this.unsubscribe = handle.unsubscribe;
 
       const sNewMsg = sNew(synthName, nodeId, AddToTail, this.group.groupId, {
         inBus: this.inputBus,
@@ -262,7 +279,7 @@ export class RecordingController {
 
       // Internal "tap scope" on the same input bus. It runs the
       // existing scope pipeline (decimated /b_getn, /b_setn → main
-      // via scopeChunk events) so we don't have to add a new worker
+      // via bufferChunk events) so we don't have to add a new worker
       // path. We compute per-tick min/max envelopes from each
       // incoming chunk and append to the envelope buffer that the
       // panel renders. Started AFTER the recorder /s_new is queued
@@ -321,13 +338,14 @@ export class RecordingController {
         this.bufnum = null;
       }
       this.nodeId = null;
+      this.writer = null;
       throw err;
     }
   }
 
-  /** Free the recorder synth + buffer, then ask the worker to
-   *  finalise the WAV. Resolves with the complete `RecordingResult`
-   *  once `recordingDone` lands. */
+  /** Tear down server-side state, drop the worker subscription, and
+   *  finalise the WAV synchronously on main. Resolves with the
+   *  complete `RecordingResult`. */
   async stop(): Promise<RecordingResult> {
     const state = this.stateStore.get();
     if (state === 'done') {
@@ -335,24 +353,13 @@ export class RecordingController {
       if (cached) return cached;
     }
     if (state !== 'recording') {
-      throw new Error(
-        `RecordingController.stop: invalid state ${state}`,
-      );
+      throw new Error(`RecordingController.stop: invalid state ${state}`);
     }
     this.stateStore.set('finalizing');
 
-    if (this.donePromise === null) {
-      this.donePromise = new Promise<RecordingResult>((resolve) => {
-        this.resolveDone = resolve;
-      });
-    }
-
     // Tear down the waveform tap scope alongside the recorder. Fire-
     // and-forget — the envelope buffer (held in main memory) survives
-    // for post-stop scrolling, and we don't want the user to wait an
-    // extra round-trip before the WAV finalises. The scope's own
-    // stop() handles its synth + buffer + worker subscription cleanup
-    // independently from the recorder's path.
+    // for post-stop scrolling.
     if (this.envelopeUnsubscribe) {
       this.envelopeUnsubscribe();
       this.envelopeUnsubscribe = null;
@@ -368,67 +375,90 @@ export class RecordingController {
       });
     }
 
+    // Unsubscribe FIRST so any late `bufferChunk` events landing in
+    // flight are dropped at the WorkerClient fan-out before they
+    // reach `handleChunk` and append to the writer post-finalise.
+    if (this.unsubscribe) {
+      this.unsubscribe();
+      this.unsubscribe = null;
+    }
+
     if (this.nodeId !== null) {
       try {
         this.client.sendCommand(nFree(this.nodeId));
       } catch (err) {
-        console.warn(
-          `[sc:rec ${this.recordingId}] nFree failed`,
-          err,
-        );
+        console.warn(`[sc:rec ${this.recordingId}] nFree failed`, err);
       }
+      this.nodeId = null;
     }
     if (this.bufnum !== null) {
       try {
         this.client.sendCommand(bFree(this.bufnum));
       } catch (err) {
-        console.warn(
-          `[sc:rec ${this.recordingId}] bFree failed`,
-          err,
-        );
+        console.warn(`[sc:rec ${this.recordingId}] bFree failed`, err);
       }
+      this.bufnum = null;
     }
-    this.client.stopRecording(this.recordingId);
 
-    return this.donePromise;
-  }
+    // Finalise the WAV on main. Synchronous — no round-trip wait on
+    // a worker `recordingDone` event the way Phase 12 needed.
+    if (!this.writer) {
+      throw new Error(
+        `RecordingController.stop: writer missing — start() never completed`,
+      );
+    }
+    const totalFrames = this.writer.framesWritten;
+    const wav = this.writer.finalise();
+    this.writer = null;
 
-  // ── Internals ─────────────────────────────────────────────────────
-
-  private handleDone(done: {
-    totalFrames: number;
-    gaps: ReadonlyArray<{ tickIndex: number; framesMissing: number }>;
-    wav: ArrayBuffer;
-    gapsJson: string;
-  }): void {
     const sampleRate = this.clock.env.sampleRate;
-    const wavBlob = new Blob([done.wav], { type: 'audio/wav' });
+    const wavBlob = new Blob([wav], { type: 'audio/wav' });
+    const gapsSnapshot = this.gapList.slice();
+    const gapsJson =
+      gapsSnapshot.length > 0
+        ? JSON.stringify(
+            { recordingId: this.recordingId, gaps: gapsSnapshot },
+            null,
+            2,
+          )
+        : '';
     const gapsBlob =
-      done.gapsJson.length > 0
-        ? new Blob([done.gapsJson], { type: 'application/json' })
+      gapsJson.length > 0
+        ? new Blob([gapsJson], { type: 'application/json' })
         : null;
 
     const result: RecordingResult = {
       wavBlob,
       gapsBlob,
-      gaps: done.gaps,
-      totalFrames: done.totalFrames,
-      durationSeconds: done.totalFrames / sampleRate,
+      gaps: gapsSnapshot,
+      totalFrames,
+      durationSeconds: totalFrames / sampleRate,
       suggestedFilename: this.deriveFilename(),
     };
 
-    this.framesWrittenStore.set(done.totalFrames);
-    this.gapsStore.set(done.gaps);
+    this.framesWrittenStore.set(totalFrames);
+    this.gapsStore.set(gapsSnapshot);
     this.resultStore.set(result);
     this.stateStore.set('done');
 
-    if (this.unsubscribe) {
-      this.unsubscribe();
-      this.unsubscribe = null;
-    }
-    if (this.resolveDone) {
-      this.resolveDone(result);
-      this.resolveDone = null;
+    return result;
+  }
+
+  // ── Internals ─────────────────────────────────────────────────────
+
+  private handleChunk(chunk: BufferChunk): void {
+    if (!this.writer) return;
+    // The worker delivers in strict tick order with offset-keyed
+    // pending + reorder buffer — appending in arrival order keeps
+    // the WAV linear. Gap chunks are zero-filled by the worker, so
+    // we append them verbatim and just record the sidecar entry.
+    this.writer.append(chunk.data);
+    this.framesWrittenStore.set(this.writer.framesWritten);
+
+    if (chunk.isGap) {
+      const framesMissing = chunk.data.length / chunk.channels;
+      this.gapList.push({ tickIndex: chunk.tickIndex, framesMissing });
+      this.gapsStore.set(this.gapList.slice());
     }
   }
 

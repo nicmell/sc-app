@@ -8,6 +8,9 @@
  * - `onError(cb)`                 — worker/WS error stream.
  * - `onTick(cb)`                  — decoded clock ticks (gated by
  *   `registerClock(trigId)`).
+ * - `subscribeBuffer(sub, cb)`    — register a tick-driven /b_getn
+ *   loop on the worker; chunk replies fan out to one or more
+ *   main-side listeners on the same `bufferId`.
  * - `sendAndAwaitReply(msg, match, timeoutMs)` — send + await first
  *   matching reply.
  * - `sendAndSync(msg, timeoutMs)` — send + /sync + await /synced.
@@ -25,15 +28,11 @@ import {
 } from '@sc-app/server-commands';
 
 import type {
+  BufferChunk,
+  BufferSubscription,
   ClockTick,
   MainToWorker,
   OscReply,
-  RecordingChunkWritten,
-  RecordingDone,
-  RecordingGap,
-  RecordingSubscription,
-  ScopeChunk,
-  ScopeSubscription,
   WorkerToMain,
 } from './workerProtocol';
 
@@ -43,29 +42,25 @@ const DEFAULT_SYNC_TIMEOUT_MS = 2000;
 export type ReplyListener = (reply: OscReply) => void;
 export type ErrorListener = (message: string) => void;
 export type TickListener = (tick: ClockTick) => void;
-export type ChunkListener = (chunk: ScopeChunk) => void;
+export type BufferChunkListener = (chunk: BufferChunk) => void;
 export type ReplyMatcher = (reply: OscReply) => boolean;
-export type RecordingChunkListener = (info: RecordingChunkWritten) => void;
-export type RecordingGapListener = (gap: RecordingGap) => void;
-export type RecordingDoneListener = (done: RecordingDone) => void;
+
+/** Returned from `subscribeBuffer`. Call `unsubscribe()` when done —
+ *  removes the local listener; if it was the last listener for this
+ *  `bufferId`, posts an `unsubscribeBuffer` to the worker so its
+ *  read loop drops the entry. */
+export interface BufferSubscriptionHandle {
+  unsubscribe: () => void;
+}
 
 export class WorkerClient {
   private readonly worker: Worker;
   private readonly replyListeners = new Set<ReplyListener>();
   private readonly errorListeners = new Set<ErrorListener>();
   private readonly tickListeners = new Set<TickListener>();
-  private readonly chunkListeners = new Map<string, Set<ChunkListener>>();
-  private readonly recordingChunkListeners = new Map<
+  private readonly bufferChunkListeners = new Map<
     string,
-    Set<RecordingChunkListener>
-  >();
-  private readonly recordingGapListeners = new Map<
-    string,
-    Set<RecordingGapListener>
-  >();
-  private readonly recordingDoneListeners = new Map<
-    string,
-    Set<RecordingDoneListener>
+    Set<BufferChunkListener>
   >();
   private nextSyncId = 1;
   readonly ready: Promise<void>;
@@ -141,29 +136,14 @@ export class WorkerClient {
         case 'clockTick':
           for (const cb of this.tickListeners) cb(msg.tick);
           break;
-        case 'scopeChunk': {
-          const cbs = this.chunkListeners.get(msg.chunk.scopeId);
+        case 'bufferChunk': {
+          const cbs = this.bufferChunkListeners.get(msg.chunk.bufferId);
           if (cbs) {
             for (const cb of cbs) cb(msg.chunk);
           }
           // No listener registered → drop on the floor; the worker
           // already paid the cost of decoding, but holding onto an
           // orphan chunk would just leak the Float32Array.
-          break;
-        }
-        case 'recordingChunkWritten': {
-          const cbs = this.recordingChunkListeners.get(msg.info.recordingId);
-          if (cbs) for (const cb of cbs) cb(msg.info);
-          break;
-        }
-        case 'recordingGap': {
-          const cbs = this.recordingGapListeners.get(msg.gap.recordingId);
-          if (cbs) for (const cb of cbs) cb(msg.gap);
-          break;
-        }
-        case 'recordingDone': {
-          const cbs = this.recordingDoneListeners.get(msg.done.recordingId);
-          if (cbs) for (const cb of cbs) cb(msg.done);
           break;
         }
         case 'error':
@@ -219,101 +199,49 @@ export class WorkerClient {
     this.post({ type: 'unregisterClock' });
   }
 
-  /** Register a per-scope tick-driven read on the worker's
-   *  subscription table and route the resulting `scopeChunk` events
-   *  to `cb`. Returns the unsubscribe function — pair every call
-   *  with the cleanup it returns. Calling twice with the same
-   *  `scopeId` replaces the previous subscription on the worker
-   *  side and adds a second callback. */
-  subscribeScope(
-    sub: ScopeSubscription,
-    cb: ChunkListener,
-  ): () => void {
-    this.post({ type: 'subscribeScope', subscription: sub });
-    let cbs = this.chunkListeners.get(sub.scopeId);
+  /** Register a tick-driven /b_getn loop on the worker for `sub.bufnum`
+   *  and route the resulting `bufferChunk` events to `cb`. Multiple
+   *  main-side listeners can attach to the same `bufferId` — they
+   *  share one worker-side subscription and each receive every
+   *  delivered chunk (the `Float32Array` reference is shared and
+   *  must be treated as read-only — see `BufferChunk` jsdoc).
+   *
+   *  Pair every call with the returned `unsubscribe()`. The last
+   *  unsubscribe for a given `bufferId` posts `unsubscribeBuffer` to
+   *  the worker. */
+  subscribeBuffer(
+    sub: BufferSubscription,
+    cb: BufferChunkListener,
+  ): BufferSubscriptionHandle {
+    let cbs = this.bufferChunkListeners.get(sub.bufferId);
+    const isFirstSubscriber = !cbs || cbs.size === 0;
     if (!cbs) {
       cbs = new Set();
-      this.chunkListeners.set(sub.scopeId, cbs);
+      this.bufferChunkListeners.set(sub.bufferId, cbs);
     }
     cbs.add(cb);
+    if (isFirstSubscriber) {
+      // Worker only sees one `subscribeBuffer` per `bufferId` —
+      // additional main-side listeners just join the local fan-out
+      // Set. Sending a duplicate would reset the worker's
+      // pendingByOffset / reorderBuffer state and cause a brief
+      // delivery stutter for existing listeners.
+      this.post({ type: 'subscribeBuffer', subscription: sub });
+    }
     let disposed = false;
-    return () => {
-      if (disposed) return;
-      disposed = true;
-      const set = this.chunkListeners.get(sub.scopeId);
-      if (set) {
+    return {
+      unsubscribe: () => {
+        if (disposed) return;
+        disposed = true;
+        const set = this.bufferChunkListeners.get(sub.bufferId);
+        if (!set) return;
         set.delete(cb);
         if (set.size === 0) {
-          this.chunkListeners.delete(sub.scopeId);
-          this.post({ type: 'unsubscribeScope', scopeId: sub.scopeId });
+          this.bufferChunkListeners.delete(sub.bufferId);
+          this.post({ type: 'unsubscribeBuffer', bufferId: sub.bufferId });
         }
-      }
+      },
     };
-  }
-
-  /** Register a recording with the worker — it'll start firing
-   *  `/b_getn` at every tick and accumulating samples into a private
-   *  in-memory `WavMemoryWriter`. Pair every call with
-   *  `stopRecording(recordingId)` to drain and finalise the WAV.
-   *
-   *  `onChunk` / `onGap` fire as samples land or gaps are filled;
-   *  `onDone` fires exactly once after `stopRecording`. The returned
-   *  function clears all three listener sets — invoke it to detach
-   *  before the controller is garbage-collected. */
-  subscribeRecording(
-    sub: RecordingSubscription,
-    callbacks: {
-      onChunk?: RecordingChunkListener;
-      onGap?: RecordingGapListener;
-      onDone?: RecordingDoneListener;
-    },
-  ): () => void {
-    this.post({ type: 'startRecording', subscription: sub });
-    if (callbacks.onChunk) {
-      const set =
-        this.recordingChunkListeners.get(sub.recordingId) ?? new Set();
-      set.add(callbacks.onChunk);
-      this.recordingChunkListeners.set(sub.recordingId, set);
-    }
-    if (callbacks.onGap) {
-      const set = this.recordingGapListeners.get(sub.recordingId) ?? new Set();
-      set.add(callbacks.onGap);
-      this.recordingGapListeners.set(sub.recordingId, set);
-    }
-    if (callbacks.onDone) {
-      const set =
-        this.recordingDoneListeners.get(sub.recordingId) ?? new Set();
-      set.add(callbacks.onDone);
-      this.recordingDoneListeners.set(sub.recordingId, set);
-    }
-    let disposed = false;
-    return () => {
-      if (disposed) return;
-      disposed = true;
-      const cb = callbacks;
-      const ck = this.recordingChunkListeners.get(sub.recordingId);
-      if (ck && cb.onChunk) {
-        ck.delete(cb.onChunk);
-        if (ck.size === 0) this.recordingChunkListeners.delete(sub.recordingId);
-      }
-      const gp = this.recordingGapListeners.get(sub.recordingId);
-      if (gp && cb.onGap) {
-        gp.delete(cb.onGap);
-        if (gp.size === 0) this.recordingGapListeners.delete(sub.recordingId);
-      }
-      const dn = this.recordingDoneListeners.get(sub.recordingId);
-      if (dn && cb.onDone) {
-        dn.delete(cb.onDone);
-        if (dn.size === 0) this.recordingDoneListeners.delete(sub.recordingId);
-      }
-    };
-  }
-
-  /** Tell the worker to drain the named recording, finalise the WAV,
-   *  and post a `recordingDone`. Idempotent — repeated calls after
-   *  the first go through to the worker which warns and ignores. */
-  stopRecording(recordingId: string): void {
-    this.post({ type: 'stopRecording', recordingId });
   }
 
   /** Send `msg` and resolve on the first reply satisfying `match`. */
@@ -416,10 +344,7 @@ export class WorkerClient {
     this.replyListeners.clear();
     this.errorListeners.clear();
     this.tickListeners.clear();
-    this.chunkListeners.clear();
-    this.recordingChunkListeners.clear();
-    this.recordingGapListeners.clear();
-    this.recordingDoneListeners.clear();
+    this.bufferChunkListeners.clear();
   }
 
   private post(msg: MainToWorker): void {

@@ -711,6 +711,55 @@ pre-phase-17 behaviour. Worker debug log shows `subscribeBuffer` /
   are silently silence with no sidecar JSON. Mark this in the
   phase 17 commit message; phase 20 restores it.
 
+#### Files (as landed)
+
+| File | Change |
+|---|---|
+| `src/server/workerProtocol.ts` | REWRITTEN. `BufferSubscription` + `BufferChunk` replace `ScopeSubscription` / `ScopeChunk` / `RecordingSubscription` / `RecordingChunkWritten` / `RecordingGap` / `RecordingDone`. `MainToWorker` uses `subscribeBuffer` / `unsubscribeBuffer`; `WorkerToMain` emits `bufferChunk`. `BufferChunk` carries an `isGap: boolean` flag for retry-exhaustion zero-fills. |
+| `src/workers/oscWorker.ts` | REWRITTEN. Single `Map<bufferId, BufferEntry>` with offset-keyed `pendingByOffset`, tick-ordered `reorderBuffer`, `nextDeliverableTick`. Lifted from the recording-side worker code, dropped the per-kind discriminator. WAV writer + recording-specific events removed. `OSC.Bundle(.. fireAt)` wrapping now applied uniformly to every read (recordings used to skip it — bonus alignment fix). |
+| `src/workers/wavWriter.ts` | UNCHANGED. Worker no longer imports it; main thread does. Physical move to `src/recording/` deferred to Phase 20. |
+| `src/server/WorkerClient.ts` | REWRITTEN. `subscribeBuffer(sub, cb): { unsubscribe }`. `Map<bufferId, Set<BufferChunkListener>>` for main-side fan-out. The worker only sees one `subscribeBuffer` per `bufferId` — `WorkerClient` posts on the first listener, `unsubscribeBuffer` on the last unsubscribe. Recording-specific listener registries removed. |
+| `src/scope/ScopeController.ts` | Adapter shim: derives `bufferId = scope-${scopeId}`, calls `subscribeBuffer` with channels + chunkSize. Removed main-side `skipNext` flag — worker's default `skipFirstTick: true` does the same job upstream. `chunkRef` and `latestChunkStore` typed `BufferChunk`. |
+| `src/recording/RecordingController.ts` | Substantial rewrite. Adapter shim: `bufferId = rec-${recordingId}`, retry policy passed through. Owns a main-side `WavMemoryWriter` (constructed in `start`, finalised synchronously in `stop`). `handleChunk` appends every chunk in arrival order (tick-ordered by the worker), stamps `gapList` entries when `chunk.isGap`. `stop()` now resolves directly from the finalised WAV — no round-trip wait on the (gone) `recordingDone` event. |
+| `src/buffer/BufferController.ts` | Imports `BufferChunk` from `workerProtocol` (single source of truth). Local `BufferChunk` definition removed; `BufferChunk` re-exported for downstream convenience. |
+| `src/ui/ScopeView/ScopeView.tsx` | `chunkRef: RefObject<BufferChunk \| null>`. ScopeView only reads `chunk.data` + `chunk.channels`, so the rename is purely type-level. |
+
+**Adaptations from spec.**
+
+- **Gap detection NOT temporarily lost.** The spec called for
+  Phase 17 to drop gap detection until Phase 20 restored it. We
+  shipped `BufferChunk.isGap: boolean` from day one — the worker
+  still zero-fills on retry exhaustion (as it did) and the flag
+  rides on the chunk; `RecordingController` materialises gaps
+  on receipt. Sidecar JSON works, no parity regression. Phase 20
+  is now a smaller change (no gap-detection plumbing to add).
+- **No internal "adapter" data type.** The spec described the
+  adapter shim as a per-controller `bufferId` allocator wrapping
+  the existing `bufnum`. Nothing more was needed — the
+  controllers each derive `bufferId` from their own stable id
+  (`scope-${scopeId}`, `rec-${recordingId}`) at the call site,
+  no separate adapter module.
+- **Scope `skipNext` removed entirely.** Worker `skipFirstTick:
+  true` (default on `BufferSubscription`) now drops the first
+  /b_getn for every subscription, including scopes. Net effect:
+  scopes save one OSC round-trip on subscribe (the read that was
+  fired and discarded on main is no longer fired at all); behaviour
+  identical from the user's seat.
+- **Bundle-wrapped reads now uniform.** Scopes always wrapped
+  `/b_getn` in an `OSC.Bundle` with `timetag = Date.now() +
+  READ_DELAY_MS` to absorb kr-vs-ar slop; recordings used to
+  send unbundled. The unified worker bundles every read — fixes
+  a latent recording alignment quirk for free.
+- **Bundle size shift.** Worker chunk shrunk from 38.58 KB →
+  34.50 KB (lost the WAV writer + recording-specific dispatch
+  branches). Main bundle grew from 537.48 KB → 538.27 KB
+  (`WavMemoryWriter` now linked into main).
+- **`RecordingController.gaps` getter retained.** The natural rename
+  to avoid colliding with the private gap accumulator was
+  `gapsList` for the getter, but `RecordingPanel` already binds
+  to `rec.gaps`. Kept the public getter as `gaps`; renamed the
+  private array to `gapList`.
+
 ### Phase 18 — Unify scope + recorder tap synthdefs
 
 **Goal.** Replace `scopeSynthDef` and `recorderSynthDef` with a

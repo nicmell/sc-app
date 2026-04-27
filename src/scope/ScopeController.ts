@@ -4,12 +4,19 @@
  * caller specifies (typically allocated by a `SynthController` or
  * external scsynth chain) and renders the signal via `ScopeView`.
  *
- * Skip-first-chunk: the first chunk that lands after subscribing
- * straddles the moment of `/b_alloc` (which zero-fills) plus the
- * partial first half written by the scope synth between /s_new and
- * the next tick boundary. We drop it so the displayed waveform
- * never shows that initial dropout. From chunk #2 onwards the
- * parity-based "completed half" guarantee in the worker takes over.
+ * Phase 17 adapter shim: subscribes to the worker via the unified
+ * `subscribeBuffer` API, deriving a per-controller `bufferId` from
+ * its `scopeId`. The buffer + tap synth are still owned per-scope —
+ * Phase 19 will move them into `BufferManager` so two scopes on the
+ * same bus share one buffer + tap. The shim is throwaway at that
+ * point.
+ *
+ * Skip-first-chunk: the first half after subscribing straddles
+ * /b_alloc (zero-fill) and the partial first half written between
+ * /s_new and the first tick boundary. The worker's
+ * `skipFirstTick: true` (default on `BufferSubscription`) drops the
+ * read entirely, so the displayed waveform never shows that
+ * initial dropout.
  */
 
 import {
@@ -29,7 +36,7 @@ import type { IdAllocator } from '@/server/IdAllocator';
 import { createStore, type ReadonlyStore } from '@/util/reactiveStore';
 import type { SynthDefRegistry } from '@/server/SynthDefRegistry';
 import type { WorkerClient } from '@/server/WorkerClient';
-import type { ScopeChunk } from '@/server/workerProtocol';
+import type { BufferChunk } from '@/server/workerProtocol';
 
 export interface ScopeControllerOptions {
   client: WorkerClient;
@@ -70,7 +77,7 @@ export class ScopeController {
   /** Mutable single-slot ref consumed by `ScopeView`'s RAF loop. The
    *  draw routine reads `.current` once per frame; older frames are
    *  overwritten as new chunks arrive. */
-  readonly chunkRef: { current: ScopeChunk | null } = { current: null };
+  readonly chunkRef: { current: BufferChunk | null } = { current: null };
 
   private readonly client: WorkerClient;
   private readonly clock: ClockController;
@@ -79,7 +86,7 @@ export class ScopeController {
   private readonly nodeIds: IdAllocator;
   private readonly bufferIds: IdAllocator;
 
-  private readonly latestChunkStore = createStore<ScopeChunk | null>(null);
+  private readonly latestChunkStore = createStore<BufferChunk | null>(null);
   private readonly chunksPerSecStore = createStore<number>(0);
   /** Sliding 1-second window of chunk-arrival timestamps used to derive
    *  `chunksPerSec`. Kept on the instance so `start` / `stop` can
@@ -89,7 +96,6 @@ export class ScopeController {
   private scopeNodeId: number | null = null;
   private bufnum: number | null = null;
   private unsubscribe: (() => void) | null = null;
-  private skipNext = false;
   private started = false;
 
   constructor(opts: ScopeControllerOptions) {
@@ -109,7 +115,7 @@ export class ScopeController {
 
   /** Latest chunk seen by the subscription. Useful for stats / non-RAF
    *  consumers; the canvas reads `chunkRef` directly. */
-  get latestChunk(): ReadonlyStore<ScopeChunk | null> {
+  get latestChunk(): ReadonlyStore<BufferChunk | null> {
     return this.latestChunkStore;
   }
 
@@ -120,7 +126,7 @@ export class ScopeController {
   }
 
   /** Bring up the scope: load defs, allocate buffer, /s_new the
-   *  scope synth, register the subscription. Idempotent. */
+   *  scope synth, register the worker subscription. Idempotent. */
   async start(): Promise<void> {
     if (this.started) return;
     this.started = true;
@@ -150,16 +156,19 @@ export class ScopeController {
     );
     this.scopeNodeId = nodeId;
 
-    this.skipNext = true;
-    this.unsubscribe = this.client.subscribeScope(
+    // Phase 17 adapter shim: derive a per-controller `bufferId` so
+    // the worker keys its subscription on it. Phase 19 retires this
+    // in favour of `BufferManager.acquire(spec)`.
+    const handle = this.client.subscribeBuffer(
       {
-        scopeId: this.scopeId,
+        bufferId: `scope-${this.scopeId}`,
         bufnum,
         chunkSize,
         channels: this.channels,
       },
       (chunk) => this.handleChunk(chunk),
     );
+    this.unsubscribe = handle.unsubscribe;
   }
 
   /** Tear down everything `start()` allocated. Best-effort: each
@@ -198,11 +207,9 @@ export class ScopeController {
 
   // ── Internals ─────────────────────────────────────────────────────
 
-  private handleChunk(chunk: ScopeChunk): void {
-    if (this.skipNext) {
-      this.skipNext = false;
-      return;
-    }
+  private handleChunk(chunk: BufferChunk): void {
+    // Scopes ignore `chunk.isGap` — a gap is rendered as silence,
+    // which is exactly what the zero-fill draws.
     this.chunkRef.current = chunk;
     this.latestChunkStore.set(chunk);
 
