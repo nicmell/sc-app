@@ -156,25 +156,26 @@ Plan follows phases 0–13. When working on a phase:
    what actually shipped.
 4. Commit per phase (or per natural break within a phase).
 
-Current phase progress: **Phase 14 shipped**. `plan.md` is updated
-through Phase 14 inclusive. Multi-scope support lives in
-`ScopeController` + `ScopeManager` + the `ScopeList` UI; each
-scope auto-allocates its own dedicated bus block via
+Current phase progress: **Phase 13.6 shipped — clock-config
+collapse + global chunkSize + runtime sampleRate.** `decimation`
+is gone (always 1); `ClockParams` is `{chunkSize}` only;
+`tickRate` is derived (`sampleRate / chunkSize`); `sampleRate`
+comes from `/status.reply.args[8]` at connect time (no compile-
+time `DEFAULT_ENV`). The dashboard header carries a chunk-size
+dropdown that triggers an in-place re-init when changed, with a
+confirm modal warning when there are recordings to lose.
+
+Multi-scope still lives in `ScopeController` + `ScopeManager` +
+`ScopeList`; each scope auto-allocates a dedicated bus block via
 `IdAllocator.nextBlock(channels)`. Recordings live in
 `src/recording/{RecordingController,RecordingManager,download,envelopeBuffer}.ts`
-+ `src/ui/RecordingPanel/` (now with `RecordingWaveformView`);
-they tap an existing bus (no auto-allocation), schedule /s_new
-sample-accurately via `tickToTimetag`, and accumulate IEEE
-float32 WAV bytes in the worker's `WavMemoryWriter` (zero-copy
-`ArrayBuffer` transfer to main on stop). Each recording also
-runs an internal "tap scope" on its input bus that feeds a
-per-tick min/max envelope buffer for the panel's waveform
-canvas (live during recording, scrollable when paused or done).
-Phase 13 (UI Polish & Teardown) is **in progress** — the
-single-scope `ScopeTestPanel` and its monitor synthdef +
-`BufferPoker` helper have been removed (they were dev-only
-diagnostics superseded by Phases 11–14), and `OscConsole` is
-now collapsed by default.
++ `src/ui/RecordingPanel/` with `RecordingWaveformView`. The
+in-place re-init flow shares `setupDashboard` /
+`teardownServerState` with the initial connect / disconnect
+paths so the same logic is exercised both ways. `OscConsole` and
+`ScopeTestPanel` were removed earlier in Phase 13;
+`SynthDefPanel` and the dev `phaseProbeSynthDef` are gone too.
+`plan.md` Phase 13 "as landed" subsection captures this.
 
 ## Where scsynth conventions matter
 
@@ -200,21 +201,26 @@ now collapsed by default.
   No other synth may reuse this id.
 - **Connect handshake** (in order, all in `AppShell.handleConnect`):
   1. `/status` probe — verifies the chain is alive; reads
-     `actualSampleRate` from `args[8]` and rejects the connect
-     if it differs from `DEFAULT_ENV.sampleRate` by more than
-     0.5 Hz (Phase 6+ alignment math goes wrong silently
-     otherwise).
+     `actualSampleRate` from `args[8]` and rejects only if it's
+     non-finite or `<= 0`. The captured value flows forward as
+     the session's `AudioEnvironment.sampleRate` — there's no
+     compile-time `DEFAULT_ENV` anymore.
   2. `/notify 1` via `sendAndAwaitReply` matching `/done /notify`,
      captures the assigned `clientId` for parent-group
      derivation. Required — scsynth doesn't broadcast async
      replies (`/tr`, `/n_go`, `/done`) to un-notified clients.
-  3. `bringUpDashboard` — constructs `GroupController`,
-     `ClockController` (allocates `clockBus = ids.bus.next()`),
-     calls `clock.start()`.
+  3. `setupDashboard(client, parentGroupId, sampleRate, chunkSize)`
+     — constructs `GroupController`, `ClockController` (allocates
+     `clockBus = ids.bus.next()`, derives `tickRate = sampleRate /
+     chunkSize`), calls `clock.start()`. Reused by the in-place
+     re-init flow when the user changes chunkSize from the header.
 - **Disconnect cleanup** (best-effort; covers serve mode + Tauri):
-  - **`handleDisconnect`** (button click): `clock.dispose()` →
-    `group.free()` → `client.sendAndSync(notify(0))` →
-    `client.dispose()`. Each step independently try/caught.
+  - **`handleDisconnect`** (button click): `teardownServerState`
+    (recordings → scopes → clock → group, each try/caught) →
+    `client.sendAndSync(notify(0))` → `client.dispose()`. The
+    `teardownServerState` helper is shared with the in-place
+    chunkSize re-init path, which runs the same teardown but
+    *without* the notify(0) + client.dispose tail.
   - **`pagehide` listener** (tab/window close): fire-and-forget
     `gFreeAll(parentGroupId) + nFree(parentGroupId) + notify(0)`.
     Best-effort — worker postMessage + WS send usually flush
@@ -226,7 +232,46 @@ now collapsed by default.
   `/tr`, extrapolates forward. The main-thread clock is only used
   for freshness watchdogs, never as the truth. For sample-accurate
   scheduling, use `tickToTimetag(clock.tick0Ms!, targetTick,
-  params.tickRate)` in an `OSC.Bundle`.
+  clock.derived.tickRate)` in an `OSC.Bundle`.
+
+### chunkSize × sampleRate practical reference
+
+`tickRate = sampleRate / chunkSize`. `Impulse.kr` accepts any
+positive Hz; the practical ceiling on tick rate is ~250 Hz before
+the worker's setTimeout retries crowd the next tick boundary
+(Phase 12 gap-bug pattern). The header dropdown filters options
+whose tick rate would exceed `MAX_PRACTICAL_TICK_RATE = 250`, via
+`practicalChunkSizes(sampleRate)`.
+
+| chunkSize | 44.1 kHz       | 48 kHz         | 96 kHz         | 192 kHz        |
+|-----------|----------------|----------------|----------------|----------------|
+| 1024      | 43 Hz / 23 ms  | 47 Hz / 21 ms  | 94 Hz / 11 ms  | 188 Hz / 5 ms  |
+| 512       | 86 Hz / 12 ms  | 94 Hz / 11 ms  | 188 Hz / 5 ms  | 375 Hz ✗       |
+| 256       | 172 Hz / 6 ms  | 188 Hz / 5 ms  | 375 Hz ✗       | 750 Hz ✗       |
+| 128       | 345 Hz ✗       | 375 Hz ✗       | 750 Hz ✗       | 1500 Hz ✗      |
+| 64        | 689 Hz ✗       | 750 Hz ✗       | 1500 Hz ✗      | 3000 Hz ✗      |
+
+Observations:
+
+- ✗ means filtered out by `practicalChunkSizes()`. Above 250 Hz
+  the kr-quantisation slop and the bridge round-trip stop fitting
+  inside one tick.
+- The numbers shift inversely with sampleRate — at 192 kHz only
+  `chunkSize = 1024` survives the filter.
+- The buffer size (`2 × chunkSize × channels × 4 bytes`) is
+  sampleRate-agnostic; only `chunkSize` determines memory.
+- Total `/b_setn` traffic is also sampleRate-agnostic per scope —
+  `chunkSize × channels × 4 bytes` per tick at `sampleRate /
+  chunkSize` ticks per second is `sampleRate × channels × 4`
+  bytes/sec regardless of which factor pair you pick.
+- Power-of-2 `chunkSize` keeps recording reads page-aligned
+  (`1024 × 4 = 4096 bytes = 1 page`) and FFT-ready at any
+  sampleRate (Future Improvement #15). The defaults (`64, 128,
+  256, 512, 1024`) are all powers of 2.
+- Time meaning of a given `chunkSize` value is *not* invariant
+  across sample rates — `1024` gives a 21 ms window at 48 k but
+  only 5 ms at 192 k. The user picks chunkSize as a sample count;
+  the resulting window depends on whatever scsynth is running.
 
 ## Gotchas to not relearn
 
@@ -295,16 +340,21 @@ now collapsed by default.
   WAV stays linear regardless of arrival order. Don't replicate
   the scope's single-slot pattern for any subscription that
   cares about strict per-tick ordering.
-- **Scope decimation is zero-order-hold, not anti-aliased** —
-  `BufWr.ar` writes every audio sample but `writeIdx` only
-  advances every `decimation` samples, so each buffer slot is
-  overwritten `decimation` times and the last write wins (no
-  averaging, no low-pass pre-filter). Above the alias frequency
-  (`effectiveRate / 2 = sampleRate / (2 × decimation)`)
-  high-frequency signals will fold back and show up as wrong-
-  frequency artefacts on the canvas. The default `decimation = 4`
-  gives a 12 kHz Nyquist on a 48 kHz session — fine for most
-  audio. At `decimation = 16` it drops to 1.5 kHz; a 5 kHz sine
-  will look like a slow modulator. Document, don't fix —
-  proper anti-aliasing belongs in a `decimateScopeSynthDef` if
-  ever needed.
+- **`chunkSize` is mutable at runtime; SynthDef cache keys must
+  include it.** The header dropdown lets the user change
+  `chunkSize` mid-session. Re-init compiles a fresh clock SynthDef
+  with the new derived `tickRate` (`sampleRate / chunkSize`), and
+  any new scope/recorder synths use the new `chunkSize` for their
+  ring + name. The cache keys for `compileScopeSynthDef` and
+  `compileRecorderSynthDef` are `(channels, chunkSize)` tuples —
+  never `(channels)` alone, or you get stale bytes after a
+  re-init. Old SynthDefs sit on scsynth until the parent group is
+  freed; harmless, just wasted slots.
+- **In-place re-init runs over the same WS — DO NOT re-issue
+  `notify(1)`.** The `parentGroupId` and the notify subscription
+  are captured once at initial `handleConnect` and stashed on
+  `DashboardResources`. Re-issuing `notify(1)` over the same WS
+  either gets rejected by scsynth or hands back a different
+  `clientId`, orphaning the existing parent group. The reinit
+  path calls `teardownServerState` (which doesn't touch notify)
+  and then `setupDashboard` with the stashed `parentGroupId`.

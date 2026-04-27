@@ -143,8 +143,33 @@ body,
       color: var(--ok-text);
     }
 
-    button {
+    .chunk-size-picker {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
       margin-left: auto;
+      font-size: 0.8rem;
+      color: var(--text-dim);
+
+      select {
+        padding: 0.25rem 0.5rem;
+        background: var(--surface-input);
+        color: var(--text);
+        border: 1px solid var(--border-3);
+        border-radius: 3px;
+        font: inherit;
+        font-size: 0.8rem;
+        font-variant-numeric: tabular-nums;
+        cursor: pointer;
+
+        &:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+      }
+    }
+
+    button {
       padding: 0.4rem 0.8rem;
       background: transparent;
       border: 1px solid var(--border-3);
@@ -153,8 +178,12 @@ body,
       cursor: pointer;
       font: inherit;
 
-      &:hover {
+      &:hover:not(:disabled) {
         background: var(--surface-3);
+      }
+      &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
       }
     }
   }

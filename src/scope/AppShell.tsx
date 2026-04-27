@@ -2,9 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ClockPanel } from '@/ui/ClockPanel';
 import { ConnectScreen } from '@/ui/ConnectScreen';
 import { DebugLog } from '@/ui/DebugLog';
+import { ConfirmModal, LoadingModal } from '@/ui/Modal';
 import { RecordingPanel } from '@/ui/RecordingPanel';
 import { ScopeList } from '@/ui/ScopeList';
-import { DEFAULT_PARAMS } from '@/config/clockConfig';
+import {
+  DEFAULT_PARAMS,
+  practicalChunkSizes,
+} from '@/config/clockConfig';
 import { RecordingManager } from '@/recording/RecordingManager';
 import {
   gFreeAll,
@@ -44,23 +48,52 @@ interface DashboardResources {
 }
 
 /**
- * Phase 5 dashboard — the dev heartbeat is gone, replaced by the real
- * `globalClock` synth managed by `ClockController`. ClockPanel now
- * renders tickIndex / elapsed / pulse dot driven by the suppressed
- * `/tr` stream.
+ * Dashboard — the live UI when connected. The header carries the
+ * connected-state badge, the chunk-size selector (which drives a
+ * full re-init when changed), and the Disconnect button. Below
+ * that: clock panel, scope list, recording panel.
  */
 function Dashboard({
   resources,
+  chunkSize,
+  reiniting,
+  onChunkSizeChange,
   onDisconnect,
 }: {
   resources: DashboardResources;
+  chunkSize: number;
+  reiniting: boolean;
+  onChunkSizeChange: (next: number) => void;
   onDisconnect: () => void;
 }) {
+  const options = practicalChunkSizes(resources.sampleRate);
   return (
     <main className="dashboard-shell">
       <header>
         <span className="badge">connected</span>
-        <button type="button" onClick={onDisconnect}>
+        <label className="chunk-size-picker">
+          chunk size&nbsp;
+          <select
+            value={chunkSize}
+            disabled={reiniting}
+            onChange={(e) => onChunkSizeChange(Number(e.target.value))}
+            title={
+              `Tick rate = sampleRate / chunkSize. Changing this ` +
+              `re-initialises the dashboard.`
+            }
+          >
+            {options.map((cs) => (
+              <option key={cs} value={cs}>
+                {cs} ({(resources.sampleRate / cs).toFixed(2)} Hz tick)
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          onClick={onDisconnect}
+          disabled={reiniting}
+        >
           Disconnect
         </button>
       </header>
@@ -206,6 +239,17 @@ export function AppShell() {
   const [defaultAddress] = useState(readInitialAddress);
   const [resources, setResources] = useState<DashboardResources | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** Currently-applied chunk size. Updated atomically with
+   *  `setResources` after a successful re-init. */
+  const [chunkSize, setChunkSize] = useState(DEFAULT_PARAMS.chunkSize);
+  /** True while a re-init is in progress — drives the
+   *  indeterminate `LoadingModal` overlay. Also disables the
+   *  header dropdown and Disconnect button. */
+  const [reiniting, setReiniting] = useState(false);
+  /** Non-null while the confirm modal is visible. Captures the
+   *  pending chunkSize the user picked but hasn't yet committed
+   *  (because there's a "dirty" recording — see `onChunkSizeChange`). */
+  const [pendingChunkSize, setPendingChunkSize] = useState<number | null>(null);
 
   // Keep the latest client in a ref so the error-handler effect can
   // tear it down on a stale event without re-subscribing every render.
@@ -356,6 +400,95 @@ export function AppShell() {
     setResources(null);
   }, [resources]);
 
+  /** Run a full in-place re-init with `next` as the new chunkSize.
+   *  The WS, parentGroupId, and sampleRate stay the same; only
+   *  server-side state (clock synth, group, scopes, recordings) is
+   *  rebuilt. Loading modal stays up for the duration. */
+  const runReinit = useCallback(
+    async (next: number) => {
+      const current = resources;
+      if (!current) return;
+      setReiniting(true);
+      try {
+        await teardownServerState(current);
+        const rebuilt = await setupDashboard(
+          current.client,
+          current.parentGroupId,
+          current.sampleRate,
+          next,
+        );
+        setResources(rebuilt);
+        setChunkSize(next);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('[sc:app] reinit failed', msg);
+        setError(msg);
+        // Tear down completely — the previous resources are now stale.
+        try {
+          current.client.dispose();
+        } catch {
+          /* best effort */
+        }
+        clientRef.current = null;
+        setResources(null);
+      } finally {
+        setReiniting(false);
+        setPendingChunkSize(null);
+      }
+    },
+    [resources],
+  );
+
+  /** Header `<select>` change handler. If any recording is active
+   *  or has an un-downloaded `done` Blob, pause the clock and pop
+   *  the confirmation modal — otherwise proceed straight to
+   *  re-init. */
+  const onChunkSizeChange = useCallback(
+    (next: number) => {
+      if (next === chunkSize) return;
+      const current = resources;
+      if (!current) {
+        setChunkSize(next);
+        return;
+      }
+      const list = current.recordingManager.recordings.get();
+      const dirty = list.some((r) => {
+        const s = r.state.get();
+        if (s === 'recording' || s === 'preparing' || s === 'finalizing') {
+          return true;
+        }
+        if (s === 'done' && r.result.get() !== null) return true;
+        return false;
+      });
+      if (dirty) {
+        // Pause the clock so the recording's elapsed counter stops
+        // moving while the user decides. clock.stop() pauses the
+        // entire parent group via /n_run 0.
+        void current.clock.stop().catch((err) => {
+          console.warn('[sc:app] clock.stop while confirming reinit failed', err);
+        });
+        setPendingChunkSize(next);
+        return;
+      }
+      void runReinit(next);
+    },
+    [chunkSize, resources, runReinit],
+  );
+
+  const onConfirmReinit = useCallback(() => {
+    if (pendingChunkSize !== null) void runReinit(pendingChunkSize);
+  }, [pendingChunkSize, runReinit]);
+
+  const onCancelReinit = useCallback(() => {
+    // Resume the clock we paused when we showed the modal — the
+    // recording continues, the dropdown effectively reverts to
+    // `chunkSize` (we never set it to `pendingChunkSize`).
+    void resources?.clock.resume().catch((err) => {
+      console.warn('[sc:app] clock.resume on cancel failed', err);
+    });
+    setPendingChunkSize(null);
+  }, [resources]);
+
   // Best-effort shutdown when the tab / Tauri window closes. `pagehide`
   // fires synchronously on the main thread; the commands we emit here
   // queue into the worker's message channel and its WebSocket, which
@@ -444,12 +577,51 @@ export function AppShell() {
   return (
     <>
       {resources ? (
-        <Dashboard resources={resources} onDisconnect={handleDisconnect} />
+        <Dashboard
+          resources={resources}
+          chunkSize={chunkSize}
+          reiniting={reiniting}
+          onChunkSizeChange={onChunkSizeChange}
+          onDisconnect={handleDisconnect}
+        />
       ) : (
         <ConnectScreen
           defaultAddress={defaultAddress}
           onConnect={handleConnect}
           error={error}
+        />
+      )}
+      {reiniting && (
+        <LoadingModal
+          title="Reinitializing dashboard…"
+          message={
+            `Applying chunk size = ${pendingChunkSize ?? chunkSize}. ` +
+            `Tearing down current scopes/recordings and rebuilding the ` +
+            `clock.`
+          }
+        />
+      )}
+      {pendingChunkSize !== null && !reiniting && (
+        <ConfirmModal
+          title="Reinitialize dashboard?"
+          body={
+            <>
+              <p>
+                Active recordings will be stopped, and any recordings in
+                this session — including ones already finalised — will
+                be lost when the dashboard reinitializes.
+              </p>
+              <p>
+                Cancel and download or dismiss them first if you want
+                to keep their WAV files.
+              </p>
+            </>
+          }
+          confirmLabel="Reinitialize"
+          cancelLabel="Cancel"
+          variant="danger"
+          onConfirm={onConfirmReinit}
+          onCancel={onCancelReinit}
         />
       )}
       <DebugLog />

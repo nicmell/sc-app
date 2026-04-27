@@ -2628,6 +2628,58 @@ or dropped entirely:
   1024` exactly — power-of-2, page-aligned recording reads,
   FFT-friendly chunk sizes.
 
+- **REVERTED: per-scope `chunkSize` + `decimation`.** The mechanism
+  shipped in commit `cec4f7e` (and pivoted to `chunkSize`-as-knob
+  in `804a719`) was reverted in Phase 13.6. The per-scope `detail`
+  option, the `ScopeDetail` interface, the scope-list dropdown,
+  the per-scope SynthDef cache tuple `(channels, chunkSize,
+  decimation)`, and the aliasing gotcha (`decimation > 1` would
+  zero-order-hold) are all gone. Reasoning: the user wanted a
+  single global knob with `decimation = 1` (no aliasing), so
+  `chunkSize` lives in `DEFAULT_PARAMS` + AppShell state and every
+  scope/recorder reads it from `clock.params.chunkSize`.
+
+- **Shipped (Phase 13.6): runtime sampleRate + global mutable
+  chunkSize + header re-init.**
+  - `DEFAULT_ENV` deleted. `AudioEnvironment.sampleRate` is read
+    from `/status.reply.args[8]` at connect time; the only check
+    is positive + finite. (Was: ±0.5 Hz vs. compile-time
+    `DEFAULT_ENV.sampleRate`.)
+  - `ClockParams = { chunkSize }` only. `tickRate` derived as
+    `sampleRate / chunkSize`. `ClockDerived` now holds tickRate
+    + samplesPerTick + recordRingSize + tickIntervalMs.
+  - `compileClockSynthDef(tickRate)`,
+    `compileScopeSynthDef(channels, chunkSize)` and
+    `compileRecorderSynthDef(channels, chunkSize)` all simplified
+    — cache keys updated. Scope synth's `g.div(phase, decimation)`
+    is gone; `writeIdx = phase mod (chunkSize × 2)`.
+  - `setupDashboard(client, parentGroupId, sampleRate, chunkSize)`
+    extracted from the old `bringUpDashboard`. Reused for both
+    initial connect and the in-place re-init triggered by the
+    header dropdown. `teardownServerState(resources)` extracted
+    from `handleDisconnect`'s first four steps; reused similarly.
+  - `DashboardResources` now stashes `parentGroupId` + `sampleRate`
+    so re-init can rebuild without re-handshaking `notify(1)`
+    (which scsynth would either reject or re-assign, orphaning
+    the current parent group).
+  - New `src/ui/Modal/{LoadingModal,ConfirmModal,Modal.scss,
+    index.ts}` — generic portal-rendered overlays. `LoadingModal`
+    has an indeterminate progress bar. `ConfirmModal` warns the
+    user that recordings/Blobs are lost on re-init when there's
+    dirty state.
+  - Header dropdown: built via `practicalChunkSizes(sampleRate)`,
+    which filters `[1024, 512, 256, 128, 64]` to those whose
+    derived tickRate stays under `MAX_PRACTICAL_TICK_RATE = 250
+    Hz`. At 48 kHz / 44.1 kHz all five render; at 192 kHz only
+    `1024` survives.
+  - On change with no dirty recording state: pop loading modal,
+    teardown, rebuild, hide modal. With dirty state: pause the
+    clock, pop confirm modal; cancel resumes clock + reverts
+    selector, confirm proceeds with re-init.
+  - See CLAUDE.md "chunkSize × sampleRate practical reference"
+    for the trade-off table and the gotcha about `chunkSize`
+    being mutable mid-session (cache keys must include it).
+
 ---
 
 ## Phase 14 — Recording Waveform View
@@ -3003,25 +3055,27 @@ pattern.
 **Cost:** ~1 day for the three above. Worth ~5 days of saved
 debugging over the project lifetime.
 
-### 20. Sample-rate auto-detection
+### 20. Sample-rate auto-detection — **COMPLETED in Phase 13.6**
 
-`DEFAULT_ENV.sampleRate = 48000` is hardcoded. We already read the
-real rate from `/status.reply` at connect time and reject mismatched
-sessions, but we could *adapt*: derive a session-specific
-`ClockParams.tickRate` such that `samplesPerTick` stays power-of-2
-at the actual rate. E.g., 44100 / 43.066 ≈ 1024 (ugly tickRate),
-44100 / 44.10 = 1000 (clean tickRate, non-power-of-2 chunk).
-There's no clean choice for 44100 — the project might just want to
-pin to 48 kHz / 96 kHz multiples. Document explicitly.
+Shipped: `AudioEnvironment.sampleRate` is now read from
+`/status.reply.args[8]` at connect time and forwarded through
+`setupDashboard`. `DEFAULT_ENV` is gone. The dashboard adapts its
+derived `tickRate = sampleRate / chunkSize` per session. The
+header `practicalChunkSizes()` filter trims options whose tickRate
+would exceed 250 Hz, so a 192 kHz scsynth gets a smaller dropdown
+than a 48 kHz one. See CLAUDE.md "chunkSize × sampleRate
+practical reference" for the trade-off table.
 
-**Cost:** ~½ day. Mostly the policy decision, not the code.
+The "44.1 / 1024 = ugly tickRate" concern from the original
+ticket is moot — `Impulse.kr` accepts any positive Hz and
+quantises to kr blocks regardless of integer-ness, so `43.066 Hz`
+is a perfectly valid clock rate.
 
 ### 21. Persistent UI settings
 
 `localStorage` per-session: last-used scsynth address (already
-done), preferred channel count, default decimation, recording bus,
-window size. Small quality-of-life win for users who reconnect
-often.
+done), preferred chunkSize, channel count, recording bus, window
+size. Small quality-of-life win for users who reconnect often.
 
 **Cost:** ~½ day.
 
