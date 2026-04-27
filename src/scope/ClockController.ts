@@ -1,27 +1,29 @@
 /**
  * Owns the global clock synth's lifecycle and the UI-facing tick stream.
  *
- * Pause/resume is **synth-level** (`/n_run nodeId 0|1` against the
- * clock synth itself), not group-level. This matters at startup:
- * `start({ startPaused: true })` bundles the synth's `/s_new` with
- * a paired `/n_run nodeId 0` so scsynth processes both atomically
- * before its next audio block — the clock synth never gets a chance
- * to fire even one `/tr` before being paused. The previous design
- * (start the synth, then group-pause) gave it a brief window to tick
- * a few times during the round-trip, which polluted the dashboard's
- * "fresh from connect" state with bogus startup ticks.
+ * Pause/resume is **group-level** — `clock.stop()` calls
+ * `group.pause()` (`/n_run groupId 0`) and `clock.resume()` calls
+ * `group.resume()`. This freezes everything in the parent group
+ * (clock, scopes, recorders, any source synths) in lockstep, which
+ * is the "global pause" semantic the dashboard expects.
+ *
+ * The dashboard comes up paused because `GroupController.ensureCreated`
+ * bundles `/g_new + /n_run groupId 0` atomically — the group never
+ * exists in a running state until the user clicks Start. The clock
+ * synth /s_new'd by `start()` lands in a paused group and inherits
+ * that state, so no /tr fires until `resume()`.
+ *
+ * `effectiveState` derives from `groupState + tickFresh`: while the
+ * group state says `running` but no tick has arrived in
+ * `2 × tickIntervalMs`, we surface `paused` so the UI doesn't lie
+ * about a silent server. Resolves back to `running` as soon as a
+ * tick lands.
  *
  * **Group ordering invariant.** The clock synth is added with
  * `AddToHead`; every other synth that reads the clock bus (scopes,
  * recorders) MUST be added with `AddToTail` so scsynth processes
  * them AFTER the clock on every control block — otherwise they'd
  * read the previous block's bus value, introducing ~1 ms lag.
- *
- * `effectiveState` derives from `paused + tickFresh`: while paused
- * is `false` (i.e. the synth's runFlag is 1) but no tick has arrived
- * in `2 × tickIntervalMs`, we surface `paused` so the UI doesn't
- * lie about a silent server. Resolves back to `running` as soon as
- * a tick lands.
  */
 
 import type {
@@ -34,14 +36,8 @@ import {
   CLOCK_SYNTHDEF_NAME,
   compileClockSynthDef,
 } from '@/synth/clockSynthDef';
-import {
-  AddToHead,
-  OSC,
-  nFree,
-  nRunOne,
-  sNew,
-} from '@sc-app/server-commands';
-import type { GroupController } from './GroupController';
+import { AddToHead, nFree, sNew } from '@sc-app/server-commands';
+import { GroupController, type GroupState } from './GroupController';
 import type { IdAllocator } from './IdAllocator';
 import type { ReadonlyStore } from './reactiveStore';
 import { createStore } from './reactiveStore';
@@ -67,14 +63,6 @@ interface ClockControllerOptions {
   params: ClockParams;
 }
 
-export interface ClockStartOptions {
-  /** When true, the clock synth is /s_new'd and immediately paused
-   *  in the same OSC bundle, so scsynth never processes an audio
-   *  block with the synth running. Used at dashboard bring-up so
-   *  the user sees a clean "paused, no ticks fired yet" state. */
-  startPaused?: boolean;
-}
-
 export class ClockController {
   readonly env: AudioEnvironment;
   readonly params: ClockParams;
@@ -93,13 +81,9 @@ export class ClockController {
 
   private clockNodeId: number | null = null;
   private offTick: (() => void) | null = null;
+  private offGroupState: (() => void) | null = null;
   private watchdog: number | null = null;
   private started = false;
-  /** True when the clock synth's runFlag is 0 (paused). Mirrors the
-   *  state we last sent to scsynth via `/n_run`. Drives the
-   *  `effectiveState` computation alongside the tick-freshness
-   *  watchdog. */
-  private paused = false;
   /** Most recent "we expect ticks to be flowing" moment — the latest
    *  of `start` / `resume` / `reset` or any incoming tick. Null while
    *  the controller is stopped. */
@@ -128,7 +112,7 @@ export class ClockController {
   }
 
   /** `running` / `paused` / `stopped`, with stale-tick detection
-   *  overriding a "running" state back to `paused`. */
+   *  overriding a "running" group back to `paused`. */
   get effectiveState(): ReadonlyStore<ClockState> {
     return this.effectiveStateStore;
   }
@@ -141,16 +125,13 @@ export class ClockController {
     return this._tick0Ms;
   }
 
-  /** First-time bring-up: load synthdef, create group, register the
-   *  clock trigId, add the clock synth at head. Idempotent.
-   *
-   *  When `opts.startPaused` is true (the default for the dashboard
-   *  flow), the synth is created paused via an atomic
-   *  `/s_new + /n_run nodeId 0` bundle — see the file-level
-   *  doc-comment for why. */
-  async start(opts: ClockStartOptions = {}): Promise<void> {
+  /** First-time bring-up: load synthdef, ensure the parent group
+   *  exists (paused — see `GroupController.ensureCreated`), register
+   *  the clock trigId, /s_new the clock synth at head. The synth
+   *  inherits the group's paused state, so no /tr fires until the
+   *  user calls `resume()`. Idempotent. */
+  async start(): Promise<void> {
     if (this.started) return;
-    const startPaused = opts.startPaused ?? false;
 
     await this.registry.ensureLoaded(
       CLOCK_SYNTHDEF_NAME,
@@ -160,66 +141,42 @@ export class ClockController {
 
     this.client.registerClock(CLOCK_TRIG_ID);
     this.offTick = this.client.onTick((tick) => this.handleTick(tick));
+    this.offGroupState = this.group.state.subscribe((s) => this.recompute(s));
     this.startWatchdog();
 
     this.clockNodeId = this.nodeIds.next();
     this.lastSignalAt = performance.now();
-    const sNewMsg = sNew(
-      CLOCK_SYNTHDEF_NAME,
-      this.clockNodeId,
-      AddToHead,
-      this.group.groupId,
-      { clockBus: this.clockBus },
+    await this.client.sendAndSync(
+      sNew(
+        CLOCK_SYNTHDEF_NAME,
+        this.clockNodeId,
+        AddToHead,
+        this.group.groupId,
+        { clockBus: this.clockBus },
+      ),
     );
-    if (startPaused) {
-      // Atomic create-then-pause. scsynth processes a bundle's
-      // commands sequentially between audio blocks, so the synth
-      // never ticks: by the time the next block runs, /n_run has
-      // already cleared the runFlag.
-      const bundle = new OSC.Bundle([
-        sNewMsg,
-        nRunOne(this.clockNodeId, 0),
-      ]);
-      this.paused = true;
-      await this.client.sendAndSync(bundle);
-    } else {
-      this.paused = false;
-      await this.client.sendAndSync(sNewMsg);
-    }
 
     this.started = true;
-    this.recompute();
+    this.recompute(this.group.state.get());
   }
 
-  /** Pause the clock synth (`/n_run nodeId 0`). The parent group
-   *  stays running — only the clock's `Impulse.kr` and `Phasor.ar`
-   *  freeze. With no `/tr` firing, the worker stops dispatching
-   *  `/b_getn` so any scopes/recorders go quiet too. */
+  /** Global pause — `/n_run 0` on the parent group freezes the
+   *  clock synth along with every scope / recorder child. */
   async stop(): Promise<void> {
-    if (!this.started || this.clockNodeId === null) return;
-    if (this.paused) return;
-    this.paused = true;
-    this.recompute();
-    await this.client.sendAndSync(nRunOne(this.clockNodeId, 0));
+    await this.group.pause();
   }
 
-  /** Resume the clock synth (`/n_run nodeId 1`). */
   async resume(): Promise<void> {
-    if (!this.started || this.clockNodeId === null) return;
-    if (!this.paused) return;
     // Reset the freshness clock so the warmup grace kicks in again —
-    // the old `lastSignalAt` predates the pause and would otherwise
-    // make the UI flicker `paused` for one watchdog period after
-    // resume.
+    // the old `lastTick` predates the pause and would otherwise make
+    // the UI flicker `paused` for one watchdog period after resume.
     this.lastSignalAt = performance.now();
-    this.paused = false;
-    this.recompute();
-    await this.client.sendAndSync(nRunOne(this.clockNodeId, 1));
+    await this.group.resume();
+    this.recompute(this.group.state.get());
   }
 
   /** Free the clock synth and re-add it, returning tickIndex to 0.
-   *  Group (and other children) untouched. Preserves the current
-   *  paused-or-not state via the same atomic-bundle trick. */
+   *  Group (and other children) untouched. */
   async reset(): Promise<void> {
     if (this.clockNodeId === null) return;
     await this.client.sendAndSync(nFree(this.clockNodeId));
@@ -228,21 +185,16 @@ export class ClockController {
     this._tick0Ms = null;
     this.lastSignalAt = performance.now();
     this.clockNodeId = this.nodeIds.next();
-    const sNewMsg = sNew(
-      CLOCK_SYNTHDEF_NAME,
-      this.clockNodeId,
-      AddToHead,
-      this.group.groupId,
-      { clockBus: this.clockBus },
+    await this.client.sendAndSync(
+      sNew(
+        CLOCK_SYNTHDEF_NAME,
+        this.clockNodeId,
+        AddToHead,
+        this.group.groupId,
+        { clockBus: this.clockBus },
+      ),
     );
-    if (this.paused) {
-      await this.client.sendAndSync(
-        new OSC.Bundle([sNewMsg, nRunOne(this.clockNodeId, 0)]),
-      );
-    } else {
-      await this.client.sendAndSync(sNewMsg);
-    }
-    this.recompute();
+    this.recompute(this.group.state.get());
   }
 
   /** Full teardown — free the clock, unregister, stop the watchdog.
@@ -252,6 +204,8 @@ export class ClockController {
     this.stopWatchdog();
     this.offTick?.();
     this.offTick = null;
+    this.offGroupState?.();
+    this.offGroupState = null;
     this.client.unregisterClock();
 
     if (this.clockNodeId !== null) {
@@ -263,7 +217,6 @@ export class ClockController {
       this.clockNodeId = null;
     }
     this.started = false;
-    this.paused = false;
     this.lastSignalAt = null;
     this._tick0Ms = null;
     this.effectiveStateStore.set('stopped');
@@ -290,22 +243,21 @@ export class ClockController {
         Date.now() - (tick.tickIndex * 1000) / this.derived.tickRate;
     }
     // A fresh tick while we were showing 'paused'-due-to-silence
-    // flips us back to 'running'. `paused` (real pause) stays
-    // pinned by `recompute`.
-    this.recompute();
+    // flips us back to 'running'. Group-state-driven `paused` (real
+    // pause) stays pinned by `recompute`.
+    this.recompute(this.group.state.get());
   }
 
-  private recompute(): void {
+  private recompute(groupState: GroupState): void {
     let next: ClockState;
-    if (!this.started) {
+    if (groupState === 'stopped') {
       next = 'stopped';
-    } else if (this.paused) {
+    } else if (groupState === 'paused') {
       next = 'paused';
     } else if (this.isTickFresh()) {
       next = 'running';
     } else {
-      // Synth thinks it's running but no recent tick — surface as
-      // paused so the UI doesn't lie.
+      // Group says running but no recent tick — surface as paused.
       next = 'paused';
     }
     this.effectiveStateStore.set(next);
@@ -328,7 +280,7 @@ export class ClockController {
     this.stopWatchdog();
     const periodMs = Math.max(20, Math.floor(this.derived.tickIntervalMs / 2));
     this.watchdog = window.setInterval(() => {
-      this.recompute();
+      this.recompute(this.group.state.get());
     }, periodMs);
   }
 
