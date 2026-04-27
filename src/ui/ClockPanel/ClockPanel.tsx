@@ -49,6 +49,12 @@ export function ClockPanel({ clock }: ClockPanelProps) {
 
   const [busy, setBusy] = useState(false);
   const [pulse, setPulse] = useState(false);
+  /** Becomes true the first time the user resumes the clock from
+   *  this panel's current mount. Gates the toggle label between
+   *  "Start" (initial paused state, before the user has ever pressed)
+   *  and "Resume" (paused after they manually paused). Resets on
+   *  re-init since `ClockPanel` re-mounts when `clock` changes. */
+  const [userStartedOnce, setUserStartedOnce] = useState(false);
 
   // Brief CSS flash on every tick. Keyed to the tick's `receivedAt`
   // so consecutive ticks retrigger even if `tickIndex` is the same
@@ -63,8 +69,12 @@ export function ClockPanel({ clock }: ClockPanelProps) {
   const onToggle = useCallback(async () => {
     setBusy(true);
     try {
-      if (state === 'running') await clock.stop();
-      else if (state === 'paused') await clock.resume();
+      if (state === 'running') {
+        await clock.stop();
+      } else if (state === 'paused') {
+        await clock.resume();
+        setUserStartedOnce(true);
+      }
     } catch (err) {
       console.error('[sc:clock] toggle failed', err);
     } finally {
@@ -86,7 +96,12 @@ export function ClockPanel({ clock }: ClockPanelProps) {
   const pill = pillFor(state);
   const tickIndex = tick?.tickIndex ?? 0;
   const elapsed = formatElapsed(tickIndex, clock.derived.tickRate);
-  const toggleLabel = state === 'paused' ? 'Resume' : 'Pause';
+  const toggleLabel =
+    state === 'paused'
+      ? userStartedOnce
+        ? 'Resume'
+        : 'Start'
+      : 'Pause';
 
   return (
     <section className="panel clock-panel">

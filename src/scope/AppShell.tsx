@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ClockPanel } from '@/ui/ClockPanel';
 import { ConnectScreen } from '@/ui/ConnectScreen';
 import { DebugLog } from '@/ui/DebugLog';
-import { ConfirmModal, LoadingModal } from '@/ui/Modal';
+import { AlertModal, ConfirmModal, LoadingModal } from '@/ui/Modal';
 import { RecordingPanel } from '@/ui/RecordingPanel';
 import { ScopeList } from '@/ui/ScopeList';
 import {
@@ -177,6 +177,13 @@ async function setupDashboard(
       `chunkSize=${chunkSize}, tickRate=${clock.derived.tickRate.toFixed(3)} Hz`,
   );
   await clock.start();
+  // Bring the dashboard up paused so nothing runs until the user
+  // explicitly presses Start. `clock.stop()` runs `/n_run 0` on the
+  // parent group, freezing the clock synth (no /tr) along with any
+  // future scope/recorder children added by the user. The clock
+  // synthdef is loaded and the synth is /s_new'd; only its kr
+  // execution is suspended.
+  await clock.stop();
   const scopeManager = new ScopeManager({
     client,
     clock,
@@ -238,7 +245,14 @@ async function teardownServerState(resources: DashboardResources): Promise<void>
 export function AppShell() {
   const [defaultAddress] = useState(readInitialAddress);
   const [resources, setResources] = useState<DashboardResources | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  /** Modal-style error shown after a *runtime* failure — typically a
+   *  WebSocket close mid-session, or a re-init failure. The
+   *  dashboard tears down, the connect screen renders behind, and
+   *  this modal fronts it until the user dismisses. (Connect-time
+   *  failures, by contrast, surface inline on the connect screen
+   *  via `ConnectScreen`'s own `localError` — those are caught from
+   *  `handleConnect`'s thrown promise inside the form submit.) */
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
   /** Currently-applied chunk size. Updated atomically with
    *  `setResources` after a successful re-init. */
   const [chunkSize, setChunkSize] = useState(DEFAULT_PARAMS.chunkSize);
@@ -372,10 +386,14 @@ export function AppShell() {
     }
 
     // Wire disconnection handler *before* the async bring-up so a
-    // mid-bring-up WebSocket error still unwinds cleanly.
+    // mid-bring-up WebSocket error still unwinds cleanly. Runtime
+    // errors (post-connect WS death) surface as a modal alert
+    // rather than an inline message on the connect screen — the
+    // user has been doing real work and deserves an explicit
+    // notification of why the dashboard just disappeared.
     next.onError((message) => {
       if (clientRef.current === next) {
-        setError(message);
+        setRuntimeError(message);
         next.dispose();
         clientRef.current = null;
         setResources(null);
@@ -396,7 +414,6 @@ export function AppShell() {
       throw err;
     }
 
-    setError(null);
     setResources(built);
   }, []);
 
@@ -440,7 +457,10 @@ export function AppShell() {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error('[sc:app] reinit failed', msg);
-        setError(msg);
+        // A re-init failure is also a runtime error — the dashboard
+        // is gone and the user needs to know why before being sent
+        // back to the connect screen.
+        setRuntimeError(`Reinitialization failed: ${msg}`);
         // Tear down completely — the previous resources are now stale.
         try {
           current.client.dispose();
@@ -606,7 +626,6 @@ export function AppShell() {
         <ConnectScreen
           defaultAddress={defaultAddress}
           onConnect={handleConnect}
-          error={error}
         />
       )}
       {reiniting && (
@@ -640,6 +659,24 @@ export function AppShell() {
           variant="danger"
           onConfirm={onConfirmReinit}
           onCancel={onCancelReinit}
+        />
+      )}
+      {runtimeError !== null && (
+        <AlertModal
+          title="Connection lost"
+          body={
+            <>
+              <p>
+                The connection to scsynth was interrupted and the
+                dashboard has been torn down.
+              </p>
+              <p style={{ opacity: 0.8 }}>{runtimeError}</p>
+              <p>Press OK to return to the connect screen.</p>
+            </>
+          }
+          dismissLabel="OK"
+          variant="danger"
+          onDismiss={() => setRuntimeError(null)}
         />
       )}
       <DebugLog />
