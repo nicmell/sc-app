@@ -30,6 +30,20 @@ import type { WorkerClient } from './WorkerClient';
 
 export type SynthKind = 'mono' | 'stereo';
 
+/** Oscillator selection — maps to the `waveform` kr control on the
+ *  tone synthdef via `WAVEFORM_INDEX`. Switchable at runtime. */
+export type Waveform = 'sine' | 'square' | 'saw';
+
+/** Index used by `Select.ar` inside the tone synthdef. Order
+ *  matters — must match the synthdef's array of source oscillators. */
+export const WAVEFORM_INDEX: Record<Waveform, number> = {
+  sine: 0,
+  square: 1,
+  saw: 2,
+};
+
+export const WAVEFORMS: readonly Waveform[] = ['sine', 'square', 'saw'];
+
 export interface SynthControllerOptions {
   client: WorkerClient;
   registry: SynthDefRegistry;
@@ -50,9 +64,12 @@ export interface SynthControllerOptions {
    *  true — matches the previous bundled-source UX where adding a
    *  scope immediately played sound. */
   initialGate?: boolean;
+  /** Initial oscillator waveform. Default `'sine'`. */
+  initialWaveform?: Waveform;
 }
 
 const DEFAULT_AMP = 0.2;
+const DEFAULT_WAVEFORM: Waveform = 'sine';
 
 function defaultFreqs(kind: SynthKind): readonly number[] {
   return kind === 'mono' ? [440] : [440, 660];
@@ -76,6 +93,7 @@ export class SynthController {
   >;
   private readonly ampStore: ReturnType<typeof createStore<number>>;
   private readonly gateOpenStore: ReturnType<typeof createStore<boolean>>;
+  private readonly waveformStore: ReturnType<typeof createStore<Waveform>>;
 
   private started = false;
 
@@ -100,6 +118,9 @@ export class SynthController {
     this.freqsStore = createStore<readonly number[]>(freqs);
     this.ampStore = createStore<number>(opts.initialAmp ?? DEFAULT_AMP);
     this.gateOpenStore = createStore<boolean>(opts.initialGate ?? true);
+    this.waveformStore = createStore<Waveform>(
+      opts.initialWaveform ?? DEFAULT_WAVEFORM,
+    );
   }
 
   /** Current scsynth node id, or `null` while stopped. */
@@ -116,6 +137,10 @@ export class SynthController {
   /** True when gate=1 (audible). */
   get gateOpen(): ReadonlyStore<boolean> {
     return this.gateOpenStore;
+  }
+  /** Current oscillator waveform — switchable at runtime via `setWaveform`. */
+  get waveform(): ReadonlyStore<Waveform> {
+    return this.waveformStore;
   }
 
   /** /s_new the tone synth with the current freq / amp / gate
@@ -135,6 +160,7 @@ export class SynthController {
       outBus: this.inputBus,
       amp: this.ampStore.get(),
       gate: this.gateOpenStore.get() ? 1 : 0,
+      waveform: WAVEFORM_INDEX[this.waveformStore.get()],
     };
     const freqs = this.freqsStore.get();
     if (this.kind === 'mono') {
@@ -197,5 +223,16 @@ export class SynthController {
     const id = this.nodeIdStore.get();
     if (id === null) return;
     this.client.sendCommand(nSet(id, { gate: open ? 1 : 0 }));
+  }
+
+  /** Switch the oscillator at runtime. The synthdef runs all three
+   *  oscillators in parallel under a `Select.ar`, so this is a pure
+   *  control change — no /s_new, no /n_replace, no audio dropout. */
+  setWaveform(w: Waveform): void {
+    if (this.waveformStore.get() === w) return;
+    this.waveformStore.set(w);
+    const id = this.nodeIdStore.get();
+    if (id === null) return;
+    this.client.sendCommand(nSet(id, { waveform: WAVEFORM_INDEX[w] }));
   }
 }

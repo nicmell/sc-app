@@ -15,7 +15,11 @@
 import type { GroupController } from './GroupController';
 import type { IdAllocator } from './IdAllocator';
 import { createStore, type ReadonlyStore } from './reactiveStore';
-import { SynthController, type SynthKind } from './SynthController';
+import {
+  SynthController,
+  type SynthKind,
+  type Waveform,
+} from './SynthController';
 import type { SynthDefRegistry } from './SynthDefRegistry';
 import type { WorkerClient } from './WorkerClient';
 
@@ -36,6 +40,8 @@ export interface AddSynthOptions {
   /** Whether to start with gate open (default true — synth plays
    *  immediately on Add, matching the previous bundled-source UX). */
   gate?: boolean;
+  /** Initial oscillator waveform. Default `'sine'`. */
+  waveform?: Waveform;
 }
 
 function freshSynthId(): string {
@@ -79,6 +85,7 @@ export class SynthManager {
       initialFreqs: opts.freqs,
       initialAmp: opts.amp,
       initialGate: opts.gate,
+      initialWaveform: opts.waveform,
     });
     try {
       await ctrl.start();

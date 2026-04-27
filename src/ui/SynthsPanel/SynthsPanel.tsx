@@ -3,7 +3,12 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import type { SynthController, SynthKind } from '@/scope/SynthController';
+import {
+  WAVEFORMS,
+  type SynthController,
+  type SynthKind,
+  type Waveform,
+} from '@/scope/SynthController';
 import type { SynthManager } from '@/scope/SynthManager';
 import './SynthsPanel.scss';
 
@@ -15,6 +20,22 @@ const DEFAULT_FREQ_MONO = 440;
 const DEFAULT_FREQ_STEREO_L = 440;
 const DEFAULT_FREQ_STEREO_R = 660;
 const DEFAULT_AMP = 0.2;
+const DEFAULT_WAVEFORM: Waveform = 'sine';
+
+const FREQ_MIN = 20;
+const FREQ_MAX = 20000;
+const FREQ_STEP = 1;
+const AMP_MIN = 0;
+const AMP_MAX = 1;
+const AMP_STEP = 0.01;
+
+function formatHz(hz: number): string {
+  return `${Math.round(hz)} Hz`;
+}
+
+function formatAmp(amp: number): string {
+  return amp.toFixed(2);
+}
 
 export function SynthsPanel({ manager }: SynthsPanelProps) {
   const synths = useSyncExternalStore(
@@ -27,6 +48,7 @@ export function SynthsPanel({ manager }: SynthsPanelProps) {
   const [freqL, setFreqL] = useState(DEFAULT_FREQ_STEREO_L);
   const [freqR, setFreqR] = useState(DEFAULT_FREQ_STEREO_R);
   const [amp, setAmp] = useState(DEFAULT_AMP);
+  const [waveform, setWaveform] = useState<Waveform>(DEFAULT_WAVEFORM);
   const [label, setLabel] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,14 +63,15 @@ export function SynthsPanel({ manager }: SynthsPanelProps) {
         label: label.trim() || undefined,
         freqs,
         amp,
+        waveform,
       });
       // Bump default freqs slightly so consecutive Adds make
       // distinguishable synths without forcing the user to type.
       if (kind === 'mono') {
-        setFreqMono((f) => f + 110);
+        setFreqMono((f) => Math.min(FREQ_MAX, f + 110));
       } else {
-        setFreqL((f) => f + 55);
-        setFreqR((f) => f + 55);
+        setFreqL((f) => Math.min(FREQ_MAX, f + 55));
+        setFreqR((f) => Math.min(FREQ_MAX, f + 55));
       }
       setLabel('');
     } catch (err) {
@@ -58,7 +81,7 @@ export function SynthsPanel({ manager }: SynthsPanelProps) {
     } finally {
       setBusy(false);
     }
-  }, [manager, kind, freqMono, freqL, freqR, amp, label]);
+  }, [manager, kind, freqMono, freqL, freqR, amp, waveform, label]);
 
   const onClear = useCallback(async () => {
     setBusy(true);
@@ -89,14 +112,28 @@ export function SynthsPanel({ manager }: SynthsPanelProps) {
             <option value="stereo">stereo (2ch)</option>
           </select>
         </label>
+        <label>
+          waveform&nbsp;
+          <select
+            value={waveform}
+            disabled={busy}
+            onChange={(e) => setWaveform(e.target.value as Waveform)}
+          >
+            {WAVEFORMS.map((w) => (
+              <option key={w} value={w}>
+                {w}
+              </option>
+            ))}
+          </select>
+        </label>
         {kind === 'mono' ? (
-          <label>
-            freq&nbsp;
+          <label className="range-field">
+            <span>freq</span>
             <input
-              type="number"
-              min={20}
-              max={20000}
-              step={10}
+              type="range"
+              min={FREQ_MIN}
+              max={FREQ_MAX}
+              step={FREQ_STEP}
               value={freqMono}
               disabled={busy}
               onChange={(e) => {
@@ -104,17 +141,17 @@ export function SynthsPanel({ manager }: SynthsPanelProps) {
                 if (Number.isFinite(v) && v > 0) setFreqMono(v);
               }}
             />
-            &nbsp;Hz
+            <span className="range-value">{formatHz(freqMono)}</span>
           </label>
         ) : (
           <>
-            <label>
-              freqL&nbsp;
+            <label className="range-field">
+              <span>freqL</span>
               <input
-                type="number"
-                min={20}
-                max={20000}
-                step={10}
+                type="range"
+                min={FREQ_MIN}
+                max={FREQ_MAX}
+                step={FREQ_STEP}
                 value={freqL}
                 disabled={busy}
                 onChange={(e) => {
@@ -122,15 +159,15 @@ export function SynthsPanel({ manager }: SynthsPanelProps) {
                   if (Number.isFinite(v) && v > 0) setFreqL(v);
                 }}
               />
-              &nbsp;Hz
+              <span className="range-value">{formatHz(freqL)}</span>
             </label>
-            <label>
-              freqR&nbsp;
+            <label className="range-field">
+              <span>freqR</span>
               <input
-                type="number"
-                min={20}
-                max={20000}
-                step={10}
+                type="range"
+                min={FREQ_MIN}
+                max={FREQ_MAX}
+                step={FREQ_STEP}
                 value={freqR}
                 disabled={busy}
                 onChange={(e) => {
@@ -138,17 +175,17 @@ export function SynthsPanel({ manager }: SynthsPanelProps) {
                   if (Number.isFinite(v) && v > 0) setFreqR(v);
                 }}
               />
-              &nbsp;Hz
+              <span className="range-value">{formatHz(freqR)}</span>
             </label>
           </>
         )}
-        <label>
-          amp&nbsp;
+        <label className="range-field">
+          <span>amp</span>
           <input
-            type="number"
-            min={0}
-            max={1}
-            step={0.05}
+            type="range"
+            min={AMP_MIN}
+            max={AMP_MAX}
+            step={AMP_STEP}
             value={amp}
             disabled={busy}
             onChange={(e) => {
@@ -156,6 +193,7 @@ export function SynthsPanel({ manager }: SynthsPanelProps) {
               if (Number.isFinite(v) && v >= 0) setAmp(v);
             }}
           />
+          <span className="range-value">{formatAmp(amp)}</span>
         </label>
         <label>
           label&nbsp;
@@ -220,6 +258,10 @@ function SynthsPanelItem({
     (cb) => synth.gateOpen.subscribe(cb),
     () => synth.gateOpen.get(),
   );
+  const waveform = useSyncExternalStore(
+    (cb) => synth.waveform.subscribe(cb),
+    () => synth.waveform.get(),
+  );
 
   const busDesc =
     synth.channels === 1
@@ -247,19 +289,35 @@ function SynthsPanelItem({
         </button>
       </div>
       <div className="row controls">
+        <label>
+          waveform&nbsp;
+          <select
+            value={waveform}
+            onChange={(e) =>
+              synth.setWaveform(e.target.value as Waveform)
+            }
+          >
+            {WAVEFORMS.map((w) => (
+              <option key={w} value={w}>
+                {w}
+              </option>
+            ))}
+          </select>
+        </label>
         {freqs.map((hz, idx) => (
-          <label key={idx}>
-            {synth.kind === 'mono'
-              ? 'freq'
-              : idx === 0
-                ? 'freqL'
-                : 'freqR'}
-            &nbsp;
+          <label key={idx} className="range-field">
+            <span>
+              {synth.kind === 'mono'
+                ? 'freq'
+                : idx === 0
+                  ? 'freqL'
+                  : 'freqR'}
+            </span>
             <input
-              type="number"
-              min={20}
-              max={20000}
-              step={10}
+              type="range"
+              min={FREQ_MIN}
+              max={FREQ_MAX}
+              step={FREQ_STEP}
               value={hz}
               onChange={(e) => {
                 const v = Number(e.target.value);
@@ -268,22 +326,23 @@ function SynthsPanelItem({
                 }
               }}
             />
-            &nbsp;Hz
+            <span className="range-value">{formatHz(hz)}</span>
           </label>
         ))}
-        <label>
-          amp&nbsp;
+        <label className="range-field">
+          <span>amp</span>
           <input
-            type="number"
-            min={0}
-            max={1}
-            step={0.05}
+            type="range"
+            min={AMP_MIN}
+            max={AMP_MAX}
+            step={AMP_STEP}
             value={amp}
             onChange={(e) => {
               const v = Number(e.target.value);
               if (Number.isFinite(v) && v >= 0) synth.setAmp(v);
             }}
           />
+          <span className="range-value">{formatAmp(amp)}</span>
         </label>
         <button
           type="button"

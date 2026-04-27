@@ -11,7 +11,8 @@
     }
 
     select,
-    input {
+    input[type='text'],
+    input[type='number'] {
       padding: 0.25rem 0.4rem;
       background: var(--surface-2);
       color: var(--text);
@@ -28,6 +29,34 @@
 
     input[type='text'] {
       width: 8rem;
+    }
+  }
+
+  // Range inputs are used in both the toolbar (initial values for
+  // Add) and per-synth cards (live runtime control). Layout: label
+  // text, then the slider, then the current value as a fixed-width
+  // monospace readout so the row doesn't reflow as the user drags.
+  .range-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+
+    > span:first-child {
+      color: var(--text-dim);
+    }
+
+    input[type='range'] {
+      width: 8rem;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .range-value {
+      min-width: 3.6rem;
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+      font-size: 0.8rem;
+      color: var(--text);
     }
   }
 
@@ -128,6 +157,24 @@
 
     .controls {
       align-items: center;
+
+      label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        font-size: 0.85rem;
+        color: var(--text-dim);
+      }
+
+      select {
+        padding: 0.2rem 0.35rem;
+        background: var(--surface-2);
+        color: var(--text);
+        border: 1px solid var(--border-2);
+        border-radius: 3px;
+        font: inherit;
+        font-size: 0.85rem;
+      }
     }
   }
 }
