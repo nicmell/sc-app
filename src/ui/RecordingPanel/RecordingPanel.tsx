@@ -9,7 +9,7 @@ import type {
   RecordingState,
 } from '@/recording/RecordingController';
 import type { RecordingManager } from '@/recording/RecordingManager';
-import type { ClockController } from '@/scope/ClockController';
+import type { ClockController } from '@/clock/ClockController';
 import { RecordingWaveformView } from './RecordingWaveformView';
 import './RecordingPanel.scss';
 

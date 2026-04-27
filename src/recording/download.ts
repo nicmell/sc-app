@@ -15,7 +15,7 @@
  * under `$DOCUMENT`, `$DOWNLOAD`, `$AUDIO`, `$DESKTOP`, `$HOME`.
  */
 
-import { IS_TAURI } from '@/scope/runtime';
+import { IS_TAURI } from '@/util/runtime';
 
 interface DownloadOptions {
   /** Filename + extension. Used as the suggested name in the save-as

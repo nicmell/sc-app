@@ -279,42 +279,47 @@ src-tauri/                             # Rust backend (transport only)
       ws_bridge.rs                     # WebSocket ↔ UDP bridge
 
 src/                                   # frontend (React)
+  AppShell.tsx                         # connect ↔ dashboard orchestration
+  main.tsx                             # React root
   config/clockConfig.ts                # ClockParams, deriveClock,
                                         # MAX_PRACTICAL_TICK_RATE,
                                         # READ_DELAY_MS, practicalChunkSizes()
+  server/                              # scsynth transport + shared server state
+    WorkerClient.ts                    # main-thread wrapper around Worker
+    workerProtocol.ts                  # main ↔ worker message shapes
+    GroupController.ts                 # parent group lifecycle (atomic /g_new + /n_run 0)
+    SynthDefRegistry.ts                # tracks loaded SynthDefs (idempotent /d_recv)
+    IdAllocator.ts                     # node / buffer / bus monotonic counters
+    serverInfo.ts                      # /status snapshot store + heartbeat + /version
+  clock/
+    ClockController.ts                 # owns clock synth + tick0Ms anchor
+  synth/                               # runtime tone-synth wrappers (producers)
+    SynthController.ts                 # one tone synth
+    SynthManager.ts                    # collection of synth controllers
+  scope/                               # scope visualization (consumers)
+    ScopeController.ts                 # one scope
+    ScopeManager.ts                    # collection of scope controllers
+  recording/                           # consumers
+    RecordingController.ts
+    RecordingManager.ts
+    envelopeBuffer.ts                  # per-tick min/max envelope storage (Phase 14)
+    download.ts                        # Blob → save-as (native dialog or <a download>)
+  synthdefs/                           # SynthDef byte compilers (one per def)
+    clockSynthDef.ts                   # globalClock
+    scopeSynthDef.ts                   # scope tap (clockBus-driven writeIdx)
+    recorderSynthDef.ts                # recorder tap (clockBus-driven writeIdx)
+    toneSynthDef.ts                    # tone1ch / tone2ch (Phase 15)
   workers/
     scopeWorker.ts                     # Vite ?worker entry
     workerBootstrap.ts                 # window = globalThis shim + buffer pre-import
     workerConsoleBridge.ts             # forwards console.* to main as `log` events
     transport.ts                       # WS wrapper (worker-internal)
     wavWriter.ts                       # in-memory WAV encoder (worker-side)
-  scope/                               # controllers + AppShell
-    AppShell.tsx                       # connect ↔ dashboard orchestration
-    workerProtocol.ts                  # main ↔ worker message shapes
-    WorkerClient.ts                    # main-thread wrapper around Worker
-    IdAllocator.ts                     # node / buffer / bus monotonic counters
-    SynthDefRegistry.ts                # tracks loaded SynthDefs (idempotent /d_recv)
-    GroupController.ts                 # parent group lifecycle (atomic /g_new + /n_run 0)
-    ClockController.ts                 # owns clock synth + tick0Ms anchor
-    SynthController.ts                 # one tone synth (producer)
-    SynthManager.ts                    # collection of synth controllers
-    ScopeController.ts                 # one scope (consumer)
-    ScopeManager.ts                    # collection of scope controllers
-    serverInfo.ts                      # /status snapshot store + heartbeat + /version
-    debugLog.ts                        # in-memory log ring for the DebugLog panel
+  util/                                # cross-cutting helpers
     reactiveStore.ts                   # tiny createStore<T>() observable
+    debugLog.ts                        # in-memory log ring for the DebugLog panel
     runtime.ts                         # IS_TAURI flag
-  recording/
-    RecordingController.ts             # one recording (consumer)
-    RecordingManager.ts                # collection of recording controllers
-    envelopeBuffer.ts                  # per-tick min/max envelope storage (Phase 14)
-    download.ts                        # Blob → save-as (native dialog or <a download>)
-  synth/                               # per-SynthDef compile + cache
-    clockSynthDef.ts                   # globalClock
-    scopeSynthDef.ts                   # scope tap (clockBus-driven writeIdx)
-    recorderSynthDef.ts                # recorder tap (clockBus-driven writeIdx)
-    toneSynthDef.ts                    # tone1ch / tone2ch (Phase 15)
-  ui/
+  ui/                                  # React components
     ConnectScreen/
     SynthsPanel/                       # producer panel (Phase 15)
     ScopeList/ScopeView/               # scope cards + canvas
@@ -323,8 +328,14 @@ src/                                   # frontend (React)
     Modal/                             # LoadingModal, ConfirmModal, ErrorModal
     Footer/                            # /status snapshot + /version
     DebugLog/                          # captured console output
-  main.tsx                             # React root
 ```
+
+Folder boundaries follow producer/consumer/transport semantics:
+`src/synth/` is *runtime* tone-synth wrappers (controllers);
+`src/synthdefs/` is the *compile-time* SynthDef byte builders that
+load via `/d_recv`. The two are deliberately separate names so
+imports are unambiguous (`@/synth/SynthController` vs
+`@/synthdefs/toneSynthDef`).
 
 ---
 
@@ -1006,21 +1017,21 @@ These tune knobs; none change the phase structure.
 
 | File | Phase | Change |
 |---|---|---|
-| `src/scope/BufferController.ts` | 16 | NEW. |
-| `src/scope/BufferManager.ts` | 16 | NEW. |
-| `src/scope/workerProtocol.ts` | 17 | Replace scope/recording subscription messages with `subscribeBuffer` / `unsubscribeBuffer`. `ScopeChunk` → `BufferChunk` keyed by `bufferId`. Recording-specific events removed (the WAV writer relocates in 20). |
+| `src/buffer/BufferController.ts` | 16 | NEW. |
+| `src/buffer/BufferManager.ts` | 16 | NEW. |
+| `src/server/workerProtocol.ts` | 17 | Replace scope/recording subscription messages with `subscribeBuffer` / `unsubscribeBuffer`. `ScopeChunk` → `BufferChunk` keyed by `bufferId`. Recording-specific events removed (the WAV writer relocates in 20). |
 | `src/workers/scopeWorker.ts` | 17 | Subscription table keyed by `bufferId`; one `/b_getn` per tick per buffer; unified offset-keyed pending + reorder. WAV writer code deleted. |
 | `src/workers/wavWriter.ts` | 20 | DELETE (moves to `src/recording/wavWriter.ts`). |
-| `src/scope/WorkerClient.ts` | 17 | Replace `subscribeScope` / `subscribeRecording` with `subscribeBuffer(spec, cb)`. Drop `startRecording` / `stopRecording`. |
-| `src/synth/bufferTapSynthDef.ts` | 18 | NEW. Replaces both old taps. Cache key `(channels, chunkSize)`. |
-| `src/synth/scopeSynthDef.ts` | 18 | DELETE. |
-| `src/synth/recorderSynthDef.ts` | 18 | DELETE. |
+| `src/server/WorkerClient.ts` | 17 | Replace `subscribeScope` / `subscribeRecording` with `subscribeBuffer(spec, cb)`. Drop `startRecording` / `stopRecording`. |
+| `src/synthdefs/bufferTapSynthDef.ts` | 18 | NEW. Replaces both old taps. Cache key `(channels, chunkSize)`. |
+| `src/synthdefs/scopeSynthDef.ts` | 18 | DELETE. |
+| `src/synthdefs/recorderSynthDef.ts` | 18 | DELETE. |
 | `src/scope/ScopeController.ts` | 19 | Drop /b_alloc, /s_new, /b_free. Take a `BufferHandle` in opts; subscribe; expose `latestChunk` unchanged. |
 | `src/scope/ScopeManager.ts` | 19 | `add()` calls `bufferManager.acquire(spec)`; `remove()` calls `release()`. |
 | `src/recording/RecordingController.ts` | 20 | Drop /b_alloc, /s_new, /b_free. Take a `BufferHandle`. WAV writer + reorder buffer move here from worker. |
 | `src/recording/RecordingManager.ts` | 20 | Acquires/releases via `BufferManager`. |
 | `src/recording/wavWriter.ts` | 20 | NEW (moved from `src/workers/`). |
-| `src/scope/AppShell.tsx` | 21 | `bufferManager` on `DashboardResources`; constructed in `setupDashboard` after registry, before scope/recording managers. `teardownServerState` clears recordings → scopes → buffers → clock → group. |
+| `src/AppShell.tsx` | 21 | `bufferManager` on `DashboardResources`; constructed in `setupDashboard` after registry, before scope/recording managers. `teardownServerState` clears recordings → scopes → buffers → clock → group. |
 | `CLAUDE.md` | 21 | Architecture diagram update + refcount-lifecycle gotcha + unified-tap note. |
 | `plan.md` | 21 | Fill "as landed" subsections per phase. |
 

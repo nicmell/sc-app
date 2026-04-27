@@ -13,13 +13,13 @@
  * bytes.
  */
 
-import type { ClockController } from './ClockController';
-import type { GroupController } from './GroupController';
-import type { IdAllocator } from './IdAllocator';
-import { createStore, type ReadonlyStore } from './reactiveStore';
+import type { ClockController } from '@/clock/ClockController';
+import type { GroupController } from '@/server/GroupController';
+import type { IdAllocator } from '@/server/IdAllocator';
+import { createStore, type ReadonlyStore } from '@/util/reactiveStore';
 import { ScopeController } from './ScopeController';
-import type { SynthDefRegistry } from './SynthDefRegistry';
-import type { WorkerClient } from './WorkerClient';
+import type { SynthDefRegistry } from '@/server/SynthDefRegistry';
+import type { WorkerClient } from '@/server/WorkerClient';
 
 export interface ScopeManagerOptions {
   client: WorkerClient;

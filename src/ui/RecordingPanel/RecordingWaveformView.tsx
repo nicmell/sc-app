@@ -30,7 +30,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import type { ClockController } from '@/scope/ClockController';
+import type { ClockController } from '@/clock/ClockController';
 import type { RecordingController } from '@/recording/RecordingController';
 
 const DEFAULT_PALETTE = ['#6ac46f', '#c4a06f', '#6f9fc4', '#c46f9f'];

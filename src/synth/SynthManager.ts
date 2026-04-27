@@ -12,16 +12,16 @@
  * `synths` store + `add` / `remove` / `clear`.
  */
 
-import type { GroupController } from './GroupController';
-import type { IdAllocator } from './IdAllocator';
-import { createStore, type ReadonlyStore } from './reactiveStore';
+import type { GroupController } from '@/server/GroupController';
+import type { IdAllocator } from '@/server/IdAllocator';
+import { createStore, type ReadonlyStore } from '@/util/reactiveStore';
 import {
   SynthController,
   type SynthKind,
   type Waveform,
 } from './SynthController';
-import type { SynthDefRegistry } from './SynthDefRegistry';
-import type { WorkerClient } from './WorkerClient';
+import type { SynthDefRegistry } from '@/server/SynthDefRegistry';
+import type { WorkerClient } from '@/server/WorkerClient';
 
 export interface SynthManagerOptions {
   client: WorkerClient;

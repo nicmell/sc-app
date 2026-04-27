@@ -91,7 +91,7 @@ are referenced from the app via `workspace:*`:
 - **`packages/synthdef-compiler/`** (`@sc-app/synthdef-compiler`) —
   pure-TS SynthDef (SCgf v2) compiler. Three API layers:
   - `synthdef(name, (g, { controls }) => …)` — sclang-style
-    callback (what `src/synth/*.ts` uses).
+    callback (what `src/synthdefs/*.ts` uses).
   - Typed chainable builders (`@sc-app/synthdef-compiler/builders`)
     — one class per bundled UGen (365 shipped).
   - Low-level `SynthDef.addControl` / `addUgen` for stringly-typed
@@ -121,9 +121,19 @@ their sources via Vite aliases; tsc handles types.
 
 ## Code conventions
 
-- **React in `src/ui/` only.** Controllers (`src/scope/`) are plain
-  TypeScript classes exposing `ReadonlyStore<T>` observables. UI
-  subscribes via `useSyncExternalStore`.
+- **React in `src/ui/` only.** Controllers are plain TypeScript
+  classes exposing `ReadonlyStore<T>` observables; UI subscribes
+  via `useSyncExternalStore`. Controllers live in feature folders:
+  `src/scope/` (scope visualization), `src/synth/` (runtime tone
+  synths), `src/recording/` (recordings), `src/clock/`
+  (`ClockController`). The scsynth-transport layer is in
+  `src/server/` (`WorkerClient`, `workerProtocol`,
+  `GroupController`, `SynthDefRegistry`, `IdAllocator`,
+  `serverInfo`). Cross-cutting utilities are in `src/util/`
+  (`reactiveStore`, `debugLog`, `runtime`). `AppShell.tsx` is at
+  `src/`. SynthDef byte compilers (one file per SynthDef) live in
+  `src/synthdefs/` — distinct from the runtime synth controllers
+  in `src/synth/`.
 - **`@/…` alias** → `src/…`. `@sc-app/…` → workspace packages.
 - **OSC**: construct `OSC.Message` / `OSC.Bundle` on the main
   thread using `@sc-app/server-commands` helpers. Pass to
@@ -141,9 +151,12 @@ their sources via Vite aliases; tsc handles types.
   past" per scsynth log a `late 0.0XX` message and run
   immediately. Harmless — the timetag is still useful as a
   *minimum* delay against kr-quantization slop.
-- **SynthDefs**: `src/synth/*.ts`, one file per SynthDef, each
+- **SynthDefs**: `src/synthdefs/*.ts`, one file per SynthDef, each
   exporting a `compile*SynthDef(…)` that caches at module scope
-  and uses the `synthdef(name, fn)` sugar API.
+  and uses the `synthdef(name, fn)` sugar API. The folder is
+  deliberately named `synthdefs` (not `synth`) to disambiguate
+  from `src/synth/` which holds the *runtime* tone-synth wrappers
+  (`SynthController`, `SynthManager`).
 - **Scope rendering**: don't put per-chunk data in React state —
   data arrives at 48 Hz and would force 48 panel re-renders/sec.
   Write incoming chunks to a `useRef<ScopeChunk | null>(null)`;
@@ -151,7 +164,7 @@ their sources via Vite aliases; tsc handles types.
   draws. React state is reserved for *control* changes
   (Subscribe/Unsubscribe, gain, etc.).
 - **Tauri vs serve dispatch**: import `IS_TAURI` from
-  `@/scope/runtime` and gate platform-specific behaviour on it.
+  `@/util/runtime` and gate platform-specific behaviour on it.
   Inside the Tauri branch, use dynamic `import('@tauri-apps/...')`
   so Vite code-splits the plugin chunks — serve users don't pay
   the bundle cost. Pattern: native save-as via

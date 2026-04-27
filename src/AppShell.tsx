@@ -19,20 +19,20 @@ import {
   status,
   version,
 } from '@sc-app/server-commands';
-import { ClockController } from './ClockController';
-import { GroupController } from './GroupController';
-import { IdAllocator } from './IdAllocator';
-import { ScopeManager } from './ScopeManager';
-import { SynthDefRegistry } from './SynthDefRegistry';
-import { SynthManager } from './SynthManager';
-import { WorkerClient } from './WorkerClient';
-import { createStore, type Store } from './reactiveStore';
+import { ClockController } from '@/clock/ClockController';
+import { GroupController } from '@/server/GroupController';
+import { IdAllocator } from '@/server/IdAllocator';
+import { ScopeManager } from '@/scope/ScopeManager';
+import { SynthDefRegistry } from '@/server/SynthDefRegistry';
+import { SynthManager } from '@/synth/SynthManager';
+import { WorkerClient } from '@/server/WorkerClient';
+import { createStore, type Store } from '@/util/reactiveStore';
 import {
   parseStatus,
   parseVersion,
   type ScsynthStatus,
   type ScsynthVersion,
-} from './serverInfo';
+} from '@/server/serverInfo';
 
 const STORAGE_KEY = 'sc.address';
 const STATUS_PROBE_TIMEOUT_MS = 1000;

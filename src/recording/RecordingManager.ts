@@ -14,12 +14,12 @@
  * still offer the Download button — the user removes them explicitly.
  */
 
-import type { ClockController } from '@/scope/ClockController';
-import type { GroupController } from '@/scope/GroupController';
-import type { IdAllocator } from '@/scope/IdAllocator';
-import { createStore, type ReadonlyStore } from '@/scope/reactiveStore';
-import type { SynthDefRegistry } from '@/scope/SynthDefRegistry';
-import type { WorkerClient } from '@/scope/WorkerClient';
+import type { ClockController } from '@/clock/ClockController';
+import type { GroupController } from '@/server/GroupController';
+import type { IdAllocator } from '@/server/IdAllocator';
+import { createStore, type ReadonlyStore } from '@/util/reactiveStore';
+import type { SynthDefRegistry } from '@/server/SynthDefRegistry';
+import type { WorkerClient } from '@/server/WorkerClient';
 import {
   RecordingController,
   type RecordingResult,

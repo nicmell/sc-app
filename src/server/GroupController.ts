@@ -28,9 +28,9 @@ import {
   nFree,
   nRunOne,
 } from '@sc-app/server-commands';
-import type { ReadonlyStore } from './reactiveStore';
-import { createStore } from './reactiveStore';
-import type { WorkerClient } from './WorkerClient';
+import type { ReadonlyStore } from '@/util/reactiveStore';
+import { createStore } from '@/util/reactiveStore';
+import type { WorkerClient } from '@/server/WorkerClient';
 
 export type GroupState = 'stopped' | 'running' | 'paused';
 

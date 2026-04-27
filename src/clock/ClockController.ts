@@ -35,15 +35,15 @@ import { CLOCK_TRIG_ID, deriveClock } from '@/config/clockConfig';
 import {
   CLOCK_SYNTHDEF_NAME,
   compileClockSynthDef,
-} from '@/synth/clockSynthDef';
+} from '@/synthdefs/clockSynthDef';
 import { AddToHead, nFree, sNew } from '@sc-app/server-commands';
-import { GroupController, type GroupState } from './GroupController';
-import type { IdAllocator } from './IdAllocator';
-import type { ReadonlyStore } from './reactiveStore';
-import { createStore } from './reactiveStore';
-import type { SynthDefRegistry } from './SynthDefRegistry';
-import type { WorkerClient } from './WorkerClient';
-import type { ClockTick } from './workerProtocol';
+import { GroupController, type GroupState } from '@/server/GroupController';
+import type { IdAllocator } from '@/server/IdAllocator';
+import type { ReadonlyStore } from '@/util/reactiveStore';
+import { createStore } from '@/util/reactiveStore';
+import type { SynthDefRegistry } from '@/server/SynthDefRegistry';
+import type { WorkerClient } from '@/server/WorkerClient';
+import type { ClockTick } from '@/server/workerProtocol';
 
 export type ClockState = 'stopped' | 'running' | 'paused';
 

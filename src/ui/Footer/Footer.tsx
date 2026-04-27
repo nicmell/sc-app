@@ -3,8 +3,8 @@ import {
   formatVersion,
   type ScsynthStatus,
   type ScsynthVersion,
-} from '@/scope/serverInfo';
-import type { Store } from '@/scope/reactiveStore';
+} from '@/server/serverInfo';
+import type { Store } from '@/util/reactiveStore';
 import './Footer.scss';
 
 export interface FooterProps {

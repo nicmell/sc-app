@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
-import type { ClockController, ClockState } from '@/scope/ClockController';
+import type { ClockController, ClockState } from '@/clock/ClockController';
 import './ClockPanel.scss';
 
 const PULSE_FLASH_MS = 90;

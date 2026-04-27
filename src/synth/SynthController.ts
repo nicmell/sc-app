@@ -21,12 +21,12 @@ import {
 import {
   compileToneSynthDef,
   toneSynthDefName,
-} from '@/synth/toneSynthDef';
-import type { GroupController } from './GroupController';
-import type { IdAllocator } from './IdAllocator';
-import { createStore, type ReadonlyStore } from './reactiveStore';
-import type { SynthDefRegistry } from './SynthDefRegistry';
-import type { WorkerClient } from './WorkerClient';
+} from '@/synthdefs/toneSynthDef';
+import type { GroupController } from '@/server/GroupController';
+import type { IdAllocator } from '@/server/IdAllocator';
+import { createStore, type ReadonlyStore } from '@/util/reactiveStore';
+import type { SynthDefRegistry } from '@/server/SynthDefRegistry';
+import type { WorkerClient } from '@/server/WorkerClient';
 
 export type SynthKind = 'mono' | 'stereo';
 

@@ -32,14 +32,14 @@ import {
 import {
   compileRecorderSynthDef,
   recorderSynthDefName,
-} from '@/synth/recorderSynthDef';
-import type { ClockController } from '@/scope/ClockController';
-import type { GroupController } from '@/scope/GroupController';
-import type { IdAllocator } from '@/scope/IdAllocator';
+} from '@/synthdefs/recorderSynthDef';
+import type { ClockController } from '@/clock/ClockController';
+import type { GroupController } from '@/server/GroupController';
+import type { IdAllocator } from '@/server/IdAllocator';
 import { ScopeController } from '@/scope/ScopeController';
-import type { SynthDefRegistry } from '@/scope/SynthDefRegistry';
-import type { WorkerClient } from '@/scope/WorkerClient';
-import { createStore, type ReadonlyStore } from '@/scope/reactiveStore';
+import type { SynthDefRegistry } from '@/server/SynthDefRegistry';
+import type { WorkerClient } from '@/server/WorkerClient';
+import { createStore, type ReadonlyStore } from '@/util/reactiveStore';
 import {
   EnvelopeBuffer,
   type EnvelopeBufferSnapshot,

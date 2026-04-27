@@ -43,7 +43,7 @@ import type {
   RecordingSubscription,
   ScopeSubscription,
   WorkerToMain,
-} from '../scope/workerProtocol';
+} from '../server/workerProtocol';
 import { createOscTransport, type OscTransport } from './transport';
 import { WavMemoryWriter } from './wavWriter';
 

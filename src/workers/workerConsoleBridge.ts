@@ -9,7 +9,7 @@
  * $init` happens.
  */
 
-import type { WorkerToMain } from '../scope/workerProtocol';
+import type { WorkerToMain } from '../server/workerProtocol';
 
 type Level = 'log' | 'info' | 'warn' | 'error';
 

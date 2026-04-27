@@ -8,8 +8,8 @@ import {
   type SynthController,
   type SynthKind,
   type Waveform,
-} from '@/scope/SynthController';
-import type { SynthManager } from '@/scope/SynthManager';
+} from '@/synth/SynthController';
+import type { SynthManager } from '@/synth/SynthManager';
 import './SynthsPanel.scss';
 
 interface SynthsPanelProps {

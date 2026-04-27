@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { clearDebugLog, debugLog, type DebugEntry } from '@/scope/debugLog';
-import { IS_TAURI } from '@/scope/runtime';
+import { clearDebugLog, debugLog, type DebugEntry } from '@/util/debugLog';
+import { IS_TAURI } from '@/util/runtime';
 import './DebugLog.scss';
 
 function formatEntries(entries: ReadonlyArray<DebugEntry>): string {

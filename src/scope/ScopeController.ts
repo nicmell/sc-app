@@ -22,14 +22,14 @@ import {
 import {
   compileScopeSynthDef,
   scopeSynthDefName,
-} from '@/synth/scopeSynthDef';
-import type { ClockController } from './ClockController';
-import type { GroupController } from './GroupController';
-import type { IdAllocator } from './IdAllocator';
-import { createStore, type ReadonlyStore } from './reactiveStore';
-import type { SynthDefRegistry } from './SynthDefRegistry';
-import type { WorkerClient } from './WorkerClient';
-import type { ScopeChunk } from './workerProtocol';
+} from '@/synthdefs/scopeSynthDef';
+import type { ClockController } from '@/clock/ClockController';
+import type { GroupController } from '@/server/GroupController';
+import type { IdAllocator } from '@/server/IdAllocator';
+import { createStore, type ReadonlyStore } from '@/util/reactiveStore';
+import type { SynthDefRegistry } from '@/server/SynthDefRegistry';
+import type { WorkerClient } from '@/server/WorkerClient';
+import type { ScopeChunk } from '@/server/workerProtocol';
 
 export interface ScopeControllerOptions {
   client: WorkerClient;

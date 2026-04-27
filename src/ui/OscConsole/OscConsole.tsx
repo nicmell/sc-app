@@ -6,8 +6,8 @@ import {
   status,
   type OscPacket,
 } from '@sc-app/server-commands';
-import type { WorkerClient } from '@/scope/WorkerClient';
-import type { OscReply } from '@/scope/workerProtocol';
+import type { WorkerClient } from '@/server/WorkerClient';
+import type { OscReply } from '@/server/workerProtocol';
 import './OscConsole.scss';
 
 interface LogEntry {

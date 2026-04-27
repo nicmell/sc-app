@@ -6,7 +6,7 @@ import {
   useState,
   type RefObject,
 } from 'react';
-import type { ScopeChunk } from '@/scope/workerProtocol';
+import type { ScopeChunk } from '@/server/workerProtocol';
 import './ScopeView.scss';
 
 type ScopeLayout = 'stacked' | 'overlay';
