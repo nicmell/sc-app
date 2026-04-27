@@ -13,8 +13,9 @@ WS↔UDP bridge between the frontend worker and scsynth.
 **scsynth is not managed by this app** — it's expected to be already
 running at `127.0.0.1:57110` (or wherever the Connect screen points).
 
-Full design doc lives in `plan.md`. Phase-by-phase acceptance
-criteria are in there too.
+Forward-looking design lives in `plan.md` (pending phases, open
+questions, acceptance criteria); the historical record of shipped
+phases — what landed and why — is in `history.md`.
 
 ## Architecture at a glance
 
@@ -172,17 +173,31 @@ their sources via Vite aliases; tsc handles types.
   `<a href={blobUrl} download={…}>` in the browser.
 - **Tests / parity harnesses live inside packages**, not in `src/`.
 
-## Phase discipline (working through plan.md)
+## Phase discipline (working through plan.md / history.md)
 
-Plan follows phases 0–13. When working on a phase:
+The project plan is split:
+
+- **`plan.md`** is the *forward-looking* spec — project overview,
+  pending phases planned in detail (open questions, file maps,
+  acceptance criteria, cross-cutting risks). Small enough to
+  re-read in full at the start of each new phase.
+- **`history.md`** is the *append-only* historical record — one
+  entry per shipped phase (goal, what shipped, decisions,
+  gotchas). Canonical lookup for "why did we decide X".
+
+When working on a phase:
 
 1. Re-read the phase in `plan.md` before implementing.
 2. Propose any improvements; ask before making substantive
    deviations from the plan.
-3. After landing, update `plan.md` under the phase's
-   "Files (as landed)" / "Adaptations" subsection to reflect
-   what actually shipped.
+3. While the phase is in flight, update `plan.md` under that
+   phase's "Files (as landed)" / "Adaptations" subsection to
+   reflect what actually shipped.
 4. Commit per phase (or per natural break within a phase).
+5. **When the phase is fully done**, *move* its entry from
+   `plan.md` to `history.md` under a new section, trim
+   `plan.md` of the moved content, and (if relevant) update
+   the "Current phase progress" line below.
 
 Current phase progress: **Phase 15 shipped — Synths panel
 decouples source synths from scopes.** Producer-consumer split:
@@ -204,8 +219,8 @@ dashboard when chunkSize changes. Recordings live in
 `setupDashboard` / `teardownServerState` are shared between
 initial connect, disconnect, and the chunkSize-driven re-init.
 Removed in earlier phases: `OscConsole`, `ScopeTestPanel`,
-`SynthDefPanel`, the dev `phaseProbeSynthDef`. `plan.md` Phase
-13–15 "as landed" subsections capture the details.
+`SynthDefPanel`, the dev `phaseProbeSynthDef`. See `history.md`
+for the per-phase write-ups.
 
 ## Where scsynth conventions matter
 
@@ -296,7 +311,7 @@ Observations:
   bytes/sec regardless of which factor pair you pick.
 - Power-of-2 `chunkSize` keeps recording reads page-aligned
   (`1024 × 4 = 4096 bytes = 1 page`) and FFT-ready at any
-  sampleRate (Future Improvement #16). The defaults (`64, 128,
+  sampleRate (Future Improvement #1). The defaults (`64, 128,
   256, 512, 1024`) are all powers of 2.
 - Time meaning of a given `chunkSize` value is *not* invariant
   across sample rates — `1024` gives a 21 ms window at 48 k but
