@@ -6,8 +6,8 @@
  * compile time from `DEFAULT_PARAMS`); the clock is oblivious. Each
  * scope frame is written at
  *     writeIdx = (clockPhase / decimation) mod (scopeChunkSize × 2)
- * which for the default 48000/48/250/4 config gives an integer
- * index stepping +1 every 4 audio samples and wrapping at 500.
+ * which for the default 48000/46.875/256/4 config gives an integer
+ * index stepping +1 every 4 audio samples and wrapping at 512.
  *
  * `BufWr.ar` writes every audio sample — so each buffer slot is
  * overwritten `decimation` times in a row, and the last write wins.

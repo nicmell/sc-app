@@ -4,7 +4,7 @@
  * Two `Float32Array`s per channel — one for mins, one for maxs —
  * indexed by an ordinal "column" (= 0 at `firstTickIndex`, growing
  * by one per appended tick). Capacity grows by doubling, so for a
- * 30-minute recording at 48 ticks/sec we end up with two 86,400-
+ * 30-minute recording at 46.875 ticks/sec we end up with two ~84,000-
  * element arrays per channel (~700 KB total stereo). Memory cost is
  * dominated by the WAV itself, not these envelopes.
  *

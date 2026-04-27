@@ -66,9 +66,15 @@ export function deriveClock(
 
 export const DEFAULT_ENV: AudioEnvironment = { sampleRate: 48000 };
 
+// Power-of-2 derived values for FFT-friendliness and page-aligned
+// recording reads (1024 frames × 4 bytes = one OS page). The
+// invariants `sampleRate / tickRate ∈ ℤ` and `chunkSize × decimation
+// = samplesPerTick` are enforced by `deriveClock()`:
+//   48000 / 46.875 = 1024 ✓
+//   256 × 4 = 1024 ✓
 export const DEFAULT_PARAMS: ClockParams = {
-  tickRate: 48,
-  scopeChunkSize: 250,
+  tickRate: 46.875,
+  scopeChunkSize: 256,
   decimation: 4,
 };
 

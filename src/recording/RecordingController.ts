@@ -83,11 +83,11 @@ export interface RecordingControllerOptions {
 
 const DEFAULT_RETRY = { maxAttempts: 2, deadlineMs: 12 };
 /** Number of ticks to wait between `/s_new` being received by the
- *  worker and the synth firing. 2 ticks (~42 ms at 48 Hz) is enough
- *  for the bundle to land in scsynth's scheduler queue and for the
- *  bridge round-trip latency. Smaller values risk a "late" warning
- *  from scsynth, which makes the synth fire immediately and breaks
- *  the multi-bus alignment guarantee. */
+ *  worker and the synth firing. 2 ticks (~43 ms at 46.875 Hz) is
+ *  enough for the bundle to land in scsynth's scheduler queue and
+ *  for the bridge round-trip latency. Smaller values risk a "late"
+ *  warning from scsynth, which makes the synth fire immediately and
+ *  breaks the multi-bus alignment guarantee. */
 const START_TICK_LEAD = 2;
 
 export class RecordingController {
