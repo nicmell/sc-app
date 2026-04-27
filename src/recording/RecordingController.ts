@@ -192,14 +192,14 @@ export class RecordingController {
     this.startedAt = new Date();
 
     try {
-      const synthName = recorderSynthDefName(this.channels);
+      const samplesPerTick = this.clock.derived.samplesPerTick;
+      const synthName = recorderSynthDefName(this.channels, samplesPerTick);
       await this.registry.ensureLoaded(
         synthName,
-        compileRecorderSynthDef(this.channels),
+        compileRecorderSynthDef(this.channels, samplesPerTick),
       );
 
       const bufnum = this.bufferIds.next();
-      const samplesPerTick = this.clock.derived.samplesPerTick;
       const ringFrames = samplesPerTick * 2;
       await this.client.sendAndSync(bAlloc(bufnum, ringFrames, this.channels));
       this.bufnum = bufnum;
@@ -253,7 +253,7 @@ export class RecordingController {
         const whenMs = tickToTimetag(
           tick0Ms,
           startTick,
-          this.clock.params.tickRate,
+          this.clock.derived.tickRate,
         );
         this.client.sendCommand(new OSC.Bundle([sNewMsg], whenMs));
       } else {

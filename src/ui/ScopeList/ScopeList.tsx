@@ -4,7 +4,6 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import type { ClockController } from '@/scope/ClockController';
 import type {
   ScopeController,
   ScopeSourceSpec,
@@ -17,22 +16,13 @@ type Channels = 1 | 2;
 
 interface ScopeListProps {
   manager: ScopeManager;
-  clock: ClockController;
 }
 
 const DEFAULT_FREQ_MONO = 440;
 const DEFAULT_FREQ_STEREO_L = 440;
 const DEFAULT_FREQ_STEREO_R = 660;
-/** Chunk-size options offered to the user — each must divide the
- *  clock's `samplesPerTick` evenly. With the default 1024 samples/tick
- *  these five values give a clean halving series down to 64. Decimation
- *  is derived (`samplesPerTick / chunkSize`); higher decimation = more
- *  aggressive zero-order-hold downsampling, which can alias visibly
- *  above the per-scope `effectiveRate / 2` (see CLAUDE.md gotcha). */
-const CHUNK_SIZE_OPTIONS = [1024, 512, 256, 128, 64] as const;
-const DEFAULT_CHUNK_SIZE = 256;
 
-export function ScopeList({ manager, clock }: ScopeListProps) {
+export function ScopeList({ manager }: ScopeListProps) {
   const scopes = useSyncExternalStore(
     (cb) => manager.scopes.subscribe(cb),
     () => manager.scopes.get(),
@@ -43,11 +33,8 @@ export function ScopeList({ manager, clock }: ScopeListProps) {
   const [freqL, setFreqL] = useState(DEFAULT_FREQ_STEREO_L);
   const [freqR, setFreqR] = useState(DEFAULT_FREQ_STEREO_R);
   const [label, setLabel] = useState('');
-  const [chunkSize, setChunkSize] = useState<number>(DEFAULT_CHUNK_SIZE);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const samplesPerTick = clock.derived.samplesPerTick;
 
   const onAdd = useCallback(async () => {
     setBusy(true);
@@ -61,7 +48,6 @@ export function ScopeList({ manager, clock }: ScopeListProps) {
         channels,
         label: label.trim() || undefined,
         source,
-        detail: { chunkSize },
       });
       // Bump the default freq slightly so consecutive Adds make
       // distinguishable scopes without forcing the user to type.
@@ -79,7 +65,7 @@ export function ScopeList({ manager, clock }: ScopeListProps) {
     } finally {
       setBusy(false);
     }
-  }, [manager, channels, freqMono, freqL, freqR, label, chunkSize]);
+  }, [manager, channels, freqMono, freqL, freqR, label]);
 
   const onClear = useCallback(async () => {
     setBusy(true);
@@ -108,27 +94,6 @@ export function ScopeList({ manager, clock }: ScopeListProps) {
           >
             <option value={1}>1 (mono)</option>
             <option value={2}>2 (stereo)</option>
-          </select>
-        </label>
-        <label
-          title={
-            `chunkSize must divide samplesPerTick (${samplesPerTick}). ` +
-            `Smaller chunkSize = more aggressive decimation = less ` +
-            `/b_setn traffic but lower visual fidelity.`
-          }
-        >
-          chunk size&nbsp;
-          <select
-            value={chunkSize}
-            disabled={busy}
-            onChange={(e) => setChunkSize(Number(e.target.value))}
-          >
-            {CHUNK_SIZE_OPTIONS.map((cs) => (
-              <option key={cs} value={cs}>
-                {cs} samples (
-                {((clock.env.sampleRate * cs) / samplesPerTick / 1000).toFixed(1)} kHz)
-              </option>
-            ))}
           </select>
         </label>
         {channels === 1 ? (
@@ -255,9 +220,7 @@ function ScopeListItem({
       <div className="scope-item-header">
         <span className="label">{scope.label}</span>
         <span className="meta">
-          {scope.channels}ch · {busDesc} · {sourceDesc} ·{' '}
-          {scope.detail.chunkSize} samples (
-          {(scope.effectiveRate / 1000).toFixed(1)} kHz) · {chunksPerSec}/s
+          {scope.channels}ch · {busDesc} · {sourceDesc} · {chunksPerSec}/s
         </span>
         <button type="button" className="danger small" onClick={() => void onRemove()}>
           Remove
@@ -266,7 +229,7 @@ function ScopeListItem({
       <ScopeView
         chunkRef={scope.chunkRef}
         effectiveRate={scope.effectiveRate}
-        samplesPerChunk={scope.detail.chunkSize}
+        samplesPerChunk={scope.samplesPerChunk}
       />
     </li>
   );

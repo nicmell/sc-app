@@ -112,7 +112,7 @@ export class ClockController {
   }
 
   /** JS ms timestamp corresponding to tick 0, anchored on the first
-   *  tick we see. Callers pair this with `params.tickRate` (or
+   *  tick we see. Callers pair this with `derived.tickRate` (or
    *  `tickToTimetag`) to schedule OSC bundles at sample-accurate
    *  future tick boundaries. Null until the first tick lands. */
   get tick0Ms(): number | null {
@@ -126,7 +126,7 @@ export class ClockController {
 
     await this.registry.ensureLoaded(
       CLOCK_SYNTHDEF_NAME,
-      compileClockSynthDef(this.params),
+      compileClockSynthDef(this.derived.tickRate),
     );
     await this.group.ensureCreated();
 
@@ -229,7 +229,8 @@ export class ClockController {
     // must return something scsynth's scheduler accepts as a JS
     // timestamp-ms.
     if (this._tick0Ms === null) {
-      this._tick0Ms = Date.now() - (tick.tickIndex * 1000) / this.params.tickRate;
+      this._tick0Ms =
+        Date.now() - (tick.tickIndex * 1000) / this.derived.tickRate;
     }
     // A fresh tick while we were showing 'paused'-due-to-silence flips
     // us back to 'running'. Group-state-driven `paused` (real pause)

@@ -123,7 +123,7 @@ export function RecordingWaveformView({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const viewport = useWaveformViewport(recording, clock);
 
-  const tickRate = clock.params.tickRate;
+  const tickRate = clock.derived.tickRate;
   const windowTicks = useMemo(
     () => Math.max(1, Math.round(windowSeconds * tickRate)),
     [windowSeconds, tickRate],

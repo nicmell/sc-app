@@ -2,31 +2,28 @@
  * Scope tap — reads an audio bus and writes it into a ring buffer
  * indexed by the clock's shared sample phase.
  *
- * The scope owns `chunkSize` and `decimation` (both baked at compile
- * time per call); the clock is oblivious. Each scope frame is
- * written at
- *     writeIdx = (clockPhase / decimation) mod (chunkSize × 2)
- * which for the default 48000/46.875/256/4 config gives an integer
- * index stepping +1 every 4 audio samples and wrapping at 512.
+ * The scope owns `chunkSize` (baked at compile time per call); the
+ * clock is oblivious. Each scope frame is written at
+ *     writeIdx = clockPhase mod (chunkSize × 2)
+ * which at the default `chunkSize = 1024` wraps cleanly on every
+ * tick boundary — one half completes per tick, and the worker's
+ * `completedHalf = tickIndex % 2` parity formula matches it.
  *
- * The invariant `chunkSize × decimation = samplesPerTick` (= 1024
- * with the current clock) is what makes the worker's
- * `completedHalf = tickIndex % 2` parity formula work: each tick
- * fires exactly when the writeIdx has just wrapped a half boundary.
- *
- * `BufWr.ar` writes every audio sample — so each buffer slot is
- * overwritten `decimation` times in a row, and the last write wins.
- * Effectively a zero-order-hold decimation, which is fine for a
- * time-domain scope display above the alias frequency.
+ * Decimation is fixed at 1: every audio sample lands in the
+ * buffer. No anti-aliasing concerns, full-rate visual fidelity. The
+ * trade-off vs the old `decimation = 4` pattern is bandwidth — a
+ * 1024-sample chunk is 4 KB on the wire vs 1 KB for the decimated
+ * 256-sample one — but at 47 Hz tick rate that's ~190 KB/s mono,
+ * trivial.
  *
  * Placed at group-tail so the clock (at head) has already written
  * `clockBus` on the same control block. Inputs (e.g. testTone)
  * must also be at-or-before this synth in the group order.
  *
- * Compiled per (channels, chunkSize, decimation) tuple: SC's
- * `In.ar(bus, channels)` and `BufWr.ar` need a fixed channel count
- * at compile time, and `decimation`/`ring` are also baked. We cache
- * one SynthDef per unique tuple seen.
+ * Compiled per (channels, chunkSize) tuple: SC's `In.ar(bus,
+ * channels)` and `BufWr.ar` need a fixed channel count at compile
+ * time, and the ring size is baked too. We cache one SynthDef per
+ * unique tuple seen.
  */
 
 import {
@@ -39,9 +36,8 @@ import {
 export function scopeSynthDefName(
   channels: number,
   chunkSize: number,
-  decimation: number,
 ): string {
-  return `scopeTap${channels}ch_${chunkSize}_${decimation}`;
+  return `scopeTap${channels}ch_${chunkSize}`;
 }
 
 const cache = new Map<string, Uint8Array>();
@@ -49,7 +45,6 @@ const cache = new Map<string, Uint8Array>();
 export function compileScopeSynthDef(
   channels: number,
   chunkSize: number,
-  decimation: number,
 ): Uint8Array {
   if (!Number.isInteger(channels) || channels < 1) {
     throw new Error(
@@ -61,12 +56,7 @@ export function compileScopeSynthDef(
       `compileScopeSynthDef: chunkSize must be a positive integer, got ${chunkSize}`,
     );
   }
-  if (!Number.isInteger(decimation) || decimation < 1) {
-    throw new Error(
-      `compileScopeSynthDef: decimation must be a positive integer, got ${decimation}`,
-    );
-  }
-  const name = scopeSynthDefName(channels, chunkSize, decimation);
+  const name = scopeSynthDefName(channels, chunkSize);
   const cached = cache.get(name);
   if (cached) return cached;
 
@@ -92,7 +82,7 @@ export function compileScopeSynthDef(
         sigs.push(uo(inIdx, c));
       }
       const phase = g.In.ar(clockBus, 1);
-      const writeIdx = g.mod(g.div(phase, decimation), ring);
+      const writeIdx = g.mod(phase, ring);
       g.BufWr.ar(sigs, bufnum, writeIdx);
     },
   );

@@ -18,7 +18,6 @@
  *    synth, and worker subscription entry.
  */
 
-import type { ScopeDetail } from '@/config/clockConfig';
 import type { ClockController } from './ClockController';
 import type { GroupController } from './GroupController';
 import type { IdAllocator } from './IdAllocator';
@@ -46,9 +45,6 @@ export interface AddScopeOptions {
    *  freshly-allocated bus block so the new scope shows a recognisable
    *  signal immediately. Use `'none'` to leave the bus unsourced. */
   source?: ScopeSourceSpec | 'none';
-  /** Per-scope chunk-size + decimation (must factor `samplesPerTick`).
-   *  Defaults to `SCOPE_DETAIL_DEFAULT`. */
-  detail?: ScopeDetail;
 }
 
 function freshScopeId(): string {
@@ -101,7 +97,6 @@ export class ScopeManager {
       scopeId,
       label: opts.label,
       source,
-      detail: opts.detail,
     });
     try {
       await ctrl.start();

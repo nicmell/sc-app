@@ -85,7 +85,7 @@ export function ClockPanel({ clock }: ClockPanelProps) {
 
   const pill = pillFor(state);
   const tickIndex = tick?.tickIndex ?? 0;
-  const elapsed = formatElapsed(tickIndex, clock.params.tickRate);
+  const elapsed = formatElapsed(tickIndex, clock.derived.tickRate);
   const toggleLabel = state === 'paused' ? 'Resume' : 'Pause';
 
   return (

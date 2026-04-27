@@ -74,9 +74,9 @@ export interface RecordingSubscription {
   recordingId: string;
   bufnum: number;
   channels: number;
-  /** Sampled at start, stamped into the WAV header verbatim — must
-   *  match scsynth's actual sample rate (`AppShell` validates this
-   *  against `DEFAULT_ENV.sampleRate` at /status time). */
+  /** Sampled at start, stamped into the WAV header verbatim. Comes
+   *  from `clock.env.sampleRate`, which AppShell captured from
+   *  `/status.reply.args[8]` at connect time. */
   sampleRate: number;
   /** How many audio samples-per-channel the recorder synth's
    *  `Phasor.ar` covers in one half (i.e. one tick's worth). The

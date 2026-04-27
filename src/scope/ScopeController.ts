@@ -23,13 +23,6 @@ import {
   sNew,
 } from '@sc-app/server-commands';
 import {
-  SCOPE_DETAIL_DEFAULT,
-  decimationFor,
-  scopeEffectiveRate,
-  validateScopeDetail,
-  type ScopeDetail,
-} from '@/config/clockConfig';
-import {
   compileScopeSynthDef,
   scopeSynthDefName,
 } from '@/synth/scopeSynthDef';
@@ -73,11 +66,6 @@ export interface ScopeControllerOptions {
    *  `inputBus`, so a freshly-added scope shows a recognisable signal
    *  with no extra wiring on the caller side. `stop()` frees it. */
   source?: ScopeSourceSpec;
-  /** Per-scope chunk-size + decimation. Defaults to
-   *  `SCOPE_DETAIL_DEFAULT`. The product `chunkSize × decimation`
-   *  must equal the clock's `samplesPerTick` — `start()` enforces
-   *  this and throws on mismatch. */
-  detail?: ScopeDetail;
 }
 
 export class ScopeController {
@@ -86,15 +74,16 @@ export class ScopeController {
   readonly channels: 1 | 2;
   readonly inputBus: number;
   readonly source: ScopeSourceSpec | null;
-  readonly detail: ScopeDetail;
-  /** Audio-sample downsampling factor — derived from
-   *  `clock.samplesPerTick / detail.chunkSize`. Stored once at
-   *  construction since neither input changes after that. */
-  readonly decimation: number;
-  /** Decimated audio rate this scope produces — `sampleRate /
-   *  decimation`. Used by `ScopeView` to label the visible window
-   *  in milliseconds. */
+  /** Effective audio rate this scope produces. With `decimation = 1`
+   *  this is just the clock's sampleRate; kept as a dedicated field
+   *  so `ScopeView` doesn't have to reach through the clock. */
   readonly effectiveRate: number;
+  /** Samples per chunk = `clock.derived.samplesPerTick`. Mirrors the
+   *  global setting at construction time so the rendering view can
+   *  read it as a stable per-scope value (the global may change
+   *  later via re-init, but this scope's resources are torn down
+   *  before that). */
+  readonly samplesPerChunk: number;
 
   /** Mutable single-slot ref consumed by `ScopeView`'s RAF loop. The
    *  draw routine reads `.current` once per frame; older frames are
@@ -134,17 +123,8 @@ export class ScopeController {
     this.scopeId = opts.scopeId;
     this.label = opts.label ?? `scope ${opts.scopeId.slice(0, 6)}`;
     this.source = opts.source ?? null;
-    this.detail = opts.detail ?? SCOPE_DETAIL_DEFAULT;
-    validateScopeDetail(this.detail, opts.clock.derived.samplesPerTick);
-    this.decimation = decimationFor(
-      this.detail,
-      opts.clock.derived.samplesPerTick,
-    );
-    this.effectiveRate = scopeEffectiveRate(
-      opts.clock.env,
-      this.detail,
-      opts.clock.derived.samplesPerTick,
-    );
+    this.samplesPerChunk = opts.clock.derived.samplesPerTick;
+    this.effectiveRate = opts.clock.env.sampleRate;
   }
 
   /** Latest chunk seen by the subscription. Useful for stats / non-RAF
@@ -169,12 +149,11 @@ export class ScopeController {
       await this.startSource();
     }
 
-    const { chunkSize } = this.detail;
-    const decimation = this.decimation;
-    const synthName = scopeSynthDefName(this.channels, chunkSize, decimation);
+    const chunkSize = this.samplesPerChunk;
+    const synthName = scopeSynthDefName(this.channels, chunkSize);
     await this.registry.ensureLoaded(
       synthName,
-      compileScopeSynthDef(this.channels, chunkSize, decimation),
+      compileScopeSynthDef(this.channels, chunkSize),
     );
 
     const bufnum = this.bufferIds.next();

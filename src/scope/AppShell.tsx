@@ -4,7 +4,7 @@ import { ConnectScreen } from '@/ui/ConnectScreen';
 import { DebugLog } from '@/ui/DebugLog';
 import { RecordingPanel } from '@/ui/RecordingPanel';
 import { ScopeList } from '@/ui/ScopeList';
-import { DEFAULT_ENV, DEFAULT_PARAMS } from '@/config/clockConfig';
+import { DEFAULT_PARAMS } from '@/config/clockConfig';
 import { RecordingManager } from '@/recording/RecordingManager';
 import {
   gFreeAll,
@@ -32,6 +32,15 @@ interface DashboardResources {
   ids: { node: IdAllocator; buffer: IdAllocator; bus: IdAllocator };
   scopeManager: ScopeManager;
   recordingManager: RecordingManager;
+  /** Stashed for in-place re-init: re-issuing `notify(1)` over the
+   *  same WS would either be rejected by scsynth or hand back a
+   *  different `clientId`, orphaning the existing parent group. The
+   *  initial connect derives this once; every rebuild reuses it. */
+  parentGroupId: number;
+  /** Captured from `/status.reply.args[8]` at initial connect. The
+   *  re-init path forwards the same value to `setupDashboard` —
+   *  scsynth's sample rate doesn't change during a session. */
+  sampleRate: number;
 }
 
 /**
@@ -56,7 +65,7 @@ function Dashboard({
         </button>
       </header>
       <ClockPanel clock={resources.clock} />
-      <ScopeList manager={resources.scopeManager} clock={resources.clock} />
+      <ScopeList manager={resources.scopeManager} />
       <RecordingPanel
         manager={resources.recordingManager}
         clock={resources.clock}
@@ -87,9 +96,30 @@ function wsUrlFor(address: string): string {
   return url.href;
 }
 
-async function bringUpDashboard(
+/**
+ * Build (or rebuild, after a chunkSize change) all the per-session
+ * server-side state plus the controllers that wrap it. Used by both
+ * the initial `handleConnect` and the in-place re-init flow.
+ *
+ * Inputs are deliberately minimal: the same `client` (WS stays
+ * open), the same `parentGroupId` (notify(1) handshake already done
+ * at initial connect), the runtime `sampleRate` (from /status), and
+ * the chunkSize the dashboard wants this round.
+ *
+ * Note: the registry is a fresh instance per call. SynthDefs
+ * uploaded to scsynth in a previous round persist server-side; the
+ * new registry just re-uploads what it doesn't remember on first
+ * `ensureLoaded`. Cost: one extra `/d_recv` per (channels,
+ * chunkSize) tuple per re-init. Harmless. The IdAllocators reset to
+ * 1000/1000/32 — safe because `teardownServerState` runs
+ * `group.free()` which `/g_freeAll`s every node and buffer in the
+ * parent group, leaving the id space clean.
+ */
+async function setupDashboard(
   client: WorkerClient,
   parentGroupId: number,
+  sampleRate: number,
+  chunkSize: number,
 ): Promise<DashboardResources> {
   const ids = {
     node: new IdAllocator(1000),
@@ -104,13 +134,14 @@ async function bringUpDashboard(
     registry,
     nodeIds: ids.node,
     busIds: ids.bus,
-    env: DEFAULT_ENV,
-    params: DEFAULT_PARAMS,
+    env: { sampleRate },
+    params: { chunkSize },
   });
 
   console.log(
     `[sc:app] starting global clock in group ${parentGroupId}, ` +
-      `clockBus=${clock.clockBus}`,
+      `clockBus=${clock.clockBus}, sampleRate=${sampleRate}, ` +
+      `chunkSize=${chunkSize}, tickRate=${clock.derived.tickRate.toFixed(3)} Hz`,
   );
   await clock.start();
   const scopeManager = new ScopeManager({
@@ -137,7 +168,38 @@ async function bringUpDashboard(
     ids,
     scopeManager,
     recordingManager,
+    parentGroupId,
+    sampleRate,
   };
+}
+
+/**
+ * Tear down everything `setupDashboard` builds — but NOT the
+ * `WorkerClient` or the `notify(1)` subscription. Re-used by
+ * `handleDisconnect` (full shutdown) and the re-init flow
+ * (rebuild against the same WS). Each step is best-effort.
+ */
+async function teardownServerState(resources: DashboardResources): Promise<void> {
+  try {
+    await resources.recordingManager.stopAll();
+  } catch (err) {
+    console.warn('[sc:app] recordingManager.stopAll failed', err);
+  }
+  try {
+    await resources.scopeManager.clear();
+  } catch (err) {
+    console.warn('[sc:app] scopeManager.clear failed', err);
+  }
+  try {
+    await resources.clock.dispose();
+  } catch (err) {
+    console.warn('[sc:app] clock.dispose failed', err);
+  }
+  try {
+    await resources.group.free();
+  } catch (err) {
+    console.warn('[sc:app] group.free failed', err);
+  }
 }
 
 export function AppShell() {
@@ -176,10 +238,10 @@ export function AppShell() {
     // scsynth → back) is actually responsive before mounting the
     // dashboard. Silent UDP "nothing listening" can only be detected
     // here, because UDP sends don't fail. We also use the reply to
-    // sanity-check the server's sample rate: if it disagrees with
-    // our assumed config, `samplesPerTick` math goes non-integer and
-    // every phase in the plan silently breaks.
+    // capture scsynth's actual sample rate, which becomes the
+    // session-wide `AudioEnvironment.sampleRate`.
     console.log('[sc:app] running /status probe');
+    let actualSampleRate: number;
     try {
       const reply = await next.sendAndAwaitReply(
         status(),
@@ -189,18 +251,14 @@ export function AppShell() {
       // args index per scsynth's /status.reply spec:
       // 0=unused, 1=numUgens, 2=numSynths, 3=numGroups, 4=numSynthDefs,
       // 5=avgCpu, 6=peakCpu, 7=nominalSampleRate, 8=actualSampleRate.
-      const actualSampleRate = reply.args[8] as number;
-      if (Math.abs(actualSampleRate - DEFAULT_ENV.sampleRate) > 0.5) {
+      actualSampleRate = reply.args[8] as number;
+      if (!Number.isFinite(actualSampleRate) || actualSampleRate <= 0) {
         next.dispose();
         throw new Error(
-          `scsynth sample rate ${actualSampleRate} doesn't match expected ` +
-            `${DEFAULT_ENV.sampleRate} — update DEFAULT_ENV or reboot scsynth ` +
-            `at the matching rate.`,
+          `scsynth reported a non-positive sample rate: ${actualSampleRate}`,
         );
       }
-      console.log(
-        `[sc:app] /status probe OK (sr=${actualSampleRate})`,
-      );
+      console.log(`[sc:app] /status probe OK (sr=${actualSampleRate})`);
     } catch (err) {
       console.error('[sc:app] /status probe failed', err);
       next.dispose();
@@ -264,7 +322,12 @@ export function AppShell() {
 
     let built: DashboardResources;
     try {
-      built = await bringUpDashboard(next, parentGroupId);
+      built = await setupDashboard(
+        next,
+        parentGroupId,
+        actualSampleRate,
+        DEFAULT_PARAMS.chunkSize,
+      );
     } catch (err) {
       console.error('[sc:app] dashboard bring-up failed', err);
       next.dispose();
@@ -278,37 +341,10 @@ export function AppShell() {
   const handleDisconnect = useCallback(async () => {
     const current = resources;
     if (current) {
-      // Free server-side state in dependency order: live recordings →
-      // live scopes → clock synth → parent group + descendants →
-      // unregister notifications → tear down the worker. Recordings
-      // go first so their worker-side WAV writers finalise (the
-      // result Blobs stay in memory for the user to download even
-      // after disconnect); scopes second so their subscriptions
-      // unwind before the group cleanup frees the scope synths under
-      // us. Each step is best-effort.
-      try {
-        await current.recordingManager.stopAll();
-      } catch (err) {
-        console.warn(
-          '[sc:app] recordingManager.stopAll on disconnect failed',
-          err,
-        );
-      }
-      try {
-        await current.scopeManager.clear();
-      } catch (err) {
-        console.warn('[sc:app] scopeManager.clear on disconnect failed', err);
-      }
-      try {
-        await current.clock.dispose();
-      } catch (err) {
-        console.warn('[sc:app] clock.dispose on disconnect failed', err);
-      }
-      try {
-        await current.group.free();
-      } catch (err) {
-        console.warn('[sc:app] group.free on disconnect failed', err);
-      }
+      // Server-side state goes first (recordings → scopes → clock →
+      // group). Then unregister /notify and tear down the worker.
+      // Each step is best-effort.
+      await teardownServerState(current);
       try {
         await current.client.sendAndSync(notify(0));
       } catch (err) {
