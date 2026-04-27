@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ClockPanel } from '@/ui/ClockPanel';
 import { ConnectScreen } from '@/ui/ConnectScreen';
 import { DebugLog } from '@/ui/DebugLog';
+import { Footer } from '@/ui/Footer';
 import { AlertModal, ConfirmModal, LoadingModal } from '@/ui/Modal';
 import { RecordingPanel } from '@/ui/RecordingPanel';
 import { ScopeList } from '@/ui/ScopeList';
@@ -15,6 +16,7 @@ import {
   nFree,
   notify,
   status,
+  version,
 } from '@sc-app/server-commands';
 import { ClockController } from './ClockController';
 import { GroupController } from './GroupController';
@@ -22,6 +24,13 @@ import { IdAllocator } from './IdAllocator';
 import { ScopeManager } from './ScopeManager';
 import { SynthDefRegistry } from './SynthDefRegistry';
 import { WorkerClient } from './WorkerClient';
+import { createStore, type Store } from './reactiveStore';
+import {
+  parseStatus,
+  parseVersion,
+  type ScsynthStatus,
+  type ScsynthVersion,
+} from './serverInfo';
 
 const STORAGE_KEY = 'sc.address';
 const STATUS_PROBE_TIMEOUT_MS = 1000;
@@ -45,6 +54,13 @@ interface DashboardResources {
    *  re-init path forwards the same value to `setupDashboard` —
    *  scsynth's sample rate doesn't change during a session. */
   sampleRate: number;
+  /** Live status snapshot, updated by the heartbeat in `AppShell`.
+   *  `null` until the first reply lands (~tick after dashboard
+   *  mount). The footer reads this via `useSyncExternalStore`. */
+  status: Store<ScsynthStatus | null>;
+  /** Fetched once at `setupDashboard` time. `null` if `/version`
+   *  timed out (informational only — connect doesn't block on it). */
+  version: ScsynthVersion | null;
 }
 
 /**
@@ -104,6 +120,7 @@ function Dashboard({
         clock={resources.clock}
         sampleRate={resources.clock.env.sampleRate}
       />
+      <Footer status={resources.status} version={resources.version} />
     </main>
   );
 }
@@ -195,6 +212,28 @@ async function setupDashboard(
     registry,
     ids: { node: ids.node, buffer: ids.buffer },
   });
+
+  // One-shot /version fetch. Informational only — fail open with
+  // null rather than blocking the dashboard if it times out (which
+  // shouldn't happen against a healthy scsynth, but old or exotic
+  // forks might not support /version).
+  let parsedVersion: ScsynthVersion | null = null;
+  try {
+    const reply = await client.sendAndAwaitReply(
+      version(),
+      (r) => r.address === '/version.reply',
+      1500,
+    );
+    parsedVersion = parseVersion(reply);
+    console.log(
+      `[sc:app] /version reply: ${parsedVersion.progName} ` +
+        `${parsedVersion.major}.${parsedVersion.minor}${parsedVersion.patch}` +
+        (parsedVersion.branch ? ` (${parsedVersion.branch})` : ''),
+    );
+  } catch (err) {
+    console.warn('[sc:app] /version probe failed (non-fatal):', err);
+  }
+
   console.log('[sc:app] dashboard ready');
 
   return {
@@ -207,6 +246,8 @@ async function setupDashboard(
     recordingManager,
     parentGroupId,
     sampleRate,
+    status: createStore<ScsynthStatus | null>(null),
+    version: parsedVersion,
   };
 }
 
@@ -524,34 +565,41 @@ export function AppShell() {
     setPendingChunkSize(null);
   }, [resources]);
 
-  // scsynth liveness heartbeat. The bridge's WebSocket stays open
-  // even when scsynth is killed (UDP doesn't surface "no listener"
-  // errors), so without an active probe the dashboard would happily
-  // sit there sending /b_getn into the void. Periodically round-
-  // trip a /status and treat a timed-out reply as "scsynth is dead"
-  // — same flow as the existing onError path: set runtimeError +
-  // dispose + clear resources. The dashboard tears down, the
-  // connect screen shows behind, the alert modal explains why.
+  // scsynth liveness heartbeat + status snapshot. The bridge's
+  // WebSocket stays open even when scsynth is killed (UDP doesn't
+  // surface "no listener" errors), so without an active probe the
+  // dashboard would happily sit there sending /b_getn into the
+  // void. Periodically round-trip a /status — on success, parse
+  // and push into `resources.status` for the footer; on timeout,
+  // treat as scsynth death (runtime error → dispose → tear down,
+  // same flow as the existing onError path).
   //
   // 3 s interval + 2 s timeout = up to 5 s detection latency. Lower
   // values would catch faster but burn more bandwidth on a healthy
   // session. /status is a cheap reply (~9 args, < 100 bytes).
+  //
+  // The first tick runs immediately so the footer doesn't sit blank
+  // for the first 3 s of the session.
   useEffect(() => {
     if (!resources) return;
-    const { client } = resources;
+    const { client, status: statusStore } = resources;
     const HEARTBEAT_INTERVAL_MS = 3000;
     const HEARTBEAT_TIMEOUT_MS = 2000;
+    let cancelled = false;
 
     const tick = async () => {
       try {
-        await client.sendAndAwaitReply(
+        const reply = await client.sendAndAwaitReply(
           status(),
           (r) => r.address === '/status.reply',
           HEARTBEAT_TIMEOUT_MS,
         );
+        if (cancelled) return;
+        statusStore.set(parseStatus(reply));
       } catch (err) {
-        // The dedup guard is the same as the WS-onError path —
-        // whichever detects the failure first wins; the loser sees
+        if (cancelled) return;
+        // Same dedup guard as the WS-onError path — whichever
+        // detects the failure first wins; the loser sees
         // `clientRef.current !== client` and bails, avoiding a
         // double-dispose / double-modal.
         if (clientRef.current !== client) return;
@@ -567,10 +615,14 @@ export function AppShell() {
       }
     };
 
+    void tick();
     const intervalId = window.setInterval(() => {
       void tick();
     }, HEARTBEAT_INTERVAL_MS);
-    return () => window.clearInterval(intervalId);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
   }, [resources]);
 
   // Best-effort shutdown when the tab / Tauri window closes. `pagehide`
