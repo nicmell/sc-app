@@ -27,9 +27,9 @@ import {
   sNew,
 } from '@sc-app/server-commands';
 import {
-  compileScopeSynthDef,
-  scopeSynthDefName,
-} from '@/synthdefs/scopeSynthDef';
+  bufferTapSynthDefName,
+  compileBufferTapSynthDef,
+} from '@/synthdefs/bufferTapSynthDef';
 import type { ClockController } from '@/clock/ClockController';
 import type { GroupController } from '@/server/GroupController';
 import type { IdAllocator } from '@/server/IdAllocator';
@@ -132,10 +132,10 @@ export class ScopeController {
     this.started = true;
 
     const chunkSize = this.samplesPerChunk;
-    const synthName = scopeSynthDefName(this.channels, chunkSize);
+    const synthName = bufferTapSynthDefName(this.channels, chunkSize);
     await this.registry.ensureLoaded(
       synthName,
-      compileScopeSynthDef(this.channels, chunkSize),
+      compileBufferTapSynthDef(this.channels, chunkSize),
     );
 
     const bufnum = this.bufferIds.next();

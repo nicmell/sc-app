@@ -777,6 +777,28 @@ Cache key `(channels, chunkSize)`. Body verbatim from
 — if the two predecessors had subtle drift this masks it. Cross-
 check `bufferTapSynthDef` bytes against both before deletion.
 
+#### Files (as landed)
+
+| File | Change |
+|---|---|
+| `src/synthdefs/bufferTapSynthDef.ts` | NEW. `compileBufferTapSynthDef(channels: number, chunkSize: number)` + `bufferTapSynthDefName`. Body lifted verbatim from the (byte-identical) predecessors. Synthdef name pattern: `bufferTap${channels}ch_${chunkSize}`. |
+| `src/synthdefs/scopeSynthDef.ts` | DELETED. |
+| `src/synthdefs/recorderSynthDef.ts` | DELETED. |
+| `src/buffer/BufferController.ts` | Imports updated. |
+| `src/scope/ScopeController.ts` | Imports updated. |
+| `src/recording/RecordingController.ts` | Imports updated. |
+
+**Adaptations.** Byte-identity confirmed by inspection of both
+predecessors before deletion: same UGen graph (`In.ar(inBus,
+channels)` → fan-out → `In.ar(clockBus, 1)` → `mod(phase, ring)` →
+`BufWr.ar(sigs, bufnum, writeIdx)`), same default arg values
+(`inBus = 0`, `bufnum = 0`, `clockBus = 0`), same control set.
+Only the SynthDef name differed. Manual `g_dumpTree` verification
+deferred to user smoke-testing.
+
+Main bundle: 538.27 KB → 537.61 KB (one synthdef compiler instead
+of two).
+
 ### Phase 19 — Migrate `ScopeController` onto `BufferManager`
 
 **Goal.** `ScopeController` no longer owns a buffer or tap synth.

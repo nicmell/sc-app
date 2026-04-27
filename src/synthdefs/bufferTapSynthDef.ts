@@ -1,29 +1,41 @@
 /**
- * Scope tap — reads an audio bus and writes it into a ring buffer
- * indexed by the clock's shared sample phase.
+ * Buffer tap — reads an audio bus and writes it into a ring buffer
+ * indexed by the clock's shared sample phase. The single tap synth
+ * for every consumer kind: scopes, recorders, future analyzers.
+ * Phase 18 unified the previously parallel `scopeTap` and
+ * `recorderTap` SynthDefs (which were byte-identical modulo name)
+ * into this single source.
  *
- * The scope owns `chunkSize` (baked at compile time per call); the
- * clock is oblivious. Each scope frame is written at
+ * Each frame is written at
  *     writeIdx = clockPhase mod (chunkSize × 2)
  * which at the default `chunkSize = 1024` wraps cleanly on every
  * tick boundary — one half completes per tick, and the worker's
  * `completedHalf = tickIndex % 2` parity formula matches it.
  *
+ * Reading the global `clockBus` phasor (rather than a local
+ * `Phasor.ar`) is what lets the worker reuse the parity formula:
+ * clockBus has been advancing since clock /s_new at session start,
+ * so absolute tick parity always aligns with the half boundaries.
+ * A local Phasor would have its own zero (the moment /s_new fires
+ * for *this* tap), and depending on whether `startTick` was even
+ * or odd, every read would land on the wrong half — the bug we
+ * hit before the clockBus rewrite.
+ *
  * Decimation is fixed at 1: every audio sample lands in the
- * buffer. No anti-aliasing concerns, full-rate visual fidelity. The
- * trade-off vs the old `decimation = 4` pattern is bandwidth — a
- * 1024-sample chunk is 4 KB on the wire vs 1 KB for the decimated
- * 256-sample one — but at 47 Hz tick rate that's ~190 KB/s mono,
- * trivial.
+ * buffer.
  *
  * Placed at group-tail so the clock (at head) has already written
- * `clockBus` on the same control block. Inputs (e.g. testTone)
- * must also be at-or-before this synth in the group order.
+ * `clockBus` on the same control block. Producer synths (e.g.
+ * `tone1ch` / `tone2ch` from the Synths panel) must also be
+ * at-or-before this synth in the group order — i.e. created first
+ * (the UX flow "add a synth, then add a consumer on its bus" gets
+ * this right naturally; both producer and tap go AddToTail and
+ * insertion order = runtime order).
  *
- * Compiled per (channels, chunkSize) tuple: SC's `In.ar(bus,
+ * Compiled per `(channels, chunkSize)` tuple: SC's `In.ar(bus,
  * channels)` and `BufWr.ar` need a fixed channel count at compile
- * time, and the ring size is baked too. We cache one SynthDef per
- * unique tuple seen.
+ * time, and the ring size is baked into the `mod`. We cache one
+ * SynthDef per unique tuple seen.
  */
 
 import {
@@ -33,30 +45,30 @@ import {
   type UGenInput,
 } from '@sc-app/synthdef-compiler';
 
-export function scopeSynthDefName(
+export function bufferTapSynthDefName(
   channels: number,
   chunkSize: number,
 ): string {
-  return `scopeTap${channels}ch_${chunkSize}`;
+  return `bufferTap${channels}ch_${chunkSize}`;
 }
 
 const cache = new Map<string, Uint8Array>();
 
-export function compileScopeSynthDef(
+export function compileBufferTapSynthDef(
   channels: number,
   chunkSize: number,
 ): Uint8Array {
   if (!Number.isInteger(channels) || channels < 1) {
     throw new Error(
-      `compileScopeSynthDef: channels must be a positive integer, got ${channels}`,
+      `compileBufferTapSynthDef: channels must be a positive integer, got ${channels}`,
     );
   }
   if (!Number.isInteger(chunkSize) || chunkSize < 1) {
     throw new Error(
-      `compileScopeSynthDef: chunkSize must be a positive integer, got ${chunkSize}`,
+      `compileBufferTapSynthDef: chunkSize must be a positive integer, got ${chunkSize}`,
     );
   }
-  const name = scopeSynthDefName(channels, chunkSize);
+  const name = bufferTapSynthDefName(channels, chunkSize);
   const cached = cache.get(name);
   if (cached) return cached;
 
@@ -75,7 +87,9 @@ export function compileScopeSynthDef(
       const inUgen = g.In.ar(inBus, channels);
       const inIdx = ugenIndex(inUgen);
       if (inIdx === null) {
-        throw new Error('compileScopeSynthDef: In.ar did not return a UGen ref');
+        throw new Error(
+          'compileBufferTapSynthDef: In.ar did not return a UGen ref',
+        );
       }
       const sigs: UGenInput[] = [];
       for (let c = 0; c < channels; c++) {

@@ -44,9 +44,9 @@ import {
   tickToTimetag,
 } from '@sc-app/server-commands';
 import {
-  compileRecorderSynthDef,
-  recorderSynthDefName,
-} from '@/synthdefs/recorderSynthDef';
+  bufferTapSynthDefName,
+  compileBufferTapSynthDef,
+} from '@/synthdefs/bufferTapSynthDef';
 import type { ClockController } from '@/clock/ClockController';
 import type { GroupController } from '@/server/GroupController';
 import type { IdAllocator } from '@/server/IdAllocator';
@@ -214,10 +214,10 @@ export class RecordingController {
 
     try {
       const samplesPerTick = this.clock.derived.samplesPerTick;
-      const synthName = recorderSynthDefName(this.channels, samplesPerTick);
+      const synthName = bufferTapSynthDefName(this.channels, samplesPerTick);
       await this.registry.ensureLoaded(
         synthName,
-        compileRecorderSynthDef(this.channels, samplesPerTick),
+        compileBufferTapSynthDef(this.channels, samplesPerTick),
       );
 
       const bufnum = this.bufferIds.next();
