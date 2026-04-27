@@ -54,6 +54,16 @@ interface Entry {
   refcount: number;
 }
 
+/** Defensive ceiling on `acquire()`'s wait. `BufferController.start()`
+ *  awaits two `sendAndSync` calls, each with `WorkerClient`'s own 2 s
+ *  per-call timeout, plus a synchronous `subscribeBuffer` postMessage
+ *  — so the realistic worst case is ~5 s. The 10 s ceiling here is
+ *  defence-in-depth: if some future change introduces a hang path
+ *  that escapes the per-call timeout, this prevents the in-flight
+ *  Promise cache from deadlocking every subsequent
+ *  `acquire(sameSpec)` joined to it. */
+const ACQUIRE_TIMEOUT_MS = 10_000;
+
 function keyOf(spec: BufferSpec): string {
   return `${spec.inputBus}:${spec.channels}:${spec.chunkSize}`;
 }
@@ -106,7 +116,12 @@ export class BufferManager {
   /** Get a handle to a buffer matching `spec`, allocating if none
    *  exists. The first acquire pays a `/b_alloc` + `/s_new` +
    *  `/sync` round-trip; subsequent acquires on the same spec
-   *  return immediately with a fresh handle wrapper. */
+   *  return immediately with a fresh handle wrapper.
+   *
+   *  Capped at `ACQUIRE_TIMEOUT_MS` per call. If the underlying
+   *  `spinUp` resolves AFTER the caller's timeout fired, the
+   *  resulting handle is released best-effort so the controller
+   *  doesn't sit in the entries map unowned. */
   async acquire(spec: BufferSpec): Promise<BufferHandle> {
     validateSpec(spec);
     const key = keyOf(spec);
@@ -119,15 +134,74 @@ export class BufferManager {
     }
 
     const inflight = this.inflight.get(key);
-    if (inflight) return inflight;
+    if (inflight) {
+      // Caller joins an in-flight spinUp — they get their own
+      // independent timeout race below.
+      return this.raceWithTimeout(inflight, key);
+    }
 
     const promise = this.spinUp(spec, key);
     this.inflight.set(key, promise);
-    try {
-      return await promise;
-    } finally {
+    // Tie inflight cleanup to the spinUp's own settlement, NOT to
+    // the caller's race outcome. If a caller times out mid-flight,
+    // the spinUp is still running; subsequent `acquire(sameSpec)`
+    // calls should be able to join it.
+    void promise.finally(() => {
       this.inflight.delete(key);
-    }
+    });
+
+    return this.raceWithTimeout(promise, key);
+  }
+
+  /** Race `promise` against an `ACQUIRE_TIMEOUT_MS` timeout. If the
+   *  timeout fires first, the caller sees a timeout error and a
+   *  best-effort late-cleanup releases the handle if `spinUp`
+   *  later resolves (so the entry doesn't sit in the map unowned).
+   *  Each caller joining the same in-flight `spinUp` has its own
+   *  independent timeout — slow-but-not-stuck spinUps don't
+   *  cascade-fail every joined caller. */
+  private raceWithTimeout(
+    promise: Promise<BufferHandle>,
+    key: string,
+  ): Promise<BufferHandle> {
+    let timedOut = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        timedOut = true;
+        reject(
+          new Error(
+            `BufferManager.acquire(${key}) timed out after ${ACQUIRE_TIMEOUT_MS}ms`,
+          ),
+        );
+      }, ACQUIRE_TIMEOUT_MS);
+    });
+
+    // Late-cleanup: if `promise` resolves after this caller's
+    // timeout, release the handle best-effort. Without this, a
+    // late-resolving spinUp commits to entries with refcount 1
+    // and no caller owns the release. The handle's internal
+    // `released` guard makes this safe even if a later `acquire`
+    // raced into the entries cache during the gap.
+    void promise.then(
+      (handle) => {
+        if (timedOut) {
+          handle.release().catch((err) => {
+            console.warn(
+              `[sc:buffer-manager] late spinUp(${key}) cleanup release failed`,
+              err,
+            );
+          });
+        }
+      },
+      () => {
+        /* spinUp rejected — caller already saw its error or the timeout */
+      },
+    );
+
+    return Promise.race([promise, timeoutPromise]).finally(() => {
+      if (timeoutId !== null) clearTimeout(timeoutId);
+    });
   }
 
   /** Tear down every active buffer. Used by `teardownServerState`

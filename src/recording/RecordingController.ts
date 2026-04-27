@@ -205,15 +205,24 @@ export class RecordingController {
     const wav = this.writer.finalise();
     this.writer = null;
 
-    // Release the buffer handle — refcount drops; if we were the
-    // last consumer the BufferController disposes (/n_free + /b_free).
-    // Fire-and-forget so finalisation doesn't block on the network.
-    void this.buffer.release().catch((err) => {
+    // Release the buffer handle synchronously with `stop()` so the
+    // refcount + entries-map updates land BEFORE `stop()` returns.
+    // Fire-and-forget here would race with `teardownServerState`'s
+    // `bufferManager.clear()` safety log: a recording stopped right
+    // before disconnect could leave its handle's refcount un-
+    // decremented at clear time, tripping the leak canary.
+    // Cost: one round-trip on the underlying `dispose()` (when this
+    // is the last consumer) — typically ms; capped by sendAndSync's
+    // own per-call timeout. The handle's internal `released` guard
+    // makes the await idempotent if `stop()` is somehow re-entered.
+    try {
+      await this.buffer.release();
+    } catch (err) {
       console.warn(
         `[sc:rec ${this.recordingId}] buffer.release failed`,
         err,
       );
-    });
+    }
 
     const wavBlob = new Blob([wav], { type: 'audio/wav' });
     const gapsSnapshot = this.gapList.slice();
