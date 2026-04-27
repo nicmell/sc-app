@@ -197,9 +197,7 @@ now collapsed by default.
   - `CLOCK_TRIG_ID = 1000` — global clock's `SendTrig`. The
     worker demuxes these into `clockTick` events, suppressing
     them from the generic `onReply` channel.
-  - `PHASE_PROBE_TRIG_ID = 9001` — the dev `phaseProbe` synth.
-    Flows through `onReply` like any other `/tr`.
-  No other synth may reuse these ids.
+  No other synth may reuse this id.
 - **Connect handshake** (in order, all in `AppShell.handleConnect`):
   1. `/status` probe — verifies the chain is alive; reads
      `actualSampleRate` from `args[8]` and rejects the connect
