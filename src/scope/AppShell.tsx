@@ -282,10 +282,23 @@ export function AppShell() {
     // scsynth → back) is actually responsive before mounting the
     // dashboard. Silent UDP "nothing listening" can only be detected
     // here, because UDP sends don't fail. We also use the reply to
-    // capture scsynth's actual sample rate, which becomes the
-    // session-wide `AudioEnvironment.sampleRate`.
+    // capture scsynth's sample rate, which becomes the session-wide
+    // `AudioEnvironment.sampleRate`.
+    //
+    // We use `nominalSampleRate` (args[7]) rather than
+    // `actualSampleRate` (args[8]) — the latter is the
+    // measured-against-audio-hardware rate, which drifts by 10s of
+    // ppm (e.g. 48000.28 instead of 48000) due to the audio device's
+    // actual crystal. That tiny drift propagates into a non-integer
+    // sampleRate that breaks `WavMemoryWriter`'s WAV-header math
+    // (the format's rate field is a uint32) and any other consumer
+    // that assumes integer Hz. Nominal is what scsynth was *asked*
+    // to run at, always an integer round number, and it's what
+    // downstream tools (DAWs, ffmpeg, etc.) expect to see in WAV
+    // headers anyway. Round defensively in case scsynth ever
+    // returns it as 48000.0 — `Math.round` is a no-op on integers.
     console.log('[sc:app] running /status probe');
-    let actualSampleRate: number;
+    let sampleRate: number;
     try {
       const reply = await next.sendAndAwaitReply(
         status(),
@@ -295,14 +308,19 @@ export function AppShell() {
       // args index per scsynth's /status.reply spec:
       // 0=unused, 1=numUgens, 2=numSynths, 3=numGroups, 4=numSynthDefs,
       // 5=avgCpu, 6=peakCpu, 7=nominalSampleRate, 8=actualSampleRate.
-      actualSampleRate = reply.args[8] as number;
-      if (!Number.isFinite(actualSampleRate) || actualSampleRate <= 0) {
+      const nominal = reply.args[7] as number;
+      const actual = reply.args[8] as number;
+      if (!Number.isFinite(nominal) || nominal <= 0) {
         next.dispose();
         throw new Error(
-          `scsynth reported a non-positive sample rate: ${actualSampleRate}`,
+          `scsynth reported a non-positive nominal sample rate: ${nominal}`,
         );
       }
-      console.log(`[sc:app] /status probe OK (sr=${actualSampleRate})`);
+      sampleRate = Math.round(nominal);
+      console.log(
+        `[sc:app] /status probe OK (nominal=${nominal}, actual=${actual}, ` +
+          `using sr=${sampleRate})`,
+      );
     } catch (err) {
       console.error('[sc:app] /status probe failed', err);
       next.dispose();
@@ -369,7 +387,7 @@ export function AppShell() {
       built = await setupDashboard(
         next,
         parentGroupId,
-        actualSampleRate,
+        sampleRate,
         DEFAULT_PARAMS.chunkSize,
       );
     } catch (err) {

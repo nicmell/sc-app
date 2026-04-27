@@ -45,9 +45,15 @@ export function deriveClock(
   env: AudioEnvironment,
   params: ClockParams,
 ): ClockDerived {
-  if (!Number.isFinite(env.sampleRate) || env.sampleRate <= 0) {
+  // sampleRate must be a positive integer — `WavMemoryWriter`
+  // stamps it into the WAV header (uint32 field) and downstream
+  // tools assume integer Hz. AppShell rounds the nominal rate
+  // returned by scsynth's /status.reply before passing it here,
+  // but we re-check at the boundary so a future caller can't
+  // sneak a float in.
+  if (!Number.isInteger(env.sampleRate) || env.sampleRate <= 0) {
     throw new Error(
-      `deriveClock: sampleRate must be positive and finite, got ${env.sampleRate}`,
+      `deriveClock: sampleRate must be a positive integer, got ${env.sampleRate}`,
     );
   }
   if (!Number.isInteger(params.chunkSize) || params.chunkSize < 1) {
