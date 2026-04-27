@@ -29,20 +29,28 @@ Browser (React, main thread)
   ├── SynthManager + Synth-     producers: tone synths writing sines
   │   Controller                 onto auto-allocated bus blocks; live
   │                              freq / amp / gate controls
-  ├── ScopeManager + Scope-     consumers: scope synths reading any
-  │   Controller                 user-typed bus + worker subscriptions
-  ├── RecordingManager + Re-    consumers: recorder synths reading any
-  │   cordingController          user-typed bus + WAV writer pipeline
+  ├── BufferManager + Buffer-   shared layer: ref-counted (inputBus,
+  │   Controller                 channels, chunkSize)-keyed taps. ONE
+  │                              tap synth + buffer + worker sub per
+  │                              spec, fanned out to N consumers.
+  ├── ScopeManager + Scope-     consumers: take a user-typed bus,
+  │   Controller                 acquire a BufferHandle, subscribe to
+  │                              its chunk stream, render via ScopeView.
+  ├── RecordingManager + Re-    consumers: take a user-typed bus,
+  │   cordingController          acquire a BufferHandle, run the WAV
+  │                              writer + envelope buffer + gap log
+  │                              off the same chunk stream.
   └── WorkerClient              postMessage wrapper around…
       │   - sendCommand / onReply / onError / onTick
-      │   - subscribeScope(sub, cb) — tick-driven /b_getn pipeline
+      │   - subscribeBuffer(sub, cb) — tick-driven /b_getn pipeline
       ▼
 OSC Worker (module worker)
   ├── workerBootstrap.ts        sync message buffer + osc-js window shim
   ├── transport.ts              raw binary WebSocket
   └── oscWorker.ts              decode inbound + forward outbound bytes
-                                + clock /tr mux + scope/recording subscription
-                                table + tick-driven /b_getn dispatch
+                                + clock /tr mux + bufferId-keyed
+                                subscription table with offset-keyed
+                                pending + tick-ordered reorder buffer
       │
       ▼
 src-tauri backend (Rust)
@@ -54,27 +62,31 @@ src-tauri backend (Rust)
 blocks via `IdAllocator.nextBlock(channels)` and `/s_new`s tone
 synths writing sines onto them. `ScopeManager` /
 `RecordingManager` are the consumer surface — they take a
-user-typed bus number and tap whatever's flowing on it. The
-typical flow: add a synth in the Synths panel, read its bus off
-the card, type that bus into the Scopes / Recordings panel.
+user-typed bus number, acquire a shared `BufferHandle` from
+`BufferManager`, and subscribe to its chunk stream. Two consumers
+on the same `(inputBus, channels, chunkSize)` triple share one
+tap synth + one buffer + one worker subscription; the manager
+ref-counts and tears down on last release. The typical flow: add
+a synth in the Synths panel, read its bus off the card, type that
+bus into the Scopes / Recordings panel.
 
 Every OSC command flows: main thread (encode) → worker (forward bytes)
 → WebSocket → bridge → UDP → scsynth.
 Every reply flows the inverse: scsynth → UDP → bridge → WS → worker
 (decode, mux clock `/tr`, intercept subscribed `/b_setn`) → main
 thread (plain `{ address, args }` POJOs via structured clone, or
-`scopeChunk` events with zero-copy `Float32Array`).
+`bufferChunk` events with zero-copy `Float32Array`).
 
-The scope-data path is special: on each clock `/tr` the worker
-fires `/b_getn` for every subscribed buffer (wrapped in an
+The buffer-data path is special: on each clock `/tr` the worker
+fires `/b_getn` for every subscribed bufferId (wrapped in an
 `OSC.Bundle` with `timetag = Date.now() + READ_DELAY_MS` so
 scsynth's scheduler holds the read past the kr-vs-ar slop
 between `Impulse.kr` and `Phasor.ar`); the matching `/b_setn`
-replies are intercepted in the worker and posted to main as
-`scopeChunk` events keyed by `scopeId`. `ScopeView` runs an RAF
-loop that reads the latest chunk from a ref and draws the
-waveform — data rate (48 Hz) and render rate (60+ Hz) are
-intentionally decoupled.
+replies are intercepted in the worker, slotted into the per-
+buffer `reorderBuffer`, and emitted in tick order as `bufferChunk`
+events. `ScopeView` runs an RAF loop that reads the latest chunk
+from a ref and draws the waveform — data rate (48 Hz) and render
+rate (60+ Hz) are intentionally decoupled.
 
 ## Workspace layout
 
@@ -125,16 +137,17 @@ their sources via Vite aliases; tsc handles types.
 - **React in `src/ui/` only.** Controllers are plain TypeScript
   classes exposing `ReadonlyStore<T>` observables; UI subscribes
   via `useSyncExternalStore`. Controllers live in feature folders:
-  `src/scope/` (scope visualization), `src/synth/` (runtime tone
-  synths), `src/recording/` (recordings), `src/clock/`
-  (`ClockController`). The scsynth-transport layer is in
-  `src/server/` (`WorkerClient`, `workerProtocol`,
-  `GroupController`, `SynthDefRegistry`, `IdAllocator`,
-  `serverInfo`). Cross-cutting utilities are in `src/util/`
-  (`reactiveStore`, `debugLog`, `runtime`). `AppShell.tsx` is at
-  `src/`. SynthDef byte compilers (one file per SynthDef) live in
-  `src/synthdefs/` — distinct from the runtime synth controllers
-  in `src/synth/`.
+  `src/buffer/` (shared `BufferController` + `BufferManager` for
+  ref-counted tap synths), `src/scope/` (scope visualization),
+  `src/synth/` (runtime tone synths), `src/recording/` (recordings
+  + WAV writer), `src/clock/` (`ClockController`). The
+  scsynth-transport layer is in `src/server/` (`WorkerClient`,
+  `workerProtocol`, `GroupController`, `SynthDefRegistry`,
+  `IdAllocator`, `serverInfo`). Cross-cutting utilities are in
+  `src/util/` (`reactiveStore`, `debugLog`, `runtime`).
+  `AppShell.tsx` is at `src/`. SynthDef byte compilers (one file
+  per SynthDef) live in `src/synthdefs/` — distinct from the
+  runtime synth controllers in `src/synth/`.
 - **`@/…` alias** → `src/…`. `@sc-app/…` → workspace packages.
 - **OSC**: construct `OSC.Message` / `OSC.Bundle` on the main
   thread using `@sc-app/server-commands` helpers. Pass to
@@ -160,7 +173,7 @@ their sources via Vite aliases; tsc handles types.
   (`SynthController`, `SynthManager`).
 - **Scope rendering**: don't put per-chunk data in React state —
   data arrives at 48 Hz and would force 48 panel re-renders/sec.
-  Write incoming chunks to a `useRef<ScopeChunk | null>(null)`;
+  Write incoming chunks to a `useRef<BufferChunk | null>(null)`;
   `ScopeView` runs an internal RAF loop that reads the ref and
   draws. React state is reserved for *control* changes
   (Subscribe/Unsubscribe, gain, etc.).
@@ -199,28 +212,29 @@ When working on a phase:
    `plan.md` of the moved content, and (if relevant) update
    the "Current phase progress" line below.
 
-Current phase progress: **Phase 15 shipped — Synths panel
-decouples source synths from scopes.** Producer-consumer split:
-`SynthManager` + `SynthController` + `SynthsPanel` create tone
-synths with auto-allocated bus blocks (mono / stereo, runtime
-freq / amp / gate controls); scopes and recordings are pure
-consumers that take a user-typed bus number. The user copies a
-bus from a Synths card into the Scope or Recording panel
-toolbar. The old `testToneSynthDef` is gone, replaced by the
-gate-aware `toneSynthDef` (`tone1ch` / `tone2ch`).
+Current phase progress: **Phase 16–21 shipped — Shared Buffer
+Layer Refactor.** A new `BufferController` + `BufferManager` pair
+sits between consumers and the OSC pipe: scopes and recordings
+no longer own buffers + tap synths. Each `acquire(spec)` returns a
+ref-counted `BufferHandle`; two consumers on the same
+`(inputBus, channels, chunkSize)` triple share one underlying tap
+synth + buffer + worker subscription, with the worker fanning
+chunks out via the unified `subscribeBuffer` protocol. The two
+old per-kind tap synthdefs (`scopeSynthDef`, `recorderSynthDef`)
+collapsed into one `bufferTapSynthDef`. WAV writing relocated
+from worker to main; recordings finalise synchronously in
+`stop()` on the main thread, no round-trip wait.
 
-Earlier landings still in effect: `decimation` always 1;
-`ClockParams = {chunkSize}`; `tickRate` derived from
-`sampleRate / chunkSize`; `sampleRate` from `/status.reply.args[7]`
-(nominal, rounded) at connect time; header dropdown re-inits the
-dashboard when chunkSize changes. Recordings live in
-`src/recording/{RecordingController,RecordingManager,download,envelopeBuffer}.ts`
-+ `src/ui/RecordingPanel/` with `RecordingWaveformView`.
+Earlier landings still in effect: producer/consumer split
+(Phase 15) — `SynthManager` + `SynthsPanel` are the producers;
+scopes and recordings are pure consumers of user-typed bus
+numbers; `decimation` always 1; `ClockParams = {chunkSize}`;
+`tickRate` derived from `sampleRate / chunkSize`; `sampleRate`
+from `/status.reply.args[7]` (nominal, rounded) at connect time;
+header dropdown re-inits the dashboard when chunkSize changes.
 `setupDashboard` / `teardownServerState` are shared between
 initial connect, disconnect, and the chunkSize-driven re-init.
-Removed in earlier phases: `OscConsole`, `ScopeTestPanel`,
-`SynthDefPanel`, the dev `phaseProbeSynthDef`. See `history.md`
-for the per-phase write-ups.
+See `history.md` for the per-phase write-ups.
 
 ## Where scsynth conventions matter
 
@@ -257,15 +271,25 @@ for the per-phase write-ups.
   3. `setupDashboard(client, parentGroupId, sampleRate, chunkSize)`
      — constructs `GroupController`, `ClockController` (allocates
      `clockBus = ids.bus.next()`, derives `tickRate = sampleRate /
-     chunkSize`), calls `clock.start()`. Reused by the in-place
-     re-init flow when the user changes chunkSize from the header.
+     chunkSize`), calls `clock.start()`. Then constructs
+     `SynthManager` (producer side), `BufferManager` (shared tap
+     layer), `ScopeManager` + `RecordingManager` (consumers, both
+     pointed at `BufferManager` for handle acquisition). Reused by
+     the in-place re-init flow when the user changes chunkSize
+     from the header.
 - **Disconnect cleanup** (best-effort; covers serve mode + Tauri):
   - **`handleDisconnect`** (button click): `teardownServerState`
-    (recordings → scopes → clock → group, each try/caught) →
-    `client.sendAndSync(notify(0))` → `client.dispose()`. The
-    `teardownServerState` helper is shared with the in-place
-    chunkSize re-init path, which runs the same teardown but
-    *without* the notify(0) + client.dispose tail.
+    (recordings → scopes → buffers → synths → clock → group, each
+    try/caught) → `client.sendAndSync(notify(0))` →
+    `client.dispose()`. The recording / scope managers release
+    their `BufferHandle`s; `bufferManager.clear()` then runs as a
+    safety net — by that point its map should be empty, and a
+    non-empty one logs a warning ("refcount leak suspected") and
+    disposes the stragglers before `group.free()` does the
+    coarser /g_freeAll. The `teardownServerState` helper is
+    shared with the in-place chunkSize re-init path, which runs
+    the same teardown but *without* the notify(0) +
+    client.dispose tail.
   - **`pagehide` listener** (tab/window close): fire-and-forget
     `gFreeAll(parentGroupId) + nFree(parentGroupId) + notify(0)`.
     Best-effort — worker postMessage + WS send usually flush
@@ -369,32 +393,30 @@ Observations:
   point — depending on whether the start tick happened to be even
   or odd, every read lands on the wrong half and `/b_setn` replies
   echo back with offsets that don't match `pendingRead`. Cost us
-  a Phase 12 debug cycle. Both `scopeSynthDef` and
-  `recorderSynthDef` follow the clockBus-divide-mod pattern; any
-  new tap synth should too.
+  a Phase 12 debug cycle. The unified `bufferTapSynthDef` follows
+  the clockBus-divide-mod pattern; any new tap synth should too.
 - **Tick-driven `/b_getn` needs offset-keyed pending tracking, not
   a single slot** — scsynth's `/b_setn` sometimes round-trips in
   >`tickIntervalMs`, especially under load. With a single
   `pendingRead` slot, the next tick's read overwrites the
   previous tick's pending and the late reply mismatches the
-  current offset. The recording worker keeps
+  current offset. The Phase 17 worker keeps
   `pendingByOffset: Map<offset, PendingRead>` (max two entries —
   one per ring half) so a late reply at offset 0 can land while a
   fresh read at offset N is in flight. A `reorderBuffer:
-  Map<tickIndex, ...>` then drains chunks in tick order so the
-  WAV stays linear regardless of arrival order. Don't replicate
-  the scope's single-slot pattern for any subscription that
-  cares about strict per-tick ordering.
+  Map<tickIndex, ...>` then drains chunks in tick order so
+  delivery stays linear regardless of arrival order. Applies
+  uniformly to every `BufferSubscription` after Phase 17 — scopes
+  and recordings, plus any future analyzers.
 - **`chunkSize` is mutable at runtime; SynthDef cache keys must
   include it.** The header dropdown lets the user change
   `chunkSize` mid-session. Re-init compiles a fresh clock SynthDef
   with the new derived `tickRate` (`sampleRate / chunkSize`), and
-  any new scope/recorder synths use the new `chunkSize` for their
-  ring + name. The cache keys for `compileScopeSynthDef` and
-  `compileRecorderSynthDef` are `(channels, chunkSize)` tuples —
-  never `(channels)` alone, or you get stale bytes after a
-  re-init. Old SynthDefs sit on scsynth until the parent group is
-  freed; harmless, just wasted slots.
+  any new tap synths use the new `chunkSize` for their ring +
+  name. `compileBufferTapSynthDef`'s cache key is
+  `(channels, chunkSize)` — never `(channels)` alone, or you get
+  stale bytes after a re-init. Old SynthDefs sit on scsynth until
+  the parent group is freed; harmless, just wasted slots.
 - **In-place re-init runs over the same WS — DO NOT re-issue
   `notify(1)`.** The `parentGroupId` and the notify subscription
   are captured once at initial `handleConnect` and stashed on
@@ -403,18 +425,41 @@ Observations:
   `clientId`, orphaning the existing parent group. The reinit
   path calls `teardownServerState` (which doesn't touch notify)
   and then `setupDashboard` with the stashed `parentGroupId`.
-- **Synths must be `/s_new`'d before scopes that read their
-  buses — same control-block ordering rule as the clock.** Both
-  synths and scopes use `AddToTail`, so creation order determines
-  runtime order: a synth created first runs first, and a scope
-  created after reads the synth's just-written bus value within
-  the same block. The UX flow ("Add a synth, then add a scope on
-  its bus") gets this right naturally; if a user types a scope's
-  bus before any synth is producing on it, the scope reads the
-  previous control block's value (~1 ms lag) until the synth is
-  created. Symmetric to the clock-at-head invariant.
+- **Producers must be `/s_new`'d before consumers that read their
+  buses — same control-block ordering rule as the clock.** Tone
+  synths (producers), scope/recording tap synths (consumers via
+  `BufferController`), and the clock all live in the same parent
+  group. The clock is at head; everything else uses `AddToTail`,
+  so creation order determines runtime order. A consumer created
+  before any producer is writing on its bus reads the previous
+  control block's value (~1 ms lag) until something forces a
+  re-/s_new — not technically broken, just stale by one block.
+  The UX flow ("Add a synth, then add a scope on its bus") gets
+  the order right naturally. Symmetric to the clock-at-head
+  invariant.
 - **`SynthManager` is the only auto-allocator from `ids.bus`.**
   Scopes and recordings consume user-typed bus numbers — they
   never touch the bus allocator. So the allocator is effectively
   synth-exclusive, and bus collisions across consumer types are
   impossible by construction.
+- **Buffer refcount lifecycle.** `BufferManager.acquire(spec)` is
+  ref-counted by `(inputBus, channels, chunkSize)`. First acquire
+  triggers `/b_alloc` + `/s_new` + worker subscribe; subsequent
+  acquires on the same spec just bump the count. Each consumer
+  must call `handle.release()` exactly once when done — the
+  per-acquire handle wrapper guards against double-release with
+  an internal `released` flag, so calling `release()` more than
+  once is a silent no-op (refcount stays correct). Last release
+  → `unsubscribeBuffer` → `/n_free` + `/b_free`. The
+  `BufferManager.snapshot` reactive store reflects the live
+  `{key, spec, refcount, bufnum, nodeId, bufferId}` set on every
+  acquire/release; tap into it from a future `BuffersPanel` or
+  inspect via the dev-mode `__sc*` globals to diagnose leaks.
+- **`bufferManager.clear()` warns on a non-empty map** —
+  refcount-leak canary. By the time `teardownServerState` runs
+  it, every consumer-side manager (`recordingManager`,
+  `scopeManager`) should already have released its handles. A
+  non-empty map at clear time means a controller failed to
+  release — the safety log surfaces the regression with a
+  console warning rather than letting it ship as a leaked tap
+  synth.

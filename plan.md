@@ -976,6 +976,24 @@ warning rather than a leaked tap synth.
   to recordings).
 - `plan.md`: fill "as landed" subsections per phase.
 
+#### Files (as landed)
+
+| File | Change |
+|---|---|
+| `CLAUDE.md` | Architecture diagram now includes `BufferManager + BufferController` between producers and consumers; "Code conventions" mentions `src/buffer/`; "Connect handshake" notes BufferManager construction; "Disconnect cleanup" describes the recordings → scopes → buffers → synths → clock → group teardown order with the safety-log canary; `bufferTapSynthDef` replaces both old per-kind references in the gotchas; the "tick-driven /b_getn" gotcha now references the unified Phase-17 worker; "synths-before-scopes" gotcha generalised to "producers before consumers" since the rule applies symmetrically to recordings via shared buffers; new gotchas for the refcount lifecycle (acquire/release, double-release safety, snapshot store) and the `bufferManager.clear()` warning canary. "Current phase progress" line updated to "Phase 16–21 shipped — Shared Buffer Layer Refactor". |
+| `plan.md` | "Files (as landed)" subsections filled per phase. The umbrella moves to `history.md` in a follow-up commit per the phase-discipline workflow. |
+| `src/AppShell.tsx` | Already wired in Phase 19 (BufferManager in `setupDashboard`, passed to scope + recording managers, included in teardown order). No further code changes in Phase 21. |
+
+**Adaptations from spec.**
+
+- **Most of the AppShell wiring landed in Phase 19** rather than
+  waiting for Phase 21. Phase 19 needed `BufferManager` accessible
+  to `ScopeManager` (and to `RecordingController` for the internal
+  scope), so constructing it in `setupDashboard` and updating
+  `teardownServerState` happened then. Phase 21 is therefore a
+  **docs-only** commit — no code changes — though the workflow
+  position (final phase of the umbrella refactor) is preserved.
+
 **Acceptance (whole refactor).**
 1. **Single tap per bus.** Two scopes on the same bus produce one
    `/s_new` and one `/b_alloc`. A recording on the same bus shares
