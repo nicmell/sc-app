@@ -222,12 +222,8 @@ async function setupDashboard(
     clock,
   });
   const recordingManager = new RecordingManager({
-    client,
-    clock,
-    group,
-    registry,
-    ids: { node: ids.node, buffer: ids.buffer },
     bufferManager,
+    clock,
   });
 
   // One-shot /version fetch. Informational only — fail open with

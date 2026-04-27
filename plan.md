@@ -891,6 +891,56 @@ that bypasses any concern. Mid-stream-join semantics are new
 behaviour — verify a recording added 5 s after a scope on the same
 bus produces a WAV starting at the recording's start.
 
+#### Files (as landed)
+
+| File | Change |
+|---|---|
+| `src/recording/RecordingController.ts` | Rewritten as a pure consumer. `RecordingControllerOptions = { buffer: BufferHandle, recordingId, label?, sampleRate }`. No /b_alloc, /s_new, /n_free, /b_free, no `client`/`group`/`clock`/`registry`/`ids`. `start()` constructs the `WavMemoryWriter` and subscribes to `buffer.subscribe(cb)`. The chunk callback runs three things off each chunk: WAV append, envelope append, gap accumulation (`isGap` flag from Phase 17). `stop()` finalises the WAV synchronously and releases the handle. |
+| `src/recording/RecordingManager.ts` | Rewritten. `RecordingManagerOptions = { bufferManager, clock }`. `add()` calls `bufferManager.acquire(spec)` + constructs `RecordingController({ buffer: handle, sampleRate: clock.env.sampleRate, … })`. |
+| `src/recording/wavWriter.ts` | MOVED from `src/workers/wavWriter.ts` (git mv preserves blame). |
+| `src/AppShell.tsx` | `RecordingManager` constructor now takes only `{ bufferManager, clock }` — no `client`/`group`/`registry`/`ids`. |
+
+**Adaptations from spec.**
+
+- **Internal envelope-tap scope removed entirely.** The Phase 19
+  `RecordingController` ran a separate `ScopeController` on the
+  same input bus to power the panel's waveform display — its own
+  buffer + tap synth + worker subscription. Phase 20 collapses
+  this: the recording subscribes ONCE to its (shared) buffer, and
+  the chunk callback runs both `WavMemoryWriter.append` and
+  `EnvelopeBuffer.append` off the same chunk. Net result: a
+  recording on a bus with one scope now uses **one** buffer + one
+  tap synth (down from three pre-Phase-19, two pre-Phase-20).
+- **`acquireTickIndex` mid-stream join guard NOT added.** The
+  spec called for the recording to drop chunks with
+  `tickIndex < acquireTickIndex`. In practice acquire() is
+  synchronous from the main side and `subscribe()` registers the
+  callback in the same JS turn — there's no chunk delivery
+  between them. Worker chunks arrive in tick order via the
+  reorder buffer, so a stale chunk can't appear. Skipped as
+  unnecessary; if an async surface ever opens between acquire
+  and subscribe, revisit.
+- **Sample-accurate /s_new dropped.** Pre-Phase-19 recordings
+  scheduled `/s_new` in an `OSC.Bundle` at `lastTick + 2` so
+  multi-bus recordings created in one JS turn shared a tick
+  origin. Phase 20's recordings go through `BufferController`,
+  which fires /s_new immediately. Two recordings created back-
+  to-back on different buses might be tick-offset by one tick.
+  Audio is still phase-aligned via the shared `clockBus` phasor;
+  WAV start positions can differ by ~21 ms (1 tick at 48 k /
+  chunkSize=1024). Acceptable trade-off; if it becomes a real
+  concern, add `OSC.Bundle` scheduling to `BufferController.start`.
+- **Per-recording retry policy dropped.** The Phase 17 `retry`
+  override on `RecordingControllerOptions` is gone. All
+  subscriptions use the worker's default
+  `{ maxAttempts: 1, deadlineMs: 50 }`. With shared buffers,
+  per-consumer retry doesn't fit (the buffer's already running
+  by the time a second consumer attaches). If a tighter policy
+  is ever needed, add it to `BufferSpec` and let
+  `BufferManager.acquire`'s first writer set it.
+- Main bundle: 541.24 KB → 539.05 KB (recording lost its
+  buffer-alloc + tap-synth + internal-scope code).
+
 ### Phase 21 — `AppShell` wiring, teardown, docs
 
 **Goal.** Hook `BufferManager` into the dashboard lifecycle, update
