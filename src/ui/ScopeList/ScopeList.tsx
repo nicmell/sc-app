@@ -10,7 +10,6 @@ import type {
   ScopeSourceSpec,
 } from '@/scope/ScopeController';
 import type { ScopeManager } from '@/scope/ScopeManager';
-import { DEFAULT_PARAMS } from '@/config/clockConfig';
 import { ScopeView } from '@/ui/ScopeView';
 import './ScopeList.scss';
 
@@ -24,6 +23,15 @@ interface ScopeListProps {
 const DEFAULT_FREQ_MONO = 440;
 const DEFAULT_FREQ_STEREO_L = 440;
 const DEFAULT_FREQ_STEREO_R = 660;
+/** Decimation factors offered to the user. Each must divide the
+ *  clock's `samplesPerTick` evenly — `chunkSize = samplesPerTick /
+ *  decimation` is computed in the `onAdd` handler. With the default
+ *  1024 samples/tick all five values divide cleanly. Higher
+ *  decimation = lower effective sample rate = less data per /b_setn,
+ *  but zero-order-hold means high-frequency content will alias
+ *  visibly above ~`effectiveRate / 2`. */
+const DECIMATION_OPTIONS = [1, 2, 4, 8, 16] as const;
+const DEFAULT_DECIMATION = 4;
 
 export function ScopeList({ manager, clock }: ScopeListProps) {
   const scopes = useSyncExternalStore(
@@ -36,8 +44,11 @@ export function ScopeList({ manager, clock }: ScopeListProps) {
   const [freqL, setFreqL] = useState(DEFAULT_FREQ_STEREO_L);
   const [freqR, setFreqR] = useState(DEFAULT_FREQ_STEREO_R);
   const [label, setLabel] = useState('');
+  const [decimation, setDecimation] = useState<number>(DEFAULT_DECIMATION);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const samplesPerTick = clock.derived.samplesPerTick;
 
   const onAdd = useCallback(async () => {
     setBusy(true);
@@ -47,10 +58,12 @@ export function ScopeList({ manager, clock }: ScopeListProps) {
         channels === 1
           ? { kind: 'mono', freq: freqMono }
           : { kind: 'stereo', freqL, freqR };
+      const chunkSize = samplesPerTick / decimation;
       await manager.add({
         channels,
         label: label.trim() || undefined,
         source,
+        detail: { chunkSize, decimation },
       });
       // Bump the default freq slightly so consecutive Adds make
       // distinguishable scopes without forcing the user to type.
@@ -68,7 +81,16 @@ export function ScopeList({ manager, clock }: ScopeListProps) {
     } finally {
       setBusy(false);
     }
-  }, [manager, channels, freqMono, freqL, freqR, label]);
+  }, [
+    manager,
+    channels,
+    freqMono,
+    freqL,
+    freqR,
+    label,
+    decimation,
+    samplesPerTick,
+  ]);
 
   const onClear = useCallback(async () => {
     setBusy(true);
@@ -97,6 +119,26 @@ export function ScopeList({ manager, clock }: ScopeListProps) {
           >
             <option value={1}>1 (mono)</option>
             <option value={2}>2 (stereo)</option>
+          </select>
+        </label>
+        <label
+          title={
+            `chunkSize × decimation must equal samplesPerTick (${samplesPerTick}). ` +
+            `Higher decimation trades visual detail for less /b_setn traffic.`
+          }
+        >
+          decimation&nbsp;
+          <select
+            value={decimation}
+            disabled={busy}
+            onChange={(e) => setDecimation(Number(e.target.value))}
+          >
+            {DECIMATION_OPTIONS.map((d) => (
+              <option key={d} value={d}>
+                {d}× ({samplesPerTick / d} samples,{' '}
+                {(clock.env.sampleRate / d / 1000).toFixed(1)} kHz)
+              </option>
+            ))}
           </select>
         </label>
         {channels === 1 ? (
@@ -183,7 +225,6 @@ export function ScopeList({ manager, clock }: ScopeListProps) {
             <ScopeListItem
               key={scope.scopeId}
               scope={scope}
-              clock={clock}
               onRemove={() => manager.remove(scope.scopeId)}
             />
           ))}
@@ -196,11 +237,9 @@ export function ScopeList({ manager, clock }: ScopeListProps) {
 
 function ScopeListItem({
   scope,
-  clock,
   onRemove,
 }: {
   scope: ScopeController;
-  clock: ClockController;
   onRemove: () => void | Promise<void>;
 }) {
   const chunksPerSec = useSyncExternalStore(
@@ -226,7 +265,8 @@ function ScopeListItem({
       <div className="scope-item-header">
         <span className="label">{scope.label}</span>
         <span className="meta">
-          {scope.channels}ch · {busDesc} · {sourceDesc} · {chunksPerSec}/s
+          {scope.channels}ch · {busDesc} · {sourceDesc} ·{' '}
+          {scope.detail.decimation}× ({(scope.effectiveRate / 1000).toFixed(1)} kHz) · {chunksPerSec}/s
         </span>
         <button type="button" className="danger small" onClick={() => void onRemove()}>
           Remove
@@ -234,8 +274,8 @@ function ScopeListItem({
       </div>
       <ScopeView
         chunkRef={scope.chunkRef}
-        effectiveRate={clock.derived.scopeEffectiveRate}
-        samplesPerChunk={DEFAULT_PARAMS.scopeChunkSize}
+        effectiveRate={scope.effectiveRate}
+        samplesPerChunk={scope.detail.chunkSize}
       />
     </li>
   );

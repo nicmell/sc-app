@@ -1,9 +1,13 @@
 /**
- * App-wide clock configuration. Three free parameters (`sampleRate`,
- * `tickRate`, `scopeChunkSize`, `decimation`); everything else —
- * ring sizes, scope window, tick interval — is derived from them.
- * The derived values must be integer-consistent; `deriveClock`
- * throws on any mismatch so the invariants never leak into runtime.
+ * App-wide clock configuration. Two free parameters (`sampleRate`,
+ * `tickRate`); everything else — `samplesPerTick`, recording ring,
+ * tick interval — is derived from them. The derived values must be
+ * integer-consistent; `deriveClock` throws on any mismatch so the
+ * invariants never leak into runtime.
+ *
+ * Scope-specific parameters (`chunkSize`, `decimation`) live on each
+ * `ScopeController` instance via `ScopeDetail` — see below — so
+ * different scopes can run at different effective sample rates.
  *
  * This module is the ONLY place where the numeric defaults appear.
  */
@@ -16,23 +20,15 @@ export interface AudioEnvironment {
 export interface ClockParams {
   /** Control-rate tick frequency in Hz. */
   tickRate: number;
-  /** Samples per scope frame, per channel. */
-  scopeChunkSize: number;
-  /** Scope-only audio-sample downsampling factor. */
-  decimation: number;
 }
 
 export interface ClockDerived {
-  /** `sampleRate / tickRate`. Drives recording chunk size and scope alignment. */
+  /** `sampleRate / tickRate`. Drives recording chunk size and scope
+   *  alignment. Every per-scope `chunkSize × decimation` must equal
+   *  this value (enforced by `validateScopeDetail`). */
   samplesPerTick: number;
-  /** `scopeChunkSize * 2` — double-buffered ring. */
-  scopeRingSize: number;
   /** `samplesPerTick * 2` — double-buffered recording ring. */
   recordRingSize: number;
-  /** Visible scope window in seconds. */
-  scopeWindowSeconds: number;
-  /** Effective post-decimation sample rate for scope rendering. */
-  scopeEffectiveRate: number;
   /** Nominal tick period in ms — used by UI watchdogs. */
   tickIntervalMs: number;
 }
@@ -47,35 +43,81 @@ export function deriveClock(
       `sampleRate (${env.sampleRate}) / tickRate (${params.tickRate}) must be integer`,
     );
   }
-  if (params.scopeChunkSize * params.decimation !== samplesPerTick) {
-    throw new Error(
-      `scopeChunkSize (${params.scopeChunkSize}) × decimation (${params.decimation}) ` +
-        `must equal samplesPerTick (${samplesPerTick})`,
-    );
-  }
   return {
     samplesPerTick,
-    scopeRingSize: params.scopeChunkSize * 2,
     recordRingSize: samplesPerTick * 2,
-    scopeWindowSeconds:
-      (params.scopeChunkSize * params.decimation) / env.sampleRate,
-    scopeEffectiveRate: env.sampleRate / params.decimation,
     tickIntervalMs: 1000 / params.tickRate,
   };
 }
 
+/**
+ * Per-scope chunk-size + decimation pair. The product
+ * `chunkSize × decimation` must equal `samplesPerTick` (enforced by
+ * `validateScopeDetail`) — that's the invariant the worker's
+ * `completedHalf = tickIndex % 2` parity formula relies on. The
+ * scope synth's `Phasor.ar`-driven `writeIdx` then wraps at exactly
+ * one tick boundary, with one half completed per tick.
+ */
+export interface ScopeDetail {
+  /** Samples per scope frame, per channel. */
+  chunkSize: number;
+  /** Audio-sample downsampling factor (zero-order-hold; not anti-
+   *  aliased — high-frequency signals will alias visibly at
+   *  decimations > ~4). */
+  decimation: number;
+}
+
+/** Default scope detail. Tuned for comfortable visual fidelity at
+ *  modest network bandwidth (1 KB/tick mono at 48 kHz). */
+export const SCOPE_DETAIL_DEFAULT: ScopeDetail = {
+  chunkSize: 256,
+  decimation: 4,
+};
+
+/** Validate that `detail` factors `samplesPerTick` cleanly. Throws
+ *  with a useful message if not — used at scope-controller
+ *  construction so misconfigured detail never reaches the worker
+ *  or scsynth. */
+export function validateScopeDetail(
+  detail: ScopeDetail,
+  samplesPerTick: number,
+): void {
+  if (!Number.isInteger(detail.chunkSize) || detail.chunkSize < 1) {
+    throw new Error(
+      `ScopeDetail.chunkSize must be a positive integer, got ${detail.chunkSize}`,
+    );
+  }
+  if (!Number.isInteger(detail.decimation) || detail.decimation < 1) {
+    throw new Error(
+      `ScopeDetail.decimation must be a positive integer, got ${detail.decimation}`,
+    );
+  }
+  if (detail.chunkSize * detail.decimation !== samplesPerTick) {
+    throw new Error(
+      `ScopeDetail invariant: chunkSize (${detail.chunkSize}) × ` +
+        `decimation (${detail.decimation}) = ${detail.chunkSize * detail.decimation} ` +
+        `must equal samplesPerTick (${samplesPerTick})`,
+    );
+  }
+}
+
+/** Effective audio-rate sample rate seen by a scope after decimation —
+ *  what `ScopeView` uses to compute the visible window in milliseconds. */
+export function scopeEffectiveRate(
+  env: AudioEnvironment,
+  detail: ScopeDetail,
+): number {
+  return env.sampleRate / detail.decimation;
+}
+
 export const DEFAULT_ENV: AudioEnvironment = { sampleRate: 48000 };
 
-// Power-of-2 derived values for FFT-friendliness and page-aligned
-// recording reads (1024 frames × 4 bytes = one OS page). The
-// invariants `sampleRate / tickRate ∈ ℤ` and `chunkSize × decimation
-// = samplesPerTick` are enforced by `deriveClock()`:
-//   48000 / 46.875 = 1024 ✓
-//   256 × 4 = 1024 ✓
+// Power-of-2 derivation: 48000 / 46.875 = 1024 (page-aligned recording
+// reads) and SCOPE_DETAIL_DEFAULT.chunkSize × decimation = 256 × 4 =
+// 1024 = samplesPerTick. The scope's chunkSize and decimation are no
+// longer global — they're per-scope. See `ScopeDetail`.
 export const DEFAULT_PARAMS: ClockParams = {
   tickRate: 46.875,
-  scopeChunkSize: 256,
-  decimation: 4,
 };
 
 /** Reserved SendTrig ID for the global clock synth. No other synth

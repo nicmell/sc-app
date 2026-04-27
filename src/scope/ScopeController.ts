@@ -22,7 +22,12 @@ import {
   nFree,
   sNew,
 } from '@sc-app/server-commands';
-import { DEFAULT_PARAMS } from '@/config/clockConfig';
+import {
+  SCOPE_DETAIL_DEFAULT,
+  scopeEffectiveRate,
+  validateScopeDetail,
+  type ScopeDetail,
+} from '@/config/clockConfig';
 import {
   compileScopeSynthDef,
   scopeSynthDefName,
@@ -46,7 +51,6 @@ export type ScopeSourceSpec =
   | { kind: 'stereo'; freqL: number; freqR: number; amp?: number };
 
 const DEFAULT_TONE_AMP = 0.2;
-const SCOPE_RING = DEFAULT_PARAMS.scopeChunkSize * 2;
 
 export interface ScopeControllerOptions {
   client: WorkerClient;
@@ -68,6 +72,11 @@ export interface ScopeControllerOptions {
    *  `inputBus`, so a freshly-added scope shows a recognisable signal
    *  with no extra wiring on the caller side. `stop()` frees it. */
   source?: ScopeSourceSpec;
+  /** Per-scope chunk-size + decimation. Defaults to
+   *  `SCOPE_DETAIL_DEFAULT`. The product `chunkSize × decimation`
+   *  must equal the clock's `samplesPerTick` — `start()` enforces
+   *  this and throws on mismatch. */
+  detail?: ScopeDetail;
 }
 
 export class ScopeController {
@@ -76,6 +85,11 @@ export class ScopeController {
   readonly channels: 1 | 2;
   readonly inputBus: number;
   readonly source: ScopeSourceSpec | null;
+  readonly detail: ScopeDetail;
+  /** Decimated audio rate this scope produces — `sampleRate /
+   *  decimation`. Used by `ScopeView` to label the visible window
+   *  in milliseconds. */
+  readonly effectiveRate: number;
 
   /** Mutable single-slot ref consumed by `ScopeView`'s RAF loop. The
    *  draw routine reads `.current` once per frame; older frames are
@@ -115,6 +129,9 @@ export class ScopeController {
     this.scopeId = opts.scopeId;
     this.label = opts.label ?? `scope ${opts.scopeId.slice(0, 6)}`;
     this.source = opts.source ?? null;
+    this.detail = opts.detail ?? SCOPE_DETAIL_DEFAULT;
+    validateScopeDetail(this.detail, opts.clock.derived.samplesPerTick);
+    this.effectiveRate = scopeEffectiveRate(opts.clock.env, this.detail);
   }
 
   /** Latest chunk seen by the subscription. Useful for stats / non-RAF
@@ -139,17 +156,19 @@ export class ScopeController {
       await this.startSource();
     }
 
-    const synthName = scopeSynthDefName(this.channels);
+    const { chunkSize, decimation } = this.detail;
+    const synthName = scopeSynthDefName(this.channels, chunkSize, decimation);
     await this.registry.ensureLoaded(
       synthName,
-      compileScopeSynthDef(this.channels),
+      compileScopeSynthDef(this.channels, chunkSize, decimation),
     );
 
     const bufnum = this.bufferIds.next();
     // bAlloc takes (bufnum, numFrames, numChannels). For multi-channel
     // scopes the buffer holds N samples × C channels interleaved, so
-    // numFrames stays SCOPE_RING — scsynth multiplies by numChannels.
-    await this.client.sendAndSync(bAlloc(bufnum, SCOPE_RING, this.channels));
+    // numFrames is `chunkSize × 2` — scsynth multiplies by numChannels.
+    const ring = chunkSize * 2;
+    await this.client.sendAndSync(bAlloc(bufnum, ring, this.channels));
     this.bufnum = bufnum;
 
     const nodeId = this.nodeIds.next();
@@ -167,7 +186,7 @@ export class ScopeController {
       {
         scopeId: this.scopeId,
         bufnum,
-        chunkSize: DEFAULT_PARAMS.scopeChunkSize,
+        chunkSize,
         channels: this.channels,
       },
       (chunk) => this.handleChunk(chunk),

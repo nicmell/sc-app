@@ -2,12 +2,17 @@
  * Scope tap — reads an audio bus and writes it into a ring buffer
  * indexed by the clock's shared sample phase.
  *
- * The scope owns `decimation` and `scopeChunkSize` (both baked at
- * compile time from `DEFAULT_PARAMS`); the clock is oblivious. Each
- * scope frame is written at
- *     writeIdx = (clockPhase / decimation) mod (scopeChunkSize × 2)
+ * The scope owns `chunkSize` and `decimation` (both baked at compile
+ * time per call); the clock is oblivious. Each scope frame is
+ * written at
+ *     writeIdx = (clockPhase / decimation) mod (chunkSize × 2)
  * which for the default 48000/46.875/256/4 config gives an integer
  * index stepping +1 every 4 audio samples and wrapping at 512.
+ *
+ * The invariant `chunkSize × decimation = samplesPerTick` (= 1024
+ * with the current clock) is what makes the worker's
+ * `completedHalf = tickIndex % 2` parity formula work: each tick
+ * fires exactly when the writeIdx has just wrapped a half boundary.
  *
  * `BufWr.ar` writes every audio sample — so each buffer slot is
  * overwritten `decimation` times in a row, and the last write wins.
@@ -18,34 +23,57 @@
  * `clockBus` on the same control block. Inputs (e.g. testTone)
  * must also be at-or-before this synth in the group order.
  *
- * Compiled per channel count: SC's `In.ar(bus, channels)` and
- * `BufWr.ar` need a fixed channel count at compile time. We cache
- * one SynthDef per `channels` value seen.
+ * Compiled per (channels, chunkSize, decimation) tuple: SC's
+ * `In.ar(bus, channels)` and `BufWr.ar` need a fixed channel count
+ * at compile time, and `decimation`/`ring` are also baked. We cache
+ * one SynthDef per unique tuple seen.
  */
 
-import { synthdef, ugenIndex, uo, type UGenInput } from '@sc-app/synthdef-compiler';
-import { DEFAULT_PARAMS } from '@/config/clockConfig';
+import {
+  synthdef,
+  ugenIndex,
+  uo,
+  type UGenInput,
+} from '@sc-app/synthdef-compiler';
 
-export function scopeSynthDefName(channels: number): string {
-  return `scopeTap${channels}ch`;
+export function scopeSynthDefName(
+  channels: number,
+  chunkSize: number,
+  decimation: number,
+): string {
+  return `scopeTap${channels}ch_${chunkSize}_${decimation}`;
 }
 
-const cache = new Map<number, Uint8Array>();
+const cache = new Map<string, Uint8Array>();
 
-export function compileScopeSynthDef(channels = 1): Uint8Array {
-  if (channels < 1 || !Number.isInteger(channels)) {
+export function compileScopeSynthDef(
+  channels: number,
+  chunkSize: number,
+  decimation: number,
+): Uint8Array {
+  if (!Number.isInteger(channels) || channels < 1) {
     throw new Error(
       `compileScopeSynthDef: channels must be a positive integer, got ${channels}`,
     );
   }
-  const cached = cache.get(channels);
+  if (!Number.isInteger(chunkSize) || chunkSize < 1) {
+    throw new Error(
+      `compileScopeSynthDef: chunkSize must be a positive integer, got ${chunkSize}`,
+    );
+  }
+  if (!Number.isInteger(decimation) || decimation < 1) {
+    throw new Error(
+      `compileScopeSynthDef: decimation must be a positive integer, got ${decimation}`,
+    );
+  }
+  const name = scopeSynthDefName(channels, chunkSize, decimation);
+  const cached = cache.get(name);
   if (cached) return cached;
 
-  const decimation = DEFAULT_PARAMS.decimation;
-  const ring = DEFAULT_PARAMS.scopeChunkSize * 2;
+  const ring = chunkSize * 2;
 
   const def = synthdef(
-    scopeSynthDefName(channels),
+    name,
     (g, { inBus = 0, bufnum = 0, clockBus = 0 }) => {
       // `In.ar(bus, channels)` registers an N-output UGen, but the
       // sugar returns a single `UGenInput` pointing at output 0
@@ -57,8 +85,6 @@ export function compileScopeSynthDef(channels = 1): Uint8Array {
       const inUgen = g.In.ar(inBus, channels);
       const inIdx = ugenIndex(inUgen);
       if (inIdx === null) {
-        // Defensive — ugenIndex returns null only for `constant`
-        // inputs, which `In.ar` never produces.
         throw new Error('compileScopeSynthDef: In.ar did not return a UGen ref');
       }
       const sigs: UGenInput[] = [];
@@ -72,6 +98,6 @@ export function compileScopeSynthDef(channels = 1): Uint8Array {
   );
 
   const bytes = def.toBytes();
-  cache.set(channels, bytes);
+  cache.set(name, bytes);
   return bytes;
 }

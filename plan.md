@@ -2548,6 +2548,86 @@ is reloaded.
    Download buttons still work.
 4. `?debug` URL shows dev panels; default URL hides them.
 
+### Files (as landed) / Adaptations
+
+Phase 13 shipped in five sub-commits + one styling pass + one
+parametrization commit, *not* the single contiguous deliverable
+the original spec described. The spec was written before Phases
+11–14 made several "dev panels" obsolete; large parts simplified
+or dropped entirely:
+
+- **Dropped: `?debug` flag with PhaseProbePanel / ScopePokerPanel /
+  ScopeDebugPanel.** Those panels were never built — Phases 11–14
+  superseded them with `ScopeList` + `RecordingPanel`. Instead we
+  *deleted* the surfaces that existed:
+  - `src/ui/ScopeTestPanel/` (Phase 7 dev panel) — removed.
+  - `src/synth/monitorSynthDef.ts` + `src/scope/BufferPoker.ts` —
+    its only consumers, removed.
+  - `src/ui/SynthDefPanel/` — removed.
+  - `src/ui/OscConsole/` — files kept, unmounted from `AppShell`
+    (so a `?debug` flag can re-mount it later if ever wanted).
+  - `src/synth/phaseProbeSynthDef.ts` + `ClockController.probePhase()`
+    + the **Probe** button on `ClockPanel` — removed.
+
+- **Dropped: QueryTree diagnostic button.** Was scoped to a dev
+  surface that no longer exists. The OSC command helper
+  (`queryTree(0)`) is still exported by `@sc-app/server-commands`
+  for ad-hoc use from the browser console.
+
+- **Dropped: Disconnected-state UX.** Deferred. WS close currently
+  surfaces as a generic error toast via `AppShell.handleConnect`'s
+  error path; panels stay mounted with their last known state. Not
+  catastrophic — the user can reload manually. Worth implementing
+  if/when the app sees production use.
+
+- **Dropped: Unified Clock pill covering scope/recording states.**
+  The current `ClockPanel` pill already covers the relevant states
+  (running / paused / stopped) for the *clock*, which is what
+  matters — scope and recording state are surfaced per-card in
+  `ScopeList` / `RecordingPanel`. No consolidation needed.
+
+- **Shipped: `beforeunload` handler.** `src/scope/AppShell.tsx`
+  opts into the browser's "leave site?" prompt when any recording
+  is active (`recording` / `preparing` / `finalizing`) or has a
+  `done`-state Blob the user hasn't downloaded or dismissed. Modern
+  browsers show their generic message; we set `returnValue = ''`
+  and return a string for the legacy WebKit path. `pagehide`
+  cleanup (gFreeAll / nFree / notify 0) stays as-is for actual
+  teardown.
+
+- **Shipped: Final styling pass.** Design-token palette in
+  `src/styles.scss` (CSS variables for surfaces, borders, text,
+  state colors, layout, type), shared `.panel` class for unified
+  chrome, dashboard column centered with `max-width: 1100px`.
+  Per-panel SCSS files dropped duplicated chrome (~50 lines each)
+  and now reference variables. Tabular-nums applied via the global
+  `.panel .status` rule so any future readout inherits.
+
+- **Shipped: dead-code cleanup pass.**
+  `src/synth/noopSynthDef.ts` (orphan since Phase 3),
+  `GroupController.queryTree()` method (never called),
+  `ScopeView.defaultLayout` prop (never overridden by callers).
+  TS strict `noUnusedLocals` / `noUnusedParameters` enforce no
+  unused locals / params throughout.
+
+- **Shipped: `DebugLog` defaults to closed** rather than open.
+  Cleaner default dashboard.
+
+- **Shipped: Per-scope `chunkSize` + `decimation` (post-13.5).**
+  `scopeChunkSize` and `decimation` moved out of `ClockParams`
+  into a new `ScopeDetail` per-scope spec. `compileScopeSynthDef`
+  signature is now `(channels, chunkSize, decimation)`; SynthDef
+  cache key changes. `ScopeController` accepts `detail?: ScopeDetail`
+  and validates `chunkSize × decimation === samplesPerTick` at
+  construction. `ScopeList` toolbar gains a Decimation selector
+  with options `1×, 2×, 4×, 8×, 16×`. The aliasing limitation is
+  documented in `CLAUDE.md` rather than warned against in the UI.
+
+- **Shipped: 1024-sample tick (post-12).** `DEFAULT_PARAMS.tickRate`
+  changed from `48` to `46.875` so `samplesPerTick = 48000/46.875 =
+  1024` exactly — power-of-2, page-aligned recording reads,
+  FFT-friendly chunk sizes.
+
 ---
 
 ## Phase 14 — Recording Waveform View
@@ -2821,7 +2901,158 @@ Lane height = `canvas.height / channels`.
    binding in practice. RF64 deferred.
 10. **Reconnection.** Out of scope. App expects a manual reload on WS loss.
 11. **Ordering constraints within parent group.** Clock must be at head; scopes and recorders at tail; sources (testTone, or real audio synths added later) must be placed before scopes that read them. Caller responsibility; document clearly.
-12. **Future: FFT / spectral scopes.** The 250-sample chunk isn't power-of-2. For spectral features, accumulate 4 consecutive chunks into 1000 samples and zero-pad/truncate to 1024. Separate component, no impact on this plan.
+12. **Future: FFT / spectral scopes.** Resolved against Phase 12.5
+    — `samplesPerTick` is now `1024` and the default
+    `scopeChunkSize` is `256`, both powers of 2. A 256-point or
+    1024-point real-FFT plugs in cleanly. See "Future Improvements"
+    below.
+
+---
+
+## Future Improvements
+
+Suggested follow-on phases. Listed in rough order of value /
+effort ratio; none are blocked by Phase 14.
+
+### 15. Spectral scope (FFT view)
+
+Add a `compileFFTScopeSynthDef` that runs `FFT.kr` on the input bus
+into a 1024-bin buffer (one FFT every tick — natural cadence given
+`samplesPerTick = 1024`). Worker reads the buffer the same way as a
+time-domain scope; main thread renders log-magnitude bars or a
+filled spectrogram. Reuse `ScopeController` plumbing — only the
+synthdef and the view component differ.
+
+**Cost:** ~1 day. Most of the work is the renderer (log frequency
+axis, magnitude smoothing, optional waterfall). Existing tick-
+driven `/b_getn` pipeline is reusable verbatim.
+
+**Why it's nice:** the SuperCollider crowd lives on spectrum views.
+Useful for tuning EQ, filters, FFT-based effects.
+
+### 16. Streaming-to-disk recordings
+
+Today the WAV lives entirely in worker memory until stop — caps
+practical session length at ~15 minutes stereo before RAM pressure.
+
+- **Browser (serve mode):** File System Access API
+  (`showSaveFilePicker`) lets us stream chunks directly to a
+  user-chosen file. Worker becomes the writer; main thread holds
+  the file handle.
+- **Tauri:** the `fs` plugin already supports `writeFile`. Stream
+  per-tick via the bridge or expose a small Tauri command that
+  appends to a path.
+
+Removes the in-memory ceiling. WAV header still needs patching at
+finalise — easy with the FS Access API (`createWritable` + seek);
+trickier with append-only IPC, may want RF64 instead.
+
+**Cost:** ~1.5 days, mostly because of the two backends.
+
+### 17. Reconnection + disconnected UX
+
+Currently a WS close drops the dashboard back to the connect
+screen via the existing error handler. Smoother:
+
+- Panels show a *disconnected* pill in place of their state pill;
+  controllers stay mounted with their last-known data (recording
+  Blobs, scope envelopes still downloadable).
+- A "Reconnect" button at the dashboard header retries the connect
+  handshake and resyncs.
+- Optional: automatic reconnect with exponential backoff (skipped
+  per the original plan's PoC scope; revisit when needed).
+
+**Cost:** ~½ day for the manual-reconnect path; ~1 day with auto-
+reconnect + state resync.
+
+### 18. Tauri-managed scsynth lifecycle
+
+Today scsynth must already be running at `127.0.0.1:57110` before
+the user can connect. In Tauri builds we could spawn it as a
+managed sidecar — Tauri sets the binary path, audio device, sample
+rate; we read its stdout for the `SuperCollider 3 server ready`
+banner; we kill it cleanly on app exit.
+
+**Cost:** ~½ day. Mostly Tauri-side glue (`tauri.conf.json` sidecar
+config + a Rust command wrapper). Serve / browser builds keep
+"bring your own scsynth" semantics.
+
+**Why it's nice:** removes the single biggest UX rough edge for
+new users — currently you have to know to launch sclang or
+scsynth from the terminal first.
+
+### 19. Test coverage for `src/`
+
+The two workspace packages (`server-commands`, `synthdef-compiler`)
+have parity tests. The app itself has zero. The pieces that have
+visibly absorbed real debugging cycles (parity formula, offset-
+keyed pending, envelope buffer, WAV writer) are exactly the ones
+worth pinning down with tests:
+
+- **`EnvelopeBuffer`** unit test — append a known signal, snapshot,
+  verify min/max columns.
+- **`WavMemoryWriter`** unit test — append known frames, finalise,
+  parse the resulting WAV header, verify counts and format codes.
+- **Worker recording dispatch** integration test — mock the
+  transport, fire a sequence of `/tr` + `/b_setn` events, assert
+  reorder buffer order + gap accounting.
+
+Vitest is already set up in the workspace packages — copy the
+pattern.
+
+**Cost:** ~1 day for the three above. Worth ~5 days of saved
+debugging over the project lifetime.
+
+### 20. Sample-rate auto-detection
+
+`DEFAULT_ENV.sampleRate = 48000` is hardcoded. We already read the
+real rate from `/status.reply` at connect time and reject mismatched
+sessions, but we could *adapt*: derive a session-specific
+`ClockParams.tickRate` such that `samplesPerTick` stays power-of-2
+at the actual rate. E.g., 44100 / 43.066 ≈ 1024 (ugly tickRate),
+44100 / 44.10 = 1000 (clean tickRate, non-power-of-2 chunk).
+There's no clean choice for 44100 — the project might just want to
+pin to 48 kHz / 96 kHz multiples. Document explicitly.
+
+**Cost:** ~½ day. Mostly the policy decision, not the code.
+
+### 21. Persistent UI settings
+
+`localStorage` per-session: last-used scsynth address (already
+done), preferred channel count, default decimation, recording bus,
+window size. Small quality-of-life win for users who reconnect
+often.
+
+**Cost:** ~½ day.
+
+### 22. Bus naming / labeling
+
+Currently buses are bare integers (`bus 16`, `bus 33..34`). A
+small label registry — "synth out", "FX return", "monitor mix" —
+would let recordings + scopes show meaningful names in the UI
+instead of ad-hoc memorisation. The bus number stays the source
+of truth; the label is purely UI.
+
+**Cost:** ~½ day.
+
+### 23. Per-scope/recording independent pause
+
+Today `/n_run 0` on the parent group freezes everything — the
+clock, every scope, every recording. Sometimes you want to pause
+*one* scope while keeping the rest running. Implementable as
+`/n_run 0 nodeId` on the specific synth, with state tracked
+per-controller.
+
+**Cost:** ~½ day.
+
+### 24. Spectrogram waterfall (after #15)
+
+Once an FFT scope exists, accumulate magnitudes column-by-column
+into a 2-D canvas — a scrolling waterfall view. Particularly nice
+for visualising drift, slow modulators, or transient content over
+time.
+
+**Cost:** ~1 day, after #15.
 
 ---
 

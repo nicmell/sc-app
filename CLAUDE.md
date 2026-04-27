@@ -295,3 +295,16 @@ now collapsed by default.
   WAV stays linear regardless of arrival order. Don't replicate
   the scope's single-slot pattern for any subscription that
   cares about strict per-tick ordering.
+- **Scope decimation is zero-order-hold, not anti-aliased** —
+  `BufWr.ar` writes every audio sample but `writeIdx` only
+  advances every `decimation` samples, so each buffer slot is
+  overwritten `decimation` times and the last write wins (no
+  averaging, no low-pass pre-filter). Above the alias frequency
+  (`effectiveRate / 2 = sampleRate / (2 × decimation)`)
+  high-frequency signals will fold back and show up as wrong-
+  frequency artefacts on the canvas. The default `decimation = 4`
+  gives a 12 kHz Nyquist on a 48 kHz session — fine for most
+  audio. At `decimation = 16` it drops to 1.5 kHz; a 5 kHz sine
+  will look like a slow modulator. Document, don't fix —
+  proper anti-aliasing belongs in a `decimateScopeSynthDef` if
+  ever needed.

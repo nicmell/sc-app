@@ -34,11 +34,11 @@ export interface ScopeViewProps {
   chunkRef: RefObject<ScopeChunk | null>;
   /** Effective sample rate — used to display the visible window
    *  size in milliseconds in the corner readout. Typically
-   *  `clock.derived.scopeEffectiveRate`. */
+   *  `scope.effectiveRate`. */
   effectiveRate: number;
   /** Number of samples per channel in a chunk — used to derive the
    *  visible-sample count from the zoom factor.
-   *  Typically `DEFAULT_PARAMS.scopeChunkSize`. */
+   *  Typically `scope.detail.chunkSize`. */
   samplesPerChunk: number;
   /** Vertical scale factor applied to the raw sample values
    *  before mapping `[-1, 1] → lane vertical extent`. Default 1. */
