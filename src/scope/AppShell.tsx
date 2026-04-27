@@ -176,14 +176,13 @@ async function setupDashboard(
       `clockBus=${clock.clockBus}, sampleRate=${sampleRate}, ` +
       `chunkSize=${chunkSize}, tickRate=${clock.derived.tickRate.toFixed(3)} Hz`,
   );
-  await clock.start();
-  // Bring the dashboard up paused so nothing runs until the user
-  // explicitly presses Start. `clock.stop()` runs `/n_run 0` on the
-  // parent group, freezing the clock synth (no /tr) along with any
-  // future scope/recorder children added by the user. The clock
-  // synthdef is loaded and the synth is /s_new'd; only its kr
-  // execution is suspended.
-  await clock.stop();
+  // Bring the dashboard up paused. `startPaused: true` bundles the
+  // clock synth's /s_new with /n_run nodeId 0, so scsynth processes
+  // both atomically — the synth never ticks. The previous
+  // start-then-stop pattern let the synth fire a few /tr's during
+  // the round-trip, polluting the freshly-connected dashboard with
+  // bogus startup ticks.
+  await clock.start({ startPaused: true });
   const scopeManager = new ScopeManager({
     client,
     clock,

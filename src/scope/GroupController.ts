@@ -1,17 +1,17 @@
 /**
  * Owns the app's parent group inside scsynth's node tree. Everything
- * audio-related (clock, scopes, recorders) gets added to children of
- * this group — `/n_run` on the parent then pauses the whole session at
- * once.
+ * audio-related (clock, scopes, recorders) gets added as children
+ * of this group, so a single `/g_freeAll + /n_free` cleans up the
+ * whole session.
  *
  * Lifecycle:
- *   stopped → running (via ensureCreated → /g_new then /n_run 1 implicitly)
- *   running ↔ paused (pause / resume via /n_run 0|1)
- *   running → stopped (free, via /g_freeAll + /n_free)
+ *   stopped → running (via `ensureCreated` → /g_new)
+ *   running → stopped (via `free` → /g_freeAll + /n_free)
  *
- * The "disconnected" case is handled at a higher level — `AppShell`
- * tears the whole dashboard down on WebSocket error — so this class
- * only models the three real on-server states.
+ * Pause/resume used to live here too (group-wide `/n_run 0|1`), but
+ * the clock now manages its own pause via `/n_run` on its synth
+ * directly — see `ClockController`. Group-level pause is no longer
+ * needed and was removed to keep the state model minimal.
  */
 
 import {
@@ -19,13 +19,12 @@ import {
   gFreeAll,
   gNewOne,
   nFree,
-  nRunOne,
 } from '@sc-app/server-commands';
 import type { ReadonlyStore } from './reactiveStore';
 import { createStore } from './reactiveStore';
 import type { WorkerClient } from './WorkerClient';
 
-export type GroupState = 'stopped' | 'running' | 'paused';
+export type GroupState = 'stopped' | 'running';
 
 export class GroupController {
   private readonly stateStore = createStore<GroupState>('stopped');
@@ -42,23 +41,13 @@ export class GroupController {
     return this.stateStore;
   }
 
-  /** Idempotent — creates the group (running by default) on first call. */
+  /** Idempotent — creates the group on first call. */
   async ensureCreated(): Promise<void> {
     if (this.created) return;
     await this.client.sendAndSync(
       gNewOne(this.groupId, this.addAction, this.targetId),
     );
     this.created = true;
-    this.stateStore.set('running');
-  }
-
-  async pause(): Promise<void> {
-    await this.client.sendAndSync(nRunOne(this.groupId, 0));
-    this.stateStore.set('paused');
-  }
-
-  async resume(): Promise<void> {
-    await this.client.sendAndSync(nRunOne(this.groupId, 1));
     this.stateStore.set('running');
   }
 
