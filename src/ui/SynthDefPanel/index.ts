@@ -1,1 +1,0 @@
-export { SynthDefPanel } from './SynthDefPanel';

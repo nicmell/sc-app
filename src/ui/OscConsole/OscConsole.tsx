@@ -47,7 +47,6 @@ function summariseReply(reply: OscReply): { summary: string; detail?: string } {
 
 export function OscConsole({ client }: OscConsoleProps) {
   const [log, setLog] = useState<LogEntry[]>([]);
-  const [open, setOpen] = useState(false);
   const nextId = useRef(0);
 
   const append = (entry: Omit<LogEntry, 'id' | 'timestamp'>) => {
@@ -94,37 +93,25 @@ export function OscConsole({ client }: OscConsoleProps) {
   };
 
   return (
-    <section className={`osc-console ${open ? 'open' : 'closed'}`}>
-      <header>
-        <button
-          type="button"
-          className="toggle"
-          onClick={() => setOpen((o) => !o)}
-        >
-          {open ? '▾' : '▸'} OSC console · {log.length}
-        </button>
-      </header>
-      {open && (
-        <>
-          <div className="quick-actions">
-            <button onClick={() => send(status())}>Status</button>
-            <button onClick={() => send(dumpOsc(1))}>DumpOSC on</button>
-            <button onClick={() => send(dumpOsc(0))}>DumpOSC off</button>
-            <button onClick={() => send(queryTree(0))}>QueryTree(0)</button>
-            <button onClick={probe}>sendAndAwaitReply(Status)</button>
-          </div>
-          <ol className="log">
-            {log.map((e) => (
-              <li key={e.id} data-dir={e.direction}>
-                <span className="dir">{e.direction.toUpperCase()}</span>
-                <span className="t">{(e.timestamp / 1000).toFixed(3)}s</span>
-                <span className="summary">{e.summary}</span>
-                {e.detail && <span className="detail">{e.detail}</span>}
-              </li>
-            ))}
-          </ol>
-        </>
-      )}
+    <section className="osc-console">
+      <header>OSC console</header>
+      <div className="quick-actions">
+        <button onClick={() => send(status())}>Status</button>
+        <button onClick={() => send(dumpOsc(1))}>DumpOSC on</button>
+        <button onClick={() => send(dumpOsc(0))}>DumpOSC off</button>
+        <button onClick={() => send(queryTree(0))}>QueryTree(0)</button>
+        <button onClick={probe}>sendAndAwaitReply(Status)</button>
+      </div>
+      <ol className="log">
+        {log.map((e) => (
+          <li key={e.id} data-dir={e.direction}>
+            <span className="dir">{e.direction.toUpperCase()}</span>
+            <span className="t">{(e.timestamp / 1000).toFixed(3)}s</span>
+            <span className="summary">{e.summary}</span>
+            {e.detail && <span className="detail">{e.detail}</span>}
+          </li>
+        ))}
+      </ol>
     </section>
   );
 }

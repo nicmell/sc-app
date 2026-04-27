@@ -5,7 +5,6 @@ import { DebugLog } from '@/ui/DebugLog';
 import { OscConsole } from '@/ui/OscConsole';
 import { RecordingPanel } from '@/ui/RecordingPanel';
 import { ScopeList } from '@/ui/ScopeList';
-import { SynthDefPanel } from '@/ui/SynthDefPanel';
 import { DEFAULT_ENV, DEFAULT_PARAMS } from '@/config/clockConfig';
 import { RecordingManager } from '@/recording/RecordingManager';
 import {
@@ -64,7 +63,6 @@ function Dashboard({
         clock={resources.clock}
         sampleRate={resources.clock.env.sampleRate}
       />
-      <SynthDefPanel registry={resources.registry} />
       <OscConsole client={resources.client} />
     </main>
   );
@@ -346,6 +344,49 @@ export function AppShell() {
     };
     window.addEventListener('pagehide', handler);
     return () => window.removeEventListener('pagehide', handler);
+  }, [resources]);
+
+  // beforeunload guard for un-saved recording state. Browsers ignore
+  // any custom message and show a generic "leave site?" prompt; we
+  // just opt in by setting `returnValue` (and returning a string for
+  // the legacy WebKit code path) when there's something the user
+  // would lose:
+  //
+  //  - any recording still actively running (`recording` /
+  //    `preparing` / `finalizing`) — its WAV isn't finalised yet, and
+  //    the worker's in-memory buffer dies with the page.
+  //  - any `done` recording with a non-null `result` — there's a Blob
+  //    sitting in memory the user hasn't downloaded *or* dismissed.
+  //    Once they hit Download or Dismiss, the warning goes silent.
+  //
+  // We register the listener once per `resources` epoch and read the
+  // recording manager's live store inside the handler so the gate
+  // reflects current state without retriggering the effect.
+  useEffect(() => {
+    if (!resources) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      const list = resources.recordingManager.recordings.get();
+      const dirty = list.some((r) => {
+        const state = r.state.get();
+        if (
+          state === 'recording' ||
+          state === 'preparing' ||
+          state === 'finalizing'
+        ) {
+          return true;
+        }
+        if (state === 'done' && r.result.get() !== null) return true;
+        return false;
+      });
+      if (!dirty) return;
+      e.preventDefault();
+      // `returnValue = ''` is what modern browsers actually look at;
+      // returning a string is the legacy WebKit code path.
+      e.returnValue = '';
+      return '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
   }, [resources]);
 
   // Expose the client + clock in dev mode for console poking.
