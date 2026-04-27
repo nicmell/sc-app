@@ -5,7 +5,6 @@ import { DebugLog } from '@/ui/DebugLog';
 import { OscConsole } from '@/ui/OscConsole';
 import { RecordingPanel } from '@/ui/RecordingPanel';
 import { ScopeList } from '@/ui/ScopeList';
-import { ScopeTestPanel } from '@/ui/ScopeTestPanel';
 import { SynthDefPanel } from '@/ui/SynthDefPanel';
 import { DEFAULT_ENV, DEFAULT_PARAMS } from '@/config/clockConfig';
 import { RecordingManager } from '@/recording/RecordingManager';
@@ -64,13 +63,6 @@ function Dashboard({
         manager={resources.recordingManager}
         clock={resources.clock}
         sampleRate={resources.clock.env.sampleRate}
-      />
-      <ScopeTestPanel
-        client={resources.client}
-        clock={resources.clock}
-        group={resources.group}
-        registry={resources.registry}
-        ids={resources.ids}
       />
       <SynthDefPanel registry={resources.registry} />
       <OscConsole client={resources.client} />

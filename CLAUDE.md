@@ -25,7 +25,6 @@ Browser (React, main thread)
   │                             clockBus phasor; probePhase() diagnostic
   ├── GroupController           parent group lifecycle (/g_new /n_run)
   ├── SynthDefRegistry          idempotent /d_recv tracker
-  ├── BufferPoker               manual /b_getn → /b_setn helper (Phase 7)
   └── WorkerClient              postMessage wrapper around…
       │   - sendCommand / onReply / onError / onTick
       │   - subscribeScope(sub, cb) — tick-driven /b_getn pipeline
@@ -171,9 +170,11 @@ float32 WAV bytes in the worker's `WavMemoryWriter` (zero-copy
 runs an internal "tap scope" on its input bus that feeds a
 per-tick min/max envelope buffer for the panel's waveform
 canvas (live during recording, scrollable when paused or done).
-The single-scope `ScopeTestPanel` from earlier phases stays as
-a diagnostic. Phase 13 (UI Polish & Teardown) is **deferred** —
-it remains the next planned phase per `plan.md`.
+Phase 13 (UI Polish & Teardown) is **in progress** — the
+single-scope `ScopeTestPanel` and its monitor synthdef +
+`BufferPoker` helper have been removed (they were dev-only
+diagnostics superseded by Phases 11–14), and `OscConsole` is
+now collapsed by default.
 
 ## Where scsynth conventions matter
 
@@ -266,13 +267,6 @@ it remains the next planned phase per `plan.md`.
   log a `late 0.0XX` message in the scsynth console and run as
   soon as possible. Not a bug — the timetag is still useful as a
   *floor* on the scheduling delay (see kr/ar slop above).
-- **Subscribed bufnums vs. `BufferPoker`** — once a scopeId is
-  subscribed via `subscribeScope`, the worker intercepts every
-  `/b_setn` for that bufnum and routes it to `scopeChunk`
-  listeners. A `BufferPoker.poke()` against the same bufnum will
-  hang because its expected `onReply` callback never fires.
-  `ScopeTestPanel` disables the **Poke** button while
-  subscribed for this reason.
 - **Tauri vs serve build deltas**: `src-tauri/capabilities/default.json`
   scopes `fs:allow-write-{file,text-file}` to `$DOCUMENT`,
   `$DOWNLOAD`, `$AUDIO`, `$DESKTOP`, `$HOME`. If a save target

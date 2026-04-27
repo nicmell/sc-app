@@ -347,8 +347,8 @@ function emitReply(packet: OscPacket): void {
     }
 
     // /b_setn intercept: dispatch by subscription kind. Non-subscribed
-    // bufnums fall through to the generic reply path so main-thread
-    // BufferPokers (Phase 7) still work.
+    // bufnums fall through to the generic reply path for any one-shot
+    // /b_getn issued from main (e.g. ad-hoc OSC console pokes).
     if (packet.address === '/b_setn') {
       const entry = subscriptions.get(packet.args[0] as number);
       if (entry !== undefined) {
@@ -409,10 +409,10 @@ function handleRecordingBSetn(
   const pending = entry.pendingByOffset.get(replyOffset);
   if (!pending) {
     // Stale reply — most likely a retry that landed after the gap
-    // was already booked, or an out-of-band /b_setn (BufferPoker
-    // against this bufnum etc.). Discarding is safe because either
-    // the gap is already in the reorder buffer or the recording
-    // doesn't care about this offset.
+    // was already booked, or an out-of-band /b_setn (e.g. an OSC
+    // console QueryTree probe firing on this bufnum). Discarding is
+    // safe because either the gap is already in the reorder buffer
+    // or the recording doesn't care about this offset.
     return;
   }
 
