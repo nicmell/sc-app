@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ClockPanel } from '@/ui/ClockPanel';
 import { ConnectScreen } from '@/ui/ConnectScreen';
 import { DebugLog } from '@/ui/DebugLog';
-import { OscConsole } from '@/ui/OscConsole';
 import { RecordingPanel } from '@/ui/RecordingPanel';
 import { ScopeList } from '@/ui/ScopeList';
 import { DEFAULT_ENV, DEFAULT_PARAMS } from '@/config/clockConfig';
@@ -63,7 +62,6 @@ function Dashboard({
         clock={resources.clock}
         sampleRate={resources.clock.env.sampleRate}
       />
-      <OscConsole client={resources.client} />
     </main>
   );
 }

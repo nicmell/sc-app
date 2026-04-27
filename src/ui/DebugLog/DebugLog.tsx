@@ -70,7 +70,7 @@ async function downloadEntries(entries: ReadonlyArray<DebugEntry>): Promise<void
 
 export function DebugLog() {
   const [entries, setEntries] = useState<DebugEntry[]>(debugLog.get());
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

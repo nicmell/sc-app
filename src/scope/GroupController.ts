@@ -19,13 +19,11 @@ import {
   gFreeAll,
   gNewOne,
   nFree,
-  queryTree,
   nRunOne,
 } from '@sc-app/server-commands';
 import type { ReadonlyStore } from './reactiveStore';
 import { createStore } from './reactiveStore';
 import type { WorkerClient } from './WorkerClient';
-import type { OscReply } from './workerProtocol';
 
 export type GroupState = 'stopped' | 'running' | 'paused';
 
@@ -71,14 +69,5 @@ export class GroupController {
     await this.client.sendAndSync(nFree(this.groupId));
     this.created = false;
     this.stateStore.set('stopped');
-  }
-
-  /** `/g_queryTree` for this group. The reply comes back as
-   *  `/g_queryTree.reply`. */
-  queryTree(): Promise<OscReply> {
-    return this.client.sendAndAwaitReply(
-      queryTree(this.groupId, true),
-      (reply) => reply.address === '/g_queryTree.reply',
-    );
   }
 }

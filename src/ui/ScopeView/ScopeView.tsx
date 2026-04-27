@@ -9,12 +9,12 @@ import {
 import type { ScopeChunk } from '@/scope/workerProtocol';
 import './ScopeView.scss';
 
-export type ScopeLayout = 'stacked' | 'overlay';
+type ScopeLayout = 'stacked' | 'overlay';
 
 /** Discrete zoom factors. `1` = full chunk visible; smaller fractions
  *  zoom in to a sub-slice of the most recent chunk. We don't go above
  *  `1` (no rolling history buffer — `1×` is the natural maximum). */
-export const ZOOM_LEVELS = [1, 1 / 2, 1 / 4, 1 / 8] as const;
+const ZOOM_LEVELS = [1, 1 / 2, 1 / 4, 1 / 8] as const;
 type ZoomLevel = (typeof ZOOM_LEVELS)[number];
 
 const DEFAULT_PALETTE = ['#6ac46f', '#c4a06f', '#6f9fc4', '#c46f9f'];
@@ -52,8 +52,6 @@ export interface ScopeViewProps {
   height?: number;
   /** Optional zero-line stroke colour per lane. `null` disables. */
   zeroLineStyle?: string | null;
-  /** Initial layout. Switchable from the toolbar at runtime. */
-  defaultLayout?: ScopeLayout;
 }
 
 export function ScopeView({
@@ -65,12 +63,11 @@ export function ScopeView({
   background = DEFAULTS.background,
   height = DEFAULTS.height,
   zeroLineStyle = DEFAULTS.zeroLineStyle,
-  defaultLayout = 'stacked',
 }: ScopeViewProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const [layout, setLayout] = useState<ScopeLayout>(defaultLayout);
+  const [layout, setLayout] = useState<ScopeLayout>('stacked');
   const [zoomFactor, setZoomFactor] = useState<ZoomLevel>(1);
 
   // Mirror visual state into refs so the RAF loop stays stable
