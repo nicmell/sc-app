@@ -78,7 +78,7 @@ function defaultFreqs(kind: SynthKind): readonly number[] {
 export class SynthController {
   readonly synthId: string;
   readonly kind: SynthKind;
-  readonly channels: 1 | 2;
+  readonly channels: number;
   readonly inputBus: number;
   readonly label: string;
 

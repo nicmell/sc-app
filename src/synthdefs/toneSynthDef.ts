@@ -33,13 +33,24 @@
 
 import { synthdef } from '@sc-app/synthdef-compiler';
 
-export function toneSynthDefName(channels: 1 | 2): string {
+export function toneSynthDefName(channels: number): string {
   return `tone${channels}ch`;
 }
 
 const cache = new Map<number, Uint8Array>();
 
-export function compileToneSynthDef(channels: 1 | 2): Uint8Array {
+export function compileToneSynthDef(channels: number): Uint8Array {
+  if (!Number.isInteger(channels) || channels < 1) {
+    throw new Error(
+      `compileToneSynthDef: channels must be a positive integer, got ${channels}`,
+    );
+  }
+  if (channels > 2) {
+    throw new Error(
+      `compileToneSynthDef: only mono (1) and stereo (2) tone synths are implemented today, got ${channels}. ` +
+        `Extend the synthdef body if a multichannel tone synth is needed.`,
+    );
+  }
   const cached = cache.get(channels);
   if (cached) return cached;
 

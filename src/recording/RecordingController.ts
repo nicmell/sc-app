@@ -74,7 +74,7 @@ export interface RecordingControllerOptions {
   ids: { node: IdAllocator; buffer: IdAllocator };
   recordingId: string;
   inputBus: number;
-  channels: 1 | 2;
+  channels: number;
   label?: string;
   /** Override the default `{ maxAttempts: 2, deadlineMs: 12 }` retry
    *  policy. Mostly useful for fault-injection tests. */
@@ -93,7 +93,7 @@ const START_TICK_LEAD = 2;
 export class RecordingController {
   readonly recordingId: string;
   readonly label: string;
-  readonly channels: 1 | 2;
+  readonly channels: number;
   readonly inputBus: number;
 
   private readonly client: WorkerClient;

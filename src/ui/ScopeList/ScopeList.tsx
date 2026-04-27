@@ -8,7 +8,7 @@ import type { ScopeManager } from '@/scope/ScopeManager';
 import { ScopeView } from '@/ui/ScopeView';
 import './ScopeList.scss';
 
-type Channels = 1 | 2;
+type Channels = number;
 
 interface ScopeListProps {
   manager: ScopeManager;

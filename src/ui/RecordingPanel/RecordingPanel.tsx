@@ -13,7 +13,7 @@ import type { ClockController } from '@/clock/ClockController';
 import { RecordingWaveformView } from './RecordingWaveformView';
 import './RecordingPanel.scss';
 
-type Channels = 1 | 2;
+type Channels = number;
 
 const WINDOW_SECONDS_OPTIONS = [1, 5, 15, 60] as const;
 type WindowSeconds = (typeof WINDOW_SECONDS_OPTIONS)[number];

@@ -35,7 +35,7 @@ export interface RecordingManagerOptions {
 
 export interface AddRecordingOptions {
   inputBus: number;
-  channels: 1 | 2;
+  channels: number;
   label?: string;
   retry?: { maxAttempts: number; deadlineMs: number };
 }

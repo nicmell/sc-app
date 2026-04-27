@@ -43,7 +43,7 @@ export interface ScopeControllerOptions {
    *  bus — typically a `SynthController` from the Synths panel, or
    *  an external scsynth chain. */
   inputBus: number;
-  channels: 1 | 2;
+  channels: number;
   /** Stable id for worker subscription routing + UI list keys. */
   scopeId: string;
   /** Free-form label used by the UI. Optional — the manager defaults
@@ -54,7 +54,7 @@ export interface ScopeControllerOptions {
 export class ScopeController {
   readonly scopeId: string;
   readonly label: string;
-  readonly channels: 1 | 2;
+  readonly channels: number;
   readonly inputBus: number;
   /** Effective audio rate this scope produces. With `decimation = 1`
    *  this is just the clock's sampleRate; kept as a dedicated field

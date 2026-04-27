@@ -478,7 +478,12 @@ ScopeManager.remove(scopeId)
    channel-slice sharing — a 1-channel consumer asking for channel
    0 of a 2-channel bus does *not* share the 2-channel consumer's
    buffer. Cost is one extra tap synth in the rare slice scenario;
-   accepted.
+   accepted. **`channels` is typed as `number` (positive integer),
+   not `1 | 2`** — the buffer / tap layer must not bake in a
+   mono-or-stereo assumption. The `SynthsPanel`'s `mono | stereo`
+   UX is a Phase-15 producer-side convention only and does not
+   propagate downstream. Multichannel buses (≥3 channels — surround
+   mixes, ambisonic, level-meter banks) are first-class.
 3. **Chunk fan-out: shared `Float32Array`, read-only by contract.**
    `postMessage` without transfer; the `Float32Array` arrives
    shared. Every consumer treats it as read-only and must not
@@ -509,26 +514,44 @@ ScopeManager.remove(scopeId)
    stay `AddToTail`. The Phase 15 "add synth, then add consumer"
    UX flow keeps tap synths after producers naturally.
 
-### Open questions to resolve before phase 16
+### Open questions — resolved before phase 16
 
-These tune knobs; none change the phase structure.
+Originally tuning-knob open questions; resolved during the
+pre-implementation walkthrough. Captured here so the rationale
+survives the move to `history.md`.
 
-1. **Push API vs pull store.** `ScopeView` reads via `useRef`
-   (pull); recording needs every chunk in order (push). Probably
-   both: `subscribe(cb)` for push consumers and
-   `latestChunk: ReadonlyStore<...>` for pull consumers.
-2. **`acquire` async vs sync-with-pending-store.** Easiest: keep
-   async (mirrors `SynthManager.add`). First acquirer pays the
-   round-trip; subsequent acquirers return a resolved Promise.
-3. **`/n_go` failure handling.** Same shape as
-   `SynthManager.add`'s try-stop-rethrow: if `/s_new` fails, clean
-   up the partial buffer alloc and reject. Document that the
-   buffer is *not* placed in the manager's map until `/sync`
-   returns clean.
-4. **`BufferManager.snapshot` debug surface?** A reactive store of
-   `{key, refcount, bufnum, nodeId}[]` would make a future
-   `BuffersPanel` cheap and would catch refcount leaks visibly.
-   Add in phase 16 if cheap; otherwise file as a follow-up.
+1. **Push API vs pull store → ship both.** `BufferController`
+   exposes `subscribe(cb): () => void` for push consumers
+   (recording — needs every chunk, in order) and
+   `latestChunk: ReadonlyStore<BufferChunk | null>` for pull
+   consumers (scope — RAF reads "whatever's current"). Cost is
+   negligible (one update + one fan-out loop on the hot path);
+   forcing one shape on both would create real pain on whichever
+   side it doesn't fit.
+2. **`acquire` async → yes, with in-flight Promise cache.**
+   `acquire(spec): Promise<BufferHandle>`. First acquirer awaits
+   the `/b_alloc` + `/s_new` + `/sync` round-trip (~5–10 ms);
+   subsequent acquirers on the same spec return a resolved
+   Promise immediately. Race fix: cache the *in-flight*
+   `Promise<BufferHandle>`, so two near-simultaneous `acquire`
+   calls on the same spec await the same Promise rather than
+   double-allocating. Mirrors `SynthManager.add`'s shape.
+3. **Partial-failure handling → try-stop-rethrow inside
+   `BufferController.start()`, map-insert AFTER `start()`
+   resolves in `BufferManager.acquire()`.** `dispose()` is the
+   single cleanup path (null-safe across every partial state).
+   The post-`start()` insert prevents a parallel `acquire` from
+   refcounting against a half-built entry. **Both invariants
+   must be inline-commented** at the implementation site —
+   listed in the Phase 16 "Required inline comments" subsection.
+4. **`BufferManager.snapshot` debug surface → ship in phase 16.**
+   `snapshot: ReadonlyStore<BufferSnapshot[]>` where
+   `BufferSnapshot = {key, spec, refcount, bufnum, nodeId}`.
+   Refreshed after every `acquire`/`release`/`dispose`. ~5
+   lines, no consumer reads it yet — it lays the foundation for
+   a future `BuffersPanel` (Future work) and catches refcount
+   leaks visibly during normal operation, not just at teardown
+   (which the Phase 21 safety log handles).
 
 ### File map
 
@@ -560,7 +583,9 @@ touch them.
 
 **`BufferController`** owns one buffer + one tap synth + one
 worker subscription. Keyed by `BufferSpec = {inputBus, channels:
-1|2, chunkSize}`. Reactive: `bufnum`, `nodeId`,
+number, chunkSize}` where `channels` is a positive integer (no
+mono / stereo lock-in — see Decision 2). Reactive: `bufnum`,
+`nodeId`,
 `latestChunk: ReadonlyStore<BufferChunk | null>`. Push API:
 `subscribe(cb): () => void`. Lifecycle: `start()` allocates +
 /s_new + subscribe; `dispose()` unsubscribe + /n_free + /b_free.
@@ -572,6 +597,27 @@ get a read-only handle.
 — missing → construct + start + insert with refcount 1; hit →
 increment refcount. `handle.release()` decrements; on zero, await
 dispose, remove. `clear()` disposes all.
+
+**Required inline comments.** Two invariants in this phase are
+non-obvious from the code alone and MUST be documented in
+comments at the implementation site:
+
+1. **`BufferController.start()` try-stop-rethrow.** A failure
+   between `/b_alloc` and `/s_new` (or between `/s_new` and
+   `subscribeBuffer`) leaves partial server-side state. The
+   catch block calls `await this.dispose()` to clean up
+   uniformly — `dispose()` is null-safe across every partial
+   state (no nodeId set, no bufnum set, etc.) precisely so this
+   one path handles them all. Comment must explain *why
+   `dispose()` is the single cleanup path*.
+2. **`BufferManager.acquire()` map-insert AFTER `start()`
+   resolves.** Inserting before `start()` would let a parallel
+   `acquire(sameSpec)` find the half-built entry and refcount
+   against it, giving consumers a handle to a buffer that may
+   never come up. The post-`start()` insert closes that race;
+   the in-flight Promise cache (Open Question 2's wrinkle)
+   handles legitimate parallel `acquire` calls. Comment must
+   explain *why the order matters*.
 
 **Acceptance.** `yarn tsc --noEmit` clean. `yarn build` clean. New
 files unreferenced (Vite tree-shakes them). No behavioural change
@@ -637,12 +683,13 @@ pre-phase-17 behaviour. Worker debug log shows `subscribeBuffer` /
 **Goal.** Replace `scopeSynthDef` and `recorderSynthDef` with a
 single `bufferTapSynthDef`.
 
-**`bufferTapSynthDef.ts`.** `compileBufferTapSynthDef(channels: 1|2,
-chunkSize: number)`. Cache key `(channels, chunkSize)`. Body
-verbatim from `compileScopeSynthDef` — they're already byte-
-identical to `recorderSynthDef`'s output (modulo synthdef name).
-Inspect with `g_dumpTree` after to confirm one tap synthdef per
-combo, not two.
+**`bufferTapSynthDef.ts`.** `compileBufferTapSynthDef(channels:
+number, chunkSize: number)`. `channels` is a positive integer; the
+compiler validates `Number.isInteger(channels) && channels >= 1`.
+Cache key `(channels, chunkSize)`. Body verbatim from
+`compileScopeSynthDef` — they're already byte-identical to
+`recorderSynthDef`'s output (modulo synthdef name). Inspect with
+`g_dumpTree` after to confirm one tap synthdef per combo, not two.
 
 **Risks.** Synthdef byte-identity is asserted but not load-bearing
 — if the two predecessors had subtle drift this masks it. Cross-
@@ -777,7 +824,27 @@ warning rather than a leaked tap synth.
    cache key `(channels, chunkSize)` ensures fresh bytes.
 4. **Group ordering.** Tap synths go `AddToTail`, after producers.
    Sharing buffers reduces the number of tap synths — fewer
-   ordering considerations, not more.
+   ordering considerations, not more. **Future-watch: the
+   "consumer-before-producer" failure mode is not fixed here.** A
+   consumer (scope / recording) added before any synth is
+   producing on its bus reads stale bus values for ~1 control
+   block until the producer is `/s_new`d. Today this is a
+   non-issue because the UX flow ("read the bus number off a
+   Synths card, then add a scope on it") naturally puts producers
+   first. Scenarios that could bypass the natural ordering and
+   resurface the bug: automated session restore, programmatic
+   panel creation from external triggers, undo/redo across panels,
+   a future "tee a recording from this scope" button that fires
+   before the producer is confirmed alive. **Not addressed in
+   Phase 16+.** When it lands, candidate fixes: (a) explicit
+   `/g_head` placement of the tap after the producing synth's
+   nodeId, requiring the buffer layer to learn which producer
+   feeds each bus; (b) a "wait one tick after the producer's
+   `/n_go` before delivering the first chunk" handshake;
+   (c) an explicit silence-first-swap-in pattern at consumer add
+   time. The invariant "a consumer must never run before its
+   producer in the same control block" stays the rule even if the
+   enforcement mechanism evolves.
 5. **Recording vs. scope chunk semantics divergence.** Both consume
    the same `BufferChunk`. Scopes care about *liveness* (latest
    chunk); recording cares about *completeness* (every chunk in

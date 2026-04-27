@@ -34,7 +34,7 @@ export interface AddScopeOptions {
    *  user types this in the toolbar; typically copy-pasted from a
    *  Synths panel card. */
   inputBus: number;
-  channels: 1 | 2;
+  channels: number;
   label?: string;
 }
 
