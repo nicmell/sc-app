@@ -623,6 +623,39 @@ comments at the implementation site:
 files unreferenced (Vite tree-shakes them). No behavioural change
 in the running app.
 
+#### Files (as landed)
+
+| File | Change |
+|---|---|
+| `src/buffer/BufferController.ts` | NEW. `BufferSpec`, `BufferChunk`, `BufferHandle`, `BufferControllerOptions`, `BufferController`. Full lifecycle: `start()` does `ensureLoaded` + `/b_alloc` + `/s_new` + `/sync`, `dispose()` does `/n_free` + `/b_free`, both idempotent + null-safe. Push/pull APIs (`subscribe(cb)` + `latestChunk` store). Tap synthdef = `compileScopeSynthDef` for now (Phase 18 swaps to `bufferTapSynthDef`). |
+| `src/buffer/BufferManager.ts` | NEW. `BufferManagerOptions`, `BufferSnapshot`, `BufferManager`. Ref-counted `Map<key, {ctrl, refcount}>` plus in-flight `Map<key, Promise<BufferHandle>>` for parallel-acquire dedup. `acquire`/`release`/`clear`. `snapshot: ReadonlyStore<BufferSnapshot[]>` reactive store, refreshed on every state change. Per-acquire `BufferHandle` wrapper with double-release guard. `clear()` warns if non-empty (refcount-leak canary). |
+
+**Adaptations from spec.**
+
+- `BufferHandle` does **not** expose `bufnum` / `nodeId` stores —
+  those are on `BufferController` itself (used by
+  `BufferManager.refreshSnapshot`). Consumers don't need them; the
+  `BuffersPanel` (future) reads them from the snapshot. Slimmer
+  consumer surface.
+- `BufferSnapshot` includes `bufferId` alongside `key/spec/refcount/
+  bufnum/nodeId`, so a future `BuffersPanel` can render a stable
+  identifier independent of the spec key.
+- `BufferController.deliverChunk` is **public** (not private as the
+  spec implied). Phase 17's worker dispatch needs to call it from
+  outside the class to route chunks. Documented as the "integration
+  seam for Phase 17."
+- `BufferController` uses `compileScopeSynthDef` /
+  `scopeSynthDefName` directly in Phase 16. Phase 18 will swap to
+  `compileBufferTapSynthDef` — a one-line change in two import
+  statements.
+- `BufferManager.clear()` includes the refcount-leak warning the
+  spec puts in Phase 21 — included now since the manager already
+  has the surface; Phase 21 only needs to wire setup/teardown
+  order.
+- Worker subscription is a `// TODO Phase 17` placeholder in
+  `start()` and `dispose()`. The chunk-delivery push/pull API
+  exists but never fires until Phase 17 wires the worker dispatch.
+
 ### Phase 17 — Worker subscription protocol pivot
 
 **Goal.** Re-key the worker's subscription table on `bufferId`
