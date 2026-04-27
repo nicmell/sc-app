@@ -38,6 +38,7 @@ is the cleaner read.
 - [Phase 13 — UI Polish, Runtime sampleRate, Global chunkSize](#phase-13--ui-polish-runtime-samplerate-global-chunksize)
 - [Phase 14 — Recording Waveform View](#phase-14--recording-waveform-view)
 - [Phase 15 — Source Synths Panel](#phase-15--source-synths-panel)
+- [Phase 16–21 — Shared Buffer Layer Refactor](#phase-1621--shared-buffer-layer-refactor)
 
 ---
 
@@ -526,3 +527,166 @@ them:
   `src/workers/oscWorker.ts`. The worker isn't scope-specific (it
   also handles recording subscriptions, the clock /tr mux, OSC
   encode/decode forwarding) — name follows function.
+
+## Phase 16–21 — Shared Buffer Layer Refactor
+
+**Goal.** Insert a shared `BufferController` + `BufferManager`
+layer between consumers (scopes, recordings) and the OSC pipe so
+two consumers on the same `(inputBus, channels, chunkSize)` triple
+share one tap synth + one buffer + one worker subscription. After
+the refactor, a recording + scope on the same bus pays one
+`/b_alloc` and one `/s_new` instead of two; multi-consumer
+features (spectral analyzers, level meters, tee-recordings)
+become "add another subscriber to an existing
+`BufferController`."
+
+Six commits, one per sub-phase:
+
+- **Phase 16 — scaffolding.** `src/buffer/BufferController.ts`
+  and `BufferManager.ts` land as unreferenced new files. Full
+  lifecycle (start/dispose, both idempotent + null-safe), push
+  API + pull store, per-acquire handle wrapper with
+  double-release guard, in-flight `Promise<BufferHandle>` cache
+  to dedup parallel acquires on the same spec, reactive
+  `snapshot` store of every active buffer for refcount-leak
+  diagnosis.
+- **Phase 17 — worker subscription protocol pivot.** The
+  worker's subscription table re-keyed on `bufferId`. A single
+  `BufferSubscription` and `BufferChunk` replace the per-kind
+  `ScopeSubscription` / `RecordingSubscription` /
+  `ScopeChunk` / recording-specific event types. The
+  offset-keyed `pendingByOffset` + tick-ordered `reorderBuffer`
+  + retry pipeline that used to be recording-only now applies
+  uniformly. WAV writing relocated from worker to main —
+  `RecordingController` owns a `WavMemoryWriter` and finalises
+  synchronously in `stop()`, no round-trip wait. Each
+  scope/recording controller still owned its own buffer + tap
+  synth at this point; they used a per-controller adapter shim
+  (`bufferId = scope-${scopeId}` / `rec-${recordingId}`) so the
+  protocol pivot could ship without depending on the rest of
+  the umbrella.
+- **Phase 18 — unified tap synthdef.** `compileScopeSynthDef` +
+  `compileRecorderSynthDef` (which produced byte-identical bytes
+  modulo synthdef name) collapsed into one
+  `compileBufferTapSynthDef(channels, chunkSize)`. Both
+  predecessors deleted; importers updated.
+- **Phase 19 — `ScopeController` migration.** Scopes become
+  pure consumers: `ScopeControllerOptions = { buffer:
+  BufferHandle, scopeId, label?, effectiveRate }`. No more
+  `client`, `clock`, `group`, `registry`, `ids`. `start()`
+  subscribes to `buffer.subscribe(cb)`; `stop()` unsubscribes +
+  releases the handle. `ScopeManager.add` calls
+  `bufferManager.acquire(spec)`. `BufferController.start` finally
+  wired the real worker subscription (the Phase 16 TODO
+  placeholder is gone).
+- **Phase 20 — `RecordingController` migration.** Recordings
+  follow the same shape: take a `BufferHandle`, subscribe once,
+  run WAV append + envelope append + gap accumulation off the
+  same chunk callback. The Phase 19 "internal envelope-tap
+  scope" is gone — pre-Phase-19 the panel waveform display ran
+  on a separate `ScopeController` with its own buffer + tap
+  synth + worker subscription; now the `RecordingController`
+  is the sole subscriber and fans out to both the WAV writer
+  and the envelope buffer. `wavWriter.ts` physically moved from
+  `src/workers/` to `src/recording/` (its semantic home
+  post-Phase-17).
+- **Phase 21 — docs.** `CLAUDE.md` architecture diagram updated
+  with the new layer; gotchas section gained refcount-lifecycle
+  and `bufferManager.clear()` warning-canary entries; the
+  "synths-before-scopes" gotcha generalised to
+  "producers-before-consumers" (applies to recordings on
+  shared buffers too). The Phase 21 *code* work (constructing
+  `BufferManager` in `setupDashboard`, updating teardown order
+  to recordings → scopes → buffers → synths → clock → group)
+  actually landed earlier in Phase 19 because `BufferManager`
+  had to exist by then; Phase 21 is therefore docs-only.
+
+**Decisions locked in (from the pre-implementation walkthrough).**
+
+1. Sharing key is `(inputBus, channels, chunkSize)`. `chunkSize`
+   stays in the key explicitly even though it's session-global
+   today, so the design survives any future where consumers can
+   pick different chunk sizes.
+2. No channel-slice sharing. `channels` typed `number` (positive
+   integer) throughout the buffer layer; multichannel buses
+   (≥3 channels) are first-class. The producer-side
+   `mono | stereo` UX in `SynthsPanel` is a Phase-15 convention
+   only and does not propagate downstream.
+3. Chunk fan-out via a shared `Float32Array` (read-only by
+   contract; consumers don't retain past one tick).
+4. Prompt teardown on last release (no debounce / grace period).
+5. Mid-stream join: next-tick start, no replay.
+6. Offset-keyed pending reads + tick-ordered reorder buffer
+   uniformly across every subscription.
+7. One unified `bufferTapSynthDef` replaces the byte-identical
+   pair.
+8. `AddToTail` placement unchanged; the consumer-before-producer
+   failure mode is documented as a future-watch — not addressed
+   in this refactor, candidate fixes outlined for when the
+   UX-flow ordering guarantee no longer holds.
+
+**Adaptations from spec.**
+
+- **Gap detection NOT temporarily lost.** The Phase-17 spec
+  called for gap detection to be dropped until Phase 20
+  restored it. We shipped `BufferChunk.isGap: boolean` from
+  day one — the worker still zero-fills on retry exhaustion
+  and the flag rides on the chunk; recordings materialise gaps
+  on receipt. Phase 20 became a smaller change (no
+  gap-detection plumbing to add).
+- **Phase 20 killed the recording's internal scope entirely.**
+  The original spec had recording own a separate scope
+  controller for the envelope display. Phase 20 collapsed it:
+  recording subscribes once and the chunk callback fans out to
+  WAV + envelope. Pre-refactor a recording on a bus with one
+  scope used three buffers + three tap synths; post-refactor
+  it uses one of each.
+- **Sample-accurate /s_new dropped for recordings.**
+  Pre-refactor, recordings scheduled `/s_new` in an
+  `OSC.Bundle` at `lastTick + 2` so multi-bus recordings
+  created in one JS turn shared a tick origin. The refactored
+  path routes recordings through `BufferController.start`,
+  which fires `/s_new` immediately. Two recordings on
+  different buses can be tick-offset by ~21 ms. Audio is still
+  phase-aligned via the shared `clockBus` phasor. If
+  multi-bus alignment becomes a real concern, add
+  `OSC.Bundle` scheduling to `BufferController.start`.
+- **Per-recording retry policy dropped.** All subscriptions
+  now use the worker's default
+  `{ maxAttempts: 1, deadlineMs: 50 }`. With shared buffers,
+  per-consumer retry doesn't fit (the buffer's already running
+  by the time a second consumer attaches).
+- **Phase 21 was docs-only.** The wiring landed early in
+  Phase 19 because subsequent phases needed `BufferManager` to
+  exist — so by Phase 21 there was nothing left to wire. The
+  workflow position (final phase of the umbrella) is preserved
+  via the docs commit.
+
+**Gotchas worth carrying forward.**
+
+- **Refcount discipline.** Every `acquire()` must be paired
+  with exactly one `release()`. The per-acquire handle wrapper
+  guards against double-release with an internal `released`
+  flag, so redundant calls are silent no-ops and the refcount
+  stays correct. `BufferManager.clear()` warns if the map is
+  non-empty at teardown — refcount-leak canary.
+- **Map-insert AFTER `start()` resolves.**
+  `BufferManager.acquire` inserts the controller into its map
+  only AFTER `start()` has resolved. Earlier insertion would
+  let a parallel `acquire(sameSpec)` find a half-built entry
+  and refcount against it. The in-flight
+  `Promise<BufferHandle>` cache handles legitimate concurrent
+  acquires by routing them to the same Promise; the
+  post-`start` insert closes the failure race. Documented
+  inline at the implementation site.
+- **`dispose()` is null-safe across every partial state.**
+  `BufferController.start()` runs `try { /b_alloc + /s_new +
+  subscribe } catch { dispose(); rethrow }`. `dispose()`
+  checks each piece of state independently (no nodeId, no
+  bufnum, partial subscribe), so a failure at any step inside
+  `start` unwinds through one cleanup function. Comment at the
+  catch site explains why `dispose` can serve as the single
+  cleanup path.
+- **`BufferChunk.isGap`** carries the worker's
+  retry-exhaustion signal. Recordings materialise it (sidecar
+  JSON entry); scopes ignore it (zero-fill draws as silence).
