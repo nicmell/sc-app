@@ -1,3 +1,6 @@
+// DebugLog is a fixed-position overlay, not a regular panel — it
+// keeps its own chrome but uses the shared design tokens.
+
 .debug-log {
   position: fixed;
   left: 0;
@@ -7,10 +10,10 @@
   flex-direction: column;
   max-height: 50vh;
   background: rgba(18, 20, 26, 0.96);
-  border-top: 1px solid #2c2f36;
+  border-top: 1px solid var(--border-2);
   backdrop-filter: blur(8px);
-  color: #e4e6eb;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text);
+  font-family: var(--font-mono);
   font-size: 0.72rem;
   z-index: 9999;
 
@@ -18,12 +21,12 @@
     display: flex;
     gap: 0.5rem;
     padding: 0.3rem 0.6rem;
-    border-bottom: 1px solid #2c2f36;
+    border-bottom: 1px solid var(--border-2);
 
     button {
       padding: 0.2rem 0.5rem;
       background: transparent;
-      border: 1px solid #3a3f4b;
+      border: 1px solid var(--border-3);
       border-radius: 3px;
       color: inherit;
       font: inherit;
@@ -31,7 +34,7 @@
       cursor: pointer;
 
       &:hover {
-        background: #242832;
+        background: var(--surface-input);
       }
     }
   }
@@ -61,6 +64,7 @@
 
     .t {
       opacity: 0.5;
+      font-variant-numeric: tabular-nums;
     }
     .l {
       font-weight: 600;
@@ -83,10 +87,10 @@
       color: #f7d57a;
     }
     &[data-level='error'] {
-      color: #f2b5ba;
+      color: var(--error-text);
     }
     &[data-level='error'] .l {
-      color: #f2b5ba;
+      color: var(--error-text);
     }
   }
 }

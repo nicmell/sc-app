@@ -85,7 +85,7 @@ export function ScopeList({ manager, clock }: ScopeListProps) {
   }, [manager]);
 
   return (
-    <section className="scope-list">
+    <section className="panel scope-list">
       <header>Scopes</header>
       <div className="row toolbar">
         <label>

@@ -93,7 +93,7 @@ export function OscConsole({ client }: OscConsoleProps) {
   };
 
   return (
-    <section className="osc-console">
+    <section className="panel osc-console">
       <header>OSC console</header>
       <div className="quick-actions">
         <button onClick={() => send(status())}>Status</button>

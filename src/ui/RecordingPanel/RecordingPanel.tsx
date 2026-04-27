@@ -83,7 +83,7 @@ export function RecordingPanel({
   );
 
   return (
-    <section className="recording-panel">
+    <section className="panel recording-panel">
       <header>Recordings</header>
       <div className="row toolbar">
         <label>

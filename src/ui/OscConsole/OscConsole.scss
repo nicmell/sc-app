@@ -1,21 +1,9 @@
+// Chrome lives in the global `.panel` class. The component itself is
+// currently unmounted from the dashboard (kept around for a future
+// `?debug` flag) — styles are kept in sync with the rest of the
+// design system so re-mounting "just works".
+
 .osc-console {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding: 1rem;
-  background: #1b1d22;
-  color: #e4e6eb;
-  border: 1px solid #2c2f36;
-  border-radius: 6px;
-  font-family: system-ui, sans-serif;
-
-  header {
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    opacity: 0.7;
-  }
-
   .quick-actions {
     display: flex;
     flex-wrap: wrap;
@@ -23,8 +11,8 @@
 
     button {
       padding: 0.35rem 0.75rem;
-      background: #242832;
-      border: 1px solid #3a3f4b;
+      background: var(--surface-input);
+      border: 1px solid var(--border-3);
       border-radius: 4px;
       color: inherit;
       font: inherit;
@@ -33,7 +21,7 @@
 
       &:hover {
         background: #2c3140;
-        border-color: #5a8fd8;
+        border-color: var(--border-focus);
       }
     }
   }
@@ -44,10 +32,10 @@
     padding: 0;
     max-height: 40vh;
     overflow-y: auto;
-    background: #12141a;
-    border: 1px solid #2c2f36;
+    background: var(--bg);
+    border: 1px solid var(--border-2);
     border-radius: 4px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     font-size: 0.78rem;
 
     li {
@@ -56,7 +44,7 @@
       grid-row-gap: 0.15rem;
       gap: 0.5rem;
       padding: 0.35rem 0.5rem;
-      border-bottom: 1px solid #1b1d22;
+      border-bottom: 1px solid var(--surface);
 
       &[data-dir='tx'] .dir {
         color: #8ab4f8;
@@ -65,7 +53,7 @@
         color: #96f2a7;
       }
       &[data-dir='err'] {
-        color: #f2b5ba;
+        color: var(--error-text);
       }
 
       .dir {
@@ -73,6 +61,7 @@
       }
       .t {
         opacity: 0.55;
+        font-variant-numeric: tabular-nums;
       }
       .summary {
         overflow-wrap: anywhere;

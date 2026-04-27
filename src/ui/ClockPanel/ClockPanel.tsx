@@ -109,7 +109,7 @@ export function ClockPanel({ clock }: ClockPanelProps) {
   const toggleLabel = state === 'paused' ? 'Resume' : 'Pause';
 
   return (
-    <section className="clock-panel">
+    <section className="panel clock-panel">
       <header>Clock</header>
       <div className="row">
         <span className={pill.className}>{pill.label}</span>

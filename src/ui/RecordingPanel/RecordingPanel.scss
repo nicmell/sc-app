@@ -1,43 +1,21 @@
+// Chrome lives in the global `.panel` class.
+
 .recording-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  padding: 1rem;
-  background: #1b1d22;
-  color: #e4e6eb;
-  border: 1px solid #2c2f36;
-  border-radius: 6px;
-  font-family: system-ui, sans-serif;
-
-  header {
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    opacity: 0.7;
-  }
-
-  .row {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    flex-wrap: wrap;
-  }
-
   .toolbar {
     label {
       display: inline-flex;
       align-items: center;
       gap: 0.25rem;
       font-size: 0.85rem;
-      color: #9aa0ab;
+      color: var(--text-dim);
     }
 
     select,
     input {
       padding: 0.25rem 0.4rem;
-      background: #15171b;
-      color: #e4e6eb;
-      border: 1px solid #2c2f36;
+      background: var(--surface-2);
+      color: var(--text);
+      border: 1px solid var(--border-2);
       border-radius: 3px;
       font: inherit;
       font-size: 0.85rem;
@@ -55,7 +33,7 @@
 
   button {
     padding: 0.35rem 0.8rem;
-    background: #3d6ab5;
+    background: var(--accent);
     border: none;
     border-radius: 4px;
     color: white;
@@ -64,25 +42,25 @@
     cursor: pointer;
 
     &:disabled {
-      background: #3a3f4b;
+      background: var(--border-3);
       cursor: not-allowed;
       opacity: 0.7;
     }
     &:not(:disabled):hover {
-      background: #4878c4;
+      background: var(--accent-hover);
     }
 
     &.secondary {
-      background: #3a3f4b;
+      background: var(--border-3);
       &:not(:disabled):hover {
-        background: #4a5060;
+        background: var(--surface-3-hover);
       }
     }
 
     &.danger {
-      background: #8a3d3d;
+      background: var(--danger);
       &:not(:disabled):hover {
-        background: #a04848;
+        background: var(--danger-hover);
       }
     }
 
@@ -95,10 +73,10 @@
   .empty {
     margin: 0;
     padding: 0.8rem;
-    background: #15171b;
-    border: 1px dashed #2c2f36;
+    background: var(--surface-2);
+    border: 1px dashed var(--border-2);
     border-radius: 4px;
-    color: #6c7080;
+    color: var(--text-mute);
     font-size: 0.85rem;
     text-align: center;
   }
@@ -106,10 +84,10 @@
   .error {
     margin: 0;
     padding: 0.4rem 0.6rem;
-    background: #3d1f22;
-    border: 1px solid #6a2d33;
+    background: var(--error-bg);
+    border: 1px solid var(--error-border);
     border-radius: 4px;
-    color: #f2b5ba;
+    color: var(--error-text);
     font-size: 0.85rem;
   }
 
@@ -124,41 +102,41 @@
 
   .recording-item {
     padding: 0.55rem 0.7rem;
-    background: #15171b;
-    border: 1px solid #262930;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
     border-radius: 5px;
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
 
     &.state-recording {
-      border-color: #3a5a3d;
+      border-color: var(--ok-strong);
     }
     &.state-error {
-      border-color: #6a2d33;
+      border-color: var(--error-border);
     }
     &.state-done {
-      border-color: #3a4a5a;
+      border-color: var(--info-border);
     }
 
     .recording-item-header {
       display: flex;
       align-items: center;
-      gap: 0.6rem;
+      gap: var(--row-gap);
       flex-wrap: wrap;
 
       .label {
         font-weight: 500;
-        color: #e4e6eb;
+        color: var(--text);
       }
       .meta {
         flex: 1 1 auto;
         font-size: 0.8rem;
-        color: #9aa0ab;
+        color: var(--text-dim);
         font-variant-numeric: tabular-nums;
       }
       .gaps {
-        color: #f2b5ba;
+        color: var(--error-text);
         cursor: help;
       }
       .actions {
@@ -170,17 +148,52 @@
     }
   }
 
+  .state-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    background: var(--surface-3);
+    border: 1px solid var(--border-3);
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+
+    &.recording {
+      background: var(--ok-bg);
+      border-color: var(--ok-strong);
+      color: var(--ok-text);
+    }
+    &.preparing,
+    &.finalizing {
+      background: var(--warn-bg);
+      border-color: var(--warn-border);
+      color: var(--warn-text);
+    }
+    &.done {
+      background: var(--info-bg);
+      border-color: var(--info-border);
+      color: var(--info-text);
+    }
+    &.error {
+      background: var(--error-bg);
+      border-color: var(--error-border);
+      color: var(--error-text);
+    }
+  }
+
   .window-selector {
     display: inline-flex;
     gap: 0;
     border-radius: 4px;
     overflow: hidden;
-    border: 1px solid #3a3f4b;
+    border: 1px solid var(--border-3);
 
     .window-option {
       padding: 0.2rem 0.55rem;
-      background: #2c2f36;
-      color: #b4b8c0;
+      background: var(--surface-3);
+      color: var(--text-dim);
       border: none;
       border-radius: 0;
       font: inherit;
@@ -190,7 +203,7 @@
       min-width: 2.2rem;
 
       & + .window-option {
-        border-left: 1px solid #3a3f4b;
+        border-left: 1px solid var(--border-3);
       }
 
       &:disabled {
@@ -198,10 +211,10 @@
         cursor: not-allowed;
       }
       &:not(:disabled):hover {
-        background: #3a3f4b;
+        background: var(--border-3);
       }
       &.active {
-        background: #3d6ab5;
+        background: var(--accent);
         color: white;
       }
     }
@@ -210,8 +223,8 @@
   .recording-waveform {
     position: relative;
     width: 100%;
-    background: #15171b;
-    border: 1px solid #262930;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
     border-radius: 4px;
     overflow: hidden;
     cursor: default;
@@ -236,7 +249,7 @@
       padding: 0.15rem 0.55rem;
       background: rgba(61, 106, 181, 0.85);
       color: white;
-      border: 1px solid #4878c4;
+      border: 1px solid var(--accent-hover);
       border-radius: 3px;
       font: inherit;
       font-size: 0.75rem;
@@ -244,43 +257,8 @@
       cursor: pointer;
 
       &:hover {
-        background: #4878c4;
+        background: var(--accent-hover);
       }
-    }
-  }
-
-  .state-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    padding: 0.1rem 0.5rem;
-    border-radius: 999px;
-    background: #2c2f36;
-    border: 1px solid #3a3f4b;
-    font-size: 0.75rem;
-    color: #b4b8c0;
-    font-variant-numeric: tabular-nums;
-
-    &.recording {
-      background: #2a3d2c;
-      border-color: #3a5a3d;
-      color: #b6e0bb;
-    }
-    &.preparing,
-    &.finalizing {
-      background: #3a3a2a;
-      border-color: #5a5a3d;
-      color: #e0d8a8;
-    }
-    &.done {
-      background: #2a3a4a;
-      border-color: #3a4a5a;
-      color: #b8d0e8;
-    }
-    &.error {
-      background: #3d1f22;
-      border-color: #6a2d33;
-      color: #f2b5ba;
     }
   }
 }
