@@ -524,6 +524,55 @@ export function AppShell() {
     setPendingChunkSize(null);
   }, [resources]);
 
+  // scsynth liveness heartbeat. The bridge's WebSocket stays open
+  // even when scsynth is killed (UDP doesn't surface "no listener"
+  // errors), so without an active probe the dashboard would happily
+  // sit there sending /b_getn into the void. Periodically round-
+  // trip a /status and treat a timed-out reply as "scsynth is dead"
+  // — same flow as the existing onError path: set runtimeError +
+  // dispose + clear resources. The dashboard tears down, the
+  // connect screen shows behind, the alert modal explains why.
+  //
+  // 3 s interval + 2 s timeout = up to 5 s detection latency. Lower
+  // values would catch faster but burn more bandwidth on a healthy
+  // session. /status is a cheap reply (~9 args, < 100 bytes).
+  useEffect(() => {
+    if (!resources) return;
+    const { client } = resources;
+    const HEARTBEAT_INTERVAL_MS = 3000;
+    const HEARTBEAT_TIMEOUT_MS = 2000;
+
+    const tick = async () => {
+      try {
+        await client.sendAndAwaitReply(
+          status(),
+          (r) => r.address === '/status.reply',
+          HEARTBEAT_TIMEOUT_MS,
+        );
+      } catch (err) {
+        // The dedup guard is the same as the WS-onError path —
+        // whichever detects the failure first wins; the loser sees
+        // `clientRef.current !== client` and bails, avoiding a
+        // double-dispose / double-modal.
+        if (clientRef.current !== client) return;
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn('[sc:app] heartbeat failed:', msg);
+        setRuntimeError(
+          `scsynth stopped responding to /status (${msg}). The ` +
+            `dashboard has been torn down.`,
+        );
+        client.dispose();
+        clientRef.current = null;
+        setResources(null);
+      }
+    };
+
+    const intervalId = window.setInterval(() => {
+      void tick();
+    }, HEARTBEAT_INTERVAL_MS);
+    return () => window.clearInterval(intervalId);
+  }, [resources]);
+
   // Best-effort shutdown when the tab / Tauri window closes. `pagehide`
   // fires synchronously on the main thread; the commands we emit here
   // queue into the worker's message channel and its WebSocket, which
