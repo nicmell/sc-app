@@ -1,18 +1,15 @@
 /**
  * One scope instance — owns the scope synth, its dedicated buffer,
- * and (optionally) a bundled source synth feeding the input bus.
- *
- * Each scope is independent: its own bus block (auto-allocated by
- * `ScopeManager`), its own buffer, its own worker subscription. The
- * clock + parent group + worker + compiled scopeTap{N}ch SynthDef
- * bytes are shared at the manager level.
+ * and a worker subscription. Pure consumer: reads from a bus the
+ * caller specifies (typically allocated by a `SynthController` or
+ * external scsynth chain) and renders the signal via `ScopeView`.
  *
  * Skip-first-chunk: the first chunk that lands after subscribing
  * straddles the moment of `/b_alloc` (which zero-fills) plus the
  * partial first half written by the scope synth between /s_new and
- * the next tick boundary. We drop it so the displayed waveform never
- * shows that initial dropout. From chunk #2 onwards the parity-based
- * "completed half" guarantee in the worker takes over.
+ * the next tick boundary. We drop it so the displayed waveform
+ * never shows that initial dropout. From chunk #2 onwards the
+ * parity-based "completed half" guarantee in the worker takes over.
  */
 
 import {
@@ -26,12 +23,6 @@ import {
   compileScopeSynthDef,
   scopeSynthDefName,
 } from '@/synth/scopeSynthDef';
-import {
-  TEST_TONE_STEREO_SYNTHDEF_NAME,
-  TEST_TONE_SYNTHDEF_NAME,
-  compileTestToneStereoSynthDef,
-  compileTestToneSynthDef,
-} from '@/synth/testToneSynthDef';
 import type { ClockController } from './ClockController';
 import type { GroupController } from './GroupController';
 import type { IdAllocator } from './IdAllocator';
@@ -40,12 +31,6 @@ import type { SynthDefRegistry } from './SynthDefRegistry';
 import type { WorkerClient } from './WorkerClient';
 import type { ScopeChunk } from './workerProtocol';
 
-export type ScopeSourceSpec =
-  | { kind: 'mono'; freq: number; amp?: number }
-  | { kind: 'stereo'; freqL: number; freqR: number; amp?: number };
-
-const DEFAULT_TONE_AMP = 0.2;
-
 export interface ScopeControllerOptions {
   client: WorkerClient;
   clock: ClockController;
@@ -53,7 +38,10 @@ export interface ScopeControllerOptions {
   registry: SynthDefRegistry;
   ids: { node: IdAllocator; buffer: IdAllocator };
   /** First audio bus index in this scope's contiguous block. The
-   *  block runs `[inputBus, inputBus + channels)`. */
+   *  block runs `[inputBus, inputBus + channels)`. The caller is
+   *  responsible for ensuring something is producing audio on that
+   *  bus — typically a `SynthController` from the Synths panel, or
+   *  an external scsynth chain. */
   inputBus: number;
   channels: 1 | 2;
   /** Stable id for worker subscription routing + UI list keys. */
@@ -61,11 +49,6 @@ export interface ScopeControllerOptions {
   /** Free-form label used by the UI. Optional — the manager defaults
    *  to something readable. */
   label?: string;
-  /** Optional source synth bundled with this scope's lifecycle. When
-   *  set, `start()` /s_new's a tone whose output is wired to
-   *  `inputBus`, so a freshly-added scope shows a recognisable signal
-   *  with no extra wiring on the caller side. `stop()` frees it. */
-  source?: ScopeSourceSpec;
 }
 
 export class ScopeController {
@@ -73,7 +56,6 @@ export class ScopeController {
   readonly label: string;
   readonly channels: 1 | 2;
   readonly inputBus: number;
-  readonly source: ScopeSourceSpec | null;
   /** Effective audio rate this scope produces. With `decimation = 1`
    *  this is just the clock's sampleRate; kept as a dedicated field
    *  so `ScopeView` doesn't have to reach through the clock. */
@@ -105,7 +87,6 @@ export class ScopeController {
   private recentArrivals: number[] = [];
 
   private scopeNodeId: number | null = null;
-  private sourceNodeId: number | null = null;
   private bufnum: number | null = null;
   private unsubscribe: (() => void) | null = null;
   private skipNext = false;
@@ -122,7 +103,6 @@ export class ScopeController {
     this.channels = opts.channels;
     this.scopeId = opts.scopeId;
     this.label = opts.label ?? `scope ${opts.scopeId.slice(0, 6)}`;
-    this.source = opts.source ?? null;
     this.samplesPerChunk = opts.clock.derived.samplesPerTick;
     this.effectiveRate = opts.clock.env.sampleRate;
   }
@@ -139,15 +119,11 @@ export class ScopeController {
     return this.chunksPerSecStore;
   }
 
-  /** Bring up the scope: load defs, start optional source, allocate
-   *  buffer, /s_new the scope, register the subscription. Idempotent. */
+  /** Bring up the scope: load defs, allocate buffer, /s_new the
+   *  scope synth, register the subscription. Idempotent. */
   async start(): Promise<void> {
     if (this.started) return;
     this.started = true;
-
-    if (this.source) {
-      await this.startSource();
-    }
 
     const chunkSize = this.samplesPerChunk;
     const synthName = scopeSynthDefName(this.channels, chunkSize);
@@ -210,14 +186,6 @@ export class ScopeController {
       }
       this.scopeNodeId = null;
     }
-    if (this.sourceNodeId !== null) {
-      try {
-        await this.client.sendAndSync(nFree(this.sourceNodeId));
-      } catch (err) {
-        console.warn(`[sc:scope ${this.scopeId}] source nFree failed`, err);
-      }
-      this.sourceNodeId = null;
-    }
     if (this.bufnum !== null) {
       try {
         await this.client.sendAndSync(bFree(this.bufnum));
@@ -229,47 +197,6 @@ export class ScopeController {
   }
 
   // ── Internals ─────────────────────────────────────────────────────
-
-  private async startSource(): Promise<void> {
-    if (!this.source) return;
-    if (this.source.kind === 'mono') {
-      await this.registry.ensureLoaded(
-        TEST_TONE_SYNTHDEF_NAME,
-        compileTestToneSynthDef(),
-      );
-      const nodeId = this.nodeIds.next();
-      await this.client.sendAndSync(
-        sNew(TEST_TONE_SYNTHDEF_NAME, nodeId, AddToTail, this.group.groupId, {
-          outBus: this.inputBus,
-          freq: this.source.freq,
-          amp: this.source.amp ?? DEFAULT_TONE_AMP,
-        }),
-      );
-      this.sourceNodeId = nodeId;
-      return;
-    }
-    // stereo
-    await this.registry.ensureLoaded(
-      TEST_TONE_STEREO_SYNTHDEF_NAME,
-      compileTestToneStereoSynthDef(),
-    );
-    const nodeId = this.nodeIds.next();
-    await this.client.sendAndSync(
-      sNew(
-        TEST_TONE_STEREO_SYNTHDEF_NAME,
-        nodeId,
-        AddToTail,
-        this.group.groupId,
-        {
-          outBus: this.inputBus,
-          freqL: this.source.freqL,
-          freqR: this.source.freqR,
-          amp: this.source.amp ?? DEFAULT_TONE_AMP,
-        },
-      ),
-    );
-    this.sourceNodeId = nodeId;
-  }
 
   private handleChunk(chunk: ScopeChunk): void {
     if (this.skipNext) {

@@ -2920,6 +2920,144 @@ Lane height = `canvas.height / channels`.
 
 ---
 
+## Phase 15 — Source Synths Panel
+
+**Goal.** Decouple tone synths from scopes. Until now the only way
+to feed a recognisable signal into a scope was to let the scope
+auto-create a bundled `testTone` / `testToneStereo` source on its
+own auto-allocated bus — conflating *producer* (the synth) and
+*consumer* (the scope). The recording panel already gets this right
+(user types a bus number; recording taps it). Phase 15 brings the
+scopes panel into the same model, and lifts the producer side into
+a dedicated **Synths** panel.
+
+### Architecture
+
+- **Producer surface (new)**: `SynthManager` + `SynthController` +
+  `SynthsPanel`.
+  - Toolbar: kind (mono/stereo), freq (or freqL/freqR), amp,
+    optional label, Add / Clear all.
+  - Each card auto-allocates a bus block via
+    `ids.bus.nextBlock(channels)` and shows the resulting nodeId +
+    bus number prominently — the user reads them off and types
+    them into Scope / Recording panels.
+  - Per-card live controls: number inputs for freq(s) and amp
+    (calls `nSet(nodeId, {…})` on every change), Start / Stop
+    button toggling a `gate` control multiplied through `Lag.kr`
+    for declick.
+  - `SynthController.start()` /s_new's the tone synth at AddToTail
+    of the parent group with the current state baked into the
+    `/s_new` controls.
+- **Consumer surfaces (modified)**: `ScopeManager.add({ inputBus,
+  channels, label? })` — no more bus auto-allocation, no more
+  bundled source, no more `ScopeSourceSpec`. `ScopeList` toolbar
+  pivots to `[bus][channels][label][Add]` (mirrors the recording
+  panel). `RecordingPanel` is unchanged.
+- **New synthdef** `toneSynthDef.ts` (`tone1ch` / `tone2ch`).
+  Mono args: `outBus, freq, amp, gate`; stereo: `outBus, freqL,
+  freqR, amp, gate`. `gate` wrapped in `Lag.kr(gate, 0.01)` to
+  declick. Default `gate=1` so the synth plays immediately on
+  Add — same UX as the previous bundled source. Replaces
+  `testToneSynthDef.ts`, which is deleted.
+
+### Files
+
+- `src/synth/toneSynthDef.ts` — NEW.
+- `src/synth/testToneSynthDef.ts` — DELETED.
+- `src/scope/SynthController.ts` — NEW.
+- `src/scope/SynthManager.ts` — NEW.
+- `src/ui/SynthsPanel/{SynthsPanel.tsx, SynthsPanel.scss, index.ts}` — NEW.
+- `src/scope/ScopeController.ts` — drop `source` option,
+  `ScopeSourceSpec` type, `startSource()`, `TEST_TONE_*` imports.
+- `src/scope/ScopeManager.ts` — drop bus auto-allocation; new
+  `AddScopeOptions = { inputBus, channels, label? }`.
+- `src/ui/ScopeList/ScopeList.tsx` — toolbar pivots to
+  `[bus][channels][label][Add]`; meta line drops the source
+  description.
+- `src/scope/AppShell.tsx` — `synthManager: SynthManager` on
+  `DashboardResources`; constructed in `setupDashboard`; rendered
+  above `<ScopeList>`; `teardownServerState` clears synths after
+  scopes/recordings.
+
+### Acceptance
+
+1. Connect → Synths panel appears between the Clock panel and the
+   Scopes panel. Empty by default.
+2. Synths: Add mono → card shows `mono · nodeId 1003 · bus 16`,
+   sine plays at 440 Hz.
+3. Synths: change freq → live pitch change. Change amp → live
+   volume. Click Stop → silence (gate=0); Start → audible again.
+4. Synths: Add stereo → card shows `stereo · nodeId 1004 · bus 17..18`.
+   freqL / freqR controls are independent.
+5. Scopes: type the synth's bus + matching channels, click Add →
+   waveform renders correctly.
+6. Recordings: same — type the synth's bus, record, download WAV.
+7. Synths: Remove a synth → /n_free issued; any scope reading that
+   bus shows last-write-wins frozen content (the synth is gone so
+   nothing's writing).
+8. chunkSize re-init: clears synths along with scopes/recordings.
+
+### Files (as landed)
+
+- **`src/synth/toneSynthDef.ts`** (new) — `compileToneSynthDef(channels)`
+  emits `tone1ch` / `tone2ch`. Cache key = channels. Args: `outBus`,
+  `freq` (mono) or `freqL`/`freqR` (stereo), `amp`, `gate`. The
+  `gate` value passes through `Lag.kr(gate, 0.01)` and multiplies
+  the SinOsc output to declick toggles.
+- **`src/scope/SynthController.ts`** (new) — owns one tone synth's
+  lifecycle. Reactive stores for `nodeId`, `freqs`, `amp`,
+  `gateOpen`. `start()` /s_new's the synth at AddToTail of the
+  parent group with the current state baked into controls;
+  `stop()` /n_free's it. `setFreq(idx, hz)`, `setAmp(value)`,
+  `setGate(open)` send `nSet(nodeId, {…})` fire-and-forget and
+  optimistically update the local stores.
+- **`src/scope/SynthManager.ts`** (new) — `add` / `remove` /
+  `clear` over a reactive list of controllers. `add()` calls
+  `ids.bus.nextBlock(channels)` per synth, builds and starts the
+  controller, appends.
+- **`src/ui/SynthsPanel/`** (new) — toolbar (kind / freqs / amp /
+  label / Add / Clear all) + per-synth cards. Each card subscribes
+  to `nodeId` / `freqs` / `amp` / `gateOpen` via
+  `useSyncExternalStore` and renders the nodeId + bus prominently
+  in a monospaced meta line (so the user can copy them by eye into
+  Scope / Recording panels). Live freq + amp number inputs;
+  Start / Stop button toggling gate. Remove button.
+- **`src/scope/ScopeController.ts`** (modified) — dropped `source`
+  option, `ScopeSourceSpec` type, `startSource()` method, and
+  `TEST_TONE_*` imports. Becomes a pure consumer that takes a
+  caller-supplied `inputBus`.
+- **`src/scope/ScopeManager.ts`** (modified) — `AddScopeOptions =
+  { inputBus, channels, label? }`. Removed `nextBlock` call;
+  removed `bus: IdAllocator` from manager options.
+- **`src/ui/ScopeList/ScopeList.tsx`** (modified) — toolbar pivots
+  to `[bus][channels][label][Add]`. Dropped `freqMono`, `freqL`,
+  `freqR` state and the auto-bumped freq logic. Meta line drops
+  the source description.
+- **`src/scope/AppShell.tsx`** (modified) — `synthManager` on
+  `DashboardResources`. `setupDashboard` constructs it (between
+  `clock.start()` and the existing `scopeManager` / `recordingManager`).
+  `<SynthsPanel>` renders above `<ScopeList>` in the dashboard.
+  `teardownServerState` calls `synthManager.clear()` after
+  `scopeManager.clear()` (so /n_free's land while the parent
+  group is still alive).
+- **`testToneSynthDef.ts`** removed.
+
+### Adaptations
+
+- **Bus allocator collision** (mentioned in CLAUDE.md): `ids.bus`
+  is now exclusively driven by `SynthManager`. Scopes and
+  recordings consume user-typed bus numbers and never touch the
+  allocator. Cross-consumer collisions are impossible by
+  construction.
+- **Synth/scope ordering**: documented as a CLAUDE.md gotcha.
+  Both use AddToTail; creation order = runtime order. The UX
+  flow ("add synth, then add scope") gets it right naturally; a
+  scope created first and then "fed" by a later synth sees a
+  ~1 ms control-block lag until something forces a re-`/s_new`
+  on the scope.
+
+---
+
 ## Open Points
 
 1. **Crate type surfaces — resolved.** See "Crate Prerequisites" for the
@@ -2964,9 +3102,9 @@ Lane height = `canvas.height / channels`.
 ## Future Improvements
 
 Suggested follow-on phases. Listed in rough order of value /
-effort ratio; none are blocked by Phase 14.
+effort ratio; none are blocked by Phase 15.
 
-### 15. Spectral scope (FFT view)
+### 16. Spectral scope (FFT view)
 
 Add a `compileFFTScopeSynthDef` that runs `FFT.kr` on the input bus
 into a 1024-bin buffer (one FFT every tick — natural cadence given
@@ -2982,7 +3120,7 @@ driven `/b_getn` pipeline is reusable verbatim.
 **Why it's nice:** the SuperCollider crowd lives on spectrum views.
 Useful for tuning EQ, filters, FFT-based effects.
 
-### 16. Streaming-to-disk recordings
+### 17. Streaming-to-disk recordings
 
 Today the WAV lives entirely in worker memory until stop — caps
 practical session length at ~15 minutes stereo before RAM pressure.
@@ -3001,7 +3139,7 @@ trickier with append-only IPC, may want RF64 instead.
 
 **Cost:** ~1.5 days, mostly because of the two backends.
 
-### 17. Reconnection + disconnected UX
+### 18. Reconnection + disconnected UX
 
 Currently a WS close drops the dashboard back to the connect
 screen via the existing error handler. Smoother:
@@ -3017,7 +3155,7 @@ screen via the existing error handler. Smoother:
 **Cost:** ~½ day for the manual-reconnect path; ~1 day with auto-
 reconnect + state resync.
 
-### 18. Tauri-managed scsynth lifecycle
+### 19. Tauri-managed scsynth lifecycle
 
 Today scsynth must already be running at `127.0.0.1:57110` before
 the user can connect. In Tauri builds we could spawn it as a
@@ -3033,7 +3171,7 @@ config + a Rust command wrapper). Serve / browser builds keep
 new users — currently you have to know to launch sclang or
 scsynth from the terminal first.
 
-### 19. Test coverage for `src/`
+### 20. Test coverage for `src/`
 
 The two workspace packages (`server-commands`, `synthdef-compiler`)
 have parity tests. The app itself has zero. The pieces that have
@@ -3055,7 +3193,7 @@ pattern.
 **Cost:** ~1 day for the three above. Worth ~5 days of saved
 debugging over the project lifetime.
 
-### 20. Sample-rate auto-detection — **COMPLETED in Phase 13.6**
+### 21. Sample-rate auto-detection — **COMPLETED in Phase 13.6**
 
 Shipped: `AudioEnvironment.sampleRate` is now read from
 `/status.reply.args[8]` at connect time and forwarded through
@@ -3071,7 +3209,7 @@ ticket is moot — `Impulse.kr` accepts any positive Hz and
 quantises to kr blocks regardless of integer-ness, so `43.066 Hz`
 is a perfectly valid clock rate.
 
-### 21. Persistent UI settings
+### 22. Persistent UI settings
 
 `localStorage` per-session: last-used scsynth address (already
 done), preferred chunkSize, channel count, recording bus, window
@@ -3079,7 +3217,7 @@ size. Small quality-of-life win for users who reconnect often.
 
 **Cost:** ~½ day.
 
-### 22. Bus naming / labeling
+### 23. Bus naming / labeling
 
 Currently buses are bare integers (`bus 16`, `bus 33..34`). A
 small label registry — "synth out", "FX return", "monitor mix" —
@@ -3089,7 +3227,7 @@ of truth; the label is purely UI.
 
 **Cost:** ~½ day.
 
-### 23. Per-scope/recording independent pause
+### 24. Per-scope/recording independent pause
 
 Today `/n_run 0` on the parent group freezes everything — the
 clock, every scope, every recording. Sometimes you want to pause
@@ -3099,14 +3237,14 @@ per-controller.
 
 **Cost:** ~½ day.
 
-### 24. Spectrogram waterfall (after #15)
+### 25. Spectrogram waterfall (after #16)
 
 Once an FFT scope exists, accumulate magnitudes column-by-column
 into a 2-D canvas — a scrolling waterfall view. Particularly nice
 for visualising drift, slow modulators, or transient content over
 time.
 
-**Cost:** ~1 day, after #15.
+**Cost:** ~1 day, after #16.
 
 ---
 

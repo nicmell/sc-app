@@ -22,9 +22,16 @@ criteria are in there too.
 Browser (React, main thread)
   ├── AppShell                  connect ↔ dashboard orchestration
   ├── ClockController           global /tr-driven clock; tick0Ms anchor;
-  │                             clockBus phasor; probePhase() diagnostic
+  │                             clockBus phasor
   ├── GroupController           parent group lifecycle (/g_new /n_run)
   ├── SynthDefRegistry          idempotent /d_recv tracker
+  ├── SynthManager + Synth-     producers: tone synths writing sines
+  │   Controller                 onto auto-allocated bus blocks; live
+  │                              freq / amp / gate controls
+  ├── ScopeManager + Scope-     consumers: scope synths reading any
+  │   Controller                 user-typed bus + worker subscriptions
+  ├── RecordingManager + Re-    consumers: recorder synths reading any
+  │   cordingController          user-typed bus + WAV writer pipeline
   └── WorkerClient              postMessage wrapper around…
       │   - sendCommand / onReply / onError / onTick
       │   - subscribeScope(sub, cb) — tick-driven /b_getn pipeline
@@ -41,6 +48,14 @@ src-tauri backend (Rust)
   ├── server/ws_bridge.rs       WS ↔ UDP datagram bridge → scsynth
   └── tauri-plugin-{dialog,fs,opener}  native save-as / file IO / etc.
 ```
+
+`SynthManager` is the producer surface — it auto-allocates bus
+blocks via `IdAllocator.nextBlock(channels)` and `/s_new`s tone
+synths writing sines onto them. `ScopeManager` /
+`RecordingManager` are the consumer surface — they take a
+user-typed bus number and tap whatever's flowing on it. The
+typical flow: add a synth in the Synths panel, read its bus off
+the card, type that bus into the Scopes / Recordings panel.
 
 Every OSC command flows: main thread (encode) → worker (forward bytes)
 → WebSocket → bridge → UDP → scsynth.
@@ -156,26 +171,28 @@ Plan follows phases 0–13. When working on a phase:
    what actually shipped.
 4. Commit per phase (or per natural break within a phase).
 
-Current phase progress: **Phase 13.6 shipped — clock-config
-collapse + global chunkSize + runtime sampleRate.** `decimation`
-is gone (always 1); `ClockParams` is `{chunkSize}` only;
-`tickRate` is derived (`sampleRate / chunkSize`); `sampleRate`
-comes from `/status.reply.args[8]` at connect time (no compile-
-time `DEFAULT_ENV`). The dashboard header carries a chunk-size
-dropdown that triggers an in-place re-init when changed, with a
-confirm modal warning when there are recordings to lose.
+Current phase progress: **Phase 15 shipped — Synths panel
+decouples source synths from scopes.** Producer-consumer split:
+`SynthManager` + `SynthController` + `SynthsPanel` create tone
+synths with auto-allocated bus blocks (mono / stereo, runtime
+freq / amp / gate controls); scopes and recordings are pure
+consumers that take a user-typed bus number. The user copies a
+bus from a Synths card into the Scope or Recording panel
+toolbar. The old `testToneSynthDef` is gone, replaced by the
+gate-aware `toneSynthDef` (`tone1ch` / `tone2ch`).
 
-Multi-scope still lives in `ScopeController` + `ScopeManager` +
-`ScopeList`; each scope auto-allocates a dedicated bus block via
-`IdAllocator.nextBlock(channels)`. Recordings live in
+Earlier landings still in effect: `decimation` always 1;
+`ClockParams = {chunkSize}`; `tickRate` derived from
+`sampleRate / chunkSize`; `sampleRate` from `/status.reply.args[7]`
+(nominal, rounded) at connect time; header dropdown re-inits the
+dashboard when chunkSize changes. Recordings live in
 `src/recording/{RecordingController,RecordingManager,download,envelopeBuffer}.ts`
-+ `src/ui/RecordingPanel/` with `RecordingWaveformView`. The
-in-place re-init flow shares `setupDashboard` /
-`teardownServerState` with the initial connect / disconnect
-paths so the same logic is exercised both ways. `OscConsole` and
-`ScopeTestPanel` were removed earlier in Phase 13;
-`SynthDefPanel` and the dev `phaseProbeSynthDef` are gone too.
-`plan.md` Phase 13 "as landed" subsection captures this.
++ `src/ui/RecordingPanel/` with `RecordingWaveformView`.
+`setupDashboard` / `teardownServerState` are shared between
+initial connect, disconnect, and the chunkSize-driven re-init.
+Removed in earlier phases: `OscConsole`, `ScopeTestPanel`,
+`SynthDefPanel`, the dev `phaseProbeSynthDef`. `plan.md` Phase
+13–15 "as landed" subsections capture the details.
 
 ## Where scsynth conventions matter
 
@@ -266,7 +283,7 @@ Observations:
   bytes/sec regardless of which factor pair you pick.
 - Power-of-2 `chunkSize` keeps recording reads page-aligned
   (`1024 × 4 = 4096 bytes = 1 page`) and FFT-ready at any
-  sampleRate (Future Improvement #15). The defaults (`64, 128,
+  sampleRate (Future Improvement #16). The defaults (`64, 128,
   256, 512, 1024`) are all powers of 2.
 - Time meaning of a given `chunkSize` value is *not* invariant
   across sample rates — `1024` gives a 21 ms window at 48 k but
@@ -358,3 +375,18 @@ Observations:
   `clientId`, orphaning the existing parent group. The reinit
   path calls `teardownServerState` (which doesn't touch notify)
   and then `setupDashboard` with the stashed `parentGroupId`.
+- **Synths must be `/s_new`'d before scopes that read their
+  buses — same control-block ordering rule as the clock.** Both
+  synths and scopes use `AddToTail`, so creation order determines
+  runtime order: a synth created first runs first, and a scope
+  created after reads the synth's just-written bus value within
+  the same block. The UX flow ("Add a synth, then add a scope on
+  its bus") gets this right naturally; if a user types a scope's
+  bus before any synth is producing on it, the scope reads the
+  previous control block's value (~1 ms lag) until the synth is
+  created. Symmetric to the clock-at-head invariant.
+- **`SynthManager` is the only auto-allocator from `ids.bus`.**
+  Scopes and recordings consume user-typed bus numbers — they
+  never touch the bus allocator. So the allocator is effectively
+  synth-exclusive, and bus collisions across consumer types are
+  impossible by construction.

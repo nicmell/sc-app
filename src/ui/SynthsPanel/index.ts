@@ -1,0 +1,1 @@
+export { SynthsPanel } from './SynthsPanel';

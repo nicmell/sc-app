@@ -1,13 +1,9 @@
 import {
   useCallback,
-  useMemo,
   useState,
   useSyncExternalStore,
 } from 'react';
-import type {
-  ScopeController,
-  ScopeSourceSpec,
-} from '@/scope/ScopeController';
+import type { ScopeController } from '@/scope/ScopeController';
 import type { ScopeManager } from '@/scope/ScopeManager';
 import { ScopeView } from '@/ui/ScopeView';
 import './ScopeList.scss';
@@ -18,9 +14,7 @@ interface ScopeListProps {
   manager: ScopeManager;
 }
 
-const DEFAULT_FREQ_MONO = 440;
-const DEFAULT_FREQ_STEREO_L = 440;
-const DEFAULT_FREQ_STEREO_R = 660;
+const DEFAULT_INPUT_BUS = 16;
 
 export function ScopeList({ manager }: ScopeListProps) {
   const scopes = useSyncExternalStore(
@@ -28,10 +22,8 @@ export function ScopeList({ manager }: ScopeListProps) {
     () => manager.scopes.get(),
   );
 
+  const [inputBus, setInputBus] = useState(DEFAULT_INPUT_BUS);
   const [channels, setChannels] = useState<Channels>(1);
-  const [freqMono, setFreqMono] = useState(DEFAULT_FREQ_MONO);
-  const [freqL, setFreqL] = useState(DEFAULT_FREQ_STEREO_L);
-  const [freqR, setFreqR] = useState(DEFAULT_FREQ_STEREO_R);
   const [label, setLabel] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,23 +32,11 @@ export function ScopeList({ manager }: ScopeListProps) {
     setBusy(true);
     setError(null);
     try {
-      const source: ScopeSourceSpec =
-        channels === 1
-          ? { kind: 'mono', freq: freqMono }
-          : { kind: 'stereo', freqL, freqR };
       await manager.add({
+        inputBus,
         channels,
         label: label.trim() || undefined,
-        source,
       });
-      // Bump the default freq slightly so consecutive Adds make
-      // distinguishable scopes without forcing the user to type.
-      if (channels === 1) {
-        setFreqMono((f) => f + 110);
-      } else {
-        setFreqL((f) => f + 55);
-        setFreqR((f) => f + 55);
-      }
       setLabel('');
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -65,7 +45,7 @@ export function ScopeList({ manager }: ScopeListProps) {
     } finally {
       setBusy(false);
     }
-  }, [manager, channels, freqMono, freqL, freqR, label]);
+  }, [manager, inputBus, channels, label]);
 
   const onClear = useCallback(async () => {
     setBusy(true);
@@ -86,6 +66,20 @@ export function ScopeList({ manager }: ScopeListProps) {
       <header>Scopes</header>
       <div className="row toolbar">
         <label>
+          bus&nbsp;
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={inputBus}
+            disabled={busy}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              if (Number.isInteger(v) && v >= 0) setInputBus(v);
+            }}
+          />
+        </label>
+        <label>
           channels&nbsp;
           <select
             value={channels}
@@ -96,59 +90,6 @@ export function ScopeList({ manager }: ScopeListProps) {
             <option value={2}>2 (stereo)</option>
           </select>
         </label>
-        {channels === 1 ? (
-          <label>
-            freq&nbsp;
-            <input
-              type="number"
-              min={20}
-              max={20000}
-              step={10}
-              value={freqMono}
-              disabled={busy}
-              onChange={(e) => {
-                const v = Number(e.target.value);
-                if (Number.isFinite(v) && v > 0) setFreqMono(v);
-              }}
-            />
-            &nbsp;Hz
-          </label>
-        ) : (
-          <>
-            <label>
-              freqL&nbsp;
-              <input
-                type="number"
-                min={20}
-                max={20000}
-                step={10}
-                value={freqL}
-                disabled={busy}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  if (Number.isFinite(v) && v > 0) setFreqL(v);
-                }}
-              />
-              &nbsp;Hz
-            </label>
-            <label>
-              freqR&nbsp;
-              <input
-                type="number"
-                min={20}
-                max={20000}
-                step={10}
-                value={freqR}
-                disabled={busy}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  if (Number.isFinite(v) && v > 0) setFreqR(v);
-                }}
-              />
-              &nbsp;Hz
-            </label>
-          </>
-        )}
         <label>
           label&nbsp;
           <input
@@ -202,14 +143,6 @@ function ScopeListItem({
     () => scope.chunksPerSec.get(),
   );
 
-  const sourceDesc = useMemo(() => {
-    if (!scope.source) return 'no source';
-    if (scope.source.kind === 'mono') {
-      return `tone ${scope.source.freq} Hz`;
-    }
-    return `tones ${scope.source.freqL}L / ${scope.source.freqR}R Hz`;
-  }, [scope.source]);
-
   const busDesc =
     scope.channels === 1
       ? `bus ${scope.inputBus}`
@@ -220,7 +153,7 @@ function ScopeListItem({
       <div className="scope-item-header">
         <span className="label">{scope.label}</span>
         <span className="meta">
-          {scope.channels}ch · {busDesc} · {sourceDesc} · {chunksPerSec}/s
+          {scope.channels}ch · {busDesc} · {chunksPerSec}/s
         </span>
         <button type="button" className="danger small" onClick={() => void onRemove()}>
           Remove
@@ -236,9 +169,6 @@ function ScopeListItem({
 }
 
 function Footer({ scopes }: { scopes: ScopeController[] }) {
-  // Subscribe to every scope's chunksPerSec so the aggregate updates
-  // at the rate of any individual scope. Building the deps array
-  // outside the hook keeps us within React's rules-of-hooks.
   return (
     <div className="footer status">
       <span>{scopes.length} scope{scopes.length === 1 ? '' : 's'}</span>
@@ -249,9 +179,9 @@ function Footer({ scopes }: { scopes: ScopeController[] }) {
 }
 
 function ChunksPerSecTotal({ scopes }: { scopes: ScopeController[] }) {
-  // Cheap re-render driver: sum each scope's chunksPerSec via
-  // useSyncExternalStore subscribed to all of them through a
-  // synthesized snapshot. Recompute snapshot when the list changes.
+  // Subscribe to every scope's chunksPerSec so the aggregate updates
+  // at the rate of any individual scope. Building the deps array
+  // outside the hook keeps us within React's rules-of-hooks.
   const subscribe = useCallback(
     (cb: () => void) => {
       const offs = scopes.map((s) => s.chunksPerSec.subscribe(cb));

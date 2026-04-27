@@ -6,6 +6,7 @@ import { Footer } from '@/ui/Footer';
 import { AlertModal, ConfirmModal, LoadingModal } from '@/ui/Modal';
 import { RecordingPanel } from '@/ui/RecordingPanel';
 import { ScopeList } from '@/ui/ScopeList';
+import { SynthsPanel } from '@/ui/SynthsPanel';
 import {
   DEFAULT_PARAMS,
   practicalChunkSizes,
@@ -23,6 +24,7 @@ import { GroupController } from './GroupController';
 import { IdAllocator } from './IdAllocator';
 import { ScopeManager } from './ScopeManager';
 import { SynthDefRegistry } from './SynthDefRegistry';
+import { SynthManager } from './SynthManager';
 import { WorkerClient } from './WorkerClient';
 import { createStore, type Store } from './reactiveStore';
 import {
@@ -43,6 +45,7 @@ interface DashboardResources {
   group: GroupController;
   clock: ClockController;
   ids: { node: IdAllocator; buffer: IdAllocator; bus: IdAllocator };
+  synthManager: SynthManager;
   scopeManager: ScopeManager;
   recordingManager: RecordingManager;
   /** Stashed for in-place re-init: re-issuing `notify(1)` over the
@@ -114,6 +117,7 @@ function Dashboard({
         </button>
       </header>
       <ClockPanel clock={resources.clock} />
+      <SynthsPanel manager={resources.synthManager} />
       <ScopeList manager={resources.scopeManager} />
       <RecordingPanel
         manager={resources.recordingManager}
@@ -198,12 +202,18 @@ async function setupDashboard(
   // bundle), so the clock synth /s_new'd here lands in a paused
   // group and never ticks until the user clicks Start.
   await clock.start();
+  const synthManager = new SynthManager({
+    client,
+    group,
+    registry,
+    ids: { node: ids.node, bus: ids.bus },
+  });
   const scopeManager = new ScopeManager({
     client,
     clock,
     group,
     registry,
-    ids,
+    ids: { node: ids.node, buffer: ids.buffer },
   });
   const recordingManager = new RecordingManager({
     client,
@@ -242,6 +252,7 @@ async function setupDashboard(
     group,
     clock,
     ids,
+    synthManager,
     scopeManager,
     recordingManager,
     parentGroupId,
@@ -267,6 +278,11 @@ async function teardownServerState(resources: DashboardResources): Promise<void>
     await resources.scopeManager.clear();
   } catch (err) {
     console.warn('[sc:app] scopeManager.clear failed', err);
+  }
+  try {
+    await resources.synthManager.clear();
+  } catch (err) {
+    console.warn('[sc:app] synthManager.clear failed', err);
   }
   try {
     await resources.clock.dispose();
