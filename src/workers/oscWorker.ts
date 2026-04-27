@@ -1,5 +1,5 @@
 /**
- * Scope worker — owns the WebSocket to the bridge. Main thread does
+ * OSC worker — owns the WebSocket to the bridge. Main thread does
  * the OSC encoding (osc-js via `@sc-app/server-commands`); we just
  * forward bytes either direction. Inbound bytes are decoded here so
  * the main thread receives plain `{ address, args }` POJOs.

@@ -8,7 +8,7 @@
  * the user types in.
  *
  * Shared across all scopes: parent group, global clock + clockBus,
- * scope worker (one tick-driven /b_getn loop multiplexed by
+ * OSC worker (one tick-driven /b_getn loop multiplexed by
  * `scopeId`), and the compiled `scopeTap{N}ch_{chunkSize}` SynthDef
  * bytes.
  */

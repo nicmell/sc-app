@@ -310,7 +310,9 @@ src/                                   # frontend (React)
     recorderSynthDef.ts                # recorder tap (clockBus-driven writeIdx)
     toneSynthDef.ts                    # tone1ch / tone2ch (Phase 15)
   workers/
-    scopeWorker.ts                     # Vite ?worker entry
+    oscWorker.ts                       # Vite ?worker entry — owns the WS,
+                                        # decodes OSC, demuxes /tr, dispatches
+                                        # /b_setn to scope/recording subs
     workerBootstrap.ts                 # window = globalThis shim + buffer pre-import
     workerConsoleBridge.ts             # forwards console.* to main as `log` events
     transport.ts                       # WS wrapper (worker-internal)
@@ -384,7 +386,7 @@ typed OSC layer yet.
   union shapes.
 - `transport.ts` (worker-internal) — `new WebSocket(url, [])` with
   `binaryType = 'arraybuffer'`.
-- `scopeWorker.ts` — Vite `?worker` entry; receives
+- `oscWorker.ts` — Vite `?worker` entry; receives
   `{type:'connect',url}`, opens WS, forwards bytes both ways.
 - `WorkerClient.ts` (main thread) — wraps the Worker with typed
   promises.
@@ -1020,7 +1022,7 @@ These tune knobs; none change the phase structure.
 | `src/buffer/BufferController.ts` | 16 | NEW. |
 | `src/buffer/BufferManager.ts` | 16 | NEW. |
 | `src/server/workerProtocol.ts` | 17 | Replace scope/recording subscription messages with `subscribeBuffer` / `unsubscribeBuffer`. `ScopeChunk` → `BufferChunk` keyed by `bufferId`. Recording-specific events removed (the WAV writer relocates in 20). |
-| `src/workers/scopeWorker.ts` | 17 | Subscription table keyed by `bufferId`; one `/b_getn` per tick per buffer; unified offset-keyed pending + reorder. WAV writer code deleted. |
+| `src/workers/oscWorker.ts` | 17 | Subscription table keyed by `bufferId`; one `/b_getn` per tick per buffer; unified offset-keyed pending + reorder. WAV writer code deleted. |
 | `src/workers/wavWriter.ts` | 20 | DELETE (moves to `src/recording/wavWriter.ts`). |
 | `src/server/WorkerClient.ts` | 17 | Replace `subscribeScope` / `subscribeRecording` with `subscribeBuffer(spec, cb)`. Drop `startRecording` / `stopRecording`. |
 | `src/synthdefs/bufferTapSynthDef.ts` | 18 | NEW. Replaces both old taps. Cache key `(channels, chunkSize)`. |

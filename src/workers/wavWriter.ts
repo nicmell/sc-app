@@ -1,5 +1,5 @@
 /**
- * In-memory WAV encoder, lives in the scope worker.
+ * In-memory WAV encoder, lives in the OSC worker.
  *
  * Builds a single contiguous `Uint8Array` representing a complete WAV
  * file. The header is written up-front with placeholder size fields;

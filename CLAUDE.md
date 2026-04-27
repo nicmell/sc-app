@@ -36,11 +36,11 @@ Browser (React, main thread)
       │   - sendCommand / onReply / onError / onTick
       │   - subscribeScope(sub, cb) — tick-driven /b_getn pipeline
       ▼
-Scope Worker (module worker)
+OSC Worker (module worker)
   ├── workerBootstrap.ts        sync message buffer + osc-js window shim
   ├── transport.ts              raw binary WebSocket
-  └── scopeWorker.ts            decode inbound + forward outbound bytes
-                                + clock /tr mux + scope subscription
+  └── oscWorker.ts              decode inbound + forward outbound bytes
+                                + clock /tr mux + scope/recording subscription
                                 table + tick-driven /b_getn dispatch
       │
       ▼
@@ -321,7 +321,7 @@ Observations:
 - **`Impulse.kr(freq, phase=0)` fires at t=0**, not at
   `t = 1/freq`. So tick `N` corresponds to audio frame
   `(N-1) × samplesPerTick`, *not* `N × samplesPerTick`. The
-  `completedHalf` parity in `scopeWorker.fireReads` is therefore
+  `completedHalf` parity in `oscWorker.fireReads` is therefore
   `tickIndex % 2` — cost us a debugging session in Phase 8 to
   realise the original derivation was off by one. If you see
   half-cycle phase jumps in the scope, check this first.

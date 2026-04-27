@@ -1,5 +1,5 @@
 /**
- * Main-thread wrapper around the scope worker.
+ * Main-thread wrapper around the OSC worker.
  *
  * Surface:
  * - `sendCommand(msg)`            — fire-and-forget OSC message/bundle.
@@ -74,7 +74,7 @@ export class WorkerClient {
   constructor(url: string) {
     console.log('[sc:client] constructing WorkerClient', url);
     this.worker = new Worker(
-      new URL('../workers/scopeWorker.ts', import.meta.url),
+      new URL('../workers/oscWorker.ts', import.meta.url),
       { type: 'module' },
     );
 
@@ -95,7 +95,7 @@ export class WorkerClient {
         reject(
           new Error(
             `worker/WS did not become ready within ${READY_TIMEOUT_MS} ms ` +
-              `(open DevTools → Application → Workers to inspect the scope worker)`,
+              `(open DevTools → Application → Workers to inspect the OSC worker)`,
           ),
         );
       }, READY_TIMEOUT_MS);
