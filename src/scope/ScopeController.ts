@@ -24,6 +24,7 @@ import {
 } from '@sc-app/server-commands';
 import {
   SCOPE_DETAIL_DEFAULT,
+  decimationFor,
   scopeEffectiveRate,
   validateScopeDetail,
   type ScopeDetail,
@@ -86,6 +87,10 @@ export class ScopeController {
   readonly inputBus: number;
   readonly source: ScopeSourceSpec | null;
   readonly detail: ScopeDetail;
+  /** Audio-sample downsampling factor — derived from
+   *  `clock.samplesPerTick / detail.chunkSize`. Stored once at
+   *  construction since neither input changes after that. */
+  readonly decimation: number;
   /** Decimated audio rate this scope produces — `sampleRate /
    *  decimation`. Used by `ScopeView` to label the visible window
    *  in milliseconds. */
@@ -131,7 +136,15 @@ export class ScopeController {
     this.source = opts.source ?? null;
     this.detail = opts.detail ?? SCOPE_DETAIL_DEFAULT;
     validateScopeDetail(this.detail, opts.clock.derived.samplesPerTick);
-    this.effectiveRate = scopeEffectiveRate(opts.clock.env, this.detail);
+    this.decimation = decimationFor(
+      this.detail,
+      opts.clock.derived.samplesPerTick,
+    );
+    this.effectiveRate = scopeEffectiveRate(
+      opts.clock.env,
+      this.detail,
+      opts.clock.derived.samplesPerTick,
+    );
   }
 
   /** Latest chunk seen by the subscription. Useful for stats / non-RAF
@@ -156,7 +169,8 @@ export class ScopeController {
       await this.startSource();
     }
 
-    const { chunkSize, decimation } = this.detail;
+    const { chunkSize } = this.detail;
+    const decimation = this.decimation;
     const synthName = scopeSynthDefName(this.channels, chunkSize, decimation);
     await this.registry.ensureLoaded(
       synthName,

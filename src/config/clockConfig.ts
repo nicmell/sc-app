@@ -51,31 +51,47 @@ export function deriveClock(
 }
 
 /**
- * Per-scope chunk-size + decimation pair. The product
- * `chunkSize × decimation` must equal `samplesPerTick` (enforced by
- * `validateScopeDetail`) — that's the invariant the worker's
- * `completedHalf = tickIndex % 2` parity formula relies on. The
- * scope synth's `Phasor.ar`-driven `writeIdx` then wraps at exactly
- * one tick boundary, with one half completed per tick.
+ * Per-scope detail. Only `chunkSize` is a free choice — it must be a
+ * positive divisor of the clock's `samplesPerTick`. The decimation
+ * factor (how many audio samples scsynth's BufWr collapses into a
+ * single buffer slot) is derived: `decimation = samplesPerTick /
+ * chunkSize`. Together they satisfy the worker's invariant
+ * `chunkSize × decimation = samplesPerTick`, which is what makes the
+ * `completedHalf = tickIndex % 2` parity formula valid — the scope
+ * synth's `writeIdx` wraps at every tick boundary, with one half
+ * completed per tick.
+ *
+ * User mental model: pick how many samples per scope frame you want
+ * (visual resolution / bandwidth trade-off); the engine handles the
+ * decimation maths. Smaller `chunkSize` = larger `decimation` = more
+ * aggressive zero-order-hold downsampling. Above the alias frequency
+ * (`sampleRate / (2 × decimation)`) high-frequency content folds
+ * back visibly — see the gotcha note in `CLAUDE.md`.
  */
 export interface ScopeDetail {
-  /** Samples per scope frame, per channel. */
+  /** Samples per scope frame, per channel. Must divide
+   *  `samplesPerTick`. */
   chunkSize: number;
-  /** Audio-sample downsampling factor (zero-order-hold; not anti-
-   *  aliased — high-frequency signals will alias visibly at
-   *  decimations > ~4). */
-  decimation: number;
 }
 
-/** Default scope detail. Tuned for comfortable visual fidelity at
- *  modest network bandwidth (1 KB/tick mono at 48 kHz). */
-export const SCOPE_DETAIL_DEFAULT: ScopeDetail = {
-  chunkSize: 256,
-  decimation: 4,
-};
+/** Default scope detail — 256 samples per frame at the current
+ *  1024-sample tick gives 12 kHz effective rate, comfortable for
+ *  most audio content with ~1 KB/tick mono network traffic. */
+export const SCOPE_DETAIL_DEFAULT: ScopeDetail = { chunkSize: 256 };
 
-/** Validate that `detail` factors `samplesPerTick` cleanly. Throws
- *  with a useful message if not — used at scope-controller
+/** Derived: how many audio frames are collapsed into one buffer
+ *  slot. The scope synth's writeIdx advances by 1 every
+ *  `decimation` audio samples; the buffer holds `chunkSize × 2`
+ *  slots so one half completes per tick. */
+export function decimationFor(
+  detail: ScopeDetail,
+  samplesPerTick: number,
+): number {
+  return samplesPerTick / detail.chunkSize;
+}
+
+/** Validate that `chunkSize` divides `samplesPerTick` cleanly.
+ *  Throws with a useful message if not — used at scope-controller
  *  construction so misconfigured detail never reaches the worker
  *  or scsynth. */
 export function validateScopeDetail(
@@ -87,16 +103,11 @@ export function validateScopeDetail(
       `ScopeDetail.chunkSize must be a positive integer, got ${detail.chunkSize}`,
     );
   }
-  if (!Number.isInteger(detail.decimation) || detail.decimation < 1) {
+  if (samplesPerTick % detail.chunkSize !== 0) {
     throw new Error(
-      `ScopeDetail.decimation must be a positive integer, got ${detail.decimation}`,
-    );
-  }
-  if (detail.chunkSize * detail.decimation !== samplesPerTick) {
-    throw new Error(
-      `ScopeDetail invariant: chunkSize (${detail.chunkSize}) × ` +
-        `decimation (${detail.decimation}) = ${detail.chunkSize * detail.decimation} ` +
-        `must equal samplesPerTick (${samplesPerTick})`,
+      `ScopeDetail.chunkSize (${detail.chunkSize}) must divide ` +
+        `samplesPerTick (${samplesPerTick}); decimation would be ` +
+        `${samplesPerTick / detail.chunkSize} (non-integer)`,
     );
   }
 }
@@ -106,8 +117,9 @@ export function validateScopeDetail(
 export function scopeEffectiveRate(
   env: AudioEnvironment,
   detail: ScopeDetail,
+  samplesPerTick: number,
 ): number {
-  return env.sampleRate / detail.decimation;
+  return (env.sampleRate * detail.chunkSize) / samplesPerTick;
 }
 
 export const DEFAULT_ENV: AudioEnvironment = { sampleRate: 48000 };

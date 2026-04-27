@@ -23,15 +23,14 @@ interface ScopeListProps {
 const DEFAULT_FREQ_MONO = 440;
 const DEFAULT_FREQ_STEREO_L = 440;
 const DEFAULT_FREQ_STEREO_R = 660;
-/** Decimation factors offered to the user. Each must divide the
- *  clock's `samplesPerTick` evenly — `chunkSize = samplesPerTick /
- *  decimation` is computed in the `onAdd` handler. With the default
- *  1024 samples/tick all five values divide cleanly. Higher
- *  decimation = lower effective sample rate = less data per /b_setn,
- *  but zero-order-hold means high-frequency content will alias
- *  visibly above ~`effectiveRate / 2`. */
-const DECIMATION_OPTIONS = [1, 2, 4, 8, 16] as const;
-const DEFAULT_DECIMATION = 4;
+/** Chunk-size options offered to the user — each must divide the
+ *  clock's `samplesPerTick` evenly. With the default 1024 samples/tick
+ *  these five values give a clean halving series down to 64. Decimation
+ *  is derived (`samplesPerTick / chunkSize`); higher decimation = more
+ *  aggressive zero-order-hold downsampling, which can alias visibly
+ *  above the per-scope `effectiveRate / 2` (see CLAUDE.md gotcha). */
+const CHUNK_SIZE_OPTIONS = [1024, 512, 256, 128, 64] as const;
+const DEFAULT_CHUNK_SIZE = 256;
 
 export function ScopeList({ manager, clock }: ScopeListProps) {
   const scopes = useSyncExternalStore(
@@ -44,7 +43,7 @@ export function ScopeList({ manager, clock }: ScopeListProps) {
   const [freqL, setFreqL] = useState(DEFAULT_FREQ_STEREO_L);
   const [freqR, setFreqR] = useState(DEFAULT_FREQ_STEREO_R);
   const [label, setLabel] = useState('');
-  const [decimation, setDecimation] = useState<number>(DEFAULT_DECIMATION);
+  const [chunkSize, setChunkSize] = useState<number>(DEFAULT_CHUNK_SIZE);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,12 +57,11 @@ export function ScopeList({ manager, clock }: ScopeListProps) {
         channels === 1
           ? { kind: 'mono', freq: freqMono }
           : { kind: 'stereo', freqL, freqR };
-      const chunkSize = samplesPerTick / decimation;
       await manager.add({
         channels,
         label: label.trim() || undefined,
         source,
-        detail: { chunkSize, decimation },
+        detail: { chunkSize },
       });
       // Bump the default freq slightly so consecutive Adds make
       // distinguishable scopes without forcing the user to type.
@@ -81,16 +79,7 @@ export function ScopeList({ manager, clock }: ScopeListProps) {
     } finally {
       setBusy(false);
     }
-  }, [
-    manager,
-    channels,
-    freqMono,
-    freqL,
-    freqR,
-    label,
-    decimation,
-    samplesPerTick,
-  ]);
+  }, [manager, channels, freqMono, freqL, freqR, label, chunkSize]);
 
   const onClear = useCallback(async () => {
     setBusy(true);
@@ -123,20 +112,21 @@ export function ScopeList({ manager, clock }: ScopeListProps) {
         </label>
         <label
           title={
-            `chunkSize × decimation must equal samplesPerTick (${samplesPerTick}). ` +
-            `Higher decimation trades visual detail for less /b_setn traffic.`
+            `chunkSize must divide samplesPerTick (${samplesPerTick}). ` +
+            `Smaller chunkSize = more aggressive decimation = less ` +
+            `/b_setn traffic but lower visual fidelity.`
           }
         >
-          decimation&nbsp;
+          chunk size&nbsp;
           <select
-            value={decimation}
+            value={chunkSize}
             disabled={busy}
-            onChange={(e) => setDecimation(Number(e.target.value))}
+            onChange={(e) => setChunkSize(Number(e.target.value))}
           >
-            {DECIMATION_OPTIONS.map((d) => (
-              <option key={d} value={d}>
-                {d}× ({samplesPerTick / d} samples,{' '}
-                {(clock.env.sampleRate / d / 1000).toFixed(1)} kHz)
+            {CHUNK_SIZE_OPTIONS.map((cs) => (
+              <option key={cs} value={cs}>
+                {cs} samples (
+                {((clock.env.sampleRate * cs) / samplesPerTick / 1000).toFixed(1)} kHz)
               </option>
             ))}
           </select>
@@ -266,7 +256,8 @@ function ScopeListItem({
         <span className="label">{scope.label}</span>
         <span className="meta">
           {scope.channels}ch · {busDesc} · {sourceDesc} ·{' '}
-          {scope.detail.decimation}× ({(scope.effectiveRate / 1000).toFixed(1)} kHz) · {chunksPerSec}/s
+          {scope.detail.chunkSize} samples (
+          {(scope.effectiveRate / 1000).toFixed(1)} kHz) · {chunksPerSec}/s
         </span>
         <button type="button" className="danger small" onClick={() => void onRemove()}>
           Remove
