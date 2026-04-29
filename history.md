@@ -39,6 +39,7 @@ is the cleaner read.
 - [Phase 14 — Recording Waveform View](#phase-14--recording-waveform-view)
 - [Phase 15 — Source Synths Panel](#phase-15--source-synths-panel)
 - [Phase 16–21 — Shared Buffer Layer Refactor](#phase-1621--shared-buffer-layer-refactor)
+- [Phase 22 — Per-session Bridge State (Disconnect Cleanup)](#phase-22--per-session-bridge-state-disconnect-cleanup)
 
 ---
 
@@ -690,3 +691,79 @@ Six commits, one per sub-phase:
 - **`BufferChunk.isGap`** carries the worker's
   retry-exhaustion signal. Recordings materialise it (sidecar
   JSON entry); scopes ignore it (zero-fill draws as silence).
+
+
+## Phase 22 — Per-session Bridge State (Disconnect Cleanup)
+
+**Goal.** Make the Rust bridge fire cleanup OSC to scsynth when a
+WebSocket closes for any reason — clean disconnect, network drop,
+browser crash, laptop lid. Before this, frontend-only cleanup
+(`handleDisconnect`, `pagehide`) caught the happy paths but every
+ungraceful close leaked a parent group, allocated buffers, and a
+notify slot. With `maxLogins = 32` (sclang's hard cap), ~32 dirty
+disconnects exhaust scsynth's slot pool until restart.
+
+**What shipped.**
+- `src-tauri/Cargo.toml` — `rosc = "0.10"` dependency added. Pure
+  Rust OSC encoder/decoder; no transitive deps of note.
+- `src-tauri/src/server/ws_bridge.rs` — gains a per-session
+  `SessionState { client_id: Option<i32> }`, lives in the WS task
+  via `Arc<tokio::sync::Mutex<…>>`. Two new behaviours:
+  1. **Snoop `/done /notify`** on the inbound (UDP→WS) path.
+     Cheap byte-prefix check (`/done\0\0\0`) before invoking
+     `rosc::decoder::decode_udp` — sub-microsecond filter, only the
+     rare `/done` replies pay the full decode cost. On match, stash
+     `args[1]` as `clientId`.
+  2. **Cleanup tail after WS close.** Compute `parentGroupId`
+     (`clientId × 100`, fallback `100` when `clientId == 0` to
+     mirror frontend), encode an OSC bundle of `/g_freeAll
+     <gid>` + `/n_free <gid>` + `/notify 0`, send via the
+     still-alive UDP socket, sleep 50 ms so datagrams flush, then
+     drop the socket.
+
+**Decisions.**
+- **Approach A (bridge-side cleanup) over Approach B
+  (heartbeat + reaper).** A is ~80 lines of Rust; B would have
+  needed a side-channel HTTP endpoint, a reaper task with two
+  Maps, and tuning knobs for heartbeat period + staleness.
+  A's only weak spot — half-open TCP — is addressable later
+  with WS-level Ping/Pong (Approach A'); B's heartbeat-miss
+  latency was strictly worse for the common cases (tab close,
+  browser crash, network drop with TCP signal). The full
+  trade-off table is preserved in the original plan.md spec.
+- **`tokio::sync::Mutex`, not `std::sync::Mutex`.** The notify
+  snoop runs inside the recv task's async context; using
+  std::Mutex would force a `block_in_place` to lock or risk
+  panicking under tokio's runtime. async Mutex is fine here —
+  contention is one update per session lifetime.
+- **Idempotent against frontend cleanup.** If the frontend's
+  `handleDisconnect` already freed the group, scsynth no-ops the
+  redundant `/g_freeAll` + `/n_free` and returns
+  `/fail /notify "Notification not registered"` for the second
+  `/notify 0`. We don't read the reply — fire-and-forget over
+  UDP, then the 50 ms flush window expires and we drop the
+  socket. The `/fail` will surface in Phase 24 as a benign one-
+  shot at disconnect time; documented there.
+- **Pre-notify disconnects skip cleanup.** If the WS closes
+  before `/done /notify` arrives, `client_id` is `None` and the
+  cleanup tail logs "session closed pre-notify; no cleanup".
+  The frontend never allocated anything in that window, so
+  there's nothing to free.
+
+**Gotchas.**
+- **OSC "immediate" timetag is `(0, 1)`, not `(0, 0)`.** The
+  cleanup bundle uses `OscTime { seconds: 0, fractional: 1 }`
+  — `(0, 0)` is a sentinel meaning "no timetag", which scsynth
+  treats as deferred-but-unschedulable. Documented in the OSC
+  1.0 spec; easy to get wrong.
+- **`recv_task.abort()` AFTER cleanup.** The recv task is
+  `tokio::spawn`'d and lives until aborted or until the recv
+  errors. Aborting it before sending cleanup would race the
+  send: the abort is async and the task might still be in the
+  middle of `tx.send` when the cleanup bytes hit the kernel.
+  Order matters — send cleanup, sleep, then abort.
+- **The 50 ms flush is generous.** Localhost UDP usually
+  delivers in microseconds. On a Pi production deployment over
+  a wired LAN, even 1 ms would be enough. Keeping 50 ms as
+  insurance against scheduling jitter; revisit if it ever
+  becomes load-bearing.
