@@ -9,14 +9,18 @@ audio config schema, file layout, workspace packages, and the
 chunkSize × sampleRate practical table all live in
 [`CLAUDE.md`](./CLAUDE.md) — don't duplicate them here.
 
-**Phase 22 in flight; Phases 23–24 sketched as follow-ons.**
+**Phase 22 in flight; Phases 23–25 sketched as follow-ons.**
 Phases 0–21 shipped (see `history.md`). Pending phases planned
 below; longer-term candidates in *Future Improvements*.
 
 Sequencing: 22 (per-session bridge state) → 23 (unified logging
 pipeline, depends on 22's session state + tracing foundations) →
 24 (scsynth `/fail` surface, independent but stronger after 23
-lands so errors persist to disk via the log pipeline).
+lands so errors persist to disk via the log pipeline) → 25
+(SuperDirt OSC shell, independent of 22–24 but lands cleaner
+*after* 22 so the new `/ws/dirt` route slots into the same
+per-session bridge state instead of churning `ws_bridge.rs`
+twice).
 
 ---
 
@@ -486,6 +490,319 @@ src/
 - scsynth `late N` stdout messages — not OSC; out of frontend
   reach.
 - Reconnection on fatal `/fail` patterns.
+
+### Files (as landed)
+
+*To fill in during implementation.*
+
+### Adaptations
+
+*To fill in during implementation.*
+
+---
+
+## Phase 25 — SuperDirt OSC shell
+
+**Goal.** Drive a separately-running SuperDirt instance from
+sc-app over OSC. A dedicated dashboard panel hosts a
+host:port input, Connect/Disconnect buttons, a status pill, and
+a Tidal-ish text REPL that emits `/dirt/play` events. Two
+independent WebSockets share the Rust bridge: the existing one to
+scsynth, a new on-demand one to SuperDirt's UDP port (default
+`127.0.0.1:57120`).
+
+**Why this framing.** SuperDirt lives at `superdirt/` as a git
+submodule (already added). Architecture overview + integration
+options are written up in [`superdirt.md`](./superdirt.md); this
+phase implements **Option A** — the thinnest possible client. It's
+the smallest piece that produces audible Dirt-style sample
+playback from sc-app, and it's the prerequisite for any future
+sequencer work (Options B/C in `superdirt.md`). All synthesis,
+voice management, and effects stay SuperDirt's problem; sc-app is
+a typed OSC dispatcher.
+
+### Approaches considered
+
+Two transport designs were weighed before locking in. Recording
+both so the trade-off is auditable.
+
+#### Approach A — Tagged frames over the existing WS (rejected)
+
+One WebSocket with a one-byte target tag prepended to every frame
+(`0x00`=scsynth, `0x01`=dirt). Bridge dispatches per-frame to one
+of two pre-bound UDP sockets. To support on-demand connect/
+disconnect, an in-band JSON control frame (`0xFE`) configures or
+clears the dirt peer dynamically.
+
+#### Approach B — Second WebSocket on `/ws/dirt` (chosen)
+
+Independent `/ws/dirt` route in the Rust bridge. Browser opens it
+on user "Connect"; closes on "Disconnect". Each WS is single-
+purpose, raw OSC bytes, no tagging. UDP socket is bound at WS
+open and dropped at WS close — WS open/close *is* the lifecycle.
+
+#### Comparison
+
+| Concern | A: Tagged frames | B: Second WS |
+|---|---|---|
+| Lifecycle for late-bound dirt | Needs in-band control protocol (`0xFE` JSON) | Native — open/close == connect/disconnect |
+| Frame format on hot path (`/b_setn`) | Every frame pays a tag byte | Untouched |
+| Reply demux | Single stream, target-byte routes back to two channels | Two streams, naturally separated |
+| Failure isolation | One WS dies → both engines down | Independent — dirt drop never touches scsynth |
+| Worker plumbing | Worker handles both targets, demuxes | Dirt runs on main thread; worker untouched |
+| Bridge code | One WS handler, branching logic | Two WS routes, mostly disjoint |
+| Code volume | Higher (tag layer + control protocol) | Lower (separate, simpler routes) |
+
+#### Decision
+
+**B.** With dirt being on-demand and orthogonal to scsynth, the
+control-protocol overhead in A exists *only because* we forced
+both onto one WS. B's open/close handshake replaces that. Two WS
+routes are independently simpler than one branching WS handler.
+
+The existing scsynth path stays in the worker (the `/b_setn` hot
+path is the reason it's there); dirt runs on the main thread —
+its traffic is sparse and small, and avoiding a second `osc-js`
+worker bootstrap is a real saving.
+
+### Architecture
+
+```
+Main thread                         Rust bridge                 External
+  ├── WorkerClient ── ws:/ws        ── /ws  ── UDP 57110 ────── scsynth
+  │   (existing, unchanged)
+  └── DirtClient   ── ws:/ws/dirt   ── /ws/dirt?host=&port=── ── superdirt (sclang)
+      (new, main thread)               (new, on demand)            (user runs)
+```
+
+### Proposed shape
+
+1. **Bridge route.** `GET /ws/dirt` with required query params
+   `host` and `port`. On WS open: validate, `UdpSocket::bind` an
+   ephemeral local socket, `connect((host, port))`. Two
+   `tokio::spawn`'d ferry tasks (WS→UDP, UDP→WS), raw OSC bytes
+   each way. On WS close or any task error: drop socket, drop
+   tasks. No global state; lives entirely in the WS task's stack
+   frame. 400 on bad query params; refuse early before WS upgrade
+   completes if practical.
+
+2. **`DirtClient` on main thread.** New `src/dirt/DirtClient.ts`.
+   No worker — `osc-js` already runs fine on the main thread
+   (`window` is real). API:
+
+   ```ts
+   class DirtClient {
+     connect(host: string, port: number): Promise<void>
+     disconnect(): Promise<void>
+     play(event: DirtEventInput, opts?: { lookaheadMs?: number }): void
+     hello(timeoutMs?: number): Promise<boolean>
+     setControlBus(idx: number, value: number): void
+     onReply(cb: (r: { address: string; args: unknown[] }) => void): () => void
+     readonly status: ReadonlyStore<'disconnected'|'connecting'|'alive'|'unreachable'>
+     readonly recentEvents: ReadonlyStore<DirtEventLog[]>
+   }
+   ```
+
+   `connect()` resolves only after a `/dirt/hello` round-trip
+   succeeds; rejects on timeout (default 1 s) → status
+   `'unreachable'`, WS closed. `play()` wraps the message in an
+   `OSC.Bundle` with `timetag = Date.now() + lookaheadMs` (default
+   100 ms) and ships bytes. Encoding reuses
+   `@sc-app/server-commands` osc-js setup.
+
+3. **Typed builders + reply accessors.** New `src/dirt/dirtCommands.ts`
+   for `/dirt/play`, `/dirt/hello`, `/dirt/handshake`,
+   `/dirt/setControlBus`. Mirrors the pattern in
+   `@sc-app/server-commands` but lives in `src/dirt/` for now —
+   if it grows, extract to a `packages/dirt-commands` workspace
+   package later.
+
+4. **REPL parser.** New `src/dirt/replParser.ts`. Pure function,
+   easily unit-tested:
+   - First bare token (no `:`) → `s` value.
+   - Subsequent `key:value` pairs.
+   - Numeric value if `parseFloat(v)` round-trips exact, else
+     string.
+   - Reject duplicate keys; throw `DirtParseError` with the
+     offending token.
+
+   Example: `bd cutoff:800 amp:0.5 n:2` →
+   `{ s: 'bd', cutoff: 800, amp: 0.5, n: 2 }`.
+
+5. **`DirtPanel` UI.** New `src/ui/DirtPanel.tsx`. Single
+   self-contained panel, **no header chip**. Layout:
+
+   ```
+   ┌─ Dirt ─────────────────────────────────────┐
+   │ [ 127.0.0.1:57120______ ] [Connect]        │   ← disconnected
+   │ [ 127.0.0.1:57120______ ] [Disconnect] ● alive  ← connected
+   │                                             │
+   │ > bd cutoff:800 amp:0.5    (only when alive)│
+   │                                             │
+   │ Recent: bd n:2  amp:0.4   3s ago            │
+   │ ▼ Replies (3)              (collapsed)      │
+   └─────────────────────────────────────────────┘
+   ```
+
+   - Input pre-filled with `127.0.0.1:57120` on every mount; **no
+     localStorage**. User retypes if they want a different value.
+   - `parseHostPort()` handles IPv6 (`[::1]:57120`) by splitting
+     on the last `:` outside brackets.
+   - Connect button disabled while connecting; replaced by
+     Disconnect on `'alive'`.
+   - Errors (parse / unreachable / hello timeout) surface as a
+     red line below the input, dismissed on next interaction.
+
+6. **Lifecycle hooks in `AppShell`.**
+   - `setupDashboard` constructs a `DirtClient` instance (in
+     `'disconnected'` state) and stashes it on `DashboardResources`.
+   - `teardownServerState` calls `dirtClient.disconnect()` first
+     in the chain. Auto-close on scsynth disconnect.
+   - chunkSize re-init does **not** touch the dirt client (dirt is
+     orthogonal to scsynth's audio config).
+
+7. **Dev hook.** Expose `__sc.dirt` on `window` in dev mode for
+   console testing — same pattern as the existing `__sc*`
+   globals. Useful for verifying transport before the panel
+   exists.
+
+### Implementation order
+
+The phase splits naturally into three contiguous slices. Each
+produces something independently observable.
+
+- **25a — transport.** Rust `/ws/dirt` route + `DirtClient`
+  skeleton + `__sc.dirt` console hook. Verifiable: in devtools,
+  `__sc.dirt.connect('127.0.0.1', 57120)` followed by
+  `__sc.dirt.play({s:'bd'})` produces audio (assuming SuperDirt
+  is running externally).
+- **25b — panel.** `DirtPanel.tsx` with connection string input,
+  Connect/Disconnect buttons, status pill. No REPL yet.
+- **25c — REPL + log.** Text input + parser, recent-events log,
+  reply log toggle.
+
+Each slice is a natural commit boundary. Whether they ship as
+sub-phases or as one Phase 25 is a call at impl time; default to
+one phase unless 25a stalls on transport quirks.
+
+### File map
+
+```
+src-tauri/
+  src/server/
+    ws_dirt.rs (NEW)              # /ws/dirt route + UDP ferry
+    mod.rs (or similar)           # register the new route
+
+src/
+  dirt/ (NEW)
+    DirtClient.ts                 # main-thread WS + status store
+    dirtCommands.ts               # typed OSC builders + reply accessors
+    replParser.ts                 # Tidal-ish shorthand → DirtEventInput
+    parseHostPort.ts              # `host:port` (IPv6-aware) parser
+    types.ts                      # DirtEventInput, DirtStatus, DirtEventLog
+  ui/
+    DirtPanel.tsx (NEW)           # the panel
+  AppShell.tsx                    # construct+dispose DirtClient, render panel
+  util/
+    runtime.ts (or wherever __sc lives)  # expose __sc.dirt in dev
+```
+
+No changes to the existing scsynth WS path, worker, or
+`@sc-app/server-commands`.
+
+### Acceptance criteria
+
+**Transport (25a):**
+- `__sc.dirt.connect('127.0.0.1', 57120)` against a running
+  SuperDirt: status flips to `'alive'` within ~50 ms; subsequent
+  `__sc.dirt.play({s:'bd'})` produces audible kick.
+- `__sc.dirt.connect('127.0.0.1', 1)` (nothing listening):
+  rejects within `timeoutMs`, status → `'unreachable'`, WS closed,
+  no zombie tasks Rust-side.
+- `__sc.dirt.disconnect()` closes WS; subsequent `play()` warns
+  and is a no-op.
+- `yarn build` + `yarn tauri dev` + `yarn serve` all work; the
+  new route is wired in the shared crate.
+
+**Panel (25b):**
+- Panel mounts in `disconnected` state with `127.0.0.1:57120`
+  pre-filled. Click Connect → `connecting` → `alive`. Connect
+  button replaced by Disconnect.
+- Click Disconnect → returns to `disconnected`. Status pill
+  reflects state at all times.
+- Hard-disconnect from scsynth (return to Connect screen) closes
+  the dirt WS as part of `teardownServerState`. Reconnecting to
+  scsynth lands in dashboard with dirt back to `disconnected`.
+- Bad host:port shows an inline error, doesn't attempt connect.
+
+**REPL (25c):**
+- `bd` → audible kick.
+- `bd n:2 amp:0.5 cutoff:800` → multi-key event audible with
+  expected parameters.
+- Parse errors (e.g. `bd cutoff:abc`) surface inline; nothing is
+  sent.
+- Recent-events log shows last 20 entries with relative
+  timestamps.
+- Reply log toggle reveals `/dirt/hello/reply` and any other
+  `/dirt/*` replies received.
+
+### Open questions
+
+1. **Where is the route table?** `yarn serve` and `yarn tauri
+   dev` need to share the new route. Need to read the Rust crate
+   and confirm there's a single registration point; if not, light
+   refactor first to centralise.
+2. **Ferry buffer sizing.** Dirt traffic is small (`/dirt/play`
+   ≤ 1 KB typical). Use `tokio::io` defaults; don't over-engineer.
+3. **`/dirt/hello` reply matching.** No transaction id in
+   SuperDirt's reply, so two concurrent `hello()` calls would
+   race. Serialise with a single in-flight flag (reject
+   overlapping calls) — fine for what it is.
+4. **`cps` semantics in REPL.** Tidal treats `cps` as a per-event
+   key, but it's actually per-orbit-permanent in SuperDirt. Match
+   SuperDirt's behaviour (treat as a key like any other) and
+   document the gotcha in the panel help.
+5. **IPv6 input UX.** Forces `[…]:port` brackets. Document via
+   placeholder text or inline help; don't auto-detect.
+6. **Phase 22 ordering.** If 22 lands first (the in-flight
+   per-session bridge state), the new `/ws/dirt` route should
+   slot into the same `Cargo.toml` deps and use the same
+   `tracing` setup if available. If 25 lands first, 22 picks up
+   on the additional route. No hard ordering, but 22-first is
+   slightly cleaner.
+
+### Risks
+
+- **Submodule discoverability.** New contributors need to know
+  that `git clone` of sc-app should be followed by
+  `git submodule update --init` to populate `superdirt/`.
+  Document in README. The submodule itself is reference-only —
+  no build step, nothing imports from it.
+- **OSC port confusion.** scsynth on 57110, SuperDirt on 57120.
+  Easy to type the wrong one and wonder why nothing happens.
+  Inline placeholder text helps; an alive-status indicator
+  catches it within 1 s either way.
+- **Sample namespace blindness.** Without a sample browser (Q
+  deferred from `superdirt.md`), the user must know that `bd`,
+  `sn`, `cp`, etc. exist. Fine for the OSC-shell scope; a real
+  blocker for any future sequencer UI (Phase 26+).
+- **REPL grammar drift.** Tidal's mini-notation is far richer
+  than `key:value`; users coming from Tidal may type
+  `bd*4 cp(3,8)` and be surprised. Document scope explicitly:
+  this is *event* shorthand, not pattern shorthand.
+
+### Out of scope (do not creep)
+
+- Sequencer / pattern playback. Option B from `superdirt.md`,
+  separate phase.
+- Native SuperDirt port (Option C). Far future.
+- Sample browser / autocomplete for `s` strings.
+- Auto-launching `sclang` from sc-app. User runs SuperDirt
+  externally; document in README.
+- Persistence of the connection string.
+- Header-chip status indicator. Single panel only.
+- IPv6 auto-formatting / hostname validation beyond
+  parse-and-pass.
 
 ### Files (as landed)
 
