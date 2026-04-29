@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ClockPanel } from '@/ui/ClockPanel';
 import { ConnectScreen } from '@/ui/ConnectScreen';
 import { DebugLog } from '@/ui/DebugLog';
+import { DirtPanel } from '@/ui/DirtPanel';
 import { Footer } from '@/ui/Footer';
 import { AlertModal, ConfirmModal, LoadingModal } from '@/ui/Modal';
 import { RecordingPanel } from '@/ui/RecordingPanel';
@@ -133,6 +134,7 @@ function Dashboard({
         clock={resources.clock}
         sampleRate={resources.clock.env.sampleRate}
       />
+      <DirtPanel client={resources.dirtClient} />
       <Footer status={resources.status} version={resources.version} />
     </main>
   );

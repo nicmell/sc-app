@@ -1,0 +1,120 @@
+// Chrome lives in the global `.panel` class.
+
+.dirt-panel {
+  .toolbar {
+    align-items: center;
+
+    label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.85rem;
+      color: var(--text-dim);
+    }
+
+    input[type='text'] {
+      padding: 0.25rem 0.4rem;
+      background: var(--surface-2);
+      color: var(--text);
+      border: 1px solid var(--border-2);
+      border-radius: 3px;
+      font: inherit;
+      font-size: 0.85rem;
+      font-family: var(--font-mono);
+      // Wide enough for `[::1]:57120` without scrolling.
+      width: 14rem;
+
+      &:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+      }
+    }
+
+    .host-port-field > span:first-child {
+      color: var(--text-dim);
+    }
+  }
+
+  button {
+    padding: 0.35rem 0.8rem;
+    background: var(--accent);
+    border: none;
+    border-radius: 4px;
+    color: white;
+    font: inherit;
+    font-weight: 500;
+    cursor: pointer;
+
+    &:disabled {
+      background: var(--border-3);
+      cursor: not-allowed;
+      opacity: 0.7;
+    }
+    &:not(:disabled):hover {
+      background: var(--accent-hover);
+    }
+
+    &.danger {
+      background: var(--danger);
+      &:not(:disabled):hover {
+        background: var(--danger-hover);
+      }
+    }
+  }
+
+  // Status pill: colored dot + label. The dot's color is the
+  // semantic signal; the label is the redundant text equivalent.
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.2rem 0.5rem;
+    background: var(--surface-2);
+    border: 1px solid var(--border-2);
+    border-radius: 999px;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+
+    .dot {
+      font-size: 0.7rem;
+      line-height: 1;
+    }
+
+    &.status-disconnected .dot {
+      color: var(--text-mute);
+    }
+    &.status-connecting .dot {
+      color: var(--accent);
+      // Pulse so the user can tell connecting is actively in flight,
+      // not stuck.
+      animation: dirt-pulse 1.2s ease-in-out infinite;
+    }
+    &.status-alive .dot {
+      color: var(--success, #2ea043);
+    }
+    &.status-unreachable .dot {
+      color: var(--danger);
+    }
+  }
+
+  @keyframes dirt-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  .error {
+    margin: 0;
+    padding: 0.4rem 0.6rem;
+    background: var(--error-bg);
+    border: 1px solid var(--error-border);
+    border-radius: 4px;
+    color: var(--error-text);
+    font-size: 0.85rem;
+  }
+}

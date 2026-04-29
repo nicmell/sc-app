@@ -503,8 +503,7 @@ src/
 
 ## Phase 25 — SuperDirt OSC shell
 
-**25a in flight (transport + DirtClient + dev hook landed).** 25b
-(panel) and 25c (REPL + log) pending.
+**25a + 25b shipped.** 25c (REPL + event log) pending.
 
 **Goal.** Drive a separately-running SuperDirt instance from
 sc-app over OSC. A dedicated dashboard panel hosts a
@@ -809,7 +808,8 @@ No changes to the existing scsynth WS path, worker, or
 
 ### Files (as landed)
 
-**25a — transport + DirtClient + dev hook + launch infra:**
+**25a — transport + DirtClient + dev hook + launch infra
++ 25b — connection panel:**
 
 ```
 scripts/
@@ -854,13 +854,22 @@ src/dirt/
                                       # DirtStatus, DirtReply, DirtEventLog
   dirtCommands.ts                     # NEW — typed builders + reply addrs
   DirtClient.ts                       # NEW — main-thread WS client
+  parseHostPort.ts                    # NEW (25b) — host:port → {host,port}
+                                      # IPv6-aware (`[::1]:57120`).
+                                      # Throws DirtParseError on bad input.
+src/ui/DirtPanel/                     # NEW (25b) — folder pattern matches
+                                      # SynthsPanel/, ScopeList/, etc.
+  DirtPanel.tsx                       # connection input + status pill
+  DirtPanel.scss                      # panel chrome + status-pill styles
+  index.ts                            # re-export
 src/AppShell.tsx                      # construct DirtClient at handleConnect,
                                       # reuse it across chunkSize re-init,
                                       # disconnect on full disconnect +
-                                      # runtime-error paths, expose __scDirt
+                                      # runtime-error paths, expose __scDirt;
+                                      # render <DirtPanel /> in Dashboard
 ```
 
-25b (panel) and 25c (REPL + log) — pending.
+25c (REPL + event log) — pending.
 
 ### Adaptations
 
@@ -934,6 +943,13 @@ src/AppShell.tsx                      # construct DirtClient at handleConnect,
   `/notify`-mirror cap. start-scsynth.sh also lsof-checks UDP
   57110 before launch so a leftover scsynth's bind() failure
   surfaces clearly instead of as `libc++abi: terminating`.
+- **DirtPanel: input locked while connecting/alive.** Plan said
+  "input locked when alive"; the implementation also locks during
+  the brief `'connecting'` window, since changing the target
+  mid-handshake would race the in-flight `/dirt/hello`. Unlocked
+  again on `'unreachable'` so the user can fix a bad address and
+  retry. Plan said the panel uses an Enter-to-connect shortcut as
+  a UX nicety — added on top of the explicit Connect button.
 - **Sclang allocators must mirror scsynth flags in attach mode.**
   Final landing-bug from dogfooding: even with scsynth started
   via `yarn scsynth -b 262144 …`, SuperDirt still failed with
