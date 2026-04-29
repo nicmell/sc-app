@@ -12,6 +12,7 @@ import {
   practicalChunkSizes,
 } from '@/config/clockConfig';
 import { BufferManager } from '@/buffer/BufferManager';
+import { DirtClient } from '@/dirt/DirtClient';
 import { RecordingManager } from '@/recording/RecordingManager';
 import {
   gFreeAll,
@@ -66,6 +67,12 @@ interface DashboardResources {
   /** Fetched once at `setupDashboard` time. `null` if `/version`
    *  timed out (informational only — connect doesn't block on it). */
   version: ScsynthVersion | null;
+  /** SuperDirt OSC client. Created at initial connect, **survives
+   *  chunkSize re-init** (dirt is orthogonal to scsynth's audio
+   *  config — see Phase 25 plan). The instance is reused across
+   *  rebuilds; only `handleDisconnect` (and the runtime-error path)
+   *  call `dirt.disconnect()`. */
+  dirtClient: DirtClient;
 }
 
 /**
@@ -176,6 +183,7 @@ async function setupDashboard(
   parentGroupId: number,
   sampleRate: number,
   chunkSize: number,
+  dirtClient: DirtClient,
 ): Promise<DashboardResources> {
   const ids = {
     node: new IdAllocator(1000),
@@ -263,6 +271,7 @@ async function setupDashboard(
     sampleRate,
     status: createStore<ScsynthStatus | null>(null),
     version: parsedVersion,
+    dirtClient,
   };
 }
 
@@ -337,8 +346,12 @@ export function AppShell() {
   // Keep the latest client in a ref so the error-handler effect can
   // tear it down on a stale event without re-subscribing every render.
   const clientRef = useRef<WorkerClient | null>(null);
+  // Mirror for the DirtClient so the runtime-error path can disconnect
+  // it without going through the (potentially stale) `resources` closure.
+  const dirtClientRef = useRef<DirtClient | null>(null);
   useEffect(() => {
     clientRef.current = resources?.client ?? null;
+    dirtClientRef.current = resources?.dirtClient ?? null;
   }, [resources]);
 
   const handleConnect = useCallback(async (address: string) => {
@@ -465,9 +478,24 @@ export function AppShell() {
         setRuntimeError(message);
         next.dispose();
         clientRef.current = null;
+        // The dirt WS is independent of scsynth's, but it shares the
+        // Rust bridge process — so a worker error usually means the
+        // dirt WS is also gone. Best-effort close either way.
+        const dirt = dirtClientRef.current;
+        if (dirt) {
+          void dirt.disconnect();
+          dirtClientRef.current = null;
+        }
         setResources(null);
       }
     });
+
+    // Construct the DirtClient before setupDashboard so the same
+    // instance is available to consumers from first render. It starts
+    // in `'disconnected'` — the user opts in via the Dirt panel
+    // (Phase 25b). Disposed only by handleDisconnect / runtime-error
+    // paths; the chunkSize re-init explicitly preserves it.
+    const dirt = new DirtClient();
 
     let built: DashboardResources;
     try {
@@ -476,6 +504,7 @@ export function AppShell() {
         parentGroupId,
         sampleRate,
         DEFAULT_PARAMS.chunkSize,
+        dirt,
       );
     } catch (err) {
       console.error('[sc:app] dashboard bring-up failed', err);
@@ -489,7 +518,17 @@ export function AppShell() {
   const handleDisconnect = useCallback(async () => {
     const current = resources;
     if (current) {
-      // Server-side state goes first (recordings → scopes → clock →
+      // Disconnect dirt first — its WS shares the Rust bridge process
+      // and we want it cleanly closed *before* the scsynth WS is torn
+      // down. This is the "auto-close on scsynth disconnect" behaviour
+      // promised in the Phase 25 plan; the chunkSize re-init path
+      // deliberately bypasses it (see runReinit below).
+      try {
+        await current.dirtClient.disconnect();
+      } catch (err) {
+        console.warn('[sc:app] dirt disconnect failed', err);
+      }
+      // Server-side state goes next (recordings → scopes → clock →
       // group). Then unregister /notify and tear down the worker.
       // Each step is best-effort.
       await teardownServerState(current);
@@ -520,6 +559,10 @@ export function AppShell() {
           current.parentGroupId,
           current.sampleRate,
           next,
+          // Reuse the existing DirtClient — chunkSize is orthogonal to
+          // dirt's WS lifecycle, so the user's connection state
+          // (including 'alive' status) survives the rebuild.
+          current.dirtClient,
         );
         setResources(rebuilt);
         setChunkSize(next);
@@ -730,14 +773,17 @@ export function AppShell() {
       __scClient?: WorkerClient;
       __scGroup?: GroupController;
       __scClock?: ClockController;
+      __scDirt?: DirtClient;
     };
     w.__scClient = resources.client;
     w.__scGroup = resources.group;
     w.__scClock = resources.clock;
+    w.__scDirt = resources.dirtClient;
     return () => {
       delete w.__scClient;
       delete w.__scGroup;
       delete w.__scClock;
+      delete w.__scDirt;
     };
   }, [resources]);
 

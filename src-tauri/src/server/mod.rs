@@ -20,9 +20,11 @@ use axum::routing::get;
 use axum::Router;
 use serde::Deserialize;
 use tokio::fs;
+use tokio::net::lookup_host;
 use tokio_util::io::ReaderStream;
 
 pub mod ws_bridge;
+pub mod ws_dirt;
 
 #[derive(Clone)]
 struct AppState {
@@ -34,11 +36,18 @@ struct WsQuery {
     scsynth: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct DirtWsQuery {
+    host: String,
+    port: u16,
+}
+
 pub async fn serve(port: u16, default_scsynth: SocketAddr, dist: PathBuf) -> Result<()> {
     let state = AppState { default_scsynth };
 
     let app = Router::new()
         .route("/ws", get(ws_handler))
+        .route("/ws/dirt", get(ws_dirt_handler))
         .with_state(state)
         .fallback({
             let dist = dist.clone();
@@ -54,6 +63,7 @@ pub async fn serve(port: u16, default_scsynth: SocketAddr, dist: PathBuf) -> Res
     eprintln!(
         "  /ws → {default_scsynth} (override per-connection via ?scsynth=HOST:PORT)"
     );
+    eprintln!("  /ws/dirt → on-demand SuperDirt bridge (per-connection ?host=&port=)");
     eprintln!("  static → {}", dist.display());
 
     axum::serve(listener, app).await.context("axum serve error")?;
@@ -168,6 +178,38 @@ async fn ws_handler(
     Ok(ws.on_upgrade(move |socket| async move {
         if let Err(e) = ws_bridge::handle_ws(socket, scsynth).await {
             eprintln!("ws_bridge session error: {e:#}");
+        }
+    }))
+}
+
+/// Resolve the dirt host:port (IP literal *or* hostname) before the
+/// WS upgrade so a 400 surfaces in the browser as a failed connection
+/// rather than an immediate WS close. Refuses to upgrade if no address
+/// is reachable for the given pair.
+async fn ws_dirt_handler(
+    ws: WebSocketUpgrade,
+    Query(query): Query<DirtWsQuery>,
+) -> Result<Response, (StatusCode, String)> {
+    let host = query.host.trim();
+    if host.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "dirt host must not be empty".into()));
+    }
+    let mut iter = lookup_host((host, query.port)).await.map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("failed to resolve {host}:{port}: {e}", port = query.port),
+        )
+    })?;
+    let dirt = iter.next().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("no addresses resolved for {host}:{port}", port = query.port),
+        )
+    })?;
+
+    Ok(ws.on_upgrade(move |socket| async move {
+        if let Err(e) = ws_dirt::handle_ws(socket, dirt).await {
+            eprintln!("ws_dirt session error: {e:#}");
         }
     }))
 }

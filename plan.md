@@ -503,6 +503,9 @@ src/
 
 ## Phase 25 — SuperDirt OSC shell
 
+**25a in flight (transport + DirtClient + dev hook landed).** 25b
+(panel) and 25c (REPL + log) pending.
+
 **Goal.** Drive a separately-running SuperDirt instance from
 sc-app over OSC. A dedicated dashboard panel hosts a
 host:port input, Connect/Disconnect buttons, a status pill, and
@@ -806,11 +809,49 @@ No changes to the existing scsynth WS path, worker, or
 
 ### Files (as landed)
 
-*To fill in during implementation.*
+**25a — transport + DirtClient + dev hook:**
+
+```
+scripts/
+  start-superdirt.sh                  # NEW — yarn superdirt
+package.json                          # +1 script: superdirt
+src-tauri/src/server/
+  ws_dirt.rs                          # NEW — UDP ferry, mirrors ws_bridge
+  mod.rs                              # +/ws/dirt route, DirtWsQuery,
+                                      # ws_dirt_handler with hostname
+                                      # resolution via tokio::net::lookup_host
+src/dirt/
+  types.ts                            # NEW — DirtArg, DirtEventInput,
+                                      # DirtStatus, DirtReply, DirtEventLog
+  dirtCommands.ts                     # NEW — typed builders + reply addrs
+  DirtClient.ts                       # NEW — main-thread WS client
+src/AppShell.tsx                      # construct DirtClient at handleConnect,
+                                      # reuse it across chunkSize re-init,
+                                      # disconnect on full disconnect +
+                                      # runtime-error paths, expose __scDirt
+```
+
+25b (panel) and 25c (REPL + log) — pending.
 
 ### Adaptations
 
-*To fill in during implementation.*
+- **Dev hook is `__scDirt`, not `__sc.dirt`.** The plan's
+  `__sc.dirt` notation was schematic; the in-tree convention is
+  flat globals (`__scClient`, `__scGroup`, `__scClock`) on
+  `window`, set/cleared by an effect on `resources` change. Phase
+  25a follows the existing convention.
+- **Hostname resolution in the bridge.** `DirtWsQuery` accepts
+  arbitrary `host` strings (not just IP literals); the handler
+  resolves via `tokio::net::lookup_host` before WS upgrade so DNS
+  failures surface as 400, not as silent WS opens that close
+  immediately. Browser-side this means a typo'd hostname rejects
+  the `connect()` promise cleanly with the bridge's error text.
+- **`setupDashboard` takes a `DirtClient` arg.** Rather than
+  creating one internally (which would re-create on every
+  chunkSize re-init and lose the user's connection state), the
+  caller (`handleConnect` for initial, `runReinit` for in-place
+  rebuilds) decides. `handleConnect` constructs `new DirtClient()`
+  once; `runReinit` passes `current.dirtClient` through.
 
 ---
 
