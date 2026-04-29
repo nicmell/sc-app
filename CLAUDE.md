@@ -124,6 +124,12 @@ yarn serve                     # standalone HTTP+WS server via Rust CLI
 yarn build                     # type-check + Vite production build
 yarn tsc --noEmit              # type-check only (fast)
 
+# SuperDirt OSC shell (Phase 25). Boots scsynth via sclang + starts
+# SuperDirt on UDP 57120; sc-app's Dirt panel connects to it.
+yarn superdirt-setup           # one-time: fetch Dirt-Samples + Vowel
+                               #   + sc3-plugins (macOS) into superdirt-deps/
+yarn superdirt                 # run sclang pinned to vendored superdirt/
+
 # Inside packages/synthdef-compiler/
 yarn test                      # vitest suite (41 tests)
 yarn parity                    # optional sclang byte-diff harness

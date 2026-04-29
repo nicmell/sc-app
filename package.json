@@ -12,7 +12,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "serve": "cargo run --manifest-path src-tauri/Cargo.toml -- serve",
-    "superdirt": "./scripts/start-superdirt.sh"
+    "superdirt": "./scripts/start-superdirt.sh",
+    "superdirt-setup": "./scripts/setup-superdirt-deps.sh"
   },
   "dependencies": {
     "@sc-app/server-commands": "workspace:*",

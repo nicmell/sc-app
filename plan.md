@@ -809,12 +809,25 @@ No changes to the existing scsynth WS path, worker, or
 
 ### Files (as landed)
 
-**25a — transport + DirtClient + dev hook:**
+**25a — transport + DirtClient + dev hook + launch infra:**
 
 ```
 scripts/
+  setup-superdirt-deps.sh             # NEW — yarn superdirt-setup
+                                      # fetches Dirt-Samples + Vowel quark
+                                      # + sc3-plugins (macOS) into
+                                      # superdirt-deps/. Idempotent.
   start-superdirt.sh                  # NEW — yarn superdirt
-package.json                          # +1 script: superdirt
+                                      # generates sclang_conf.yaml at run
+                                      # time, includePaths pinned to
+                                      # SCClassLibrary + superdirt/ +
+                                      # superdirt-deps/{Vowel,sc3-plugins};
+                                      # exec sclang -l <conf> startup.scd
+  sc-app-superdirt-startup.scd        # NEW — trimmed startup that reads
+                                      # samples path from SC_APP_DIRT_SAMPLES
+.gitignore                            # +/superdirt-deps/ entry
+package.json                          # +superdirt + superdirt-setup scripts
+CLAUDE.md                             # Common commands +yarn superdirt(-setup)
 src-tauri/src/server/
   ws_dirt.rs                          # NEW — UDP ferry, mirrors ws_bridge
   mod.rs                              # +/ws/dirt route, DirtWsQuery,
@@ -852,6 +865,30 @@ src/AppShell.tsx                      # construct DirtClient at handleConnect,
   caller (`handleConnect` for initial, `runReinit` for in-place
   rebuilds) decides. `handleConnect` constructs `new DirtClient()`
   once; `runReinit` passes `current.dirtClient` through.
+- **Launch pinned to vendored submodule.** First-run dogfooding
+  found that the user's system quark folder may have StrudelDirt
+  (a SuperDirt fork) installed without canonical SuperDirt or
+  Dirt-Samples — sclang then picks up StrudelDirt for
+  `SuperDirt(2, s)` and tries to load synthdefs that need
+  sc3-plugins. Solution: the launch script now passes
+  `sclang -l <generated.yaml>` with an explicit `includePaths`
+  list — system `SCClassLibrary` + our vendored `superdirt/`
+  submodule + `superdirt-deps/{Vowel, sc3-plugins}`. Anything in
+  `~/Library/.../downloaded-quarks` is invisible to the run.
+  Reproducible across machines, version-locked to the submodule.
+- **Custom startup .scd reads samples path from env var.**
+  `scripts/sc-app-superdirt-startup.scd` (a trimmed copy of the
+  example shipped with the SuperDirt quark) takes the Dirt-Samples
+  glob from `SC_APP_DIRT_SAMPLES`, set by the launch script to
+  `superdirt-deps/Dirt-Samples/*`. The vendored
+  `superdirt/superdirt_startup.scd` is left untouched (upstream
+  example).
+- **`yarn superdirt-setup` for runtime deps.**
+  `scripts/setup-superdirt-deps.sh` clones Dirt-Samples + Vowel
+  and (on macOS) downloads the latest sc3-plugins release into
+  `superdirt-deps/`. Idempotent. Linux skips sc3-plugins (no
+  pre-built release; users `apt install supercollider-sc3-plugins`
+  or build from source). The directory is `.gitignore`d.
 
 ---
 
