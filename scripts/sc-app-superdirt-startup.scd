@@ -13,11 +13,27 @@
 // Sample path comes from SC_APP_DIRT_SAMPLES (set by the launch
 // script to superdirt-deps/Dirt-Samples/*).
 //
-// Wrapping note: the entire body lives inside Routine.run({…}) — a
-// single top-level statement. sclang's command-line file parser
-// rejects multiple top-level statements + `var` declarations inside
-// the outer (...);. The routine context also gives us .wait for the
-// liveness poll.
+// Three things this file's structure reflects (read CLAUDE.md's
+// "SuperDirt launch gotchas" section for full context):
+//
+//   1. Single top-level statement wrapped in Routine.run({...}).
+//      sclang's command-line file parser rejects multi-statement
+//      + top-level `var` inside (...);. The routine wrapper also
+//      gives us .wait for the liveness poll.
+//
+//   2. s.options.* mirror scsynth's command-line flags. In attach
+//      mode sclang doesn't push these to scsynth — but they STILL
+//      govern sclang's local allocator ranges (bufferAllocator
+//      uses options.numBuffers). Without this block, sclang's
+//      allocator stays at default 1024 and Dirt-Samples loading
+//      fails partway through with "No more buffer numbers".
+//      MUST match scripts/start-scsynth.sh + sc-app-scsynth.service.
+//
+//   3. s.newAllocators after setting options. sclang's allocators
+//      are constructed at Server.local init time (before this .scd
+//      runs) using whatever options were in effect then — i.e.
+//      defaults. Setting options now doesn't retroactively resize.
+//      newAllocators rebuilds them with the current option values.
 
 (
 Routine.run({

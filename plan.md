@@ -934,6 +934,19 @@ src/AppShell.tsx                      # construct DirtClient at handleConnect,
   `/notify`-mirror cap. start-scsynth.sh also lsof-checks UDP
   57110 before launch so a leftover scsynth's bind() failure
   surfaces clearly instead of as `libc++abi: terminating`.
+- **Sclang allocators must mirror scsynth flags in attach mode.**
+  Final landing-bug from dogfooding: even with scsynth started
+  via `yarn scsynth -b 262144 …`, SuperDirt still failed with
+  `No more buffer numbers` partway through Dirt-Samples loading.
+  Cause: sclang's `bufferAllocator` is sized from
+  `s.options.numBuffers`, which stays at default 1024 unless
+  explicitly set. The .scd now sets all relevant `s.options.*`
+  to mirror scsynth's flags AND calls `s.newAllocators` to
+  rebuild the allocator data structures with the new ranges.
+  Three places hold these numbers (start-scsynth.sh,
+  sc-app-scsynth.service, sc-app-superdirt-startup.scd) — must
+  change together. Could be centralised later if it bites; for
+  now the `.scd` carries a comment flagging the duplication.
 - **`yarn cleanup` for repeatable resets.**
   `scripts/cleanup.sh` wipes `superdirt-deps/`, `dist/`, and
   `src-tauri/target/`. Doesn't touch `node_modules/` (yarn-managed)

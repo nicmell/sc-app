@@ -480,3 +480,84 @@ Observations:
   release — the safety log surfaces the regression with a
   console warning rather than letting it ship as a leaked tap
   synth.
+
+### SuperDirt launch gotchas (Phase 25)
+
+- **scsynth's defaults are far too small for SuperDirt.** Plain
+  `scsynth -u 57110` boots with `-b 1024 -m 8192 -l 64` which
+  fails three different ways: (a) Dirt-Samples exhausts the 1024
+  buffer slots around the 15th folder, (b) `-m 8192` (KB)
+  triggers SuperDirt's `checkServerMemory` failure path, (c)
+  `maxLogins = 64` exceeds sclang's hardcoded ≤32 cap on
+  `/notify` mirroring. Required: `-b 262144 -m 262144 -w 2048
+  -n 32768 -l 8 -i 2 -o 2`. These flags are duplicated across
+  `scripts/start-scsynth.sh` (dev), `scripts/sc-app-scsynth.service`
+  (Pi prod), and `s.options.*` in `scripts/sc-app-superdirt-startup.scd`
+  (sclang local) — change all three together. Mismatch between
+  the .scd and the launcher manifests as `No more buffer numbers`
+  even though scsynth has plenty.
+- **`s.options.*` has TWO roles, both relevant in attach mode.**
+  At `s.boot` time, options become scsynth command-line flags.
+  At runtime, they govern sclang-side allocator ranges
+  (`bufferAllocator` uses `options.numBuffers`, etc.). In our
+  setup sclang doesn't boot scsynth, but the *second* role still
+  matters — without setting `s.options.numBuffers`, sclang's
+  `bufferAllocator` stays at the default 1024 even though scsynth
+  has 262144 slots ready. Always pair `s.options.* = …` with
+  `s.newAllocators` in attach mode to actually rebuild the
+  allocator data structures.
+- **sclang's command-line file parser is finicky about `(...)
+  ;`.** A `.scd` file run via `sclang file.scd` is interpreted
+  as a single top-level expression. Inside the outer `(…);`
+  wrapper, top-level `var` declarations followed by multiple
+  `;`-separated statements trip the parser ("unexpected `;`,
+  expecting end of file"). Workaround: collapse the body into
+  one statement — typically `Routine.run({ var X; var Y; … })`
+  — so the file's outermost `(...)` contains exactly one
+  expression. The IDE doesn't have this constraint; only
+  command-line `sclang file.scd` execution does.
+- **scsynth UGens (`-U`) and sclang quarks (`-l includePaths`)
+  are TWO separate plugin paths.** sc3-plugins ships both `.sc`
+  class files (sclang-side) and `.scx` UGen binaries
+  (scsynth-side). Adding `superdirt-deps/sc3-plugins` to sclang's
+  `includePaths` only handles the class library. scsynth has its
+  own `-U` flag for UGen binary search paths, completely
+  independent of sclang's class path. Both must be set or you
+  get "UGen 'X' not installed" errors at SynthDef compile time
+  (sclang knows the UGen, scsynth doesn't, so /d_recv fails).
+- **macOS AppleDouble files in zip releases break scsynth's `-U`
+  scan.** The official sc3-plugins macOS release zip contains
+  `._FOO.scx` AppleDouble metadata siblings of every real
+  `FOO.scx`. scsynth tries to `dlopen` every `*.scx` it finds in
+  the plugin path and crashes with `slice is not valid mach-o
+  file` for each `._*` file. `setup-superdirt-deps.sh` strips
+  them after extraction (`find … -name '._*' -delete`). If you
+  manually update the prebuilt sc3-plugins, do the same.
+- **The user's quark folder can shadow our vendored SuperDirt.**
+  sclang's default class-library compile scans
+  `~/Library/Application Support/SuperCollider/{Extensions,downloaded-quarks}/*`
+  on top of the system stdlib. If a SuperDirt fork (StrudelDirt,
+  etc.) lives there, it wins over our vendored
+  `superdirt/` because both define a `SuperDirt` class. Fix:
+  `start-superdirt.sh` generates an `sclang_conf.yaml` with
+  pinned `includePaths` (system + `superdirt/` + `Vowel` +
+  `sc3-plugins`) and passes it via `sclang -l`. The
+  `downloaded-quarks/` tree is invisible to that run. The
+  `Extensions/` dir is *still* compiled by sclang regardless of
+  `-l` config (hardcoded behaviour); harmless unless a `SuperDirt`
+  class lives there directly.
+- **scsynth/sclang/sc-app are three independent processes.**
+  scsynth runs externally — `yarn scsynth` (dev) or a systemd
+  unit (Pi prod). `yarn superdirt` runs sclang which *attaches*
+  via `s.startAliveThread` + `/notify`; it does NOT boot
+  scsynth. sc-app is yet another OSC client of the same scsynth.
+  All three can be started/stopped independently. Don't be
+  tempted to use `s.reboot{}` in the .scd — that would `/quit`
+  whatever scsynth is running and break sc-app's connection
+  (and any other clients).
+- **UDP 57110 collisions surface as `libc++abi: terminating`
+  SIGABRT.** scsynth's `bind()` failure throws an uncaught C++
+  exception with no informative output. Most common cause: a
+  leftover scsynth from a previous session. `start-scsynth.sh`
+  pre-flights with `lsof -nP -iUDP:57110` and refuses to launch
+  if anything's already bound, with a clear PID + kill hint.
