@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Boot scsynth + SuperDirt via sclang, pinned to the vendored
-# superdirt/ submodule and superdirt-deps/ tree.
+# Run sclang and mount SuperDirt on top of an externally-running
+# scsynth. Pinned to the vendored superdirt/ submodule and
+# superdirt-deps/ tree.
 #
-# sclang owns scsynth's lifecycle: `s.reboot { ... }` in the startup
-# .scd sends /quit to any existing scsynth on 57110, then boots a
-# fresh one with SuperDirt-required options. sc-app connects to that
-# scsynth as a normal OSC client.
+# scsynth must already be running on UDP 57110 — we don't manage
+# its lifecycle. Launch it with:
+#   - dev (Mac):   yarn scsynth   (foreground; Ctrl-C to stop)
+#   - prod (Pi):   systemctl start sc-app-scsynth
+#                  (template at scripts/sc-app-scsynth.service)
 #
 # We pass `-l <generated-config>` to sclang so only these paths
 # contribute to the compiled class library:
@@ -18,7 +20,9 @@
 # Anything in the user's ~/Library/.../downloaded-quarks (StrudelDirt,
 # etc.) is invisible to this run — no class-name conflicts.
 #
-# Wire: `yarn superdirt`. Pre-req: `yarn superdirt-setup` (one-time).
+# Wire: `yarn superdirt`. Pre-reqs:
+#   - `yarn superdirt-setup` (one-time, fetches deps)
+#   - scsynth running on UDP 57110 (yarn scsynth or systemd unit)
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -43,7 +47,6 @@ fi
 case "$(uname -s)" in
   Darwin*)
     SCCLASSLIB="/Applications/SuperCollider.app/Contents/Resources/SCClassLibrary"
-    SC_STOCK_PLUGINS="/Applications/SuperCollider.app/Contents/Resources/plugins"
     ;;
   Linux*)
     if [ -d "/usr/share/SuperCollider/SCClassLibrary" ]; then
@@ -53,7 +56,6 @@ case "$(uname -s)" in
     else
       die "SCClassLibrary not found — set SC_APP_CLASSLIB to override"
     fi
-    SC_STOCK_PLUGINS=""
     ;;
   *)
     die "unsupported OS: $(uname -s)"
@@ -61,7 +63,6 @@ case "$(uname -s)" in
 esac
 
 SCCLASSLIB="${SC_APP_CLASSLIB:-$SCCLASSLIB}"
-SC_STOCK_PLUGINS="${SC_APP_STOCK_PLUGINS:-$SC_STOCK_PLUGINS}"
 
 # ── Pre-flight checks ────────────────────────────────────────────────
 [ -d "$SCCLASSLIB" ] || die "SCClassLibrary not found at $SCCLASSLIB"
@@ -87,23 +88,15 @@ trap 'rm -f "$CONF"' EXIT
 } > "$CONF"
 
 # ── Banner + launch ──────────────────────────────────────────────────
-echo "starting sclang (boots scsynth + mounts SuperDirt)"
+echo "starting sclang (attaches to scsynth + mounts SuperDirt)"
 echo "  superdirt → $SUPERDIRT"
 echo "  deps → $DEPS"
-if [ ! -d "$DEPS/sc3-plugins" ] && [ "$(uname -s)" = "Darwin" ]; then
-  echo "  (sc3-plugins not installed — global effects unavailable)"
-fi
-echo "  scsynth → 127.0.0.1:57110 (managed by sclang)"
+echo "  attaching to scsynth at 127.0.0.1:57110 (must already be running)"
 echo "  SuperDirt → 127.0.0.1:57120 (12 orbits)"
-echo "  Ctrl-C to stop both."
+echo "  Ctrl-C to stop sclang+SuperDirt (scsynth survives)."
 
-# Env vars consumed by the .scd. Sample path always set; plugin paths
-# only on macOS where sc3-plugins lives outside scsynth's compiled-in
-# default plugin path.
+# Sample path consumed by the .scd. scsynth's plugin path (-U flag)
+# is scsynth's concern — set when launching scsynth, not here.
 export SC_APP_DIRT_SAMPLES="$DEPS/Dirt-Samples/*"
-if [ -n "$SC_STOCK_PLUGINS" ] && [ -d "$DEPS/sc3-plugins" ]; then
-  export SC_APP_STOCK_PLUGINS_PATH="$SC_STOCK_PLUGINS"
-  export SC_APP_SC3_PLUGINS_PATH="$DEPS/sc3-plugins"
-fi
 
 exec sclang -l "$CONF" "$STARTUP"

@@ -819,6 +819,12 @@ scripts/
                                       # superdirt-deps/. Strips macOS
                                       # ._*.scx AppleDouble files.
                                       # Idempotent.
+  start-scsynth.sh                    # NEW — yarn scsynth (dev)
+                                      # foreground scsynth on 57110
+                                      # with SuperDirt-required flags
+                                      # + per-OS -U plugin path
+  sc-app-scsynth.service              # NEW — systemd unit template
+                                      # for Pi prod (same flag set)
   cleanup.sh                          # NEW — yarn cleanup
                                       # wipes superdirt-deps/ + dist/
                                       # + src-tauri/target/ for a
@@ -829,11 +835,12 @@ scripts/
                                       # SCClassLibrary + superdirt/ +
                                       # superdirt-deps/{Vowel,sc3-plugins};
                                       # exec sclang -l <conf> startup.scd
-  sc-app-superdirt-startup.scd        # NEW — boots scsynth via
-                                      # s.reboot{} with SuperDirt-
-                                      # required options, then mounts
-                                      # SuperDirt. Reads samples path
-                                      # + plugin paths from env vars.
+  sc-app-superdirt-startup.scd        # NEW — attach-mode startup
+                                      # wrapped in Routine.run({…}).
+                                      # Polls for serverRunning, then
+                                      # /notify + /sync + SuperDirt
+                                      # mount. Reads samples path
+                                      # from SC_APP_DIRT_SAMPLES.
 .gitignore                            # +/superdirt-deps/ entry
 package.json                          # +superdirt + superdirt-setup scripts
 CLAUDE.md                             # Common commands +yarn superdirt(-setup)
@@ -905,17 +912,28 @@ src/AppShell.tsx                      # construct DirtClient at handleConnect,
   scsynth's compiled-in default plugin path so no extra wiring is
   needed. Idempotent. The `superdirt-deps/` directory is
   `.gitignore`d.
-- **sclang owns scsynth's lifecycle.** Briefly tried a "user
-  manages scsynth, sclang attaches" mode but it required two
-  yarn commands, a port-conflict pre-flight, and exposing
-  scsynth's command-line flags — without solving any concrete
-  problem. Reverted to the upstream pattern: `s.reboot { … }` in
-  the .scd boots scsynth with the right options
-  (`numBuffers = 262144`, `memSize = 262144`, `maxLogins = 8`,
-  etc. — defaults are too small and SC 3.14's default `maxLogins
-  = 64` trips sclang's hardcoded ≤32 cap during `/notify`
-  mirroring). sc-app connects to that scsynth as a normal OSC
-  client; multiple clients on one scsynth is fine.
+- **scsynth's lifecycle is external; sclang attaches.** Matches
+  the actual deployment model: a separate terminal on dev
+  (`yarn scsynth`), a systemd unit on the Pi (template at
+  `scripts/sc-app-scsynth.service`). The startup `.scd` uses
+  `s.startAliveThread` + a 10s liveness poll, then `s.notify`
+  + `s.sync` + `SuperDirt(2, s)` — never `s.reboot`. The whole
+  body wraps in `Routine.run({...})` so sclang's command-line
+  parser sees a single top-level statement (multiple top-level
+  statements with `var` declarations inside `(...);` trip the
+  parser).
+- **`yarn scsynth` for dev; systemd unit for Pi.**
+  `scripts/start-scsynth.sh` is a foreground convenience for the
+  dev machine. `scripts/sc-app-scsynth.service` is a systemd
+  unit template (User=, audio policy, `ExecStart=` with the same
+  flags) for Pi prod. Both pass the SuperDirt-required server
+  sizing: `-b 262144 -m 262144 -w 2048 -n 32768 -l 8 -i 2 -o 2`.
+  Defaults are too small (Dirt-Samples needs >1k buffers,
+  per-orbit graph needs ~256 MB RT memory) and SC 3.14's
+  `maxLogins = 64` default exceeds sclang's hardcoded ≤32
+  `/notify`-mirror cap. start-scsynth.sh also lsof-checks UDP
+  57110 before launch so a leftover scsynth's bind() failure
+  surfaces clearly instead of as `libc++abi: terminating`.
 - **`yarn cleanup` for repeatable resets.**
   `scripts/cleanup.sh` wipes `superdirt-deps/`, `dist/`, and
   `src-tauri/target/`. Doesn't touch `node_modules/` (yarn-managed)
