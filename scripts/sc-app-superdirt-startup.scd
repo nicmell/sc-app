@@ -23,30 +23,38 @@
 // not sclang's — for sc3-plugins UGens to actually load at runtime,
 // scsynth must have been started with the right -U list. See
 // scripts/start-scsynth.sh.
+//
+// Structure: the entire body lives inside `Routine.run({...})` —
+// a single top-level statement. sclang's command-line file parser
+// dislikes multiple top-level statements + `var` declarations
+// inside the outer `( ... );` wrapper; collapsing everything into
+// one routine body sidesteps that, and gives us `.wait` support
+// for the server-liveness poll for free.
 
 (
-var samplesPath = "SC_APP_DIRT_SAMPLES".getenv;
-
-// Default `s` already targets 127.0.0.1:57110 — make it explicit
-// so misconfigured environments fail loudly rather than silently
-// connecting to "localhost"-as-something-else.
-s.addr = NetAddr("127.0.0.1", 57110);
-
-// Watch for /status replies. When scsynth answers, s.serverRunning
-// flips to true. Doesn't try to boot anything.
-s.startAliveThread;
-
-fork {
+Routine.run({
+    var samplesPath = "SC_APP_DIRT_SAMPLES".getenv;
     var attemptsLeft = 20;  // 10 s @ 0.5 s polling
+
+    // Default `s` already targets 127.0.0.1:57110 — be explicit so
+    // misconfigured environments fail loudly rather than silently
+    // connecting to "localhost"-as-something-else.
+    s.addr = NetAddr("127.0.0.1", 57110);
+
+    // Watch for /status replies. When scsynth answers,
+    // s.serverRunning flips to true. Doesn't try to boot.
+    s.startAliveThread;
+
     while({ s.serverRunning.not and: { attemptsLeft > 0 } }) {
         0.5.wait;
         attemptsLeft = attemptsLeft - 1;
     };
+
     if(s.serverRunning.not) {
         "[sc-app] scsynth not reachable on % after 10s — start it first:\n  yarn scsynth   (or: scsynth -u 57110)".format(s.addr).error;
     } {
         // Register for async notifications (/n_go, /n_end, /done, …)
-        // and wait for the /done /notify reply via a /sync round-trip.
+        // and wait for the /done /notify reply via /sync round-trip.
         s.notify;
         s.sync;
 
@@ -55,5 +63,5 @@ fork {
         ~dirt.start(57120, 0 ! 12); // 12 orbits, all routing to bus 0
         "[sc-app] SuperDirt ready on UDP 57120".postln;
     };
-};
+});
 );
