@@ -24,6 +24,38 @@ Routine.run({
     var samplesPath = "SC_APP_DIRT_SAMPLES".getenv;
     var attempts = 20;  // 10 s @ 0.5 s polling
 
+    // Mirror scsynth's command-line flags into sclang's local
+    // ServerOptions, then recreate sclang's allocators so they have
+    // matching ranges. ServerOptions has a dual role:
+    //   - At s.boot time: pushed to scsynth as `-b -m -l ...` flags.
+    //   - At runtime:      governs sclang-side allocator sizes
+    //                      (bufferAllocator uses options.numBuffers,
+    //                       node/bus allocators use clientID +
+    //                       maxLogins, etc.)
+    // In attach mode we don't boot scsynth — but the second role
+    // still matters. Without these, sclang's bufferAllocator stays
+    // at default 1024 (Server.local was constructed before this .scd
+    // ran), and SuperDirt's sample loading fails with 'No more
+    // buffer numbers' around the 15th Dirt-Samples folder. Most
+    // sample banks (including 'bd', 'sn', etc.) never load.
+    //
+    // Values must match scripts/start-scsynth.sh and the systemd
+    // unit (scripts/sc-app-scsynth.service); change all three
+    // together.
+    s.options.numBuffers = 1024 * 256;        // -b 262144
+    s.options.memSize = 8192 * 32;             // -m 262144 KB
+    s.options.numWireBufs = 2048;              // -w 2048
+    s.options.maxNodes = 1024 * 32;            // -n 32768
+    s.options.maxLogins = 8;                   // -l 8
+    s.options.numInputBusChannels = 2;         // -i 2
+    s.options.numOutputBusChannels = 2;        // -o 2
+
+    // Recreate sclang's allocators with the new option values. The
+    // notify-handler also calls this if maxLogins/clientID change
+    // mid-flight, but pre-setting maxLogins suppresses that path —
+    // be explicit instead of relying on a side effect.
+    s.newAllocators;
+
     s.addr = NetAddr("127.0.0.1", 57110);
     s.startAliveThread;
 
