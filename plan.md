@@ -9,14 +9,14 @@ audio config schema, file layout, workspace packages, and the
 chunkSize × sampleRate practical table all live in
 [`CLAUDE.md`](./CLAUDE.md) — don't duplicate them here.
 
-**Phase 23 in flight; Phase 24 sketched as follow-on.**
-Phases 0–22 shipped (see `history.md`). Pending phases planned
+**Phase 23 in flight.**
+Phases 0–22 + 24 shipped (see `history.md`). Pending phases planned
 below; longer-term candidates in *Future Improvements*.
 
-Sequencing: 23 (unified logging pipeline, builds on 22's session
-state + tracing foundations) → 24 (scsynth `/fail` surface,
-independent but stronger after 23 lands so errors persist to disk
-via the log pipeline).
+Phase 24 (`/fail` surface) shipped out of order — independent of 23
+per the original sequencing note. Phase 23 (logging pipeline) gains
+a hookup point for the `/fail` events to be persisted server-side
+once it lands.
 
 ---
 
@@ -139,129 +139,6 @@ src/
 - Centralized shipping to external services (Loki, Datadog).
   Local files only.
 - Frontend log filtering UI beyond what `DebugLog` already has.
-
-### Files (as landed)
-
-*To fill in during implementation.*
-
-### Adaptations
-
-*To fill in during implementation.*
-
----
-
-## Phase 24 — scsynth `/fail` surface
-
-**Goal.** scsynth replies with `/fail /<originatingCommand>
-"<error>" [extras]` whenever it rejects a command. Today only one
-matcher consumes these (`/fail /d_recv` in `SynthDefRegistry`);
-every other `/fail` flows silently into `onReply` and gets
-dropped. Surface unmatched `/fail` events through a centralized
-error bus, render them in the UI (errors panel + transient toasts
-+ header badge), and forward them to the log pipeline.
-
-**Why this framing.** Most user-visible bugs in this app are
-silent failures: `/s_new` against a missing SynthDef, `/b_setn`
-after a buffer was freed, `/n_free` on a stale node. The decoder
-already exists in `@sc-app/server-commands` (`Fail.commandAddress`,
-`Fail.error`); the gap is purely "no global subscriber." Pure
-frontend phase, closes a major diagnostic hole.
-
-### Proposed shape
-
-1. **Worker emits `oscError`.** On the inbound path, after decode,
-   intercept any reply where `address === '/fail'`. Emit a typed
-   `oscError` event to main with `{ commandAddress, errorString,
-   extras, receivedAt }`. The reply still flows through `onReply`
-   so existing awaiters (e.g. `SynthDefRegistry`) keep working —
-   emitting both is intentional, simpler than tracking which
-   awaiter would have matched.
-
-2. **Main: `ServerErrorBus`.** New controller in `src/server/`,
-   exposes `ReadonlyStore<OscError[]>` (ring ~100 entries).
-   Subscribes to `oscError` from `WorkerClient`. Forwards each
-   event to `console.error` and (when Phase 23 lands) to the log
-   shipper.
-
-3. **UI — three surfaces:**
-   - **Errors panel** (section in `DebugLog`, or dedicated
-     `ErrorsPanel`): timestamp, command, message, extras.
-   - **Toast** (corner, auto-dismiss ~5 s): most recent error,
-     dismissable, click-through to the panel.
-   - **Header badge**: ⚠ N counter; click opens the panel; resets
-     to 0 on open.
-
-4. **Suppression: simple first cut, none.** Phase 22 cleanup will
-   produce a brief `/fail /notify "Notification not registered"`
-   on already-released slots; users see a one-shot toast at
-   disconnect, document as benign. If real noise emerges, add
-   `markExpected(predicate, ttlMs)` later.
-
-5. **Reuse existing `Fail` accessor** — no new OSC parsing.
-
-### File map
-
-```
-src/
-  server/
-    ServerErrorBus.ts (NEW)           # ring buffer + reactive store
-    WorkerClient.ts                   # add onOscError subscription channel
-  workers/
-    oscWorker.ts                      # intercept /fail on inbound, emit oscError
-    workerProtocol.ts                 # add OscError message shape
-  ui/
-    DebugLog/                         # add Errors section
-    ErrorsToast/ (NEW, optional)      # corner toast component
-    ClockPanel/                       # or wherever header chrome lives — badge
-```
-
-### Acceptance criteria
-
-- Manually fire `/s_new "doesNotExist"` (e.g. via the OscConsole
-  if remounted, or a test path) → toast appears, errors panel
-  shows the entry, header badge increments.
-- `SynthDefRegistry` still rejects on `/fail /d_recv` as today
-  (no regression).
-- Bus ring caps at ~100 entries — older drop without UI freeze.
-- Phase 22 cleanup-time `/fail /notify` shows up as a single
-  benign entry (acceptable noise; documented).
-- After Phase 23 lands, `/fail` events appear in `--log-dir`
-  files server-side, tagged with clientId.
-
-### Open questions
-
-1. **Toast vs. modal.** First cut: toast (non-blocking). Reserve
-   `ErrorModal` for fatal runtime errors (scsynth death, WS
-   close). Confirm.
-2. **Header badge placement.** Next to the `/status` snapshot? Or
-   a dedicated dashboard row?
-3. **Ring size.** 100 is fine for a first cut — match `debugLog`.
-   Configurable later.
-4. **Suppression default.** Simple (none) vs. precise
-   (`markExpected`). Recommend simple unless cleanup noise turns
-   out loud.
-5. **Bundle errors.** When a bundled command fails, scsynth emits
-   `/fail` with the originating sub-command. `Fail.commandAddress`
-   already gives this; ensure the panel shows it prominently.
-
-### Risks
-
-- **Noise overwhelms the panel.** Buggy code path firing `/fail`
-  per tick fills the ring in seconds. Mitigate: count consecutive
-  duplicates ("12× /fail /s_new …") rather than repeat.
-- **Awaiter double-handling.** Both `onReply` matcher and the
-  bus see the event. Intentional — simpler than dedup, and the
-  raw `/fail` in the panel is useful even when an awaiter
-  rejected with a friendlier message.
-
-### Out of scope
-
-- Suppression API (`markExpected`) — added later if needed.
-- Categorization beyond raw `/fail` (severity grading, retry
-  suggestions).
-- scsynth `late N` stdout messages — not OSC; out of frontend
-  reach.
-- Reconnection on fatal `/fail` patterns.
 
 ### Files (as landed)
 

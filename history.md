@@ -40,6 +40,7 @@ is the cleaner read.
 - [Phase 15 — Source Synths Panel](#phase-15--source-synths-panel)
 - [Phase 16–21 — Shared Buffer Layer Refactor](#phase-1621--shared-buffer-layer-refactor)
 - [Phase 22 — Per-session Bridge State (Disconnect Cleanup)](#phase-22--per-session-bridge-state-disconnect-cleanup)
+- [Phase 24 — scsynth `/fail` Surface](#phase-24--scsynth-fail-surface)
 
 ---
 
@@ -767,3 +768,84 @@ disconnects exhaust scsynth's slot pool until restart.
   a wired LAN, even 1 ms would be enough. Keeping 50 ms as
   insurance against scheduling jitter; revisit if it ever
   becomes load-bearing.
+
+
+## Phase 24 — scsynth `/fail` Surface
+
+**Goal.** scsynth replies with `/fail /<originatingCommand>
+"<error>" [extras]` whenever it rejects a command. Pre-Phase-24,
+only one matcher consumed these (`SynthDefRegistry`'s
+`/fail /d_recv` await); every other `/fail` flowed through
+`onReply` and got dropped. Closed the diagnostic hole by surfacing
+unmatched `/fail` events through a centralized error bus, with a
+DebugLog Errors section as the first UI surface.
+
+**What shipped.**
+- `src/server/workerProtocol.ts` — `OscError` type
+  (`commandAddress`, `errorString`, `extras`, `receivedAt`) and
+  `oscError` variant on `WorkerToMain`.
+- `src/workers/oscWorker.ts` — `/fail` intercept inside
+  `emitReply`. Emits `oscError` AND falls through to the normal
+  reply path so existing matchers keep working.
+- `src/server/WorkerClient.ts` — `onOscError(cb)` channel,
+  `oscErrorListeners` Set, dispatch + cleanup in `dispose()`.
+- `src/server/ServerErrorBus.ts` — new controller. Subscribes
+  once on construction, exposes `entries` (ring of 100, newest
+  first) and `total` (unbounded counter) as `ReadonlyStore`s.
+  Mirrors each event to `console.error` with a compact summary
+  so it also lands in the existing `debugLog` ring.
+- `src/AppShell.tsx` — `errorBus: ServerErrorBus` added to
+  `DashboardResources`, constructed in `setupDashboard`,
+  disposed at the head of `teardownServerState`. Passed to
+  `<DebugLog />`.
+- `src/ui/DebugLog/DebugLog.tsx` — `ErrorsSection` sub-component
+  rendered above the regular log scroller when `errors.length >
+  0`. Header gains an `⚠ N` pill that's visible even when the
+  panel is collapsed. SCSS for the new section + pill.
+
+**Decisions.**
+- **Both `oscError` and `reply` for the same `/fail`.** Plan
+  considered routing /fail exclusively through the new channel.
+  Rejected: SynthDefRegistry's `/fail /d_recv` matcher uses
+  `onReply`, and adding it to oscError instead would force
+  every awaiter that wants /fail context to subscribe through a
+  second API. Emitting both is intentional — small dup, large
+  decoupling win.
+- **No suppression for "expected" /fails (yet).** Phase 22's
+  cleanup tail produces a one-shot `/fail /notify "Notification
+  not registered"` at every disconnect (the second `/notify 0`
+  hits an already-cleared notify slot). Document as benign;
+  don't filter. If real noise emerges, add `markExpected(predicate,
+  ttlMs)` later — pattern punted to a follow-on.
+- **Bus disposed at the head of `teardownServerState`.** Putting
+  it first means any /fail replies *during* teardown
+  (e.g. `/n_free` against a stale node) don't fire UI updates
+  on a dashboard that's already coming down. Rare race; cheap
+  insurance.
+- **No toast, no separate ErrorsPanel, no header badge in the
+  Dashboard chrome.** Plan's three-surface design (panel +
+  toast + badge) was scope-trimmed: DebugLog Errors section
+  + the inline pill on the DebugLog header gives persistent
+  visibility from anywhere on the page (DebugLog is fixed-
+  position bottom). Toast and Dashboard-header badge stay on
+  the shelf for follow-on work.
+
+**Gotchas.**
+- **`useSyncExternalStore` needs stable subscribe/snapshot
+  functions when the store is conditional.** Passing
+  `errorBus ? (cb) => bus.subscribe(cb) : noop` creates a fresh
+  closure each render and triggers a re-subscribe loop. Fix:
+  module-level `noopSubscribe` / `noopSnapshot` constants used
+  on the `null` branch. Documented inline in `DebugLog.tsx`.
+- **`receivedAt` units differ between layers.** The worker
+  stamps with `performance.now()` (worker-thread origin); the
+  bus re-stamps with `Date.now()` at receive time on main so
+  the UI's relative-time display can compare against the wall
+  clock. Cross-thread `performance.now()` is not directly
+  comparable — stamp on the consumer side.
+- **`extras` is `args.slice(2)`, not parsed further.** scsynth
+  occasionally puts a nodeId or bufnum past `args[1]`; we keep
+  it raw in the bus and JSON-stringify in the UI. If a caller
+  later wants typed extras (e.g. "this fail referenced node
+  1004"), add a per-command-address parser at that site —
+  the bus shouldn't grow heuristics.

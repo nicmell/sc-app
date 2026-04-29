@@ -32,6 +32,7 @@ import type {
   BufferSubscription,
   ClockTick,
   MainToWorker,
+  OscError,
   OscReply,
   WorkerToMain,
 } from './workerProtocol';
@@ -41,6 +42,7 @@ const DEFAULT_SYNC_TIMEOUT_MS = 2000;
 
 export type ReplyListener = (reply: OscReply) => void;
 export type ErrorListener = (message: string) => void;
+export type OscErrorListener = (error: OscError) => void;
 export type TickListener = (tick: ClockTick) => void;
 export type BufferChunkListener = (chunk: BufferChunk) => void;
 export type ReplyMatcher = (reply: OscReply) => boolean;
@@ -57,6 +59,7 @@ export class WorkerClient {
   private readonly worker: Worker;
   private readonly replyListeners = new Set<ReplyListener>();
   private readonly errorListeners = new Set<ErrorListener>();
+  private readonly oscErrorListeners = new Set<OscErrorListener>();
   private readonly tickListeners = new Set<TickListener>();
   private readonly bufferChunkListeners = new Map<
     string,
@@ -133,6 +136,12 @@ export class WorkerClient {
           console.log('[sc:client] reply', msg.reply.address);
           for (const cb of this.replyListeners) cb(msg.reply);
           break;
+        case 'oscError':
+          // Phase 24: handlers (ServerErrorBus) decide what to do —
+          // we don't console.error here, since the bus does that
+          // itself with structured context.
+          for (const cb of this.oscErrorListeners) cb(msg.error);
+          break;
         case 'clockTick':
           for (const cb of this.tickListeners) cb(msg.tick);
           break;
@@ -180,6 +189,15 @@ export class WorkerClient {
   onError(cb: ErrorListener): () => void {
     this.errorListeners.add(cb);
     return () => this.errorListeners.delete(cb) as unknown as void;
+  }
+
+  /** Phase 24 — subscribe to decoded `/fail` replies. The same reply
+   *  also reaches `onReply` so existing matchers (e.g.
+   *  `SynthDefRegistry`'s `/fail /d_recv`) continue to work; this
+   *  channel is the catch-all for unmatched failures. */
+  onOscError(cb: OscErrorListener): () => void {
+    this.oscErrorListeners.add(cb);
+    return () => this.oscErrorListeners.delete(cb) as unknown as void;
   }
 
   /** Subscribe to decoded clock ticks. Only fires while a clock
@@ -343,6 +361,7 @@ export class WorkerClient {
     this.worker.terminate();
     this.replyListeners.clear();
     this.errorListeners.clear();
+    this.oscErrorListeners.clear();
     this.tickListeners.clear();
     this.bufferChunkListeners.clear();
   }

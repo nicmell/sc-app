@@ -24,6 +24,7 @@ import { ClockController } from '@/clock/ClockController';
 import { GroupController } from '@/server/GroupController';
 import { IdAllocator } from '@/server/IdAllocator';
 import { ScopeManager } from '@/scope/ScopeManager';
+import { ServerErrorBus } from '@/server/ServerErrorBus';
 import { SynthDefRegistry } from '@/server/SynthDefRegistry';
 import { SynthManager } from '@/synth/SynthManager';
 import { WorkerClient } from '@/server/WorkerClient';
@@ -50,6 +51,10 @@ interface DashboardResources {
   synthManager: SynthManager;
   scopeManager: ScopeManager;
   recordingManager: RecordingManager;
+  /** Phase 24 — surfaces unmatched scsynth `/fail` replies. Created
+   *  fresh per `setupDashboard` (cheap; no server-side state).
+   *  Disposed by `teardownServerState`. */
+  errorBus: ServerErrorBus;
   /** Stashed for in-place re-init: re-issuing `notify(1)` over the
    *  same WS would either be rejected by scsynth or hand back a
    *  different `clientId`, orphaning the existing parent group. The
@@ -226,6 +231,11 @@ async function setupDashboard(
     clock,
   });
 
+  // Phase 24: subscribe to /fail replies for the lifetime of this
+  // dashboard. Created here so chunkSize re-init gets a fresh ring;
+  // subscribing on the same WorkerClient again is fine.
+  const errorBus = new ServerErrorBus(client);
+
   // One-shot /version fetch. Informational only — fail open with
   // null rather than blocking the dashboard if it times out (which
   // shouldn't happen against a healthy scsynth, but old or exotic
@@ -263,6 +273,7 @@ async function setupDashboard(
     sampleRate,
     status: createStore<ScsynthStatus | null>(null),
     version: parsedVersion,
+    errorBus,
   };
 }
 
@@ -273,6 +284,15 @@ async function setupDashboard(
  * (rebuild against the same WS). Each step is best-effort.
  */
 async function teardownServerState(resources: DashboardResources): Promise<void> {
+  // Bus disposal is cheap and non-server-touching — drop subscription,
+  // clear ring. Run early so any /fail replies during the teardown
+  // itself (rare but possible — e.g. /n_free against a stale node)
+  // aren't surfaced post-mortem.
+  try {
+    resources.errorBus.dispose();
+  } catch (err) {
+    console.warn('[sc:app] errorBus.dispose failed', err);
+  }
   try {
     await resources.recordingManager.stopAll();
   } catch (err) {
@@ -808,7 +828,7 @@ export function AppShell() {
           onDismiss={() => setRuntimeError(null)}
         />
       )}
-      <DebugLog />
+      <DebugLog errorBus={resources?.errorBus ?? null} />
     </>
   );
 }

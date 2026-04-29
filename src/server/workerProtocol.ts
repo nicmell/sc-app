@@ -32,6 +32,28 @@ export interface OscReply {
   args: ReadonlyArray<OscArg>;
 }
 
+/** Phase 24 — decoded `/fail` reply. scsynth replies with
+ *  `/fail /<originatingCommand> "<error>" [extras]` on every
+ *  rejection (missing SynthDef, /b_setn against a freed buffer,
+ *  /n_free on a stale node, …). The worker emits these as a
+ *  separate `oscError` event in addition to the generic `reply`
+ *  channel — existing /fail awaiters (e.g. SynthDefRegistry's
+ *  /fail /d_recv handler) keep working via onReply; the bus
+ *  catches everything else. */
+export interface OscError {
+  /** The address of the command scsynth rejected, e.g. `/s_new`,
+   *  `/b_alloc`. Comes from `args[0]` of the `/fail` reply. */
+  commandAddress: string;
+  /** Human-readable error string from `args[1]`. May be empty if
+   *  scsynth omitted it (rare). */
+  errorString: string;
+  /** Anything past `args[1]` — typically empty, occasionally
+   *  carries an offending nodeId or bufnum. */
+  extras: ReadonlyArray<OscArg>;
+  /** `performance.now()` in the worker thread at decode time. */
+  receivedAt: number;
+}
+
 /** One decoded clock tick. Emitted by the worker when a `/tr` reply
  *  arrives whose `triggerId` matches the currently-registered clock
  *  trigId. The generic `reply` event is suppressed for those messages. */
@@ -110,6 +132,7 @@ export type WorkerToMain =
   | { type: 'ready' }
   | { type: 'error'; message: string }
   | { type: 'reply'; reply: OscReply }
+  | { type: 'oscError'; error: OscError }
   | { type: 'clockTick'; tick: ClockTick }
   | { type: 'bufferChunk'; chunk: BufferChunk }
   | { type: 'log'; level: 'log' | 'info' | 'warn' | 'error'; message: string };

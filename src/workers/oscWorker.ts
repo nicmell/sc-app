@@ -323,6 +323,25 @@ function emitReply(packet: OscPacket): void {
       }
     }
 
+    // Phase 24: /fail intercept. Emit a typed oscError alongside the
+    // normal reply emission — existing /fail awaiters (e.g.
+    // SynthDefRegistry's /fail /d_recv matcher) keep firing via
+    // onReply; ServerErrorBus picks up everything else from this
+    // channel without competing with awaiters.
+    if (packet.address === '/fail') {
+      const args = packet.args as OscReply['args'];
+      post({
+        type: 'oscError',
+        error: {
+          commandAddress: (args[0] as string | undefined) ?? '',
+          errorString: (args[1] as string | undefined) ?? '',
+          extras: args.slice(2),
+          receivedAt: performance.now(),
+        },
+      });
+      // Fall through — reply still posts below.
+    }
+
     const reply: OscReply = {
       address: packet.address,
       args: packet.args as OscReply['args'],
