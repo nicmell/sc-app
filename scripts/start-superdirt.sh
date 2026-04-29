@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
-# Boot scsynth + SuperDirt via sclang, pinned to the vendored
-# superdirt/ submodule and superdirt-deps/ tree.
+# Run sclang to attach to a running scsynth and start SuperDirt on
+# UDP 57120. Pinned to the vendored superdirt/ submodule and
+# superdirt-deps/ tree.
+#
+# scsynth must already be running (we don't manage its lifecycle —
+# sc-app may already be connected, and rebooting would kill that).
+# Start scsynth either via `yarn scsynth` (which sets -U with
+# sc3-plugins for global effects) or directly via `scsynth -u 57110`.
 #
 # We pass `-l <generated-config>` to sclang so only these paths
 # contribute to the compiled class library:
@@ -8,17 +14,14 @@
 #   <SCClassLibrary>          # SuperCollider standard library
 #   superdirt/                # our vendored SuperDirt (submodule)
 #   superdirt-deps/Vowel      # Vowel quark (SuperDirt dep)
-#   superdirt-deps/sc3-plugins  # optional UGens for global effects
+#   superdirt-deps/sc3-plugins  # sc3-plugins .sc class files
 #
 # Anything in the user's ~/Library/.../downloaded-quarks (StrudelDirt,
 # etc.) is invisible to this run — no class-name conflicts.
 #
-# Once running:
-#   - sc-app's main connect targets scsynth on 127.0.0.1:57110
-#   - sc-app's Dirt panel targets SuperDirt on 127.0.0.1:57120
-# Both consumers share one scsynth instance.
-#
-# Wire: `yarn superdirt`. Pre-req: `yarn superdirt-setup` (one-time).
+# Wire: `yarn superdirt`. Pre-reqs:
+#   - `yarn superdirt-setup` (one-time, fetches deps)
+#   - scsynth running (yarn scsynth, or scsynth -u 57110)
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -43,7 +46,6 @@ fi
 case "$(uname -s)" in
   Darwin*)
     SCCLASSLIB="/Applications/SuperCollider.app/Contents/Resources/SCClassLibrary"
-    SC_STOCK_PLUGINS="/Applications/SuperCollider.app/Contents/Resources/plugins"
     ;;
   Linux*)
     if [ -d "/usr/share/SuperCollider/SCClassLibrary" ]; then
@@ -53,13 +55,6 @@ case "$(uname -s)" in
     else
       die "SCClassLibrary not found — set SC_APP_CLASSLIB env var to override"
     fi
-    if [ -d "/usr/lib/SuperCollider/plugins" ]; then
-      SC_STOCK_PLUGINS="/usr/lib/SuperCollider/plugins"
-    elif [ -d "/usr/local/lib/SuperCollider/plugins" ]; then
-      SC_STOCK_PLUGINS="/usr/local/lib/SuperCollider/plugins"
-    else
-      SC_STOCK_PLUGINS=""
-    fi
     ;;
   *)
     die "unsupported OS: $(uname -s)"
@@ -68,7 +63,6 @@ esac
 
 # Allow override (e.g. for non-default install paths).
 SCCLASSLIB="${SC_APP_CLASSLIB:-$SCCLASSLIB}"
-SC_STOCK_PLUGINS="${SC_APP_STOCK_PLUGINS:-$SC_STOCK_PLUGINS}"
 
 # ── Pre-flight checks ────────────────────────────────────────────────
 [ -d "$SCCLASSLIB" ] || die "SCClassLibrary not found at $SCCLASSLIB"
@@ -101,24 +95,14 @@ echo "  deps → $DEPS"
 if [ ! -d "$DEPS/sc3-plugins" ]; then
   echo "  (sc3-plugins not installed — global effects unavailable)"
 fi
-echo "  scsynth → 127.0.0.1:57110"
+echo "  attaching to scsynth at 127.0.0.1:57110 (must be running)"
 echo "  SuperDirt → 127.0.0.1:57120 (12 orbits)"
-echo "  Ctrl-C to stop both."
+echo "  Ctrl-C to stop sclang+SuperDirt (scsynth survives)."
 
-# Sample path passes through env var; the .scd reads it via "VAR".getenv
+# Sample path passes through env var; the .scd reads it via "VAR".getenv.
+# scsynth's plugin path (`-U` flag) is scsynth's concern — not threaded
+# through here. Use scripts/start-scsynth.sh (yarn scsynth) to launch
+# scsynth with sc3-plugins included, or pass `-U <paths>` yourself.
 export SC_APP_DIRT_SAMPLES="$DEPS/Dirt-Samples/*"
-
-# Plugin search path for scsynth (the audio server, distinct from
-# sclang's class library). sc3-plugins ships UGen .scx binaries
-# alongside .sc class files; sclang found them via includePaths but
-# scsynth needs them on its `-U` flag too. The .scd builds
-# `s.options.ugenPluginsPath = [stock, sc3-plugins]` if BOTH env vars
-# are set; otherwise it leaves the option at default and scsynth uses
-# its compiled-in plugin paths (stock UGens only — global effects
-# like delay/reverb won't work, sample playback will).
-if [ -n "$SC_STOCK_PLUGINS" ] && [ -d "$DEPS/sc3-plugins" ]; then
-  export SC_APP_STOCK_PLUGINS_PATH="$SC_STOCK_PLUGINS"
-  export SC_APP_SC3_PLUGINS_PATH="$DEPS/sc3-plugins"
-fi
 
 exec sclang -l "$CONF" "$STARTUP"

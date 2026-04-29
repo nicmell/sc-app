@@ -84,6 +84,12 @@ case "$(uname -s)" in
           die "extracted sc3-plugins zip but found no inner directory"
         fi
         mv "$inner" "$DEPS/sc3-plugins"
+        # macOS release zips include AppleDouble metadata files
+        # (._*.scx) alongside the real Mach-O .scx binaries. scsynth
+        # tries to dlopen every *.scx in its plugin path and spams
+        # 'slice is not valid mach-o file' for each metadata sibling.
+        # Strip them.
+        find "$DEPS/sc3-plugins" -name '._*' -delete 2>/dev/null || true
         ok "installed at $DEPS/sc3-plugins"
       fi
 

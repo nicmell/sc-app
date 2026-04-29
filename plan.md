@@ -816,15 +816,24 @@ scripts/
   setup-superdirt-deps.sh             # NEW — yarn superdirt-setup
                                       # fetches Dirt-Samples + Vowel quark
                                       # + sc3-plugins (macOS) into
-                                      # superdirt-deps/. Idempotent.
+                                      # superdirt-deps/. Strips macOS
+                                      # ._*.scx AppleDouble files.
+                                      # Idempotent.
+  start-scsynth.sh                    # NEW — yarn scsynth (optional)
+                                      # convenience launcher for
+                                      # `scsynth -u 57110 -U
+                                      # <stock>:<sc3-plugins>`
   start-superdirt.sh                  # NEW — yarn superdirt
                                       # generates sclang_conf.yaml at run
                                       # time, includePaths pinned to
                                       # SCClassLibrary + superdirt/ +
                                       # superdirt-deps/{Vowel,sc3-plugins};
                                       # exec sclang -l <conf> startup.scd
-  sc-app-superdirt-startup.scd        # NEW — trimmed startup that reads
-                                      # samples path from SC_APP_DIRT_SAMPLES
+  sc-app-superdirt-startup.scd        # NEW — attach-mode startup;
+                                      # waits for externally-running
+                                      # scsynth, then mounts SuperDirt.
+                                      # Reads samples path from
+                                      # SC_APP_DIRT_SAMPLES env var.
 .gitignore                            # +/superdirt-deps/ entry
 package.json                          # +superdirt + superdirt-setup scripts
 CLAUDE.md                             # Common commands +yarn superdirt(-setup)
@@ -886,9 +895,27 @@ src/AppShell.tsx                      # construct DirtClient at handleConnect,
 - **`yarn superdirt-setup` for runtime deps.**
   `scripts/setup-superdirt-deps.sh` clones Dirt-Samples + Vowel
   and (on macOS) downloads the latest sc3-plugins release into
-  `superdirt-deps/`. Idempotent. Linux skips sc3-plugins (no
-  pre-built release; users `apt install supercollider-sc3-plugins`
-  or build from source). The directory is `.gitignore`d.
+  `superdirt-deps/`. Strips macOS AppleDouble (`._*.scx`) files
+  from the extracted sc3-plugins so scsynth's `-U` scan doesn't
+  spam `dlopen … not a valid mach-o file` errors. Idempotent.
+  Linux skips sc3-plugins (no pre-built release; users
+  `apt install supercollider-sc3-plugins` or build from source).
+  The directory is `.gitignore`d.
+- **scsynth is user-managed; sclang attaches.** First-run
+  dogfooding showed that `s.reboot { … }` in the startup .scd
+  killed the user's externally-running scsynth (which sc-app may
+  already be connected to). The .scd now uses `s.startAliveThread`
+  + a poll loop; if scsynth isn't reachable within 10s, it errors
+  out with a clear "start scsynth first" message. Server-options
+  (`numBuffers`, `memSize`, etc.) and the `ugenPluginsPath` setup
+  moved out of the .scd entirely — those are scsynth's command-
+  line concern, not sclang's.
+- **`yarn scsynth` convenience launcher.**
+  `scripts/start-scsynth.sh` runs `scsynth -u 57110 -U
+  <stock>:<sc3-plugins>` (cross-platform stock-plugin detection),
+  so global effects work out of the box. Optional — users who
+  prefer to manage scsynth directly can ignore it and run their
+  own scsynth invocation (with whatever `-U` they want).
 
 ---
 
