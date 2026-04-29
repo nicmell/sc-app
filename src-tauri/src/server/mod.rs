@@ -9,20 +9,80 @@
 //!    overridden per connection via `?scsynth=HOST:PORT`.
 
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use axum::body::Body;
-use axum::extract::{Query, Request, State, WebSocketUpgrade};
+use axum::extract::{DefaultBodyLimit, Query, Request, State, WebSocketUpgrade};
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
 use serde::Deserialize;
 use tokio::fs;
 use tokio_util::io::ReaderStream;
+use tracing_appender::non_blocking::WorkerGuard;
 
+pub mod log_ingest;
 pub mod ws_bridge;
+
+/// Phase 23 — initialise the global tracing subscriber. Called once
+/// per process: from `cli.rs::run_server_blocking` for `serve` mode
+/// and from `cli.rs::run_gui` for the Tauri build.
+///
+/// Always emits to stderr at INFO+ (matching the previous `eprintln!`
+/// loudness). When `log_dir` is `Some`, also writes daily-rotated
+/// JSON files to `<log_dir>/sc-app.log.<YYYY-MM-DD>` via
+/// `tracing-appender`. The returned `WorkerGuard` must live as long
+/// as the process — it owns the background flush thread; dropping
+/// it loses any in-flight buffered events.
+///
+/// `RUST_LOG` overrides the default filter (e.g.
+/// `RUST_LOG=sc_app_lib=debug`).
+pub fn init_tracing(log_dir: Option<&Path>) -> Option<WorkerGuard> {
+    use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info,sc_app_lib=info"));
+
+    let stderr_layer = fmt::layer()
+        .with_writer(std::io::stderr)
+        .with_target(true);
+
+    let Some(dir) = log_dir else {
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(stderr_layer)
+            .init();
+        return None;
+    };
+
+    if let Err(e) = std::fs::create_dir_all(dir) {
+        eprintln!("[init_tracing] could not create {dir:?}: {e}");
+        // Fall back to stderr-only — better than refusing to boot.
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(stderr_layer)
+            .init();
+        return None;
+    }
+
+    let appender = tracing_appender::rolling::daily(dir, "sc-app.log");
+    let (non_blocking, guard) = tracing_appender::non_blocking(appender);
+    let file_layer = fmt::layer()
+        .with_writer(non_blocking)
+        .with_ansi(false)
+        .json();
+
+    tracing_subscriber::registry()
+        .with(env_filter)
+        .with(stderr_layer)
+        .with(file_layer)
+        .init();
+
+    tracing::info!(log_dir = %dir.display(), "tracing initialised — file output active");
+    Some(guard)
+}
 
 #[derive(Clone)]
 struct AppState {
@@ -37,8 +97,17 @@ struct WsQuery {
 pub async fn serve(port: u16, default_scsynth: SocketAddr, dist: PathBuf) -> Result<()> {
     let state = AppState { default_scsynth };
 
+    // 1 MB cap for /api/logs body — generous for NDJSON batches
+    // (~10 KB typical, ~100 KB in a flood). Doesn't apply to the
+    // WS upgrade path which streams arbitrary bytes via the bridge.
+    const LOGS_BODY_LIMIT: usize = 1024 * 1024;
+
     let app = Router::new()
         .route("/ws", get(ws_handler))
+        .route(
+            "/api/logs",
+            post(log_ingest::logs_handler).layer(DefaultBodyLimit::max(LOGS_BODY_LIMIT)),
+        )
         .with_state(state)
         .fallback({
             let dist = dist.clone();
@@ -50,11 +119,12 @@ pub async fn serve(port: u16, default_scsynth: SocketAddr, dist: PathBuf) -> Res
         .await
         .with_context(|| format!("failed to bind to {addr}"))?;
 
-    eprintln!("sc-app listening on http://{addr}");
-    eprintln!(
+    tracing::info!(addr = %addr, "sc-app listening on http://{addr}");
+    tracing::info!(
         "  /ws → {default_scsynth} (override per-connection via ?scsynth=HOST:PORT)"
     );
-    eprintln!("  static → {}", dist.display());
+    tracing::info!("  /api/logs → frontend log ingest (NDJSON, max {LOGS_BODY_LIMIT} bytes)");
+    tracing::info!("  static → {}", dist.display());
 
     axum::serve(listener, app).await.context("axum serve error")?;
     Ok(())
@@ -167,7 +237,7 @@ async fn ws_handler(
 
     Ok(ws.on_upgrade(move |socket| async move {
         if let Err(e) = ws_bridge::handle_ws(socket, scsynth).await {
-            eprintln!("ws_bridge session error: {e:#}");
+            tracing::warn!(error = %e, "ws_bridge session error");
         }
     }))
 }

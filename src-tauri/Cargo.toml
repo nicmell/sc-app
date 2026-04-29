@@ -38,3 +38,10 @@ anyhow = "1"
 # and encode the cleanup bundle (/g_freeAll, /n_free, /notify 0).
 rosc = "0.10"
 
+# Phase 23 — unified logging pipeline. eprintln! → tracing!,
+# daily-rotated file via tracing-appender, frontend log shipping
+# via POST /api/logs.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
+

@@ -40,6 +40,16 @@ function render(args: unknown[]): string {
     .join(' ');
 }
 
+/** Phase 23 — optional sink for shipping log entries to the bridge.
+ *  `installLogShipper()` from `@/util/logShipper` registers itself
+ *  here; we call the shipper as a side-effect of every push so the
+ *  ring + the shipper see exactly the same entries. */
+type ShipperFn = (entry: DebugEntry, immediate: boolean) => void;
+let shipper: ShipperFn | null = null;
+export function setLogShipper(fn: ShipperFn | null): void {
+  shipper = fn;
+}
+
 function push(level: DebugLevel, args: unknown[]): void {
   const text = render(args);
   const entry: DebugEntry = {
@@ -52,6 +62,12 @@ function push(level: DebugLevel, args: unknown[]): void {
   const next =
     prev.length >= MAX_ENTRIES ? [...prev.slice(-(MAX_ENTRIES - 1)), entry] : [...prev, entry];
   store.set(next);
+
+  // Forward to the log shipper if installed. ERROR + WARN flush
+  // immediately; LOG + INFO are batched. The shipper itself is
+  // resilient to its own POST failures (drops on error) so a bad
+  // network won't recurse through here.
+  shipper?.(entry, level === 'error' || level === 'warn');
 }
 
 let installed = false;

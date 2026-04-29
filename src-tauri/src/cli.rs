@@ -40,15 +40,26 @@ enum Command {
         /// Directory to serve static assets from. Env: `SC_DIST_DIR`.
         #[arg(long, env = "SC_DIST_DIR", default_value = "dist")]
         dist: PathBuf,
+
+        /// Phase 23 — directory to write rotated NDJSON log files into
+        /// (one file per day, `sc-app.log.<YYYY-MM-DD>`). When unset,
+        /// only stderr logging is enabled. Env: `SC_LOG_DIR`.
+        #[arg(long, env = "SC_LOG_DIR")]
+        log_dir: Option<PathBuf>,
     },
 }
 
 pub fn run() {
     match Cli::parse().command {
         None => run_gui(),
-        Some(Command::Serve { port, scsynth, dist }) => {
+        Some(Command::Serve {
+            port,
+            scsynth,
+            dist,
+            log_dir,
+        }) => {
             let scsynth = parse_scsynth_or_die(&scsynth);
-            run_server_blocking(port, scsynth, dist);
+            run_server_blocking(port, scsynth, dist, log_dir);
         }
     }
 }
@@ -66,11 +77,22 @@ fn parse_scsynth_or_die(raw: &str) -> SocketAddr {
 }
 
 /// `serve` subcommand — the HTTP+WS bridge, standalone.
-fn run_server_blocking(port: u16, scsynth: SocketAddr, dist: PathBuf) {
+fn run_server_blocking(
+    port: u16,
+    scsynth: SocketAddr,
+    dist: PathBuf,
+    log_dir: Option<PathBuf>,
+) {
+    // Phase 23 — initialise tracing before anything else logs. The
+    // returned guard owns the appender's background flush thread and
+    // must live as long as the process. Bound to `_guard` so it drops
+    // at end of scope (program exit), flushing on the way out.
+    let _guard = server::init_tracing(log_dir.as_deref());
+
     let rt = tokio::runtime::Runtime::new().expect("failed to start tokio runtime");
     rt.block_on(async move {
         if let Err(e) = server::serve(port, scsynth, dist).await {
-            eprintln!("server error: {e:#}");
+            tracing::error!(error = %e, "server error");
             std::process::exit(1);
         }
     });
@@ -86,12 +108,20 @@ fn run_gui() {
     let scsynth = parse_scsynth_or_die(
         &std::env::var("SC_SCSYNTH_ADDR").unwrap_or_else(|_| "127.0.0.1:57110".into()),
     );
+    // Phase 23 — Tauri builds have no CLI flags, so the file-logging
+    // path is opted into via env var. Same semantics as `--log-dir`
+    // for serve mode.
+    let log_dir = std::env::var("SC_LOG_DIR").ok().map(PathBuf::from);
+    // Guard is bound to the function's stack frame; tauri::run blocks
+    // until the user quits the app, so the guard outlives every log
+    // call.
+    let _guard = server::init_tracing(log_dir.as_deref());
 
     // Tauri's async_runtime is tokio — spawn the bridge there so it dies
     // when the app exits.
     tauri::async_runtime::spawn(async move {
         if let Err(e) = server::serve(port, scsynth, PathBuf::from("dist")).await {
-            eprintln!("bridge server error: {e:#}");
+            tracing::error!(error = %e, "bridge server error");
         }
     });
 

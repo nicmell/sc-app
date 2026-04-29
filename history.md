@@ -40,6 +40,7 @@ is the cleaner read.
 - [Phase 15 — Source Synths Panel](#phase-15--source-synths-panel)
 - [Phase 16–21 — Shared Buffer Layer Refactor](#phase-1621--shared-buffer-layer-refactor)
 - [Phase 22 — Per-session Bridge State (Disconnect Cleanup)](#phase-22--per-session-bridge-state-disconnect-cleanup)
+- [Phase 23 — Unified Logging Pipeline](#phase-23--unified-logging-pipeline)
 - [Phase 24 — scsynth `/fail` Surface](#phase-24--scsynth-fail-surface)
 
 ---
@@ -849,3 +850,118 @@ DebugLog Errors section as the first UI surface.
   later wants typed extras (e.g. "this fail referenced node
   1004"), add a per-command-address parser at that site —
   the bus shouldn't grow heuristics.
+
+
+## Phase 23 — Unified Logging Pipeline
+
+**Goal.** Persist frontend logs in serve mode (pre-Phase-23 only
+Tauri could write to disk via the `fs` plugin; serve-mode logs
+were browser-only and lost on refresh) and add structured backend
+logging tagged by source. End state: one log file per day per
+serve / Tauri instance, containing both bridge events (sessions,
+errors, scsynth I/O) and frontend ERROR / WARN events, all JSON
+and grep-friendly.
+
+**What shipped.**
+- `src-tauri/Cargo.toml` — three new deps:
+  - `tracing = "0.1"` (the macros + spans)
+  - `tracing-subscriber = "0.3"` with `env-filter` + `json`
+  - `tracing-appender = "0.2"` (daily rotation + non-blocking
+    writer)
+- `src-tauri/src/server/mod.rs` — `init_tracing(log_dir: Option<&Path>)`
+  builds a registry with a stderr layer + (when `log_dir` is set)
+  a JSON file layer pointing at `<dir>/sc-app.log.<YYYY-MM-DD>`.
+  Returns the appender's `WorkerGuard`; callers must keep it alive
+  for the process lifetime so background flushes don't drop on
+  exit.
+- `src-tauri/src/server/log_ingest.rs` (NEW) — `POST /api/logs`
+  handler. Parses NDJSON one line at a time; bad lines are
+  skipped, the whole batch isn't failed. Each entry re-emits as a
+  tracing event at the matching level with `target = "frontend"`
+  so file-side filters can distinguish frontend from bridge.
+- `src-tauri/src/server/mod.rs` — registers `/api/logs` with a
+  `DefaultBodyLimit` of 1 MB (generous for NDJSON batches). All
+  the previous `eprintln!` calls in `serve()` and `ws_handler`
+  switched to `tracing::info!` / `warn!`.
+- `src-tauri/src/server/ws_bridge.rs` — every `eprintln!` →
+  `tracing::info!`/`warn!`/`debug!` with structured fields where
+  meaningful (`client_id`, `parent_group`, `error = %e`).
+- `src-tauri/src/cli.rs` — `Serve { log_dir: Option<PathBuf> }`
+  flag (env `SC_LOG_DIR`). `run_server_blocking` and `run_gui`
+  both call `init_tracing` + bind the guard to the local stack so
+  it lives until the process exits. `run_gui` reads `SC_LOG_DIR`
+  from the environment since Tauri builds have no CLI.
+- `src/util/logShipper.ts` (NEW) — frontend batcher. Hooks into
+  `debugLog`'s push channel via `setLogShipper`. ERROR + WARN
+  flush immediately; LOG + INFO are batched on a 5-second timer
+  or up to 100 entries. POSTs NDJSON to `/api/logs` with
+  `keepalive: true` so the last batch survives a tab close.
+  Three consecutive failures → "dead" state, stops queueing
+  silently (avoids unbounded growth on a server that's gone).
+- `src/util/debugLog.ts` — `setLogShipper(fn)` setter; `push()`
+  calls the shipper as a side effect of every entry.
+- `src/main.tsx` — `installLogShipper()` after
+  `installDebugLog()`.
+
+**Decisions.**
+- **HTTP, not WebSocket, for shipping.** Multiplexing onto the
+  OSC WS would force a frame discriminator and break its `bytes
+  ↔ datagram` simplicity. HTTP gives ack + retry for free,
+  works even when the WS is dead (necessary for logging
+  WS-close events themselves), and reuses axum's existing
+  routing.
+- **No IndexedDB persistence layer (yet).** Plan called for
+  IndexedDB mirroring of the in-memory ring across reloads;
+  scope-trimmed because (a) the shipper covers the persistence
+  story server-side, which is the primary "find what happened"
+  use case, and (b) the in-memory ring + Download button (which
+  already existed) covers the "send me the log" flow. Worth
+  revisiting if a deployment really needs F5-survivable browser
+  history.
+- **`target = "frontend"` field, not a separate file.** Frontend
+  events get the same daily-rotated file as bridge events; the
+  tracing event's `target` field disambiguates at grep / `jq`
+  time. Single-file is simpler to operate (one log per session
+  for the user to attach to a bug report) and the volume from
+  the frontend is low (errors + warns mostly).
+- **No structured per-session spans yet.** Plan mentioned
+  Phase 22's session state as a "natural span carrier";
+  deferred. Would require holding a `tracing::Span` in
+  `SessionState` and `.in_scope`-ing the recv task. Useful if
+  we ever want per-clientId log filtering, but for now the
+  flat events with `client_id` as a structured field are
+  enough.
+- **Bound `WorkerGuard` to the call stack of `run_server_blocking`
+  / `run_gui`.** Both functions block until process exit, so a
+  `let _guard = …;` keeps the appender's flush thread alive
+  through the entire program. Returning the guard out of
+  `init_tracing` (vs. swallowing it) preserves operator control
+  if a future entry point needs different semantics.
+
+**Gotchas.**
+- **Don't `console.*` from inside `logShipper`.** The
+  monkey-patched console pushes into `debugLog`, which calls the
+  shipper, which would recurse. The shipper drops on fetch
+  failure silently — no logging from itself. If you debug it,
+  use `debugger` breakpoints or temporary `originalConsole.error`
+  via the saved reference in `debugLog.ts`.
+- **`tracing::error!` / `warn!` macros need `target:` as a literal
+  identifier, not a string variable.** `target: entry.target` in
+  the call site won't compile — the value must be a string
+  literal. We work around this in `log_ingest.rs::emit_tracing`
+  by branching on the level inline rather than passing it.
+- **`DefaultBodyLimit::max(N)` is per-route via `.layer(...)`.**
+  Applied at the route registration site (`mod.rs`), not on the
+  router globally — global limits would also cap WS upgrade body
+  parsing, which can be larger.
+- **`keepalive: true` on `fetch` has a 64 KB body cap on most
+  browsers.** If a logShipper batch ever exceeds that during
+  pagehide, the request will be rejected. Our 100-entry batches
+  at ~200 bytes each = ~20 KB are comfortably under. Document
+  for any future change to `MAX_BATCH`.
+- **Dropping the WorkerGuard mid-program loses buffered entries.**
+  The non-blocking writer batches IO on a background thread; the
+  guard owns that thread. Keep it alive as long as anything
+  might log. If a future refactor moves init_tracing into a
+  function that returns early, the guard returns with it —
+  callers must not let it drop.

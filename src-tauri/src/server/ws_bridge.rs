@@ -116,26 +116,27 @@ pub async fn handle_ws(ws: WebSocket, scsynth: SocketAddr) -> Result<()> {
                     if let Some(client_id) = snoop_notify_reply(payload) {
                         let mut state = session_recv.lock().await;
                         if state.client_id.is_none() {
-                            eprintln!(
-                                "[ws_bridge] notify clientId={client_id} (parent group \
-                                 {})",
-                                if client_id > 0 {
-                                    client_id * 100
-                                } else {
-                                    FALLBACK_PARENT_GROUP_ID
-                                }
+                            let parent = if client_id > 0 {
+                                client_id * 100
+                            } else {
+                                FALLBACK_PARENT_GROUP_ID
+                            };
+                            tracing::info!(
+                                client_id,
+                                parent_group = parent,
+                                "notify handshake captured"
                             );
                         }
                         state.client_id = Some(client_id);
                     }
                     if let Err(e) = tx.send(Message::Binary(payload.to_vec().into())).await
                     {
-                        eprintln!("ws send error: {e}");
+                        tracing::warn!(error = %e, "ws send error");
                         break;
                     }
                 }
                 Err(e) => {
-                    eprintln!("udp recv error: {e}");
+                    tracing::warn!(error = %e, "udp recv error");
                     break;
                 }
             }
@@ -150,14 +151,14 @@ pub async fn handle_ws(ws: WebSocket, scsynth: SocketAddr) -> Result<()> {
         match msg {
             Ok(Message::Binary(bytes)) => {
                 if let Err(e) = sock.send(&bytes).await {
-                    eprintln!("udp send error: {e}");
+                    tracing::warn!(error = %e, "udp send error");
                     break;
                 }
             }
             Ok(Message::Close(_)) => break,
             Ok(_) => {} // ignore text / ping / pong
             Err(e) => {
-                eprintln!("ws recv error: {e}");
+                tracing::warn!(error = %e, "ws recv error");
                 break;
             }
         }
@@ -172,20 +173,20 @@ pub async fn handle_ws(ws: WebSocket, scsynth: SocketAddr) -> Result<()> {
     if let Some(group_id) = parent_group_id {
         match send_cleanup(&sock, group_id).await {
             Ok(()) => {
-                eprintln!("[ws_bridge] cleanup sent for clientId group {group_id}");
+                tracing::info!(parent_group = group_id, "cleanup bundle sent");
                 // Hold the socket open briefly so kernel-side queued
                 // datagrams flush before we drop it. Without this, the
                 // /notify 0 occasionally races the WS close on Linux.
                 tokio::time::sleep(CLEANUP_FLUSH_DELAY).await;
             }
             Err(e) => {
-                eprintln!("[ws_bridge] cleanup encode/send failed: {e:#}");
+                tracing::warn!(error = %e, "cleanup encode/send failed");
             }
         }
     } else {
         // Disconnect before /done /notify arrived — frontend never
         // allocated anything (no clientId yet), so no cleanup needed.
-        eprintln!("[ws_bridge] session closed pre-notify; no cleanup");
+        tracing::debug!("session closed pre-notify; no cleanup");
     }
 
     recv_task.abort();
