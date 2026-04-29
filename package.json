@@ -14,7 +14,8 @@
     "serve": "cargo run --manifest-path src-tauri/Cargo.toml -- serve",
     "scsynth": "./scripts/start-scsynth.sh",
     "superdirt": "./scripts/start-superdirt.sh",
-    "superdirt-setup": "./scripts/setup-superdirt-deps.sh"
+    "superdirt-setup": "./scripts/setup-superdirt-deps.sh",
+    "cleanup": "./scripts/cleanup.sh"
   },
   "dependencies": {
     "@sc-app/server-commands": "workspace:*",

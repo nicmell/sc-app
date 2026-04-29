@@ -52,3 +52,8 @@ dist-ssr
 # SuperDirt runtime deps (Dirt-Samples / Vowel / sc3-plugins) fetched
 # by `yarn superdirt-setup`. ~50+ MB; never tracked.
 /superdirt-deps/
+
+# Stray sclang/scsynth log captures from local debugging — not source.
+/errors.log
+/scsynth.log
+/sclang.log

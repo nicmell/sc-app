@@ -819,10 +819,15 @@ scripts/
                                       # superdirt-deps/. Strips macOS
                                       # ._*.scx AppleDouble files.
                                       # Idempotent.
-  start-scsynth.sh                    # NEW — yarn scsynth (optional)
-                                      # convenience launcher for
-                                      # `scsynth -u 57110 -U
-                                      # <stock>:<sc3-plugins>`
+  start-scsynth.sh                    # NEW — yarn scsynth
+                                      # launches scsynth with full
+                                      # SuperDirt-required options
+                                      # (-b 262144 -m 262144 -l 8 …)
+                                      # and per-OS -U plugin path
+  cleanup.sh                          # NEW — yarn cleanup
+                                      # wipes superdirt-deps/ + dist/
+                                      # + src-tauri/target/ for a
+                                      # fresh-slate rebuild
   start-superdirt.sh                  # NEW — yarn superdirt
                                       # generates sclang_conf.yaml at run
                                       # time, includePaths pinned to
@@ -893,14 +898,18 @@ src/AppShell.tsx                      # construct DirtClient at handleConnect,
   `superdirt/superdirt_startup.scd` is left untouched (upstream
   example).
 - **`yarn superdirt-setup` for runtime deps.**
-  `scripts/setup-superdirt-deps.sh` clones Dirt-Samples + Vowel
-  and (on macOS) downloads the latest sc3-plugins release into
-  `superdirt-deps/`. Strips macOS AppleDouble (`._*.scx`) files
-  from the extracted sc3-plugins so scsynth's `-U` scan doesn't
-  spam `dlopen … not a valid mach-o file` errors. Idempotent.
-  Linux skips sc3-plugins (no pre-built release; users
-  `apt install supercollider-sc3-plugins` or build from source).
-  The directory is `.gitignore`d.
+  `scripts/setup-superdirt-deps.sh` clones Dirt-Samples + Vowel.
+  On macOS it downloads sc3-plugins **pinned to a specific release
+  tag** (`Version-3.13.0`) for reproducibility — re-running yields
+  the same binaries every time. Strips macOS AppleDouble
+  (`._*.scx`) metadata files from the extracted sc3-plugins so
+  scsynth's `-U` scan doesn't log `dlopen … not a valid mach-o
+  file` for each. On Linux, the script just *detects* whether
+  `supercollider-sc3-plugins` is installed via apt and prints the
+  install instruction if not — apt-installed plugins land in
+  scsynth's compiled-in default plugin path so no extra wiring is
+  needed. Idempotent. The `superdirt-deps/` directory is
+  `.gitignore`d.
 - **scsynth is user-managed; sclang attaches.** First-run
   dogfooding showed that `s.reboot { … }` in the startup .scd
   killed the user's externally-running scsynth (which sc-app may
@@ -910,12 +919,27 @@ src/AppShell.tsx                      # construct DirtClient at handleConnect,
   (`numBuffers`, `memSize`, etc.) and the `ugenPluginsPath` setup
   moved out of the .scd entirely — those are scsynth's command-
   line concern, not sclang's.
-- **`yarn scsynth` convenience launcher.**
-  `scripts/start-scsynth.sh` runs `scsynth -u 57110 -U
-  <stock>:<sc3-plugins>` (cross-platform stock-plugin detection),
-  so global effects work out of the box. Optional — users who
-  prefer to manage scsynth directly can ignore it and run their
-  own scsynth invocation (with whatever `-U` they want).
+- **`yarn scsynth` launcher passes SuperDirt-required server options.**
+  scsynth's defaults (`-b 1024 -m 8192 -l 64`) are far too small
+  for SuperDirt — Dirt-Samples alone needs >1k buffers, the
+  per-orbit graph needs tens of MB of real-time memory, and SC
+  3.14's default `maxLogins = 64` exceeds sclang's hardcoded ≤32
+  cap. Running plain `scsynth -u 57110` causes a cascade of
+  `No more buffer numbers` / `not enough free memory` /
+  `Group not found` errors at SuperDirt init.
+  `scripts/start-scsynth.sh` runs scsynth with `-b 262144 -m 262144
+  -w 2048 -n 32768 -l 8 -i 2 -o 2 -U <plugins>`, mirroring the
+  `s.options.*` block the upstream `superdirt_startup.scd` set
+  before its `s.reboot{}`. macOS gets an explicit `-U` list (stock
+  + sc3-plugins from `superdirt-deps/`); Linux relies on the
+  compiled-in default path (which includes apt-installed
+  sc3-plugins).
+- **`yarn cleanup` for repeatable resets.**
+  `scripts/cleanup.sh` wipes `superdirt-deps/`, `dist/`, and
+  `src-tauri/target/`. Doesn't touch `node_modules/` (yarn-managed)
+  or any source. After `yarn cleanup`, the natural sequence is
+  `yarn superdirt-setup` + `yarn scsynth` + `yarn superdirt` to
+  rebuild from scratch.
 
 ---
 

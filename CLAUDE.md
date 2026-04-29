@@ -127,15 +127,19 @@ yarn tsc --noEmit              # type-check only (fast)
 # SuperDirt OSC shell (Phase 25). scsynth is user-managed (or via
 # yarn scsynth); sclang attaches and starts SuperDirt on UDP 57120.
 yarn superdirt-setup           # one-time: fetch Dirt-Samples + Vowel
-                               #   + sc3-plugins (macOS) into superdirt-deps/
-yarn scsynth                   # convenience launcher: scsynth -u 57110 -U
-                               #   <stock>:<sc3-plugins>. Optional —
-                               #   plain `scsynth -u 57110` works too
-                               #   (without sc3-plugins UGens loaded
-                               #   global effects fail to register).
+                               #   + sc3-plugins (pinned release on macOS;
+                               #   apt on Linux) into superdirt-deps/
+yarn scsynth                   # boot scsynth with SuperDirt-required
+                               #   server options (-b 262144 -m 262144
+                               #   -l 8 -U …). Plain `scsynth -u 57110`
+                               #   does NOT work — defaults are too small
+                               #   for SuperDirt and maxLogins=64
+                               #   conflicts with sclang's ≤32 cap.
 yarn superdirt                 # attach sclang (pinned to vendored
                                #   superdirt/) to the running scsynth
                                #   and start SuperDirt on UDP 57120
+yarn cleanup                   # wipe superdirt-deps/ + dist/ + target/
+                               #   for a fresh-slate rebuild
 
 # Inside packages/synthdef-compiler/
 yarn test                      # vitest suite (41 tests)

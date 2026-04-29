@@ -22,6 +22,15 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEPS="$REPO_ROOT/superdirt-deps"
 mkdir -p "$DEPS"
 
+# Pinned sc3-plugins release. Bump this when we want a newer cut.
+# We pin to a specific release URL rather than querying "latest" from
+# the GitHub API so re-running setup gives the same binaries every
+# time. Compat note: SC's plugin ABI is stable across minor versions,
+# so 3.13.0 plugins load fine in SC 3.14.x. The matching ARM macOS
+# build is bundled inside the same zip on releases that support it.
+SC3_PLUGINS_TAG="Version-3.13.0"
+SC3_PLUGINS_VERSION="3.13.0"
+
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 skip() { printf '  \033[33m·\033[0m %s\n' "$*"; }
 warn() { printf '  \033[33m!\033[0m %s\n' "$*" >&2; }
@@ -50,8 +59,8 @@ else
 fi
 echo
 
-# ── 3. sc3-plugins (macOS pre-built release; optional) ───────────────
-echo "[3/3] sc3-plugins (optional — needed for global effects)"
+# ── 3. sc3-plugins (macOS pre-built; Linux via apt) ──────────────────
+echo "[3/3] sc3-plugins (needed for SuperDirt global effects)"
 case "$(uname -s)" in
   Darwin*)
     if [ -d "$DEPS/sc3-plugins" ]; then
@@ -60,48 +69,35 @@ case "$(uname -s)" in
       tmp="$(mktemp -d)"
       trap 'rm -rf "$tmp"' EXIT
 
-      echo "  querying GitHub for latest macOS release…"
-      api_response="$(curl -fsSL https://api.github.com/repos/supercollider/sc3-plugins/releases/latest)" \
-        || die "failed to query github API for sc3-plugins releases"
-
-      # Match a macOS .zip asset; if multiple variants (arm64/x86_64) exist, take the first.
-      url="$(echo "$api_response" \
-        | grep -o 'https://github\.com/supercollider/sc3-plugins/releases/download/[^"]*macOS[^"]*\.zip' \
-        | head -1)"
-
-      if [ -z "$url" ]; then
-        warn "no macOS release asset found — skipping sc3-plugins"
-        warn "  global effects (dirt_delay, dirt_reverb, …) will not work"
-        warn "  see https://github.com/supercollider/sc3-plugins/releases"
-      else
-        echo "  downloading $url"
-        curl -fsSL "$url" -o "$tmp/sc3-plugins.zip"
-        unzip -q "$tmp/sc3-plugins.zip" -d "$tmp/extracted"
-        # The release zip extracts to a top-level folder. Find it and move
-        # under our deps tree so the path is predictable.
-        inner="$(find "$tmp/extracted" -maxdepth 1 -mindepth 1 -type d | head -1)"
-        if [ -z "$inner" ]; then
-          die "extracted sc3-plugins zip but found no inner directory"
-        fi
-        mv "$inner" "$DEPS/sc3-plugins"
-        # macOS release zips include AppleDouble metadata files
-        # (._*.scx) alongside the real Mach-O .scx binaries. scsynth
-        # tries to dlopen every *.scx in its plugin path and spams
-        # 'slice is not valid mach-o file' for each metadata sibling.
-        # Strip them.
-        find "$DEPS/sc3-plugins" -name '._*' -delete 2>/dev/null || true
-        ok "installed at $DEPS/sc3-plugins"
-      fi
+      url="https://github.com/supercollider/sc3-plugins/releases/download/${SC3_PLUGINS_TAG}/sc3-plugins-${SC3_PLUGINS_VERSION}-macOS.zip"
+      echo "  downloading pinned release $SC3_PLUGINS_TAG"
+      echo "  $url"
+      curl -fsSL "$url" -o "$tmp/sc3-plugins.zip" \
+        || die "download failed — check sc3-plugins releases page for current asset URL"
+      unzip -q "$tmp/sc3-plugins.zip" -d "$tmp/extracted"
+      inner="$(find "$tmp/extracted" -maxdepth 1 -mindepth 1 -type d | head -1)"
+      [ -n "$inner" ] || die "extracted sc3-plugins zip but found no inner directory"
+      mv "$inner" "$DEPS/sc3-plugins"
+      # Strip macOS AppleDouble metadata (._*.scx) — not real Mach-O,
+      # scsynth's -U scan logs 'slice is not valid mach-o file' for each.
+      find "$DEPS/sc3-plugins" -name '._*' -delete 2>/dev/null || true
+      ok "installed at $DEPS/sc3-plugins ($SC3_PLUGINS_TAG)"
 
       rm -rf "$tmp"
       trap - EXIT
     fi
     ;;
   Linux*)
-    skip "Linux: sc3-plugins must be installed via your package manager"
-    skip "  e.g. apt install supercollider-sc3-plugins"
-    skip "  or build from source: https://github.com/supercollider/sc3-plugins"
-    skip "  (without it, global effects like delay/reverb won't work)"
+    # sc3-plugins is a Debian package; installed binaries land in
+    # scsynth's compiled-in default plugin path so no `-U` override is
+    # needed when launching scsynth on Linux.
+    if dpkg -s supercollider-sc3-plugins >/dev/null 2>&1; then
+      ok "supercollider-sc3-plugins already installed via apt"
+    else
+      warn "supercollider-sc3-plugins not installed"
+      warn "  install with: sudo apt install supercollider-sc3-plugins"
+      warn "  (without it, global effects like delay/reverb won't work)"
+    fi
     ;;
   *)
     skip "unsupported OS: skipping sc3-plugins"
@@ -112,4 +108,6 @@ echo
 echo "done. Dependency tree:"
 ls -1 "$DEPS"
 echo
-echo "next: yarn superdirt"
+echo "next:"
+echo "  yarn scsynth     # boot scsynth (in another terminal)"
+echo "  yarn superdirt   # start sclang+SuperDirt against it"
