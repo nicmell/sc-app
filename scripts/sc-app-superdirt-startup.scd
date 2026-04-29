@@ -1,67 +1,70 @@
 // sc-app's SuperDirt startup.
 //
 // Adapted from superdirt/superdirt_startup.scd (the example shipped
-// with the SuperDirt quark) but two structural changes:
+// with the SuperDirt quark). Two changes vs. upstream:
 //
-//   1. **Attach mode, not reboot.** scsynth is expected to be
-//      already running externally (scripts/start-scsynth.sh, or
-//      `scsynth -u 57110` directly). sclang doesn't manage its
-//      lifecycle — sc-app may already be connected, and rebooting
-//      scsynth would kill that. We start an alive thread, wait for
-//      the server to reply, then build SuperDirt on top.
-//
-//   2. **Sample path from env var.** start-superdirt.sh sets
-//      SC_APP_DIRT_SAMPLES to superdirt-deps/Dirt-Samples/*.
+//   1. Sample path comes from SC_APP_DIRT_SAMPLES env var (set by
+//      scripts/start-superdirt.sh to superdirt-deps/Dirt-Samples/*).
 //      The vendored upstream startup is left untouched.
 //
-// Note: sclang is launched with `-l <generated-conf.yaml>` so the
-// only quark paths in scope are SCClassLibrary, our vendored
-// superdirt/, and superdirt-deps/{Vowel,sc3-plugins}. Whatever
-// else lives in ~/Library/.../downloaded-quarks is invisible.
+//   2. UGen plugin paths come from SC_APP_STOCK_PLUGINS_PATH and
+//      SC_APP_SC3_PLUGINS_PATH env vars (macOS only). On Linux,
+//      apt-installed sc3-plugins lives in scsynth's compiled-in
+//      default path so we leave ugenPluginsPath at its default.
 //
-// Note 2: scsynth's UGen plugin path (`-U` flag) is *its* concern,
-// not sclang's — for sc3-plugins UGens to actually load at runtime,
-// scsynth must have been started with the right -U list. See
-// scripts/start-scsynth.sh.
+// sclang owns scsynth's lifecycle here — `s.reboot { ... }` sends
+// /quit to any existing scsynth on 57110 (graceful), then boots a
+// fresh one with the options below. sc-app then connects to that
+// scsynth as a normal OSC client. SuperDirt + sc-app + anything
+// else all share one scsynth instance.
 //
-// Structure: the entire body lives inside `Routine.run({...})` —
-// a single top-level statement. sclang's command-line file parser
-// dislikes multiple top-level statements + `var` declarations
-// inside the outer `( ... );` wrapper; collapsing everything into
-// one routine body sidesteps that, and gives us `.wait` support
-// for the server-liveness poll for free.
+// sclang is launched with `-l <generated-conf.yaml>` so the only
+// quark paths in scope are SCClassLibrary, our vendored superdirt/
+// submodule, and superdirt-deps/{Vowel,sc3-plugins}. Whatever else
+// lives in ~/Library/.../downloaded-quarks is invisible.
 
 (
-Routine.run({
+s.reboot {
+    // `var` declarations live at the top of s.reboot's function
+    // body — sclang's command-line file parser refuses them
+    // anywhere else inside the outer (...);. The s.waitForBoot
+    // closure below picks them up via lexical capture.
     var samplesPath = "SC_APP_DIRT_SAMPLES".getenv;
-    var attemptsLeft = 20;  // 10 s @ 0.5 s polling
+    var stockPlugins = "SC_APP_STOCK_PLUGINS_PATH".getenv;
+    var sc3Plugins = "SC_APP_SC3_PLUGINS_PATH".getenv;
 
-    // Default `s` already targets 127.0.0.1:57110 — be explicit so
-    // misconfigured environments fail loudly rather than silently
-    // connecting to "localhost"-as-something-else.
-    s.addr = NetAddr("127.0.0.1", 57110);
-
-    // Watch for /status replies. When scsynth answers,
-    // s.serverRunning flips to true. Doesn't try to boot.
-    s.startAliveThread;
-
-    while({ s.serverRunning.not and: { attemptsLeft > 0 } }) {
-        0.5.wait;
-        attemptsLeft = attemptsLeft - 1;
+    // Plugin search path for scsynth (-U flag). Setting this BEFORE
+    // s.waitForBoot is critical — sclang passes the option to scsynth
+    // at boot time, and scsynth scans the path when it starts up.
+    // If both env vars are absent (Linux apt path, or sc3-plugins
+    // skipped), leave the option at default and scsynth uses its
+    // compiled-in plugin path.
+    if(stockPlugins.notNil and: { sc3Plugins.notNil }) {
+        s.options.ugenPluginsPath = [stockPlugins, sc3Plugins];
     };
 
-    if(s.serverRunning.not) {
-        "[sc-app] scsynth not reachable on % after 10s — start it first:\n  yarn scsynth   (or: scsynth -u 57110)".format(s.addr).error;
-    } {
-        // Register for async notifications (/n_go, /n_end, /done, …)
-        // and wait for the /done /notify reply via /sync round-trip.
-        s.notify;
-        s.sync;
+    // SuperDirt-required server sizing. Defaults are far too small —
+    // Dirt-Samples alone exceeds the default 1024 buffers, and the
+    // per-orbit graph needs tens of MB of real-time memory.
+    s.options.numBuffers = 1024 * 256;        // -b 262144
+    s.options.memSize = 8192 * 32;             // -m 262144 KB
+    s.options.numWireBufs = 2048;
+    s.options.maxNodes = 1024 * 32;
+    s.options.numOutputBusChannels = 2;
+    s.options.numInputBusChannels = 2;
+    // sclang's hardcoded cap is 32; SC 3.14's scsynth default is 64
+    // which trips that mirror check during /notify. Pin to a safe
+    // value below the cap.
+    s.options.maxLogins = 8;
 
+    s.waitForBoot {
+        ~dirt.stop; // tear down a prior instance, if any
         ~dirt = SuperDirt(2, s);   // stereo
         ~dirt.loadSoundFiles(samplesPath);
         ~dirt.start(57120, 0 ! 12); // 12 orbits, all routing to bus 0
         "[sc-app] SuperDirt ready on UDP 57120".postln;
     };
-});
+
+    s.latency = 0.3;
+};
 );

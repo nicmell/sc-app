@@ -819,11 +819,6 @@ scripts/
                                       # superdirt-deps/. Strips macOS
                                       # ._*.scx AppleDouble files.
                                       # Idempotent.
-  start-scsynth.sh                    # NEW — yarn scsynth
-                                      # launches scsynth with full
-                                      # SuperDirt-required options
-                                      # (-b 262144 -m 262144 -l 8 …)
-                                      # and per-OS -U plugin path
   cleanup.sh                          # NEW — yarn cleanup
                                       # wipes superdirt-deps/ + dist/
                                       # + src-tauri/target/ for a
@@ -834,11 +829,11 @@ scripts/
                                       # SCClassLibrary + superdirt/ +
                                       # superdirt-deps/{Vowel,sc3-plugins};
                                       # exec sclang -l <conf> startup.scd
-  sc-app-superdirt-startup.scd        # NEW — attach-mode startup;
-                                      # waits for externally-running
-                                      # scsynth, then mounts SuperDirt.
-                                      # Reads samples path from
-                                      # SC_APP_DIRT_SAMPLES env var.
+  sc-app-superdirt-startup.scd        # NEW — boots scsynth via
+                                      # s.reboot{} with SuperDirt-
+                                      # required options, then mounts
+                                      # SuperDirt. Reads samples path
+                                      # + plugin paths from env vars.
 .gitignore                            # +/superdirt-deps/ entry
 package.json                          # +superdirt + superdirt-setup scripts
 CLAUDE.md                             # Common commands +yarn superdirt(-setup)
@@ -910,36 +905,22 @@ src/AppShell.tsx                      # construct DirtClient at handleConnect,
   scsynth's compiled-in default plugin path so no extra wiring is
   needed. Idempotent. The `superdirt-deps/` directory is
   `.gitignore`d.
-- **scsynth is user-managed; sclang attaches.** First-run
-  dogfooding showed that `s.reboot { … }` in the startup .scd
-  killed the user's externally-running scsynth (which sc-app may
-  already be connected to). The .scd now uses `s.startAliveThread`
-  + a poll loop; if scsynth isn't reachable within 10s, it errors
-  out with a clear "start scsynth first" message. Server-options
-  (`numBuffers`, `memSize`, etc.) and the `ugenPluginsPath` setup
-  moved out of the .scd entirely — those are scsynth's command-
-  line concern, not sclang's.
-- **`yarn scsynth` launcher passes SuperDirt-required server options.**
-  scsynth's defaults (`-b 1024 -m 8192 -l 64`) are far too small
-  for SuperDirt — Dirt-Samples alone needs >1k buffers, the
-  per-orbit graph needs tens of MB of real-time memory, and SC
-  3.14's default `maxLogins = 64` exceeds sclang's hardcoded ≤32
-  cap. Running plain `scsynth -u 57110` causes a cascade of
-  `No more buffer numbers` / `not enough free memory` /
-  `Group not found` errors at SuperDirt init.
-  `scripts/start-scsynth.sh` runs scsynth with `-b 262144 -m 262144
-  -w 2048 -n 32768 -l 8 -i 2 -o 2 -U <plugins>`, mirroring the
-  `s.options.*` block the upstream `superdirt_startup.scd` set
-  before its `s.reboot{}`. macOS gets an explicit `-U` list (stock
-  + sc3-plugins from `superdirt-deps/`); Linux relies on the
-  compiled-in default path (which includes apt-installed
-  sc3-plugins).
+- **sclang owns scsynth's lifecycle.** Briefly tried a "user
+  manages scsynth, sclang attaches" mode but it required two
+  yarn commands, a port-conflict pre-flight, and exposing
+  scsynth's command-line flags — without solving any concrete
+  problem. Reverted to the upstream pattern: `s.reboot { … }` in
+  the .scd boots scsynth with the right options
+  (`numBuffers = 262144`, `memSize = 262144`, `maxLogins = 8`,
+  etc. — defaults are too small and SC 3.14's default `maxLogins
+  = 64` trips sclang's hardcoded ≤32 cap during `/notify`
+  mirroring). sc-app connects to that scsynth as a normal OSC
+  client; multiple clients on one scsynth is fine.
 - **`yarn cleanup` for repeatable resets.**
   `scripts/cleanup.sh` wipes `superdirt-deps/`, `dist/`, and
   `src-tauri/target/`. Doesn't touch `node_modules/` (yarn-managed)
   or any source. After `yarn cleanup`, the natural sequence is
-  `yarn superdirt-setup` + `yarn scsynth` + `yarn superdirt` to
-  rebuild from scratch.
+  `yarn superdirt-setup` + `yarn superdirt` to rebuild from scratch.
 
 ---
 

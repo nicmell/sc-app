@@ -124,20 +124,16 @@ yarn serve                     # standalone HTTP+WS server via Rust CLI
 yarn build                     # type-check + Vite production build
 yarn tsc --noEmit              # type-check only (fast)
 
-# SuperDirt OSC shell (Phase 25). scsynth is user-managed (or via
-# yarn scsynth); sclang attaches and starts SuperDirt on UDP 57120.
+# SuperDirt OSC shell (Phase 25). sclang owns scsynth's lifecycle;
+# sc-app connects to that scsynth as a normal OSC client.
 yarn superdirt-setup           # one-time: fetch Dirt-Samples + Vowel
                                #   + sc3-plugins (pinned release on macOS;
                                #   apt on Linux) into superdirt-deps/
-yarn scsynth                   # boot scsynth with SuperDirt-required
-                               #   server options (-b 262144 -m 262144
-                               #   -l 8 -U …). Plain `scsynth -u 57110`
-                               #   does NOT work — defaults are too small
-                               #   for SuperDirt and maxLogins=64
-                               #   conflicts with sclang's ≤32 cap.
-yarn superdirt                 # attach sclang (pinned to vendored
-                               #   superdirt/) to the running scsynth
-                               #   and start SuperDirt on UDP 57120
+yarn superdirt                 # boots scsynth (with SuperDirt-required
+                               #   options + pinned plugin/sample paths)
+                               #   AND mounts SuperDirt on UDP 57120,
+                               #   in one terminal. sclang's s.reboot{}
+                               #   gracefully /quits any prior scsynth.
 yarn cleanup                   # wipe superdirt-deps/ + dist/ + target/
                                #   for a fresh-slate rebuild
 
