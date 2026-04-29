@@ -18,12 +18,13 @@
 // this run.
 
 (
-var samplesPath = "SC_APP_DIRT_SAMPLES".getenv;
-if(samplesPath.isNil or: { samplesPath.size == 0 }) {
-    "SC_APP_DIRT_SAMPLES env var not set — start-superdirt.sh should set this".error;
-};
-
 s.reboot {
+    // `var` declarations live at the top of s.reboot's function
+    // body — that's the only place sclang's parser accepts them in
+    // command-line file execution. Captured by the s.waitForBoot
+    // closure below.
+    var samplesPath = "SC_APP_DIRT_SAMPLES".getenv;
+
     // Server options — only applied on (re)boot.
     s.options.numBuffers = 1024 * 256;
     s.options.memSize = 8192 * 32;
@@ -35,6 +36,11 @@ s.reboot {
     s.waitForBoot {
         ~dirt.stop; // tear down a prior instance, if any
         ~dirt = SuperDirt(2, s);   // stereo
+        // If the env var is unset (.scd run without the wrapper
+        // script), loadSoundFiles(nil) falls back to SuperDirt's
+        // default quark-folder lookup — our pinned sclang_conf
+        // points at no sample folder, so SuperDirt will warn and
+        // load nothing. Audible-but-empty failure mode.
         ~dirt.loadSoundFiles(samplesPath);
         ~dirt.start(57120, 0 ! 12); // 12 orbits, all routing to bus 0
     };
