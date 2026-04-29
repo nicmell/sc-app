@@ -24,6 +24,20 @@ s.reboot {
     // command-line file execution. Captured by the s.waitForBoot
     // closure below.
     var samplesPath = "SC_APP_DIRT_SAMPLES".getenv;
+    var stockPlugins = "SC_APP_STOCK_PLUGINS_PATH".getenv;
+    var sc3Plugins = "SC_APP_SC3_PLUGINS_PATH".getenv;
+
+    // Tell scsynth where to find UGen plugin binaries. sclang's
+    // includePaths (set via -l) only governs class-library
+    // compilation — scsynth has its own `-U` plugin search path,
+    // distinct from sclang's class path. If both env vars are set
+    // (the launch script handled OS detection + sc3-plugins
+    // presence), we pass [stock, sc3-plugins]; otherwise we leave
+    // the option at default so scsynth falls back to its compiled-
+    // in stock-plugins path.
+    if(stockPlugins.notNil and: { sc3Plugins.notNil }) {
+        s.options.ugenPluginsPath = [stockPlugins, sc3Plugins];
+    };
 
     // Server options — only applied on (re)boot.
     s.options.numBuffers = 1024 * 256;

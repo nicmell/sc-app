@@ -43,6 +43,7 @@ fi
 case "$(uname -s)" in
   Darwin*)
     SCCLASSLIB="/Applications/SuperCollider.app/Contents/Resources/SCClassLibrary"
+    SC_STOCK_PLUGINS="/Applications/SuperCollider.app/Contents/Resources/plugins"
     ;;
   Linux*)
     if [ -d "/usr/share/SuperCollider/SCClassLibrary" ]; then
@@ -52,6 +53,13 @@ case "$(uname -s)" in
     else
       die "SCClassLibrary not found — set SC_APP_CLASSLIB env var to override"
     fi
+    if [ -d "/usr/lib/SuperCollider/plugins" ]; then
+      SC_STOCK_PLUGINS="/usr/lib/SuperCollider/plugins"
+    elif [ -d "/usr/local/lib/SuperCollider/plugins" ]; then
+      SC_STOCK_PLUGINS="/usr/local/lib/SuperCollider/plugins"
+    else
+      SC_STOCK_PLUGINS=""
+    fi
     ;;
   *)
     die "unsupported OS: $(uname -s)"
@@ -60,6 +68,7 @@ esac
 
 # Allow override (e.g. for non-default install paths).
 SCCLASSLIB="${SC_APP_CLASSLIB:-$SCCLASSLIB}"
+SC_STOCK_PLUGINS="${SC_APP_STOCK_PLUGINS:-$SC_STOCK_PLUGINS}"
 
 # ── Pre-flight checks ────────────────────────────────────────────────
 [ -d "$SCCLASSLIB" ] || die "SCClassLibrary not found at $SCCLASSLIB"
@@ -98,5 +107,18 @@ echo "  Ctrl-C to stop both."
 
 # Sample path passes through env var; the .scd reads it via "VAR".getenv
 export SC_APP_DIRT_SAMPLES="$DEPS/Dirt-Samples/*"
+
+# Plugin search path for scsynth (the audio server, distinct from
+# sclang's class library). sc3-plugins ships UGen .scx binaries
+# alongside .sc class files; sclang found them via includePaths but
+# scsynth needs them on its `-U` flag too. The .scd builds
+# `s.options.ugenPluginsPath = [stock, sc3-plugins]` if BOTH env vars
+# are set; otherwise it leaves the option at default and scsynth uses
+# its compiled-in plugin paths (stock UGens only — global effects
+# like delay/reverb won't work, sample playback will).
+if [ -n "$SC_STOCK_PLUGINS" ] && [ -d "$DEPS/sc3-plugins" ]; then
+  export SC_APP_STOCK_PLUGINS_PATH="$SC_STOCK_PLUGINS"
+  export SC_APP_SC3_PLUGINS_PATH="$DEPS/sc3-plugins"
+fi
 
 exec sclang -l "$CONF" "$STARTUP"
