@@ -50,6 +50,27 @@ EOF
   exit 1
 fi
 
+# Pre-flight: refuse to start if something already binds UDP 57110.
+# scsynth's bind() failure surfaces as an unhandled C++ exception
+# ("libc++abi: terminating", SIGABRT) — much more confusing than a
+# clear "port in use" message. Most common cause: a leftover scsynth
+# from a previous session.
+if command -v lsof >/dev/null 2>&1; then
+  occupant="$(lsof -nP -iUDP:57110 2>/dev/null | tail -n +2 | head -1 || true)"
+  if [ -n "$occupant" ]; then
+    pid="$(printf '%s' "$occupant" | awk '{print $2}')"
+    cmd="$(printf '%s' "$occupant" | awk '{print $1}')"
+    cat >&2 <<EOF
+error: UDP port 57110 already in use by $cmd (pid $pid)
+
+Probably a leftover scsynth from a previous session. Kill it first:
+  kill $pid
+  # or, if you don't care which scsynth: pkill scsynth
+EOF
+    exit 1
+  fi
+fi
+
 # SuperDirt-friendly server options. Same on macOS and Linux.
 COMMON_OPTS=(-u 57110 -b 262144 -m 262144 -w 2048 -n 32768 -l 8 -i 2 -o 2)
 
