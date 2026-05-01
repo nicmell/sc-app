@@ -12,11 +12,25 @@
 //! scsynth instances concurrently with no cross-talk.
 //!
 //! The bridge stays minimally OSC-aware: it forwards bytes verbatim
-//! and delegates `/done /notify` snooping + WS-close cleanup to
+//! and delegates `/done /notify` snooping (inbound), `/notify 0`
+//! snooping (outbound), and WS-close cleanup to
 //! [`super::session::Session`]. The cleanup catches the cases the
 //! frontend can't (browser crash, TCP RST, forced tab kill before
 //! `pagehide` flushes); the eager frontend `handleDisconnect` /
 //! `pagehide` paths still run first in normal use.
+//!
+//! ## WS-close cleanup ordering
+//!
+//! When the WS→UDP loop exits we:
+//!
+//! 1. Abort the `recv_task` *first*. Otherwise scsynth's `/fail`
+//!    replies to our cleanup bundle (when one is sent) get picked up
+//!    by `recv_task` and forwarded to the closed WS, producing a
+//!    "Sending after closing" warning per reply. Aborting first lets
+//!    those datagrams hit a closed UDP socket and the kernel drops
+//!    them silently.
+//! 2. Run `session.cleanup()` — which itself no-ops if the frontend
+//!    already deregistered (we observed `/notify 0` outbound).
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -30,7 +44,8 @@ use super::session::Session;
 
 /// Bridge a single WebSocket session to a UDP socket connected to
 /// `scsynth`. Returns when either side closes or errors. Fires the
-/// Phase 22 cleanup bundle on the way out.
+/// Phase 22 cleanup bundle on the way out (unless the frontend
+/// already cleaned up).
 pub async fn handle_ws(ws: WebSocket, scsynth: SocketAddr) -> Result<()> {
     let (mut tx, mut rx) = ws.split();
 
@@ -74,10 +89,13 @@ pub async fn handle_ws(ws: WebSocket, scsynth: SocketAddr) -> Result<()> {
     });
 
     // WS → UDP loop. Returns on Close, error, or stream end (TCP
-    // half-open / RST).
+    // half-open / RST). Each binary frame is snooped for `/notify 0`
+    // before being forwarded — when seen, it flips the
+    // `frontend_clean` flag so the cleanup tail skips its bundle.
     while let Some(msg) = rx.next().await {
         match msg {
             Ok(Message::Binary(bytes)) => {
+                session.snoop_outbound(&bytes).await;
                 if let Err(e) = sock.send(&bytes).await {
                     tracing::warn!(error = %e, "udp send error");
                     break;
@@ -92,7 +110,10 @@ pub async fn handle_ws(ws: WebSocket, scsynth: SocketAddr) -> Result<()> {
         }
     }
 
-    session.cleanup(&sock).await;
+    // Abort the recv task BEFORE running cleanup, so scsynth's
+    // (potential) `/fail` replies to our cleanup bundle don't get
+    // forwarded to a closed WS. See module-level comment.
     recv_task.abort();
+    session.cleanup(&sock).await;
     Ok(())
 }
