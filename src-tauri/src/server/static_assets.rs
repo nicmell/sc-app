@@ -1,5 +1,5 @@
-//! Static-file serving for the Vite `dist/` bundle, with a scoped
-//! SPA fallback to `index.html`.
+//! Static-file serving for the Vite `dist/` bundle, plus the path
+//! resolution that finds it inside a Tauri bundle.
 //!
 //! The naive `ServeDir::fallback(ServeFile::new(index))` approach
 //! serves `index.html` for *every* 404 — which means missing assets
@@ -15,6 +15,13 @@
 //!
 //! Path-traversal guard: requests are canonicalised and rejected if
 //! they resolve outside `dist/`.
+//!
+//! Where `dist/` lives: when shipped via `bundle.resources` in
+//! `tauri.conf.json`, Tauri re-bases the leading `..` to `_up_`, so
+//! the bundled files land at `<resource_dir>/_up_/dist/`. Both the
+//! GUI path (via `AppHandle::path().resource_dir()`) and the bridge
+//! path ([`resolve_bundled_dist`], via `tauri::utils::platform`) use
+//! [`DIST_SUBPATH`] as the same suffix.
 
 use std::path::{Path, PathBuf};
 
@@ -24,6 +31,41 @@ use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
 use tokio::fs;
 use tokio_util::io::ReaderStream;
+
+/// Subpath inside the Tauri resource dir where `dist/` lands.
+/// `bundle.resources: ["../dist"]` re-bases the leading `..` to
+/// `_up_` when copying into the bundle, so the actual files live at
+/// `<resource_dir>/_up_/dist/...`.
+pub const DIST_SUBPATH: &str = "_up_/dist";
+
+/// Resolve the bundled `dist/` directory for a non-Tauri-runtime
+/// caller (the `bridge` subcommand). Uses
+/// `tauri::utils::platform::resource_dir` directly so we get Tauri's
+/// platform-specific path logic without paying for `Builder::run()`
+/// (and, on Linux, without `gtk::init()` failing on a headless
+/// host).
+///
+/// Returns `Err` when not running inside a Tauri bundle (e.g. plain
+/// `cargo run -- bridge` in dev). Caller is expected to fall back
+/// gracefully — `--dist` override or no static fallback at all.
+///
+/// The GUI path doesn't call this — it has an `AppHandle` and
+/// uses `app.path().resource_dir()?.join(DIST_SUBPATH)` directly.
+pub fn resolve_bundled_dist() -> anyhow::Result<PathBuf> {
+    let pkg_info = tauri::utils::PackageInfo {
+        name: env!("CARGO_PKG_NAME").into(),
+        version: env!("CARGO_PKG_VERSION")
+            .parse()
+            .expect("CARGO_PKG_VERSION must be a valid semver"),
+        authors: env!("CARGO_PKG_AUTHORS"),
+        description: env!("CARGO_PKG_DESCRIPTION"),
+        crate_name: env!("CARGO_PKG_NAME"),
+    };
+    let env = tauri::Env::default();
+    let resource_dir = tauri::utils::platform::resource_dir(&pkg_info, &env)
+        .map_err(|e| anyhow::anyhow!("resource_dir: {e}"))?;
+    Ok(resource_dir.join(DIST_SUBPATH))
+}
 
 pub async fn static_or_spa(req: Request, dist: PathBuf) -> Response {
     let path = req.uri().path();

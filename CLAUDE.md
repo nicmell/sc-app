@@ -55,7 +55,15 @@ OSC Worker (module worker)
       │
       ▼
 src-tauri backend (Rust)
-  ├── server/ws_bridge.rs       WS ↔ UDP datagram bridge → scsynth
+  ├── cli.rs                    clap parsing + dispatch
+  ├── gui.rs                    Tauri Builder + window for desktop mode
+  ├── bridge.rs                 headless `bridge` subcommand entry
+  ├── logging.rs                tracing init (stderr + daily-rotated file)
+  ├── server/
+  │   ├── mod.rs                axum router, bind/serve_on/run_bridge
+  │   ├── ws_bridge.rs          WS ↔ UDP datagram bridge → scsynth
+  │   ├── session.rs            per-WS state (clientId snoop + cleanup)
+  │   └── static_assets.rs      SPA fallback + dist resolution
   └── tauri-plugin-{dialog,fs,opener}  native save-as / file IO / etc.
 ```
 
@@ -169,7 +177,9 @@ difference is whether a `tauri::Builder` runs around it:
 external browsers hit the same axum static fallback. Inside the
 bundle the files land at `<resource_dir>/_up_/dist/` because Tauri
 re-bases the leading `..` to `_up_` when copying resources; the
-constant `DIST_SUBPATH` in `cli.rs` captures this.
+constant `DIST_SUBPATH` in `server/static_assets.rs` captures this,
+alongside the `resolve_bundled_dist()` helper used by the bridge
+subcommand.
 
 Frontend asset URLs are always same-origin: `wsUrlFor` in
 `AppShell.tsx` builds from `window.location.origin`, no env-var

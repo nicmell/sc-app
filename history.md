@@ -1061,6 +1061,22 @@ binary that runs cleanly on a headless Pi without `xvfb`.
   are lost; in practice this only affects a handful of Tauri
   startup messages.
 
+*Final Rust layout pass.*
+- Top-level files split by process-mode-of-being:
+  - `cli.rs` (~95 LoC) — clap parsing + dispatch only.
+  - `gui.rs` (~95 LoC) — Tauri Builder, `setup` block, `TracingGuard` newtype.
+  - `bridge.rs` (~50 LoC) — `run_blocking` for the headless subcommand.
+- `init_tracing` lifted out of `server/` into top-level `logging.rs`
+  (it was never a server concern; the `pub use logging::init_tracing`
+  re-export from `server/mod.rs` was the smell that gave it away).
+- `DIST_SUBPATH` constant + `resolve_bundled_dist()` helper moved
+  into `server/static_assets.rs` — same module that owns the
+  serving side. Both `gui.rs` (with `AppHandle::path()`) and
+  `bridge.rs` (via `resolve_bundled_dist`) reach in for the same
+  layout knowledge.
+- Each file is now under 200 LoC with a single clear concern. The
+  `server/` submodule shrank from 5 files to 4 (logging gone).
+
 *Same-origin WS via Vite proxy.*
 - `vite.config.ts -> server.proxy['/ws']` forwards the WS
   upgrade to `http://127.0.0.1:3000` (override via

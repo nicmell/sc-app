@@ -11,9 +11,6 @@
 //!    the local axum, or a remote browser hits the deployed
 //!    bundle). In dev the frontend is served by Vite, so the static
 //!    fallback is `None` and any non-`/ws` request 404s.
-//!
-//! Tracing init lives in [`logging`] and is re-exported as
-//! `server::init_tracing` for the `cli.rs` callers.
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -27,12 +24,9 @@ use axum::Router;
 use serde::Deserialize;
 use tokio::net::TcpListener;
 
-mod logging;
 mod session;
-mod static_assets;
+pub mod static_assets;
 pub mod ws_bridge;
-
-pub use logging::init_tracing;
 
 #[derive(Clone)]
 struct AppState {
