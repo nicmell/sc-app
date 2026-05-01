@@ -46,11 +46,13 @@ yarn build
 cargo run --manifest-path src-tauri/Cargo.toml -- bridge --dist dist
 ```
 
-Defaults: port 3000, scsynth `127.0.0.1:57110`. All overridable via
-flags or env (`SC_PORT`, `SC_SCSYNTH_ADDR`, `SC_DIST_DIR`). Visit
-`http://127.0.0.1:3000/`. Inside a `tauri build` artifact, `--dist`
-is unnecessary — the bridge resolves `dist/` from the bundle's
-resource dir automatically.
+Defaults: port 3000, scsynth `127.0.0.1:57110`. Override via
+`--port` / `--scsynth` flags or `SC_PORT` / `SC_SCSYNTH_ADDR` env
+vars. Visit `http://127.0.0.1:3000/`. Inside a `tauri build`
+artifact, `--dist` is unnecessary — the bridge resolves `dist/`
+from the bundle's resource dir automatically. File logging is
+opt-in via `--log-dir` (deploys typically pin the path from a
+systemd unit).
 
 ### Browser-only dev (HMR without Tauri)
 

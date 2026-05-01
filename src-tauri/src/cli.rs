@@ -58,14 +58,16 @@ enum Command {
         /// `dist/` is resolved via Tauri's resource-dir mechanism,
         /// which only works inside a built bundle. For a dev-mode
         /// `cargo run -- bridge`, omit it and load the UI from Vite
-        /// (`yarn dev`). Env: `SC_DIST_DIR`.
-        #[arg(long, env = "SC_DIST_DIR")]
+        /// (`yarn dev`).
+        #[arg(long)]
         dist: Option<PathBuf>,
 
-        /// Phase 23 — directory to write rotated NDJSON log files
-        /// into (one file per day, `sc-app.log.<YYYY-MM-DD>`). When
-        /// unset, only stderr logging is enabled. Env: `SC_LOG_DIR`.
-        #[arg(long, env = "SC_LOG_DIR")]
+        /// Directory to write rotated NDJSON log files into (one file
+        /// per day, `sc-app.log.<YYYY-MM-DD>`). When unset, only
+        /// stderr logging is enabled — file logging is opt-in for the
+        /// bridge subcommand, since deploys typically pin the path
+        /// from a systemd unit or similar.
+        #[arg(long)]
         log_dir: Option<PathBuf>,
     },
 }
@@ -158,14 +160,24 @@ fn run_gui() {
     let scsynth = parse_scsynth_or_die(
         &std::env::var("SC_SCSYNTH_ADDR").unwrap_or_else(|_| "127.0.0.1:57110".into()),
     );
-    let log_dir = std::env::var("SC_LOG_DIR").ok().map(PathBuf::from);
-    let _guard = server::init_tracing(log_dir.as_deref());
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .setup(move |app| {
+            // GUI mode picks up file logging automatically — Tauri
+            // gives us the platform-standard log dir
+            // (~/Library/Logs/<bundle-id>/ on macOS, etc.). Bridge
+            // mode skips this; deploys pin the path explicitly via
+            // --log-dir.
+            let log_dir = app.path().app_log_dir().ok();
+            let guard = server::init_tracing(log_dir.as_deref());
+            // The non-blocking appender's flush thread is owned by
+            // this guard; managed state outlives the app's
+            // event-loop, so file logging stays alive until exit.
+            app.manage(TracingGuard(guard));
+
             // In production, the webview loads from the local axum,
             // so we serve `dist/` from the bundle. In dev the
             // webview loads from Vite (`devUrl`), so the dist path
@@ -216,3 +228,8 @@ fn run_gui() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+/// Newtype so `tauri::Manager::manage` accepts the tracing guard.
+/// We never read it back — its only job is to live as long as the
+/// Tauri app does, keeping the appender's flush thread alive.
+struct TracingGuard(#[allow(dead_code)] Option<tracing_appender::non_blocking::WorkerGuard>);

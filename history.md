@@ -1043,6 +1043,24 @@ binary that runs cleanly on a headless Pi without `xvfb`.
   `not_static_fallback` returning 404 for everything except
   `/ws`. The bridge runs cleanly with no static dir at all.
 
+*Path env vars retired.*
+- Both `SC_DIST_DIR` and `SC_LOG_DIR` env-var bindings dropped from
+  `cli.rs`. Path config is now flag-only on the bridge subcommand
+  and Tauri-default in GUI mode:
+  - GUI log dir: `app.path().app_log_dir()` —
+    `~/Library/Logs/<bundle-id>/` on macOS, `$XDG_DATA_HOME/<bundle-id>/logs/`
+    on Linux, `%LOCALAPPDATA%\<bundle-id>\logs\` on Windows. No
+    config; logs just appear in the platform-standard place.
+  - Bridge log dir: stderr-only by default; `--log-dir` opts in to
+    file logging. Headless deploys typically pin the path from a
+    systemd unit anyway, so the env-var indirection added nothing.
+- To wire `app_log_dir()` into the GUI path, `init_tracing` moves
+  inside `Builder::setup()` and the returned `WorkerGuard` is held
+  by Tauri's managed-state via `app.manage(TracingGuard(..))`.
+  Pre-setup tracing events go to the default no-op subscriber and
+  are lost; in practice this only affects a handful of Tauri
+  startup messages.
+
 *Same-origin WS via Vite proxy.*
 - `vite.config.ts -> server.proxy['/ws']` forwards the WS
   upgrade to `http://127.0.0.1:3000` (override via
