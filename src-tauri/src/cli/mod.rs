@@ -5,6 +5,17 @@
 //! * `bridge` subcommand → [`bridge::run_blocking`] runs the WS↔UDP
 //!   bridge standalone (no Tauri runtime, no GTK init).
 //!
+//! Config precedence for the bridge subcommand:
+//!
+//! 1. CLI flag (`--port`, `--scsynth`, `--log-dir`)
+//! 2. Env var (`SC_PORT`, `SC_SCSYNTH_ADDR`)
+//! 3. `config.json` value (`--config <path>` or auto-discovered at
+//!    [`config::LINUX_SYSTEM_PATH`])
+//! 4. Built-in default
+//!
+//! GUI mode does the same precedence inside `gui::run` (no CLI
+//! flags; reads env + `app_config_dir/config.json`).
+//!
 //! Asset bundling: `dist/` ships once via `bundle.resources` in
 //! `tauri.conf.json`. The Tauri `tauri://` protocol is unused —
 //! `frontendDist` is intentionally absent and the webview points at
@@ -14,9 +25,14 @@ mod bridge;
 mod gui;
 
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
+
+use crate::config::{self, Config};
+
+const DEFAULT_PORT: u16 = 3000;
+const DEFAULT_SCSYNTH: &str = "127.0.0.1:57110";
 
 #[derive(Parser)]
 #[command(name = "sc-app", version, about = "SCSynth Oscilloscope & Recorder")]
@@ -31,15 +47,17 @@ enum Command {
     /// static assets if available; otherwise the frontend must be
     /// hosted elsewhere (Vite dev, an external CDN, etc.).
     Bridge {
-        /// HTTP port to bind. Env: `SC_PORT`.
-        #[arg(short, long, env = "SC_PORT", default_value_t = 3000)]
-        port: u16,
+        /// HTTP port to bind. Falls back to env (`SC_PORT`),
+        /// config.json `port`, then 3000.
+        #[arg(short, long)]
+        port: Option<u16>,
 
         /// Default scsynth address. Each WebSocket connection may
-        /// override this via `?scsynth=HOST:PORT`. Env:
-        /// `SC_SCSYNTH_ADDR`.
-        #[arg(long, env = "SC_SCSYNTH_ADDR", default_value = "127.0.0.1:57110")]
-        scsynth: String,
+        /// override this via `?scsynth=HOST:PORT`. Falls back to
+        /// env (`SC_SCSYNTH_ADDR`), config.json `scsynth`, then
+        /// `127.0.0.1:57110`.
+        #[arg(long)]
+        scsynth: Option<String>,
 
         /// Override the static asset directory. Without this flag
         /// `dist/` is resolved via Tauri's resource-dir mechanism,
@@ -50,37 +68,88 @@ enum Command {
         dist: Option<PathBuf>,
 
         /// Directory to write rotated NDJSON log files into (one
-        /// file per day, `sc-app.log.<YYYY-MM-DD>`). When unset,
-        /// only stderr logging is enabled — file logging is opt-in
-        /// for the bridge subcommand, since deploys typically pin
-        /// the path from a systemd unit or similar.
+        /// file per day, `sc-app.log.<YYYY-MM-DD>`). Falls back to
+        /// config.json `log_dir`. When unset everywhere, only
+        /// stderr logging is enabled.
         #[arg(long)]
         log_dir: Option<PathBuf>,
+
+        /// Path to a `config.json` file. If passed, the file *must*
+        /// exist (we fail loudly on missing/unparseable). If
+        /// omitted, [`config::LINUX_SYSTEM_PATH`] is auto-discovered
+        /// — silently skipped if absent.
+        #[arg(long)]
+        config: Option<PathBuf>,
     },
 }
 
 pub fn run() {
     match Cli::parse().command {
-        None => {
-            // GUI mode reads the same env vars the bridge subcommand
-            // exposes via flags — Tauri builds have no CLI surface.
-            let port: u16 = std::env::var("SC_PORT")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(3000);
-            let scsynth = parse_scsynth_or_die(
-                &std::env::var("SC_SCSYNTH_ADDR").unwrap_or_else(|_| "127.0.0.1:57110".into()),
-            );
-            gui::run(port, scsynth);
-        }
+        None => gui::run(),
         Some(Command::Bridge {
             port,
             scsynth,
             dist,
             log_dir,
+            config,
         }) => {
-            let scsynth = parse_scsynth_or_die(&scsynth);
+            let cfg = resolve_bridge_config(config.as_deref());
+
+            let port = port
+                .or_else(|| std::env::var("SC_PORT").ok().and_then(|s| s.parse().ok()))
+                .or(cfg.port)
+                .unwrap_or(DEFAULT_PORT);
+            let scsynth_str = scsynth
+                .or_else(|| std::env::var("SC_SCSYNTH_ADDR").ok())
+                .or(cfg.scsynth)
+                .unwrap_or_else(|| DEFAULT_SCSYNTH.to_string());
+            let scsynth = parse_scsynth_or_die(&scsynth_str);
+            let log_dir = log_dir.or(cfg.log_dir);
+
             bridge::run_blocking(port, scsynth, dist, log_dir);
+        }
+    }
+}
+
+/// Bridge-mode config resolution. Explicit `--config` is required
+/// to exist; auto-discovery silently skips missing files.
+fn resolve_bridge_config(explicit: Option<&Path>) -> Config {
+    if let Some(path) = explicit {
+        match Config::load(path) {
+            Ok(Some(c)) => {
+                eprintln!("[config] loaded {}", path.display());
+                c
+            }
+            Ok(None) => {
+                eprintln!(
+                    "error: --config {} does not exist",
+                    path.display()
+                );
+                std::process::exit(2);
+            }
+            Err(e) => {
+                eprintln!(
+                    "error: failed to load --config {}: {e}",
+                    path.display()
+                );
+                std::process::exit(2);
+            }
+        }
+    } else {
+        let auto = Path::new(config::LINUX_SYSTEM_PATH);
+        match Config::load(auto) {
+            Ok(Some(c)) => {
+                eprintln!("[config] loaded {}", auto.display());
+                c
+            }
+            Ok(None) => Config::default(),
+            Err(e) => {
+                eprintln!(
+                    "[config] failed to load auto-discovered {}: {e}",
+                    auto.display()
+                );
+                Config::default()
+            }
         }
     }
 }
@@ -89,7 +158,7 @@ fn parse_scsynth_or_die(raw: &str) -> SocketAddr {
     match raw.parse::<SocketAddr>() {
         Ok(addr) => addr,
         Err(e) => {
-            eprintln!("error: invalid --scsynth address {raw:?}: {e}");
+            eprintln!("error: invalid scsynth address {raw:?}: {e}");
             std::process::exit(2);
         }
     }

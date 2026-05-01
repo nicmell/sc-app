@@ -1,4 +1,5 @@
 mod cli;
+mod config;
 mod logging;
 pub mod server;
 

@@ -7,50 +7,101 @@
 //! the window URL is valid the moment the webview navigates to it
 //! (no boot race against the bridge).
 //!
-//! Logging: `init_tracing` runs *inside* `.setup()` so it can pick up
-//! `app.path().app_log_dir()` for the platform-standard log
-//! location. The returned `WorkerGuard` is held by Tauri's managed
-//! state via [`TracingGuard`] for the app's lifetime.
+//! Config: GUI mode reads
+//! `app.path().app_config_dir()/config.json` and writes a default
+//! version on first launch (port + scsynth seeded with built-ins;
+//! `log_dir` left out so it falls through to
+//! `app.path().app_log_dir()`). Precedence is the same as bridge
+//! mode minus the CLI flags: env > config > built-in.
+//!
+//! Logging: `init_tracing` runs *inside* `.setup()` so it can pick
+//! up either the config-supplied `log_dir` or the platform-standard
+//! `app.path().app_log_dir()`. The returned `WorkerGuard` is held
+//! by Tauri's managed state via [`TracingGuard`] for the app's
+//! lifetime.
 
 use std::net::SocketAddr;
 
 use tauri::Manager;
 
+use crate::config::Config;
 use crate::logging;
 use crate::server;
 use crate::server::static_assets::DIST_SUBPATH;
 
-pub fn run(port: u16, scsynth: SocketAddr) {
+const DEFAULT_PORT: u16 = 3000;
+const DEFAULT_SCSYNTH: &str = "127.0.0.1:57110";
+
+pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .setup(move |app| {
-            // Platform-standard log dir (~/Library/Logs/<bundle-id>/
-            // on macOS, $XDG_DATA_HOME/<bundle-id>/logs/ on Linux,
-            // %LOCALAPPDATA%\<bundle-id>\logs\ on Windows). No env
-            // var indirection.
-            let log_dir = app.path().app_log_dir().ok();
-            let guard = logging::init_tracing(log_dir.as_deref());
-            // The non-blocking appender's flush thread is owned by
-            // this guard; managed state outlives the event loop, so
-            // file logging stays alive until exit.
-            app.manage(TracingGuard(guard));
+            // 1. Resolve config: app_config_dir/config.json, written
+            //    on first launch with port + scsynth defaults so the
+            //    user has something to discover and edit.
+            let cfg_path = app
+                .path()
+                .app_config_dir()
+                .ok()
+                .map(|d| d.join("config.json"));
+            if let Some(p) = cfg_path.as_deref() {
+                Config::write_default_if_missing(p);
+            }
+            let cfg = cfg_path
+                .as_deref()
+                .and_then(|p| match Config::load(p) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("[config] failed to parse {}: {e}", p.display());
+                        None
+                    }
+                })
+                .unwrap_or_default();
 
-            // In release the webview loads from the local axum, so
-            // we serve `dist/` from the bundle. In debug
-            // (`tauri dev`, `cargo run`) the webview loads from
-            // Vite — `resource_dir()` may resolve to a non-existent
-            // `_up_/dist` next to `target/debug/`, harmless because
-            // nothing requests it.
+            // 2. Logging — config.log_dir > app_log_dir.
+            let log_dir = cfg
+                .log_dir
+                .clone()
+                .or_else(|| app.path().app_log_dir().ok());
+            let guard = logging::init_tracing(log_dir.as_deref());
+            app.manage(TracingGuard(guard));
+            if let Some(p) = cfg_path.as_deref() {
+                if p.exists() {
+                    tracing::info!(path = %p.display(), "loaded config");
+                }
+            }
+
+            // 3. Resolve port + scsynth: env > config > default.
+            let port = std::env::var("SC_PORT")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .or(cfg.port)
+                .unwrap_or(DEFAULT_PORT);
+            let scsynth_str = std::env::var("SC_SCSYNTH_ADDR")
+                .ok()
+                .or(cfg.scsynth)
+                .unwrap_or_else(|| DEFAULT_SCSYNTH.to_string());
+            let scsynth: SocketAddr = scsynth_str
+                .parse()
+                .map_err(|e| format!("invalid scsynth {scsynth_str:?}: {e}"))?;
+
+            // 4. Static assets: in release the webview loads from
+            //    the local axum, so we serve `dist/` from the
+            //    bundle. In debug (`tauri dev`, `cargo run`) the
+            //    webview loads from Vite — `resource_dir()` may
+            //    resolve to a non-existent `_up_/dist` next to
+            //    `target/debug/`, harmless because nothing requests
+            //    it.
             let dist = app
                 .path()
                 .resource_dir()
                 .ok()
                 .map(|d| d.join(DIST_SUBPATH));
 
-            // Bind synchronously so the window URL is valid the
-            // moment the webview navigates to it.
+            // 5. Bind synchronously so the window URL is valid the
+            //    moment the webview navigates to it.
             let (listener, addr) = tauri::async_runtime::block_on(server::bind(port))
                 .map_err(|e| format!("server::bind: {e}"))?;
             tracing::info!(addr = %addr, "sc-app listening on http://{addr}");
@@ -61,13 +112,14 @@ pub fn run(port: u16, scsynth: SocketAddr) {
                 }
             });
 
-            // Webview URL:
-            // - Release (`tauri build`): point at the local axum.
-            //   Same source of truth as headless bridge mode.
-            // - Debug (`tauri dev`, `cargo run`): defer to `devUrl`
-            //   from `tauri.conf.json` so Vite's HMR keeps working.
-            //   The Vite proxy in `vite.config.ts` forwards `/ws` to
-            //   `:port` so the webview's WS still reaches the bridge.
+            // 6. Webview URL:
+            //    - Release (`tauri build`): point at the local axum.
+            //      Same source of truth as headless bridge mode.
+            //    - Debug (`tauri dev`, `cargo run`): defer to
+            //      `devUrl` from `tauri.conf.json` so Vite's HMR
+            //      keeps working. The Vite proxy in
+            //      `vite.config.ts` forwards `/ws` to `:port` so
+            //      the webview's WS still reaches the bridge.
             let url = if cfg!(debug_assertions) {
                 tauri::WebviewUrl::default()
             } else {

@@ -60,7 +60,7 @@ What this gets you:
 ## 2. Node.js (for the frontend build)
 
 The frontend is built once on the Pi (or on your dev box and
-copied — see §6). Yarn 4 needs Node ≥ 18.12; Raspberry Pi OS's
+copied — see §7). Yarn 4 needs Node ≥ 18.12; Raspberry Pi OS's
 default `nodejs` is too old, so use NodeSource:
 
 ```bash
@@ -154,14 +154,58 @@ sudo cp -r dist /usr/local/share/sc-app/dist
 
 # Log dir
 sudo install -d -o sc-app -g sc-app -m 0755 /var/log/sc-app
+
+# Config dir + file (see §6)
+sudo install -d -m 0755 /etc/sc-app
+sudo tee /etc/sc-app/config.json >/dev/null <<'JSON'
+{
+  "port": 3000,
+  "scsynth": "127.0.0.1:57110",
+  "log_dir": "/var/log/sc-app"
+}
+JSON
+sudo chmod 0644 /etc/sc-app/config.json
 ```
 
-That's the entire layout — five files/dirs the install puts on
-disk (see §8 for the summary table).
+That's the entire layout — six files/dirs the install puts on
+disk (see §9 for the summary table).
 
 ---
 
-## 6. Alternative: build on your dev box, copy the artifacts
+## 6. Config file
+
+`sc-app bridge` auto-discovers `/etc/sc-app/config.json` at startup
+when `--config` isn't passed. All fields are optional and fall
+through to env vars then built-in defaults; unknown fields are a
+hard error to catch typos:
+
+```json
+{
+  "port": 3000,
+  "scsynth": "127.0.0.1:57110",
+  "log_dir": "/var/log/sc-app"
+}
+```
+
+Precedence (highest → lowest):
+1. CLI flag (`--port`, `--scsynth`, `--log-dir`)
+2. Env var (`SC_PORT`, `SC_SCSYNTH_ADDR`)
+3. `config.json` value
+4. Built-in default (3000 / `127.0.0.1:57110` / stderr-only)
+
+So the systemd unit in §8b can drop most of its `--…` flags once
+the config file is in place — just `--dist /usr/local/share/sc-app/dist`
+remains because dist is the one knob that's not in the auto-discovered
+config schema (it's bundle-resolved in production builds; the Pi's
+plain `cargo build` doesn't bundle, hence the explicit flag).
+
+If `--config <path>` is passed explicitly, the file *must* exist
+(the bridge fails loudly on missing/unparseable). Auto-discovered
+absence is silent.
+
+---
+
+## 7. Alternative: build on your dev box, copy the artifacts
 
 If you'd rather not build on the Pi, you can build on a Linux x86_64
 host (cross-compile to ARM64) and `scp` the result. This skips the
@@ -189,12 +233,12 @@ in §4 or set up a Linux VM.
 
 ---
 
-## 7. systemd units
+## 8. systemd units
 
 Two services: scsynth (the audio server) and sc-app-bridge (the
 WS↔UDP bridge + static asset server).
 
-### 7a. scsynth.service
+### 8a. scsynth.service
 
 scsynth needs JACK, so we let JACK come up first via the user
 session bus or a system-level JACK service. The simplest setup
@@ -234,7 +278,7 @@ Flag rationale:
 - `-i 2 -o 2` — 2 in, 2 out audio channels. Adjust to your USB
   audio device.
 
-### 7b. sc-app-bridge.service
+### 8b. sc-app-bridge.service
 
 Create `/etc/systemd/system/sc-app-bridge.service`:
 
@@ -249,11 +293,10 @@ Type=simple
 User=sc-app
 Group=sc-app
 Environment=RUST_LOG=info,sc_app_lib=info
-ExecStart=/usr/local/bin/sc-app bridge \
-  --port 3000 \
-  --scsynth 127.0.0.1:57110 \
-  --dist /usr/local/share/sc-app/dist \
-  --log-dir /var/log/sc-app
+# port / scsynth / log_dir come from /etc/sc-app/config.json (auto-
+# discovered). Only --dist needs to be on the CLI because dist isn't
+# in the config schema.
+ExecStart=/usr/local/bin/sc-app bridge --dist /usr/local/share/sc-app/dist
 Restart=on-failure
 RestartSec=5
 
@@ -268,7 +311,7 @@ PrivateTmp=true
 WantedBy=multi-user.target
 ```
 
-### 7c. Enable and start
+### 8c. Enable and start
 
 ```bash
 sudo systemctl daemon-reload
@@ -286,7 +329,7 @@ daily-rotated NDJSON file at
 
 ---
 
-## 8. Where everything lives
+## 9. Where everything lives
 
 After install, here's the complete file map:
 
@@ -294,10 +337,11 @@ After install, here's the complete file map:
 |---|---|---|
 | `/usr/local/bin/sc-app` | root:root | `cargo build --release` output |
 | `/usr/local/share/sc-app/dist/` | root:root | `yarn build` output |
+| `/etc/sc-app/config.json` | root:root | created in §5; auto-discovered by `sc-app bridge` |
 | `/var/log/sc-app/` | sc-app:sc-app | created by `install -d` |
 | `/var/log/sc-app/sc-app.log.<YYYY-MM-DD>` | sc-app:sc-app | written by the bridge (daily rotation) |
-| `/etc/systemd/system/scsynth.service` | root:root | created in §7a |
-| `/etc/systemd/system/sc-app-bridge.service` | root:root | created in §7b |
+| `/etc/systemd/system/scsynth.service` | root:root | created in §8a |
+| `/etc/systemd/system/sc-app-bridge.service` | root:root | created in §8b |
 | `~/.cargo/`, `~/.rustup/` | pi:pi | rustup install (build-time only; safe to delete after install if you only deploy and don't rebuild) |
 | `~/sc-app/` | pi:pi | source checkout (build-time only; safe to keep for in-place rebuilds, or delete after copying artifacts) |
 | `/etc/alternatives/scsynth → /usr/bin/scsynth` | root:root | provided by `supercollider-server` apt package |
@@ -311,7 +355,7 @@ Runtime ports:
 
 ---
 
-## 9. Updating
+## 10. Updating
 
 ```bash
 cd ~/sc-app
@@ -331,9 +375,14 @@ The bridge restart is hot — clients reconnect via `pagehide` /
 manual reload. scsynth doesn't need restarting unless its config
 changed.
 
+`/etc/sc-app/config.json` is *not* touched by updates; your local
+edits survive across `git pull` + reinstall cycles. Schema changes
+(new optional fields) are documented in `docs/raspberry-pi.md` §6;
+unknown fields fail the parse so additions need an explicit edit.
+
 ---
 
-## 10. Uninstall
+## 11. Uninstall
 
 ```bash
 sudo systemctl disable --now sc-app-bridge.service scsynth.service
@@ -343,6 +392,7 @@ sudo systemctl daemon-reload
 
 sudo rm /usr/local/bin/sc-app
 sudo rm -rf /usr/local/share/sc-app
+sudo rm -rf /etc/sc-app
 sudo rm -rf /var/log/sc-app
 sudo userdel sc-app
 

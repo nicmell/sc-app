@@ -56,9 +56,10 @@ OSC Worker (module worker)
       ▼
 src-tauri backend (Rust)
   ├── cli/
-  │   ├── mod.rs                clap parsing + dispatch
+  │   ├── mod.rs                clap parsing + dispatch + precedence
   │   ├── gui.rs                Tauri Builder + window for desktop mode
   │   └── bridge.rs             headless `bridge` subcommand entry
+  ├── config.rs                 `config.json` schema + load helpers
   ├── logging.rs                tracing init (stderr + daily-rotated file)
   ├── server/
   │   ├── mod.rs                axum router, bind/serve_on/run_bridge
@@ -181,6 +182,35 @@ re-bases the leading `..` to `_up_` when copying resources; the
 constant `DIST_SUBPATH` in `server/static_assets.rs` captures this,
 alongside the `resolve_bundled_dist()` helper used by the bridge
 subcommand.
+
+## Runtime config (`config.json`)
+
+Both modes consult an optional `config.json` for `port`, `scsynth`,
+and `log_dir`. Schema lives in `src-tauri/src/config.rs` (`Config`
+struct, `deny_unknown_fields` so typos error out). All fields are
+`Option<…>`; missing fields fall through.
+
+Discovery:
+
+- **GUI mode** reads `app.path().app_config_dir()/config.json` and
+  writes a starter file (`port` + `scsynth` defaults) on first
+  launch via `Config::write_default_if_missing`. Subsequent
+  launches never overwrite the user's edits.
+- **Bridge mode** uses `--config <path>` if explicitly passed (must
+  exist; fails loudly otherwise), else auto-discovers
+  `/etc/sc-app/config.json` (silent if absent).
+
+Precedence (highest → lowest):
+
+1. CLI flag (bridge only — `--port`, `--scsynth`, `--log-dir`)
+2. Env var (`SC_PORT`, `SC_SCSYNTH_ADDR`)
+3. `config.json` value
+4. Built-in default (3000 / `127.0.0.1:57110` / stderr-only)
+
+`dist` is intentionally *not* in the config schema — it has its own
+resolution path (resource_dir auto-resolves in bundle, `--dist`
+overrides) and adding it would just create a duplicate knob. Same
+reasoning kept it out of the env-var surface earlier.
 
 Frontend asset URLs are always same-origin: `wsUrlFor` in
 `AppShell.tsx` builds from `window.location.origin`, no env-var
