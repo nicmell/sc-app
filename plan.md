@@ -9,7 +9,7 @@ audio config schema, file layout, workspace packages, and the
 chunkSize × sampleRate practical table all live in
 [`CLAUDE.md`](./CLAUDE.md) — don't duplicate them here.
 
-**No phase in flight.** Phases 0–24 shipped (see `history.md`).
+**No phase in flight.** Phases 0–25 shipped (see `history.md`).
 The forward-looking pipeline is empty — pick the next direction
 from *Future Improvements* below, or add a new phase entry above
 this line as needs surface.

@@ -42,6 +42,7 @@ is the cleaner read.
 - [Phase 22 — Per-session Bridge State (Disconnect Cleanup)](#phase-22--per-session-bridge-state-disconnect-cleanup)
 - [Phase 23 — Unified Logging Pipeline](#phase-23--unified-logging-pipeline)
 - [Phase 24 — scsynth `/fail` Surface](#phase-24--scsynth-fail-surface)
+- [Phase 25 — Bundle & Dev Workflow Refresh](#phase-25--bundle--dev-workflow-refresh)
 
 ---
 
@@ -965,3 +966,170 @@ and grep-friendly.
   might log. If a future refactor moves init_tracing into a
   function that returns early, the guard returns with it —
   callers must not let it drop.
+
+---
+
+## Phase 25 — Bundle & Dev Workflow Refresh
+
+**Goal.** Clean up the deployment + dev story that had accreted
+across Phases 0–24. Three pain points: (a) Phase 23's frontend
+`logShipper` + `/api/logs` ingest was over-engineered for a tool
+where operators care about server-side health and devs use
+DevTools; (b) `tauri.conf.json` shipped `dist/` twice (once as
+embedded `frontendDist` for `tauri://`, once as filesystem
+`bundle.resources` after we collapsed the webview to HTTP); (c)
+the `serve` mode required either a `--dist` flag or a built bundle
+in dev, and the frontend's `VITE_OSC_WS_URL` env var papered over
+the cross-origin gap between Vite and the bridge. End state: one
+bundle path for assets, one origin for every web request, and a
+binary that runs cleanly on a headless Pi without `xvfb`.
+
+**What shipped.**
+
+*Drop the frontend log shipper.*
+- Deleted `src/util/logShipper.ts` and `src-tauri/src/server/log_ingest.rs`.
+- Removed `setLogShipper` hook + `ShipperFn` from `debugLog.ts`;
+  removed `installLogShipper()` call from `main.tsx`.
+- Removed `/api/logs` route + `DefaultBodyLimit` middleware from
+  `server::serve`. Kept `init_tracing` (daily-rotated file +
+  stderr) intact — the bridge still logs to file, the frontend
+  still surfaces in the in-memory `debugLog` ring + Download
+  button.
+
+*Modularise the server.*
+- New `src-tauri/src/server/session.rs` (`Session` type) — owns
+  the `clientId` snoop, parent-group fallback, Phase 22 cleanup
+  bundle. `ws_bridge.rs` calls `session.snoop(payload).await` on
+  every inbound datagram and `session.cleanup(&sock).await` on WS
+  close, otherwise stays byte-level.
+- New `src-tauri/src/server/static_assets.rs` — the SPA fallback
+  + path-traversal guard + MIME map, lifted out of `mod.rs`.
+- New `src-tauri/src/server/logging.rs` — `init_tracing`,
+  re-exported as `server::init_tracing` for the two `cli.rs`
+  callers.
+- `mod.rs` collapsed to ~85 lines: module decls, `bind`,
+  `serve_on`, `run_bridge`, `ws_handler`. The router setup is the
+  centerpiece.
+
+*Collapse the asset pipeline to one source.*
+- Dropped `frontendDist` from `tauri.conf.json`. Added
+  `bundle.resources: ["../dist"]`. Tauri's `tauri://` protocol is
+  unused; the webview loads from the local axum like a regular
+  browser.
+- `tauri.conf.json -> app.windows[]` is empty; the main window is
+  created programmatically in `cli.rs::run_gui::setup` so we can
+  bind the listener first and navigate the webview at the actual
+  port.
+- `capabilities/default.json` adds `remote.urls: ["http://127.0.0.1:*", "http://localhost:*"]`
+  so Tauri IPC (fs / dialog / opener) survives the move off
+  `tauri://`.
+- Webview URL is gated by `cfg!(debug_assertions)`:
+  `WebviewUrl::default()` (resolves to `devUrl` in dev) vs.
+  `WebviewUrl::External(http://127.0.0.1:<port>/)` in release.
+
+*Decouple the bridge from `tauri::Builder`.*
+- The `bridge` subcommand (renamed from `serve`) runs plain
+  tokio + axum — no `tauri::Builder::run()`, no `gtk::init()` on
+  Linux. Ships as a single binary that runs cleanly under
+  systemd on a headless Pi.
+- `dist/` resolution shared via the `DIST_SUBPATH` constant
+  (`"_up_/dist"`):
+  - GUI path: `app.path().resource_dir()?.join(DIST_SUBPATH)`
+    (Tauri-runtime API).
+  - Bridge path: `tauri::utils::platform::resource_dir(&pkg_info, &env)?.join(DIST_SUBPATH)`
+    (library form, no AppHandle needed).
+- `--dist` is now `Option<PathBuf>` and falls back to the bundled
+  resource dir; if neither resolves, `serve_on` registers a
+  `not_static_fallback` returning 404 for everything except
+  `/ws`. The bridge runs cleanly with no static dir at all.
+
+*Same-origin WS via Vite proxy.*
+- `vite.config.ts -> server.proxy['/ws']` forwards the WS
+  upgrade to `http://127.0.0.1:3000` (override via
+  `SC_BRIDGE_URL`). `wsUrlFor` in `AppShell.tsx` now builds from
+  `window.location.origin` only — `VITE_OSC_WS_URL` and
+  `.env.development` are gone.
+
+*Dev workflow.*
+- `yarn serve` → `yarn bridge` (cargo run -- bridge, no `--dist`).
+- New `yarn dev:full` runs Vite + bridge concurrently via
+  `concurrently` (added as a dev dep).
+- `yarn tauri dev` is unchanged in behaviour but cleaner under
+  the hood — webview hits Vite (`devUrl`), Vite proxies `/ws` to
+  the bridge that the GUI mode itself spawns.
+
+**Decisions.**
+- **Tauri resources, not `rust-embed`.** `rust-embed` would have
+  given a single self-contained binary but locked us into
+  rebuilding the Rust binary every time the frontend changed. Tauri
+  resources keeps the `tauri build` artifact as the deployment unit
+  — one source for the assets, both webview and external browsers
+  read the same files.
+- **Library `resource_dir`, not a shared Builder.** The
+  alternative was running `tauri::Builder::run()` for the bridge
+  too and reusing `AppHandle::path().resource_dir()`. That would
+  drag GTK init into headless deployments (`xvfb-run` wart on the
+  Pi). Calling
+  `tauri::utils::platform::resource_dir(&pkg_info, &env)`
+  directly gives the same path-resolution logic as a library
+  function with no runtime overhead, and Tauri 2 exposes it as
+  public API.
+- **Webview at `http://localhost:port`, not `tauri://`.** Removes
+  the `frontendDist` / `bundle.resources` duplication
+  (~few MB in the bundle) and means there's exactly one
+  asset-serving code path to reason about. The cost is a CSP /
+  capability tweak (`remote.urls`) and a small bind-then-create
+  dance in `setup`. Worth it.
+- **Rename `serve` → `bridge`.** The subcommand can run with no
+  static fallback at all, so "serve" became misleading. "Bridge"
+  reflects the primary purpose (WS↔UDP); static serving is now an
+  optional layer on top. Yarn script renamed to match.
+- **`yarn dev:full` over a unified `yarn dev`.** A single
+  `yarn dev` that always spawned the bridge would make
+  frontend-only iteration (no scsynth running) noisier — the
+  bridge logs would clutter the terminal, port 3000 would refuse
+  to bind on a second invocation, etc. Keeping `yarn dev` as
+  Vite-only and `yarn dev:full` as the explicit "I want both"
+  preserves the simpler loop.
+
+**Gotchas.**
+- **`tauri::generate_context!()` accepts a missing `frontendDist`
+  silently.** The macro reads `tauri.conf.json` at compile time
+  and is fine without `frontendDist`; we verified by `cargo build`
+  + `tauri build`. If a future Tauri version regresses on this,
+  the fix is to point `frontendDist` at an empty placeholder
+  directory rather than re-add the duplication.
+- **`debug_assertions` ≠ "running under `tauri dev`".** Release
+  builds intentionally use `WebviewUrl::External(http://...)`;
+  debug builds use `WebviewUrl::default()`. If anyone ever does a
+  release-mode `cargo run` for profiling, they'll need a built
+  bundle around the binary — same as the bridge subcommand. The
+  dev loop is `yarn tauri dev` (debug) or `yarn dev:full`
+  (browser-only debug); release builds go through `tauri build`.
+- **`WebviewWindowBuilder::new` runs synchronously inside
+  `.setup()`** but the webview's actual page load is async. By
+  binding the listener via `tauri::async_runtime::block_on`
+  *before* creating the window, we guarantee the URL responds the
+  moment the webview navigates — no ECONNREFUSED race.
+- **Capability `remote.urls` is required for IPC over `http://`
+  origins**, not just for navigation. Tauri 2's default capability
+  scope is "local" (tauri:// only); without `remote.urls` the fs
+  / dialog / opener plugins reject calls from a webview loaded
+  over HTTP with a generic permission error. Easy to debug if you
+  remember the cause.
+- **Vite's WS proxy needs `ws: true` explicitly.** Without it the
+  `/ws` path forwards HTTP upgrade requests as plain HTTP and the
+  WebSocket handshake never completes. The error surfaces as a
+  silent connection close on the frontend, no helpful stderr.
+- **`cargo run -- bridge` without `--dist` and outside a bundle**
+  is *not* an error — the bridge runs `/ws`-only and logs the
+  reason ("no bundled dist/ found"). The dev loop relies on this:
+  `yarn dev:full` invokes `yarn bridge` and lets Vite serve the
+  UI. The 404-with-help fallback (`no_static_fallback` in
+  `server/mod.rs`) catches accidental hits to the bridge's HTTP
+  root in dev.
+- **Tauri resources re-base the leading `..`.** `bundle.resources: ["../dist"]`
+  copies into `<resource_dir>/_up_/dist/`, not
+  `<resource_dir>/dist/`. The `DIST_SUBPATH` constant in
+  `cli.rs` captures this; if a future `bundle.resources` entry
+  uses a different parent path, the resolver needs adjusting.

@@ -2,19 +2,20 @@
 //!
 //! Two modes:
 //! * No subcommand → launch the native Tauri GUI. The webview loads
-//!   the UI from `http://127.0.0.1:<port>/`, served by axum from the
-//!   bundled `dist/` (`bundle.resources` in `tauri.conf.json`). The
-//!   bridge runs on Tauri's async runtime.
-//! * `serve` subcommand → run the bridge server standalone. No
-//!   `tauri::Builder`, no GTK init — just tokio + axum. The bundled
-//!   `dist/` is located via `tauri::utils::platform::resource_dir`,
-//!   the same library function `AppHandle::path().resource_dir()`
-//!   uses internally; `--dist` overrides it for dev (`cargo run`
-//!   outside a bundle).
+//!   the UI from `http://127.0.0.1:<port>/` in production (axum
+//!   serves the bundled `dist/`), or from `devUrl` in dev (Vite at
+//!   :1420). The bridge runs on Tauri's async runtime.
+//! * `bridge` subcommand → run the WS↔UDP bridge standalone. No
+//!   `tauri::Builder`, no GTK init — just tokio + axum. Static
+//!   assets are served when `dist/` resolves (via the bundle's
+//!   resource dir or `--dist` override); otherwise the bridge
+//!   answers only `/ws` and the frontend is expected to come from
+//!   somewhere else (e.g. `yarn dev`).
 //!
-//! Asset bundling: only `bundle.resources` ships `dist/`. The Tauri
-//! `tauri://` protocol is unused — there's no `frontendDist` and the
-//! webview points at the local axum like any browser would.
+//! Asset bundling: `dist/` ships once via `bundle.resources` in
+//! `tauri.conf.json`. The Tauri `tauri://` protocol is unused —
+//! `frontendDist` is intentionally absent and the webview points at
+//! the local axum like any browser would.
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -23,6 +24,12 @@ use clap::{Parser, Subcommand};
 use tauri::Manager;
 
 use crate::server;
+
+/// Subpath inside the Tauri resource dir where `dist/` lands.
+/// `bundle.resources: ["../dist"]` re-bases the leading `..` to
+/// `_up_` when copying into the bundle, so the actual files live at
+/// `<resource_dir>/_up_/dist/...`.
+const DIST_SUBPATH: &str = "_up_/dist";
 
 #[derive(Parser)]
 #[command(name = "sc-app", version, about = "SCSynth Oscilloscope & Recorder")]
@@ -33,9 +40,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Run as a standalone HTTP server (browser mode). Serves the
-    /// bundled `dist/` plus the `/ws` bridge to scsynth.
-    Serve {
+    /// Run the WS↔UDP bridge standalone (no GUI). Serves bundled
+    /// static assets if available; otherwise the frontend must be
+    /// hosted elsewhere (Vite dev, an external CDN, etc.).
+    Bridge {
         /// HTTP port to bind. Env: `SC_PORT`.
         #[arg(short, long, env = "SC_PORT", default_value_t = 3000)]
         port: u16,
@@ -46,11 +54,11 @@ enum Command {
         #[arg(long, env = "SC_SCSYNTH_ADDR", default_value = "127.0.0.1:57110")]
         scsynth: String,
 
-        /// Override the static asset directory. Without this flag,
+        /// Override the static asset directory. Without this flag
         /// `dist/` is resolved via Tauri's resource-dir mechanism,
-        /// which only works inside a built bundle. For
-        /// `cargo run -- serve` in dev, point this at the freshly
-        /// built `dist/`. Env: `SC_DIST_DIR`.
+        /// which only works inside a built bundle. For a dev-mode
+        /// `cargo run -- bridge`, omit it and load the UI from Vite
+        /// (`yarn dev`). Env: `SC_DIST_DIR`.
         #[arg(long, env = "SC_DIST_DIR")]
         dist: Option<PathBuf>,
 
@@ -65,20 +73,18 @@ enum Command {
 pub fn run() {
     match Cli::parse().command {
         None => run_gui(),
-        Some(Command::Serve {
+        Some(Command::Bridge {
             port,
             scsynth,
             dist,
             log_dir,
         }) => {
             let scsynth = parse_scsynth_or_die(&scsynth);
-            run_server_blocking(port, scsynth, dist, log_dir);
+            run_bridge_blocking(port, scsynth, dist, log_dir);
         }
     }
 }
 
-/// Parse the `--scsynth` flag's value into a `SocketAddr`, printing a
-/// clear error and exiting on malformed input.
 fn parse_scsynth_or_die(raw: &str) -> SocketAddr {
     match raw.parse::<SocketAddr>() {
         Ok(addr) => addr,
@@ -90,14 +96,14 @@ fn parse_scsynth_or_die(raw: &str) -> SocketAddr {
 }
 
 /// Resolve the bundled `dist/` directory for a non-Tauri-runtime
-/// caller (the `serve` subcommand). Uses `tauri::utils::platform::
+/// caller (the `bridge` subcommand). Uses `tauri::utils::platform::
 /// resource_dir` directly so we get Tauri's platform-specific path
 /// logic without paying for `Builder::run()` (and, on Linux, without
 /// `gtk::init()` failing on a headless host).
 ///
 /// Returns `Err` when not running inside a Tauri bundle (e.g. plain
-/// `cargo run -- serve` in dev) — caller is expected to fall back to
-/// the explicit `--dist` flag in that case.
+/// `cargo run -- bridge` in dev). Caller is expected to fall back
+/// gracefully — `--dist` override or no static fallback at all.
 fn resolve_bundled_dist() -> anyhow::Result<PathBuf> {
     let pkg_info = tauri::utils::PackageInfo {
         name: env!("CARGO_PKG_NAME").into(),
@@ -111,54 +117,39 @@ fn resolve_bundled_dist() -> anyhow::Result<PathBuf> {
     let env = tauri::Env::default();
     let resource_dir = tauri::utils::platform::resource_dir(&pkg_info, &env)
         .map_err(|e| anyhow::anyhow!("resource_dir: {e}"))?;
-    // `bundle.resources: ["../dist"]` re-bases `..` to `_up_` inside
-    // the bundle, so the actual dist lives at `resource_dir/_up_/dist`.
-    Ok(resource_dir.join("_up_").join("dist"))
+    Ok(resource_dir.join(DIST_SUBPATH))
 }
 
-/// `serve` subcommand — the HTTP+WS bridge, standalone. No Tauri
-/// runtime; on Linux this means no GTK init, so the binary runs
-/// cleanly under systemd on a headless Pi.
-fn run_server_blocking(
+fn run_bridge_blocking(
     port: u16,
     scsynth: SocketAddr,
     dist_override: Option<PathBuf>,
     log_dir: Option<PathBuf>,
 ) {
-    // Phase 23 — initialise tracing before anything else logs. The
-    // returned guard owns the appender's background flush thread and
-    // must live as long as the process. Bound to `_guard` so it drops
-    // at end of scope (program exit), flushing on the way out.
+    // Phase 23 — initialise tracing before anything else logs.
     let _guard = server::init_tracing(log_dir.as_deref());
 
-    let dist = match dist_override {
-        Some(d) => d,
-        None => match resolve_bundled_dist() {
-            Ok(d) => d,
-            Err(e) => {
-                eprintln!(
-                    "error: could not locate bundled dist/ ({e}). \
-                     Pass --dist or set SC_DIST_DIR when running \
-                     outside a Tauri bundle."
-                );
-                std::process::exit(2);
-            }
-        },
-    };
+    let dist = dist_override.or_else(|| match resolve_bundled_dist() {
+        Ok(d) => Some(d),
+        Err(e) => {
+            tracing::info!(
+                reason = %e,
+                "no bundled dist/ found — running /ws-only. \
+                 Pass --dist or run inside a Tauri bundle to enable static serving."
+            );
+            None
+        }
+    });
 
     let rt = tokio::runtime::Runtime::new().expect("failed to start tokio runtime");
     rt.block_on(async move {
-        if let Err(e) = server::serve(port, scsynth, dist).await {
-            tracing::error!(error = %e, "server error");
+        if let Err(e) = server::run_bridge(port, scsynth, dist).await {
+            tracing::error!(error = %e, "bridge error");
             std::process::exit(1);
         }
     });
 }
 
-/// Default mode — launch the Tauri GUI. The webview is created
-/// programmatically in `.setup()` after axum binds, so it can be
-/// pointed at the actual listening address (avoids a boot race
-/// against the bridge).
 fn run_gui() {
     let port: u16 = std::env::var("SC_PORT")
         .ok()
@@ -167,13 +158,7 @@ fn run_gui() {
     let scsynth = parse_scsynth_or_die(
         &std::env::var("SC_SCSYNTH_ADDR").unwrap_or_else(|_| "127.0.0.1:57110".into()),
     );
-    // Phase 23 — Tauri builds have no CLI flags, so the file-logging
-    // path is opted into via env var. Same semantics as `--log-dir`
-    // for serve mode.
     let log_dir = std::env::var("SC_LOG_DIR").ok().map(PathBuf::from);
-    // Guard is bound to the function's stack frame; tauri::run blocks
-    // until the user quits the app, so the guard outlives every log
-    // call.
     let _guard = server::init_tracing(log_dir.as_deref());
 
     tauri::Builder::default()
@@ -181,46 +166,45 @@ fn run_gui() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .setup(move |app| {
-            // Resolve the bundled dist via Tauri's runtime API. Same
-            // result as `resolve_bundled_dist()` in the serve path,
-            // but goes through the AppHandle (which is the supported
-            // way once a Builder is in play).
-            let resource_dir = app
+            // In production, the webview loads from the local axum,
+            // so we serve `dist/` from the bundle. In dev the
+            // webview loads from Vite (`devUrl`), so the dist path
+            // is irrelevant — but `resource_dir()` may still resolve
+            // to a non-existent `_up_/dist` next to `target/debug/`,
+            // and that's harmless because nothing requests it.
+            let dist = app
                 .path()
                 .resource_dir()
-                .map_err(|e| format!("resource_dir: {e}"))?;
-            let dist = resource_dir.join("_up_").join("dist");
+                .ok()
+                .map(|d| d.join(DIST_SUBPATH));
 
-            // Bind the listener synchronously so the window URL is
-            // valid the moment the webview navigates to it. axum's
-            // accept loop runs on the spawned task afterwards.
+            // Bind synchronously so the window URL is valid the
+            // moment the webview navigates to it.
             let (listener, addr) = tauri::async_runtime::block_on(server::bind(port))
                 .map_err(|e| format!("server::bind: {e}"))?;
             tracing::info!(addr = %addr, "sc-app listening on http://{addr}");
 
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = server::serve_on(listener, scsynth, dist).await {
-                    tracing::error!(error = %e, "bridge server error");
+                    tracing::error!(error = %e, "bridge error");
                 }
             });
 
             // Webview URL:
-            // - Production (`tauri build`): point at the local axum,
-            //   same source of truth as the headless serve path.
-            // - Dev (`tauri dev`): defer to `devUrl` from
-            //   `tauri.conf.json` so Vite's HMR keeps working. We
-            //   detect via `debug_assertions` — true in `cargo run`
-            //   / `tauri dev`, false in release builds.
-            // Capability `default.json` whitelists
-            // `http://{127.0.0.1,localhost}:*` so IPC (fs, dialog,
-            // opener) keeps working in both cases.
+            // - Release (`tauri build`): point at the local axum.
+            //   Same source of truth as headless bridge mode.
+            // - Debug (`tauri dev`, `cargo run`): defer to `devUrl`
+            //   from `tauri.conf.json` so Vite's HMR keeps working.
+            //   The Vite proxy in `vite.config.ts` forwards `/ws` to
+            //   `:port` so the webview's WS still reaches the bridge.
             let url = if cfg!(debug_assertions) {
                 tauri::WebviewUrl::default()
             } else {
-                let parsed = format!("http://{addr}/")
-                    .parse()
-                    .expect("constructed http URL must parse");
-                tauri::WebviewUrl::External(parsed)
+                tauri::WebviewUrl::External(
+                    format!("http://{addr}/")
+                        .parse()
+                        .expect("constructed http URL must parse"),
+                )
             };
             tauri::WebviewWindowBuilder::new(app, "main", url)
                 .title("sc-app")

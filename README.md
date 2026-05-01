@@ -36,31 +36,29 @@ yarn tauri build
 
 Produces a bundled desktop app under `src-tauri/target/release/bundle/`.
 
-### Standalone HTTP server (browser mode)
+### Standalone bridge (browser mode)
 
-Build the frontend, then start the Rust backend in `serve` mode:
+Build the frontend, then start the Rust bridge with the bundled
+dist as the static fallback:
 
 ```bash
 yarn build
-cargo run --manifest-path src-tauri/Cargo.toml -- serve
+cargo run --manifest-path src-tauri/Cargo.toml -- bridge --dist dist
 ```
 
-Defaults: port 3000, scsynth `127.0.0.1:57110`, dist dir `./dist`. All
-overridable via flags or env (`SC_PORT`, `SC_SCSYNTH_ADDR`,
-`SC_DIST_DIR`). Visit `http://127.0.0.1:3000/`.
+Defaults: port 3000, scsynth `127.0.0.1:57110`. All overridable via
+flags or env (`SC_PORT`, `SC_SCSYNTH_ADDR`, `SC_DIST_DIR`). Visit
+`http://127.0.0.1:3000/`. Inside a `tauri build` artifact, `--dist`
+is unnecessary — the bridge resolves `dist/` from the bundle's
+resource dir automatically.
 
-### Frontend-only dev (HMR without Tauri)
-
-Run the bridge standalone alongside `yarn dev`:
+### Browser-only dev (HMR without Tauri)
 
 ```bash
-# Terminal 1 — bridge only (missing dist/ is fine, /ws still works)
-cargo run --manifest-path src-tauri/Cargo.toml -- serve
-
-# Terminal 2 — Vite dev server on :1420
-yarn dev
+yarn dev:full
 ```
 
-Open `http://127.0.0.1:1420/`. `VITE_OSC_WS_URL` (in
-`.env.development`) points the frontend's WebSocket at
-`http://127.0.0.1:3000`.
+This runs Vite on `:1420` (frontend with HMR) and the Rust bridge
+on `:3000` concurrently. Vite's `/ws` proxy forwards the WebSocket
+upgrade to the bridge so the frontend uses same-origin URLs.
+Open `http://127.0.0.1:1420/`.

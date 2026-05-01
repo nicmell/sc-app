@@ -8,10 +8,11 @@
   ],
   "scripts": {
     "dev": "vite",
+    "dev:full": "concurrently --names vite,bridge --prefix-colors auto --kill-others-on-fail \"yarn dev\" \"yarn bridge\"",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "serve": "cargo run --manifest-path src-tauri/Cargo.toml -- serve --dist dist"
+    "bridge": "cargo run --manifest-path src-tauri/Cargo.toml -- bridge"
   },
   "dependencies": {
     "@sc-app/server-commands": "workspace:*",
@@ -30,6 +31,7 @@
     "@types/react": "^18.3.1",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.2.1",
     "sass": "^1.99.0",
     "typescript": "~5.6.2",
     "vite": "^6.0.3"

@@ -6,9 +6,10 @@ Project-specific guidance for Claude Code working in this repo.
 
 **sc-app** — a browser-first oscilloscope + WAV recorder for
 [SuperCollider's](https://supercollider.github.io/) `scsynth`. Runs
-as a Tauri desktop app or a standalone HTTP server (`yarn serve`).
+as a Tauri desktop app or a standalone HTTP+WS bridge (`yarn bridge`).
 Everything renders in the browser; the Rust side is a thin
-WS↔UDP bridge between the frontend worker and scsynth.
+WS↔UDP bridge between the frontend worker and scsynth, optionally
+also serving the bundled `dist/` over HTTP.
 
 **scsynth is not managed by this app** — it's expected to be already
 running at `127.0.0.1:57110` (or wherever the Connect screen points).
@@ -118,19 +119,65 @@ happens there, it just forwards bytes.
 
 ```bash
 yarn install                   # yarn 4 workspaces
-yarn dev                       # Vite dev server (port 1420)
-yarn tauri dev                 # Tauri desktop app in dev mode
-yarn serve                     # standalone HTTP+WS server via Rust CLI
+yarn dev                       # Vite dev server (port 1420), frontend only
+yarn dev:full                  # Vite + bridge concurrently (browser-only dev)
+yarn bridge                    # standalone WS↔UDP bridge via Rust CLI (port 3000)
+yarn tauri dev                 # Tauri desktop app in dev mode (Vite + bridge auto)
 yarn build                     # type-check + Vite production build
 yarn tsc --noEmit              # type-check only (fast)
+yarn tauri build               # produce platform bundle (.app/.dmg/.deb/AppImage)
 
 # Inside packages/synthdef-compiler/
 yarn test                      # vitest suite (41 tests)
 yarn parity                    # optional sclang byte-diff harness
 ```
 
+`yarn dev:full` is the browser-only dev loop: Vite serves the SPA on
+:1420 with HMR, the Rust bridge runs on :3000, and Vite's
+`server.proxy` forwards `/ws` to the bridge so the frontend uses
+same-origin WS without env-var indirection. `yarn tauri dev` is the
+desktop dev loop — same Vite + same proxy, but Tauri's webview
+loads :1420 instead of an external browser.
+
 There is no wasm build step anymore — both TS packages resolve to
 their sources via Vite aliases; tsc handles types.
+
+## Asset bundling and the dist/ contract
+
+The Rust binary has two modes: GUI (default, no subcommand) and
+`bridge` subcommand. They share the same axum server; the
+difference is whether a `tauri::Builder` runs around it:
+
+- **GUI** (`tauri build` artifact, `tauri dev`, plain `cargo run`):
+  goes through `Builder::run()`, opens a webview window. The window
+  navigates to `http://127.0.0.1:<port>/` in release builds (axum
+  serves `dist/` from the bundle's resource dir) or to
+  `devUrl: http://localhost:1420` in debug builds (Vite). The
+  cfg-gate is `cfg!(debug_assertions)`.
+- **Bridge** (`sc-app bridge` subcommand): plain tokio + axum, no
+  `tauri::Builder`. On Linux this means **no GTK init** — the
+  binary runs cleanly under systemd on a headless host. The
+  `dist/` directory is resolved via
+  `tauri::utils::platform::resource_dir(&pkg_info, &env)` (the
+  library form of `AppHandle::path().resource_dir()`), or via
+  `--dist` override, or skipped entirely (in which case axum
+  answers only `/ws`).
+
+`dist/` ships exactly once via `bundle.resources: ["../dist"]` in
+`tauri.conf.json`. There is **no `frontendDist`** — the Tauri
+`tauri://` protocol is unused. Both the webview (production) and
+external browsers hit the same axum static fallback. Inside the
+bundle the files land at `<resource_dir>/_up_/dist/` because Tauri
+re-bases the leading `..` to `_up_` when copying resources; the
+constant `DIST_SUBPATH` in `cli.rs` captures this.
+
+Frontend asset URLs are always same-origin: `wsUrlFor` in
+`AppShell.tsx` builds from `window.location.origin`, no env-var
+indirection. In dev (`yarn dev` / `yarn tauri dev`) the origin is
+Vite's `:1420`; Vite's `/ws` proxy forwards the WebSocket upgrade
+to the bridge. In production (Tauri webview pointed at axum, or a
+remote browser hitting a deployed bundle) the origin already *is*
+the bridge.
 
 ## Code conventions
 

@@ -148,10 +148,10 @@ function readInitialAddress(): string {
 }
 
 function wsUrlFor(address: string): string {
-  const base =
-    (import.meta.env.VITE_OSC_WS_URL as string | undefined) ??
-    window.location.origin;
-  const url = new URL('/ws', base);
+  // Always same-origin: in production the webview / browser hits
+  // axum directly; in dev Vite proxies `/ws` to the bridge (see
+  // `vite.config.ts`). No env var indirection needed.
+  const url = new URL('/ws', window.location.origin);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   url.searchParams.set('scsynth', address);
   return url.href;
