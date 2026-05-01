@@ -55,9 +55,10 @@ OSC Worker (module worker)
       │
       ▼
 src-tauri backend (Rust)
-  ├── cli.rs                    clap parsing + dispatch
-  ├── gui.rs                    Tauri Builder + window for desktop mode
-  ├── bridge.rs                 headless `bridge` subcommand entry
+  ├── cli/
+  │   ├── mod.rs                clap parsing + dispatch
+  │   ├── gui.rs                Tauri Builder + window for desktop mode
+  │   └── bridge.rs             headless `bridge` subcommand entry
   ├── logging.rs                tracing init (stderr + daily-rotated file)
   ├── server/
   │   ├── mod.rs                axum router, bind/serve_on/run_bridge
