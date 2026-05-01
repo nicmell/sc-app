@@ -1,6 +1,6 @@
 //! CLI parsing and dispatch.
 //!
-//! Two modes:
+//! Two modes, each in its own submodule under this directory:
 //! * No subcommand → [`gui::run`] launches the native Tauri GUI.
 //! * `bridge` subcommand → [`bridge::run_blocking`] runs the WS↔UDP
 //!   bridge standalone (no Tauri runtime, no GTK init).
@@ -10,12 +10,13 @@
 //! `frontendDist` is intentionally absent and the webview points at
 //! the local axum like any browser would.
 
+mod bridge;
+mod gui;
+
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-
-use crate::{bridge, gui};
 
 #[derive(Parser)]
 #[command(name = "sc-app", version, about = "SCSynth Oscilloscope & Recorder")]

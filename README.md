@@ -64,3 +64,11 @@ This runs Vite on `:1420` (frontend with HMR) and the Rust bridge
 on `:3000` concurrently. Vite's `/ws` proxy forwards the WebSocket
 upgrade to the bridge so the frontend uses same-origin URLs.
 Open `http://127.0.0.1:1420/`.
+
+## Deployment
+
+- **Raspberry Pi 5 (headless)** — see
+  [`docs/raspberry-pi.md`](./docs/raspberry-pi.md) for the full
+  install-from-scratch guide (apt + rustup + cargo build + systemd
+  units). The bridge subcommand runs without GTK init, so no X
+  server / xvfb is needed.
