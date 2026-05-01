@@ -13,17 +13,16 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use axum::body::Body;
-use axum::extract::{DefaultBodyLimit, Query, Request, State, WebSocketUpgrade};
+use axum::extract::{Query, Request, State, WebSocketUpgrade};
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::get;
 use axum::Router;
 use serde::Deserialize;
 use tokio::fs;
 use tokio_util::io::ReaderStream;
 use tracing_appender::non_blocking::WorkerGuard;
 
-pub mod log_ingest;
 pub mod ws_bridge;
 
 /// Phase 23 — initialise the global tracing subscriber. Called once
@@ -97,17 +96,8 @@ struct WsQuery {
 pub async fn serve(port: u16, default_scsynth: SocketAddr, dist: PathBuf) -> Result<()> {
     let state = AppState { default_scsynth };
 
-    // 1 MB cap for /api/logs body — generous for NDJSON batches
-    // (~10 KB typical, ~100 KB in a flood). Doesn't apply to the
-    // WS upgrade path which streams arbitrary bytes via the bridge.
-    const LOGS_BODY_LIMIT: usize = 1024 * 1024;
-
     let app = Router::new()
         .route("/ws", get(ws_handler))
-        .route(
-            "/api/logs",
-            post(log_ingest::logs_handler).layer(DefaultBodyLimit::max(LOGS_BODY_LIMIT)),
-        )
         .with_state(state)
         .fallback({
             let dist = dist.clone();
@@ -123,7 +113,6 @@ pub async fn serve(port: u16, default_scsynth: SocketAddr, dist: PathBuf) -> Res
     tracing::info!(
         "  /ws → {default_scsynth} (override per-connection via ?scsynth=HOST:PORT)"
     );
-    tracing::info!("  /api/logs → frontend log ingest (NDJSON, max {LOGS_BODY_LIMIT} bytes)");
     tracing::info!("  static → {}", dist.display());
 
     axum::serve(listener, app).await.context("axum serve error")?;
