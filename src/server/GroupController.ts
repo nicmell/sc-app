@@ -21,7 +21,7 @@
  */
 
 import {
-  AddToHead,
+  AddToTail,
   OSC,
   gFreeAll,
   gNewOne,
@@ -42,7 +42,17 @@ export class GroupController {
     private readonly client: WorkerClient,
     readonly groupId: number,
     private readonly targetId = 0,
-    private readonly addAction: number = AddToHead,
+    // AddToTail (not AddToHead) of the root group: sc-app's parent
+    // group sits AFTER any pre-existing default groups belonging to
+    // other clients (notably sclang at clientID=0 hosting SuperDirt
+    // in Phase 26 deployments). Without this, sc-app's tap synths
+    // process before SuperDirt's orbits have written to their output
+    // buses, and the tap reads silence even though the audio engine
+    // is shipping data to the speakers via dirtMonitor.
+    //
+    // Pre-Phase-26 single-client deployments are unaffected:
+    // AddToTail of an empty root puts the group at index 0 anyway.
+    private readonly addAction: number = AddToTail,
   ) {}
 
   get state(): ReadonlyStore<GroupState> {
