@@ -16,7 +16,7 @@ running at `127.0.0.1:57110` (or wherever the Connect screen points).
 
 Forward-looking design lives in `plan.md` (pending phases, open
 questions, acceptance criteria); the historical record of shipped
-phases — what landed and why — is in `history.md`.
+phases — what landed and why — is in [`docs/history.md`](./docs/history.md).
 
 ## Architecture at a glance
 
@@ -41,6 +41,12 @@ Browser (React, main thread)
   │   cordingController          acquire a BufferHandle, run the WAV
   │                              writer + envelope buffer + gap log
   │                              off the same chunk stream.
+  ├── DirtClient                SuperDirt OSC client over the SAME
+  │                              WorkerClient — encodes /dirt/play +
+  │                              /dirt/hello, filters /dirt/* replies
+  │                              from the shared onReply pump.
+  ├── ServerErrorBus            decoded /fail ring, surfaced via
+  │                              DebugLog header badge.
   └── WorkerClient              postMessage wrapper around…
       │   - sendCommand / onReply / onError / onTick
       │   - subscribeBuffer(sub, cb) — tick-driven /b_getn pipeline
@@ -59,14 +65,23 @@ src-tauri backend (Rust)
   │   ├── mod.rs                clap parsing + dispatch + precedence
   │   ├── gui.rs                Tauri Builder + window for desktop mode
   │   └── bridge.rs             headless `bridge` subcommand entry
-  ├── config.rs                 `config.json` schema + load helpers
+  ├── config.rs                 `config.json` schema + load helpers +
+  │                              starter-config OnceLock
   ├── logging.rs                tracing init (stderr + daily-rotated file)
   ├── server/
   │   ├── mod.rs                axum router, bind/serve_on/run_bridge
-  │   ├── ws_bridge.rs          WS ↔ UDP datagram bridge → scsynth
+  │   ├── ws_bridge.rs          WS ↔ UDP bridge with N+1 sockets per
+  │   │                          session (one per route target),
+  │   │                          outbound prefix demux + reply fan-in
+  │   ├── routing.rs            RoutingTable + peek_osc_address —
+  │   │                          config.json `routes` ⟹ N targets
   │   ├── session.rs            per-WS state (clientId snoop + cleanup)
   │   └── static_assets.rs      SPA fallback + dist resolution
   └── tauri-plugin-{dialog,fs,opener}  native save-as / file IO / etc.
+
+External services (config-driven, addressable via `routes`):
+  scsynth                       127.0.0.1:57110  (default route target)
+  sclang+SuperDirt              127.0.0.1:57120  (/dirt/* prefix)
 ```
 
 `SynthManager` is the producer surface — it auto-allocates bus
@@ -82,11 +97,15 @@ a synth in the Synths panel, read its bus off the card, type that
 bus into the Scopes / Recordings panel.
 
 Every OSC command flows: main thread (encode) → worker (forward bytes)
-→ WebSocket → bridge → UDP → scsynth.
-Every reply flows the inverse: scsynth → UDP → bridge → WS → worker
-(decode, mux clock `/tr`, intercept subscribed `/b_setn`) → main
-thread (plain `{ address, args }` POJOs via structured clone, or
-`bufferChunk` events with zero-copy `Float32Array`).
+→ WebSocket → bridge → **route table prefix-match** → UDP → scsynth
+or sclang+SuperDirt. Every reply flows the inverse: target → UDP →
+bridge → WS → worker (decode, mux clock `/tr`, intercept subscribed
+`/b_setn`) → main thread (plain `{ address, args }` POJOs via
+structured clone, or `bufferChunk` events with zero-copy
+`Float32Array`). The bridge picks the route socket by peeking the
+OSC address against `config.json -> routes` (`/dirt → 57120` is the
+SuperDirt route; everything else falls through to the default
+target = `scsynth` config field).
 
 The buffer-data path is special: on each clock `/tr` the worker
 fires `/b_getn` for every subscribed bufferId (wrapped in an
@@ -282,8 +301,8 @@ The project plan is split:
   pending phases planned in detail (open questions, file maps,
   acceptance criteria, cross-cutting risks). Small enough to
   re-read in full at the start of each new phase.
-- **`history.md`** is the *append-only* historical record — one
-  entry per shipped phase (goal, what shipped, decisions,
+- **`docs/history.md`** is the *append-only* historical record —
+  one entry per shipped phase (goal, what shipped, decisions,
   gotchas). Canonical lookup for "why did we decide X".
 
 When working on a phase:
@@ -296,33 +315,44 @@ When working on a phase:
    reflect what actually shipped.
 4. Commit per phase (or per natural break within a phase).
 5. **When the phase is fully done**, *move* its entry from
-   `plan.md` to `history.md` under a new section, trim
+   `plan.md` to `docs/history.md` under a new section, trim
    `plan.md` of the moved content, and (if relevant) update
    the "Current phase progress" line below.
 
-Current phase progress: **Phase 16–21 shipped — Shared Buffer
-Layer Refactor.** A new `BufferController` + `BufferManager` pair
-sits between consumers and the OSC pipe: scopes and recordings
-no longer own buffers + tap synths. Each `acquire(spec)` returns a
-ref-counted `BufferHandle`; two consumers on the same
-`(inputBus, channels, chunkSize)` triple share one underlying tap
-synth + buffer + worker subscription, with the worker fanning
-chunks out via the unified `subscribeBuffer` protocol. The two
-old per-kind tap synthdefs (`scopeSynthDef`, `recorderSynthDef`)
-collapsed into one `bufferTapSynthDef`. WAV writing relocated
-from worker to main; recordings finalise synchronously in
-`stop()` on the main thread, no round-trip wait.
+Current phase progress: **Phase 26 shipped — SuperDirt via
+bridge-internal OSC router.** Frontend keeps exactly one
+`WorkerClient` / one `/ws`; the bridge's `RoutingTable`
+(config-driven prefix table) demuxes outbound packets to N
+UDP targets and fans replies back. SuperDirt is the first
+non-default target (`/dirt → 127.0.0.1:57120`); the launch
+story collapses to two supervised processes via
+`scripts/start-osc.sh` (scsynth + sclang+SuperDirt). The bridge
+has no SuperDirt awareness; it just walks `config.json -> routes`.
+
+Two load-bearing fixes that landed mid-phase: `GroupController`
+default `addAction` flipped from `AddToHead` to `AddToTail` so
+sc-app's parent group sits *after* sclang's defaultGroup in the
+root tree (without this, sc-app's tap synth runs before
+SuperDirt's orbits write to bus 0/1 and reads silence); and
+node + buffer `IdAllocator` scoped per-clientId
+(`idBase = clientId * 1_000_000 + 1000`) so sc-app's `/s_new` IDs
+don't collide with sclang's allocator at clientId=0. See
+`docs/history.md` Phase 26 for the full play-by-play, including
+`OscConsole` revival as a debug surface and the
+`ServerErrorBus`-must-subscribe-before-first-/s_new race.
 
 Earlier landings still in effect: producer/consumer split
 (Phase 15) — `SynthManager` + `SynthsPanel` are the producers;
 scopes and recordings are pure consumers of user-typed bus
-numbers; `decimation` always 1; `ClockParams = {chunkSize}`;
-`tickRate` derived from `sampleRate / chunkSize`; `sampleRate`
-from `/status.reply.args[7]` (nominal, rounded) at connect time;
-header dropdown re-inits the dashboard when chunkSize changes.
-`setupDashboard` / `teardownServerState` are shared between
-initial connect, disconnect, and the chunkSize-driven re-init.
-See `history.md` for the per-phase write-ups.
+numbers. Shared Buffer Layer (Phase 16–21) — `BufferController`
++ `BufferManager` ref-count `(inputBus, channels, chunkSize)`-keyed
+taps so two consumers on the same spec share one tap synth +
+buffer + worker subscription. Bundle & Dev Workflow Refresh
+(Phase 25) — `dist/` ships once via `bundle.resources`, single
+`/ws` origin, daily-rotated tracing, `yarn dev:full` /
+`yarn bridge` / `yarn osc` script trio. `setupDashboard` /
+`teardownServerState` are shared between initial connect,
+disconnect, and the chunkSize-driven re-init.
 
 ## Where scsynth conventions matter
 
@@ -551,3 +581,38 @@ Observations:
   release — the safety log surfaces the regression with a
   console warning rather than letting it ship as a leaked tap
   synth.
+- **Parent group `/g_new` MUST use `AddToTail` of root, not
+  `AddToHead`.** Pre-Phase-26, AddToHead was the default and
+  worked because sc-app was the only client at the root. With
+  Phase-26 deployments hosting sclang+SuperDirt at clientId=0,
+  AddToHead would put sc-app's parent group BEFORE sclang's
+  defaultGroup (group 1), and sc-app's tap synths would process
+  before SuperDirt's orbits had written to their output buses —
+  taps read silence. `GroupController`'s constructor default is
+  now `AddToTail` and the comment block there documents why.
+- **Node + buffer ID allocators scope per-clientId.**
+  `setupDashboard` derives
+  `idBase = clientId * 1_000_000 + 1000` and passes it to both
+  `IdAllocator(node)` and `IdAllocator(buffer)`. scsynth doesn't
+  enforce per-client ID ranges but rejects duplicate `/s_new`
+  with `FAILURE IN SERVER /s_new duplicate node ID`. clientId=0
+  (single-client) is byte-identical to pre-Phase-26 (base 1000);
+  clientId=N (sharing scsynth with sclang+SuperDirt) starts at
+  N×1M+1000, well beyond any practical SuperDirt synth count.
+- **`ServerErrorBus` must be constructed BEFORE the first
+  `/s_new`.** The first `/s_new` from `setupDashboard` is the
+  clock — and the clock is exactly the synth that fails when
+  ID-collision-with-SuperDirt strikes. If `ServerErrorBus`
+  subscribes after `clock.start()` resolves, the `/fail` reply
+  arrives in the listener-less window and is silently dropped —
+  no UI surface, no debug-log entry. The bus is now the FIRST
+  thing constructed in `setupDashboard`. Don't reorder.
+- **OSC routing in the bridge happens BY OSC ADDRESS PREFIX.**
+  `config.json -> routes: [{prefix, target}]` is walked
+  top-to-bottom, first `starts_with` match wins. A bundle is
+  routed by the address of its first inner message
+  (mixed-target bundles are unsupported). Default route =
+  `scsynth` field. Hot path: `peek_osc_address` decodes only
+  enough bytes to extract the address (no full rosc decode).
+  Adding a future target (metronome, MIDI, analyzer) is a
+  config entry, not a code edit.

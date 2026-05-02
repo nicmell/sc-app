@@ -43,6 +43,7 @@ is the cleaner read.
 - [Phase 23 — Unified Logging Pipeline](#phase-23--unified-logging-pipeline)
 - [Phase 24 — scsynth `/fail` Surface](#phase-24--scsynth-fail-surface)
 - [Phase 25 — Bundle & Dev Workflow Refresh](#phase-25--bundle--dev-workflow-refresh)
+- [Phase 26 — SuperDirt via Bridge-Internal OSC Router](#phase-26--superdirt-via-bridge-internal-osc-router)
 
 ---
 
@@ -1167,3 +1168,255 @@ binary that runs cleanly on a headless Pi without `xvfb`.
   `<resource_dir>/dist/`. The `DIST_SUBPATH` constant in
   `cli.rs` captures this; if a future `bundle.resources` entry
   uses a different parent path, the resolver needs adjusting.
+
+---
+
+## Phase 26 — SuperDirt via Bridge-Internal OSC Router
+
+**Goal.** Bring SuperDirt back online without a second WebSocket.
+The frontend keeps exactly one `WorkerClient` / one `/ws`;
+everything OSC — scsynth control, buffer reads, `/dirt/play`,
+`/dirt/hello` — flows through it. Inside the bridge, a
+config-driven prefix-match table demuxes each outbound packet to
+the appropriate UDP target. The launch story collapses to two
+supervised processes (scsynth + sclang+SuperDirt); the bridge
+handles routing internally. Architecture **D-generic** chosen
+over **A** (separate `sc-app proxy` subcommand) and **C**
+(sclang as OSC front) — same extensibility as A without the
+extra process; better hot-path latency than C.
+
+### What shipped
+
+*26a — Bridge router (commit 8a5d1e6).*
+- `src-tauri/src/server/routing.rs` (NEW). `RoutingTable` (build,
+  clone, set_default for `?scsynth=` per-WS override,
+  unique_targets for socket binding). `peek_osc_address` walks
+  `#bundle` envelopes to the first inner message. 6 unit tests
+  cover prefix matching, bundle peek, deduplication.
+- `src-tauri/src/config.rs` — adds `routes: Vec<Route>` field
+  with `Route { prefix, target }`. `target` is `host:port`,
+  resolved via `tokio::net::lookup_host` at boot.
+- `src-tauri/src/server/mod.rs` — `AppState.routes:
+  Arc<RoutingTable>`. `serve_on` / `run_bridge` signatures take
+  `RoutingTable` instead of single `SocketAddr`. `ws_handler`
+  clones the global table per-WS, applies `?scsynth=` to default
+  only.
+- `src-tauri/src/server/ws_bridge.rs` — per-WS opens N UDP
+  sockets (one per unique target). N recv tasks fan replies into
+  a shared `tokio::sync::Mutex<SplitSink>`. Phase 22 snoop +
+  cleanup runs on the *default route's* socket only — non-default
+  targets are pure forwarders. Recv-task abort happens BEFORE
+  cleanup so `/fail` replies don't hit a closed WS sink.
+- `src-tauri/src/cli/{bridge,gui}.rs` — both build a
+  `RoutingTable` from config inside async context. Resolution
+  failure is fatal in the bridge; returns a Tauri-friendly error
+  in the GUI.
+
+*Project-local config.json (commit 0e8ab0d).*
+- Tracked `config.json` at repo root with port / scsynth /
+  log_dir / routes for the dev workflow.
+- `cli/mod.rs::resolve_bridge_config` adds `./config.json` to
+  the auto-discovery list (between explicit `--config` and the
+  system-wide `/etc/sc-app/config.json` fallback).
+- `DEFAULT_PORT` and `DEFAULT_SCSYNTH` consolidated as `pub
+  const` in `config.rs` (were duplicated in `cli/mod.rs` and
+  `cli/gui.rs`).
+- New `starter()` function returns `&'static Config` via
+  `OnceLock` — replaces hand-written JSON literal in
+  `Config::write_default_if_missing`. Serialised through serde
+  so any future field additions land on disk automatically.
+- Config fields gain `skip_serializing_if` so unset Options /
+  empty Vecs don't appear as `null` / `[]` in starter JSON.
+
+*26b — SuperDirt foundations (commit 2bb3e92).*
+- `superdirt/` git submodule (codeberg.org/musikinformatik/SuperDirt).
+- `scripts/setup-superdirt-deps.sh` (one-time fetch of
+  Dirt-Samples + Vowel + sc3-plugins on macOS; Linux uses apt).
+- `scripts/sc-app-superdirt-startup.scd` — sclang init that
+  attaches to externally-running scsynth, mirrors scsynth's
+  options into sclang allocator config, mounts SuperDirt on
+  UDP 57120.
+- `scripts/start-osc.sh` (NEW) — unified supervisor for
+  scsynth + sclang+SuperDirt with trap-based cleanup and
+  pre-flight port checks. The dev convenience.
+- Renames per Q3: `start-scsynth.sh` → `start-scsynth-only.sh`,
+  `start-superdirt.sh` → `start-superdirt-only.sh` (debug
+  variants).
+- `scripts/sc-app-scsynth.service` — Pi systemd template,
+  flag-aligned with the dev script.
+- `scripts/cleanup.sh` — wipe superdirt-deps/ + dist/ + target/.
+- yarn scripts: `osc`, `scsynth-only`, `superdirt-only`,
+  `superdirt-setup`, `cleanup`.
+- `config.json` adds the `/dirt → 127.0.0.1:57120` route.
+
+*26c — SuperDirt frontend rewire (commit 02c38db).*
+- `src/dirt/dirtCommands.ts` (typed builders for `/dirt/play`,
+  `/dirt/hello`, `/dirt/handshake`, `/dirt/setControlBus` +
+  reply addresses), `replParser.ts` (Tidal-ish shorthand parser),
+  `types.ts` brought from the `superdirt` branch.
+- `DirtStatus` shrunk to three-state (`'probing' | 'alive' |
+  'unreachable'`) per Q1.
+- `DirtParseError` migrated from deleted `parseHostPort.ts` into
+  `types.ts`.
+- `src/dirt/DirtClient.ts` (REWRITE). Constructor takes a
+  `WorkerClient`; subscribes to `/dirt/*` via
+  `client.onReply` filtered by prefix; sends via
+  `client.sendCommand`. `probe()` runs the hello round-trip
+  once at mount (Q2 = i). `dispose()` unsubscribes. No socket
+  to close because we don't own one.
+- `src/ui/DirtPanel/*` (REWRITE) — connection-string input +
+  Connect / Disconnect buttons gone. REPL + status pill +
+  bounded event-log ring, all rendered unconditionally.
+- `src/AppShell.tsx` — `DashboardResources.dirtClient`,
+  fire-and-forget probe in `setupDashboard`, dispose in
+  `teardownServerState`. `<DirtPanel />` slots after
+  `<RecordingPanel />`.
+- Deletes: `src-tauri/src/server/ws_dirt.rs` (and `/ws/dirt`
+  route), `src/dirt/parseHostPort.ts`.
+
+*Per-clientId IdAllocator scoping (commit 66893c9).*
+- `DashboardResources.clientId: number` added.
+- `setupDashboard` derives
+  `idBase = clientId * 1_000_000 + 1000` for node + buffer
+  allocators; bus allocator stays at 32. Without this, sc-app's
+  clock `/s_new` at id 1000 collides with sclang's SuperDirt
+  synths (also 1000+) — scsynth rejects the second `/s_new` with
+  `FAILURE IN SERVER /s_new duplicate node ID`, the clock never
+  starts, the timer hangs.
+- 1M IDs per client is generous: scsynth's `-n 32768` caps
+  concurrent nodes well below that. clientId=0 keeps the
+  pre-Phase-26 base (1000) so single-client deployments are
+  byte-identical.
+
+*ServerErrorBus early construction + log noise (commit 1bcbbe4).*
+- `errorBus = new ServerErrorBus(client)` moves to the TOP of
+  `setupDashboard`, before `clock.start()`. Otherwise a `/fail`
+  reply for the clock's `/s_new` (the very thing that breaks
+  when IDs collide) arrives before the bus subscribes, and the
+  error gets silently dropped — no UI signal of the failure.
+- Removed per-packet `console.log` spam: `[sc:client] reply
+  <addr>` (every OSC reply, including 3 Hz status heartbeats
+  and 48 Hz buffer chunks) and `[sc:worker] main → worker
+  <type>` (every send). Branch-specific logs (connect,
+  disconnect, errors) stay.
+- New diagnostic: `[sc:app] setupDashboard clientId=N
+  parentGroupId=N00 idBase=...` so the per-client scoping is
+  visible at each connect.
+
+*OscConsole revival (commit e0dffd2).*
+- `src/ui/OscConsole/*` files were intact since Phase 13's
+  cleanup; rendering them in the dashboard makes them work
+  again. Quick-action buttons: Status, DumpOSC on/off,
+  QueryTree(0), sendAndAwaitReply Status. The `QueryTree(0)`
+  button was load-bearing for resolving the bus-0 silence
+  question (see AddToTail fix below) — without it we'd have
+  needed an out-of-band sclang session to dump the node tree.
+
+*AddToTail fix (commit 4beb518).*
+- `GroupController` constructor's `addAction` parameter changes
+  default from `AddToHead` to `AddToTail`. Pre-Phase-26 it
+  didn't matter (sc-app was the only client at the root). With
+  sclang+SuperDirt at clientID=0, the user's parent group at
+  clientID=2 ended up at the *head* of the root, processing
+  BEFORE sclang's defaultGroup. sc-app's tap synth therefore
+  read its input bus before SuperDirt's orbits had written
+  anything in the current control block — captured silence.
+- Speakers worked because `dirtMonitor` (inside group 1, after
+  orbits) DID see the writes; only sc-app's tap (in group 200)
+  didn't. The /g_queryTree dump from OscConsole made this
+  visible: `root → [group 200 (sc-app, FIRST), 7 empty default
+  groups, group 1 (sclang+SuperDirt), group 2]`. AddToTail puts
+  sc-app's group at the END instead.
+- This fix solved the bus-0 recording problem. The earlier
+  workaround (route SuperDirt to private bus 16 + dirtMonitor
+  mirror to 0/1) was reverted in commit ac5be27 because direct
+  bus 0 tapping now works.
+
+*Final test/UX touches.*
+- `cargo test --lib` suite now 8 tests (6 routing + 2 config),
+  all green.
+- DebugLog header gains `⚠ N` badge visible while the panel is
+  collapsed (was Phase 24's design; reaffirmed during this
+  session).
+
+### Decisions
+
+- **D-generic over A and C.** Same single-WS goal as A (separate
+  proxy subcommand) but ~⅔ the LoC and zero new processes. C
+  (sclang as the OSC front) was rejected on hot-path latency:
+  sclang's single-threaded interpreter would contend with
+  SuperDirt pattern parsing for the same loop, producing bursty
+  jitter on the `/b_setn` reply path. The full A-vs-C-vs-D
+  comparison table sat in `plan.md` while Phase 26 was in
+  flight; it has now been moved here for posterity.
+- **Config-driven route table over hardcoded `dirt:
+  Option<SocketAddr>`.** Adding a future target (metronome, MIDI
+  bridge, analyzer) is a config entry, not a code edit. The
+  routing module lifts cleanly into a `proxy` subcommand if
+  external observability ever becomes load-bearing.
+- **AddToTail of root for parent group.** Necessary when
+  sharing scsynth with sclang at clientID=0. Pre-Phase-26
+  AddToHead was harmless because sc-app was the only client.
+  Single-client deployments stay byte-identical (AddToTail of
+  empty root puts the group at index 0 either way).
+- **1M IDs per client (sc-app side), not scsynth's per-client
+  range API.** scsynth divides 2^31 by `numClientIDs` for its
+  per-client default group ranges, but doesn't enforce ID
+  scoping for `/s_new`. Manually picking 1M-per-client on the
+  frontend is simpler than negotiating maxLogins through the
+  notify reply, and 1M is well above any realistic synth count.
+- **ServerErrorBus from the start of setupDashboard.** The race
+  between "first /s_new fires" and "bus subscribes" is small in
+  wall time but exactly the wrong window to miss — the clock
+  /s_new is the canary for ID-collision scenarios.
+- **OscConsole revived rather than queried-out-of-band.** `/g_queryTree`
+  in the dashboard saved a debug session; cheap to keep around
+  for future "what's actually in the tree?" moments.
+- **bus 0/1 IS tappable after AddToTail.** Future Improvement #9
+  (InFeedback.ar variant) was scoped against a "hardware-bus
+  read semantics" theory that turned out to be a tree-ordering
+  symptom in disguise. FI #9 dropped from `plan.md` after the
+  fix landed.
+
+### Gotchas worth carrying forward
+
+- **Parent group `AddToTail` is load-bearing when sharing
+  scsynth with other clients.** The default in `GroupController`
+  matters; the comment at the constructor explains why. If a
+  future feature lets multiple sc-app instances connect to one
+  scsynth (Future Improvement: multi-tenancy), each instance's
+  group still adds at the tail of root and per-client ID scoping
+  keeps them out of each other's way.
+- **Per-client ID scoping = 1M IDs per clientID.** sc-app's
+  IdAllocator(idBase) is `clientId * 1_000_000 + 1000`. If a
+  third client ever appears (say, two browsers connect to one
+  bridge), they'll be at 1M, 2M, … with no overlap. Don't shrink
+  the multiplier without also shrinking SuperDirt's expected
+  load.
+- **ServerErrorBus must be wired BEFORE the first /s_new.** Any
+  future `setupDashboard` reorganisation should keep
+  `new ServerErrorBus(client)` at the top, before `clock.start()`
+  / synth manager construction / etc. The race is invisible
+  when nothing fails (most sessions); but exactly the sessions
+  with /fails to surface are the ones we miss.
+- **Frontend filters /dirt/* in the worker by NOT filtering it.**
+  `oscWorker.ts` only intercepts `/tr` (clock), `/b_setn` (buffer
+  chunk), `/fail`. Everything else — including `/dirt/hello/reply`
+  — falls through to the generic `onReply` channel that DirtClient
+  subscribes to. If a future feature wants to add per-prefix
+  worker-side handling, `/dirt/*` follows the same "leave it
+  alone" rule unless there's a perf reason.
+- **SuperDirt orbit master fx live in defaultGroup (group 1),
+  not in their own root-level group.** `dirt_monitor2`,
+  `dirt_rms2`, `dirt_leslie2`, `dirt_reverb2`, `dirt_delay2` —
+  five synths per orbit, 12 orbits = 60 master fx synths inside
+  `defaultGroup`'s child container (`group 4` in the user's
+  observed tree). sc-app's tap on bus 0 reads after all of them
+  because group 200 (sc-app) sits AFTER group 1 in the root with
+  AddToTail.
+- **`/g_queryTree.reply` arg encoding is depth-first flattened.**
+  Format: `[withControls=0, queriedGroupID, numChildren,
+  nodeID, numChildren_or_-1, [synthName_if_synth, recurse_if_group]]`.
+  When debugging tree issues, the OscConsole panel's
+  `QueryTree(0)` button gives you this directly. Parse mentally
+  by tracking the numChildren value of each group.

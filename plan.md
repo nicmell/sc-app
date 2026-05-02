@@ -2,447 +2,318 @@
 
 Forward-looking spec. Pending phases live here in detail (open
 questions, file maps, acceptance criteria). When a phase ships, it
-moves to [`history.md`](./history.md).
+moves to [`docs/history.md`](./docs/history.md).
 
 Project overview, architecture diagram, architectural principles,
 audio config schema, file layout, workspace packages, and the
 chunkSize × sampleRate practical table all live in
 [`CLAUDE.md`](./CLAUDE.md) — don't duplicate them here.
 
-**Phase 26 in flight.** Phases 0–25 shipped (see `history.md`).
-Phase 26 below brings forward the SuperDirt work prototyped on the
-`superdirt` branch with a single OSC connection from the frontend,
-demuxed inside the bridge by a config-driven prefix route table.
-Architecture **D-generic** chosen; A and C summarised as
-alternatives considered. Earlier longer-term candidates remain in
+**Phase 27 in design.** Phases 0–26 shipped (see
+`docs/history.md`). Phase 27 below introduces a step-sequencer
+panel that drives SuperDirt — turning the dashboard from
+"oscilloscope + recorder + REPL" into "oscilloscope + recorder +
+sequencer." Earlier longer-term candidates remain in
 *Future Improvements*.
 
 ---
 
-## Phase 26 — SuperDirt via bridge-internal OSC router (D-generic)
+## Phase 27 — Step Sequencer for SuperDirt
 
-**Goal.** Bring SuperDirt back online without the second WebSocket
-that the `superdirt` branch shipped. The frontend keeps exactly
-one `WorkerClient` / one `/ws`; everything OSC — scsynth control,
-buffer reads, `/dirt/play`, `/dirt/hello` — flows through it.
-Inside the bridge, a config-driven prefix-match table demuxes
-each outbound packet to the appropriate UDP target. Each per-WS
-session opens N+1 sockets (one per unique target) and fans
-replies back into the same WS.
+**Goal.** Add a step-sequencer panel that drives the existing
+`DirtClient`. Users build patterns by toggling cells in a grid;
+transport plays the pattern at a configured BPM, sending
+`/dirt/play` events at each step with timetags scheduled
+sample-accurately on the SuperDirt side. The result is a
+self-contained groove-box experience: launch `yarn osc`, open the
+dashboard, build a beat in the SequencerPanel, hit Play, hear
+SuperDirt do the rest.
 
-The frontend's `DirtPanel` REPL + event log + `/dirt/play`
-builder all come forward unchanged in shape. What goes away is
-connection management — there's no host/port input, no second-WS
-lifecycle, no second status badge. Aliveness becomes a
-`/dirt/hello` round-trip on dashboard mount; failure surfaces
-inline in the panel.
+The sequencer is intentionally lightweight: a 16-step (configurable
+8/16/32) grid, N user-added tracks each with a sample name and a
+gain slider, transport controls (BPM, Play/Stop, animated
+playhead). No mini-notation parser, no pattern algebra, no
+arrangement timeline — those belong to a later phase if at all.
 
-**Architectural call: D-generic.** Three options were weighed (A:
-separate `sc-app proxy` subcommand; C: sclang as OSC front;
-D: bridge does the demux). The chosen path generalises D to a
-config-driven route table — same per-process footprint as today,
-~115 LoC of new bridge code, future targets add as config entries
-with no code edits. The full comparison + rejection rationale is
-in *Alternatives considered* below.
-
-### Architecture: bridge as OSC router
+### Architecture
 
 ```
-Frontend (one WorkerClient, one /ws)
-  ↓ WS bytes
-Bridge (Rust): per-session opens N+1 UDP sockets
-  ├── outbound: peek OSC address, prefix-match against route
-  │             table, send via the matching socket
-  └── inbound: N+1 recv tasks, each fans replies back to the WS
-  ↓ UDP
-scsynth (default route)        sclang+SuperDirt (/dirt/*)
-:57110                         :57120
+Browser (React, main thread)
+  ├── SequencerController   pattern state + JS scheduler + reactive
+  │                          stores. Owns the setTimeout-based
+  │                          lookahead loop. Sends /dirt/play via
+  │                          DirtClient with `lookaheadMs` set so
+  │                          SuperDirt schedules each event at its
+  │                          step boundary.
+  └── SequencerPanel        TransportBar (BPM, play/stop, length,
+                             current step) + TrackRow ×N (sample
+                             name input, gain slider, step grid).
+
+DirtClient (Phase 26) ── unchanged. Sequencer just calls
+                          dirtClient.play({ s, gain, ... }, { lookaheadMs }).
 ```
 
-Where N is the number of configured `routes` entries plus the
-default. Adding a third target (metronome, MIDI bridge,
-analyzer, …) is one entry in `config.json`, no code edits.
+The sequencer doesn't touch scsynth or the bridge. All audio
+output happens via SuperDirt; the bridge's `/dirt → 57120` route
+carries every event. From the bridge's perspective this is just
+more `/dirt/play` traffic.
 
-#### Config schema
+### Data model
 
-`config.json` gains a `routes: [{ prefix, target }]` field. The
-existing `scsynth` field stays as the implicit *default* route
-target — packets not matching any prefix go there. So a config
-without `routes` behaves identically to today.
+```typescript
+interface Track {
+  id: string;          // stable for React keys
+  sample: string;      // SuperDirt bank name, e.g. "bd", "sn"
+  gain: number;        // 0..1, default 0.8
+  steps: boolean[];    // length === pattern.length
+}
 
-```json
-{
-  "port": 3000,
-  "scsynth": "127.0.0.1:57110",
-  "log_dir": "/var/log/sc-app",
-  "routes": [
-    { "prefix": "/dirt", "target": "127.0.0.1:57120" }
-  ]
+interface Pattern {
+  length: number;      // 8 | 16 | 32; default 16
+  tracks: Track[];
+  bpm: number;         // 60..240; default 120
+  subdivision: number; // steps per beat; default 4 (= 1/16ths)
+}
+
+interface TransportState {
+  isPlaying: boolean;
+  currentStep: number;        // 0..length-1, advances during playback
+  patternStartTime: number;   // performance.now() when Play hit;
+                              //   used to compute step times so we
+                              //   don't accumulate setTimeout drift
 }
 ```
 
-`prefix` matches the OSC address with `starts_with`. The bridge
-walks the array top-to-bottom, first match wins; user is
-responsible for ordering most-specific prefixes first (Q5
-revisits this).
+`stepTimeMs(stepIndex) = patternStartTime + stepIndex * (60_000 / bpm / subdivision)`.
 
-`target` is `host:port`, parsed at boot via `lookup_host`.
-Resolution failure at boot is a config error.
+For a 120 BPM pattern at subdivision=4 (sixteenth notes):
+`stepIntervalMs = 60_000 / 120 / 4 = 125 ms`. So 16 steps over
+2000 ms = one bar. At 240 BPM: 62.5 ms/step, one bar in 1000 ms.
 
-#### Implementation outline
+### Scheduler
 
-New module `src-tauri/src/server/routing.rs`:
-```rust
-pub struct RoutingTable {
-    routes: Vec<(String, SocketAddr)>,   // user order preserved
-    default: SocketAddr,
+JS-side, setTimeout-based, lookahead pattern (the standard
+"browser-music scheduling" pattern from the Web Audio docs):
+
+```typescript
+const WAKE_INTERVAL_MS = 25;   // scheduler runs at ~40 Hz
+const LOOKAHEAD_MS = 100;      // how far ahead we queue events
+
+function scheduler() {
+  if (!isPlaying) return;
+  const now = performance.now();
+  const horizon = now + LOOKAHEAD_MS;
+
+  // Walk forward from the last-scheduled step to the horizon.
+  while (nextStepTimeMs <= horizon) {
+    const stepIndex = nextStepIndex % pattern.length;
+    for (const track of pattern.tracks) {
+      if (track.steps[stepIndex]) {
+        dirtClient.play(
+          { s: track.sample, gain: track.gain },
+          { lookaheadMs: nextStepTimeMs - now },
+        );
+      }
+    }
+    // Update reactive currentStep just-in-time so the playhead
+    // lands close to the audible event (not 100ms early).
+    setTimeout(
+      () => currentStepStore.set(stepIndex),
+      Math.max(0, nextStepTimeMs - now),
+    );
+    nextStepIndex += 1;
+    nextStepTimeMs += stepIntervalMs;
+  }
 }
 
-impl RoutingTable {
-    pub fn from_config(default: SocketAddr, routes: &[Route]) -> Result<Self> { … }
-    pub fn route_for(&self, address: &str) -> SocketAddr { … }
-    pub fn unique_targets(&self) -> Vec<SocketAddr> { … }  // for socket binding
-}
-
-/// Peek the OSC address from a UDP payload without full decode.
-/// For a `#bundle`, return the address of the first inner message.
-/// For a bare message, return its address. None on parse failure
-/// (caller falls back to the default route).
-pub fn peek_osc_address(bytes: &[u8]) -> Option<&str> { … }
+setInterval(scheduler, WAKE_INTERVAL_MS);  // or a self-rescheduling
+                                            //   setTimeout for
+                                            //   tighter cleanup
 ```
 
-Per-WS state in `ws_bridge.rs::handle_ws`:
-```rust
-// Boot the session:
-//   For each unique target in routes.unique_targets():
-//     bind ephemeral UDP, connect(target), insert into a map.
-//     Spawn a recv task that loops sock.recv() and forwards to WS.
-//     Only the default target's recv task runs `Session::snoop`
-//     (Phase 22 /done /notify capture is scsynth-specific).
-//
-// WS→UDP loop:
-//   addr = peek_osc_address(bytes)?  // None → default route
-//   target = routes.route_for(addr)
-//   if target == default: session.snoop_outbound(bytes)
-//   sockets[target].send(bytes)
-//
-// Cleanup tail (on WS close):
-//   recv_tasks.iter().for_each(|t| t.abort())
-//   session.cleanup(sockets[default])
-//   // /g_freeAll, /n_free, /notify 0 — scsynth-specific,
-//   // not relevant to other targets.
-```
-
-#### Edge cases
-
-- **Route target unreachable at boot.** UDP `connect()` doesn't
-  validate the peer; sends to a non-listening peer silently
-  drop. So bridge boots fine even if SuperDirt isn't running.
-  Hello probe times out → frontend panel shows `unreachable`.
-  Same flexibility as today.
-- **Same target under multiple prefixes.** Allowed.
-  `unique_targets()` deduplicates so one socket serves all
-  prefixes pointing at that target — saves resources, simpler
-  reply pump.
-- **Empty prefix `""`.** Would shadow the default route. Almost
-  certainly a config typo. Reject at config-load with a helpful
-  message rather than allow it.
-- **Trailing-slash precision.** `prefix: "/dirt"` matches both
-  `/dirt` and `/dirt/play`. `prefix: "/dirt/"` matches only the
-  latter. Up to the user; document literally.
-- **No-match on a packet.** Always falls back to the default
-  route (scsynth). No "reject unknown" alternative; safer to
-  forward to scsynth than to drop, and scsynth itself surfaces
-  bad addresses via `/fail`.
-- **Bundle handling.** Peek the address of the first inner
-  message; route the whole bundle by that. Mixed-target bundles
-  are unsupported — document as a known limitation. No real
-  use case driver.
-- **Phase 22 snoop scope.** `/done /notify` snoop runs only on
-  the *default route's* inbound stream (scsynth-specific reply).
-  `/notify 0` snoop runs only when the outbound target *is* the
-  default. Non-default targets have no scsynth-style state to
-  reset.
-
-### Alternatives considered
-
-- **A — Separate `sc-app proxy` subcommand.** Same routing
-  semantics as D-generic, but as a third subcommand of the
-  existing binary, external to the bridge. ~150 LoC + an extra
-  process per deployment. Rejected because D-generic gets the
-  same extensibility (config-driven routes) without the extra
-  process, the systemd unit, or the supervisor-script
-  bookkeeping. A remains the right shape if external
-  observability of the routing layer (independent restart,
-  traffic-capture as a separate concern, mock targets in test)
-  becomes load-bearing — the routing module from D lifts cleanly
-  into a `proxy` subcommand at that point, identical logic just
-  hosted differently.
-- **C — sclang as the OSC front.** Frontend-side single WS
-  preserved, but sclang owns the routing decision and
-  raw-forwards non-`/dirt/*` to scsynth. Rejected on hot-path
-  latency: sclang's single-threaded interpreter contends with
-  SuperDirt pattern parsing for the same loop, producing bursty
-  jitter on the `/b_setn` reply path under load. Phase 17's
-  reorder buffer absorbs *some* jitter but not unbounded
-  amounts. C remains viable for fundamentally-Tidal-driven
-  workflows where scope/recording is incidental, not always-on.
-
-### Comparison (decision audit)
-
-| Dimension | A | C | D-generic (chosen) |
-|---|---|---|---|
-| **Single WS** | yes | yes | yes |
-| **New Rust LoC** | ~150 | 0 | ~115 |
-| **New sclang LoC** | 0 | ~50 | 0 |
-| **New runtime processes** | +1 | 0 | 0 |
-| **Hot-path latency** | ~100 µs deterministic | ~100 µs–few ms (interpreter) | direct UDP, no extra hop |
-| **Adding a 3rd target** | CLI flag, no code | sclang code edit | config entry, no code |
-| **Bridge purity** | preserved | preserved | router (small step from Phase 22) |
-| **Crash isolation** | proxy independent | sclang crash kills all routing | scsynth/dirt independent |
-| **Pi systemd footprint** | 3 units | 2 units | 2 units |
-| **Cleanly fits N targets** | unbounded | unbounded | unbounded |
-| **Mock target / traffic capture** | trivial (proxy is the right place) | hard | future bridge module |
-
-D-generic and A are functionally identical on extensibility; the
-trade is "extra process" vs "router lives inside bridge." Without
-operational pressure to keep the routing layer external, the
-in-bridge form wins on simplicity.
-
-### What the route table enables (future)
-
-The point of the generic shape is that future targets are config
-additions. Concrete candidates, none committed:
-
-- **Metronome service** — sclang or Rust process listening on
-  `/metronome/*`. Click track on a dedicated bus. Useful for
-  live coding.
-- **MIDI bridge** — sclang or any MIDI-capable process listening
-  on `/midi/*` to send to MIDI out. Hardware sync, hardware
-  synth control.
-- **Spectral analyzer** — Python or Rust process consuming an
-  audio bus (via OSC tap or direct JACK) and exposing
-  `/analyze/*` for FFT data, peak detection.
-- **Pattern player (non-Dirt)** — custom rhythm sequencer,
-  separate from SuperDirt, listening on `/seq/*`.
-- **Hardware controller bridge** — `/ctrl/*` from a knob
-  surface, unifying physical controls into the OSC bus.
-
-Each is "spawn a process, add a route." No bridge code.
-
-### What comes from the `superdirt` branch
-
-**Brought forward unchanged:**
-- `superdirt/` git submodule (vendored SuperDirt source).
-- `superdirt-deps/` tree + `scripts/setup-superdirt-deps.sh`.
-- `scripts/sc-app-superdirt-startup.scd` (sclang init script).
-- `scripts/sc-app-scsynth.service` (Pi systemd template).
-- `scripts/cleanup.sh`.
-- `src/dirt/dirtCommands.ts` (typed builders for `/dirt/play`,
-  `/dirt/hello`, `/dirt/handshake`, `/dirt/setControlBus` +
-  reply addresses).
-- `src/dirt/types.ts` (minus `parseHostPort`; `DirtStatus`
-  shrinks per Q1).
-- `src/dirt/replParser.ts` (REPL command parser, no networking).
-- `src/ui/DirtPanel/*` (REPL UI + bounded event-log ring).
-
-**Rewritten:**
-- `src/dirt/DirtClient.ts` — drops the `/ws/dirt` lifecycle.
-  Constructor takes a `WorkerClient`; encodes `OSC.Message` /
-  `OSC.Bundle` and calls `client.sendCommand`. Replies arrive
-  via `client.onReply` filtered for `/dirt/*`. `connect()`
-  collapses to "send `/dirt/hello`, await
-  `/dirt/hello/reply`" — health probe only, no socket
-  lifecycle. `host`/`port` constructor args go away.
-- `DirtPanel` — drop the connection-string input + Connect /
-  Disconnect buttons. Three states from the hello probe:
-  `probing` (initial), `alive` (reply received within timeout),
-  `unreachable` (timeout — REPL still usable, sends are no-ops
-  if the route isn't configured).
-
-**Dropped entirely:**
-- `src-tauri/src/server/ws_dirt.rs` and the `/ws/dirt` route in
-  `server/mod.rs`.
-- `src/dirt/parseHostPort.ts` — connection routing is now in
-  the bridge config.
-- `scripts/start-scsynth.sh` and `scripts/start-superdirt.sh` —
-  replaced by `scripts/start-osc.sh` (unified supervisor) plus
-  optional `*-only.sh` variants (Q3).
-
-### Frontend wiring
-
-- `WorkerClient` — already a generic `onReply` pump. Verify
-  `oscWorker.ts` doesn't filter `/dirt/*` addresses; if it does,
-  remove the filter.
-- `AppShell.DashboardResources` — `dirtClient: DirtClient`
-  constructed with `new DirtClient(client)`. Lifecycle
-  simplifies: no `disconnect()` (no socket to close); chunkSize
-  re-init flow drops the "dirt survives re-init" special case.
-
-### Launch story
-
-`scripts/start-osc.sh` (replaces start-scsynth.sh +
-start-superdirt.sh):
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-# scsynth (background)
-scsynth -u 57110 -b 262144 -m 262144 -w 2048 -n 32768 -l 8 -i 2 -o 2 &
-scsynth_pid=$!
-
-# sclang + SuperDirt (background)
-sclang -l <generated-conf> "$STARTUP_SCD" &
-sclang_pid=$!
-
-trap "kill $scsynth_pid $sclang_pid 2>/dev/null" EXIT
-wait
-```
-
-Two supervised processes. Routing happens inside the bridge once
-the user runs `yarn bridge` (or `tauri dev`).
-
-Yarn scripts:
-- `yarn osc` — runs `start-osc.sh` (scsynth + sclang+SuperDirt).
-- `yarn scsynth-only`, `yarn superdirt-only` — debug variants
-  that boot one component (Q3).
-- `yarn superdirt-setup`, `yarn cleanup` — unchanged.
-
-### Bridge config
-
-`config.json` keeps `scsynth` as the default route target and
-adds optional `routes`:
-
-```json
-{
-  "port": 3000,
-  "scsynth": "127.0.0.1:57110",
-  "routes": [
-    { "prefix": "/dirt", "target": "127.0.0.1:57120" }
-  ]
-}
-```
-
-Empty/absent `routes` ⇒ identical to today's single-target
-behaviour. SuperDirt unconfigured ⇒ `/dirt/*` sends silently
-drop, hello probe times out, panel shows `unreachable`.
-
-### Files (planned)
-
-```
-src-tauri/src/config.rs          EDIT — add `routes: Vec<Route>` field;
-                                        `Route { prefix, target }`.
-
-src-tauri/src/server/routing.rs  NEW  — RoutingTable + peek_osc_address.
-
-src-tauri/src/server/mod.rs      EDIT — pass RoutingTable into AppState;
-                                        ws_handler builds per-session
-                                        sockets from it.
-
-src-tauri/src/server/ws_bridge.rs
-                                 EDIT — multi-socket setup, outbound
-                                        prefix routing, per-target
-                                        recv tasks, cleanup limited to
-                                        default route.
-
-src-tauri/src/server/session.rs  EDIT — minor: snoop_outbound called
-                                        only when target == default.
-
-src/dirt/DirtClient.ts           REWRITE — WorkerClient-based, no WS.
-src/dirt/dirtCommands.ts         KEEP
-src/dirt/types.ts                SHRINK (DirtStatus per Q1)
-src/dirt/replParser.ts           KEEP
-src/dirt/parseHostPort.ts        DELETE
-src/ui/DirtPanel/*               REWRITE (drop connection UI)
-
-src-tauri/src/server/ws_dirt.rs  DELETE
-                                 (and drop /ws/dirt route)
-
-scripts/start-osc.sh             NEW  — unified supervisor
-scripts/start-scsynth.sh         DELETE or RENAME (Q3)
-scripts/start-superdirt.sh       DELETE or RENAME (Q3)
-scripts/setup-superdirt-deps.sh  KEEP
-scripts/sc-app-superdirt-startup.scd
-                                 KEEP
-scripts/sc-app-scsynth.service   KEEP
-scripts/cleanup.sh               KEEP
-
-superdirt/                       NEW (git submodule)
-superdirt-deps/                  NEW (gitignored)
-
-CLAUDE.md                        EDIT — architecture diagram, routes
-                                        config, dev commands.
-docs/raspberry-pi.md             EDIT — config.json with routes; systemd
-                                        units (Q4).
-plan.md                          MOVE entry → history.md on completion.
-```
+Key properties:
+- Step times are computed from `patternStartTime` (a fixed
+  reference), not accumulated, so JS timer drift doesn't compound.
+- Each `/dirt/play` ships with `lookaheadMs` ≥ 0. SuperDirt
+  schedules the event for `Date.now() + lookaheadMs` on its end —
+  sample-accurate playback as long as we ship events early enough.
+- 100 ms lookahead is generous: even with a system pause / GC
+  hiccup of ~50 ms, the scheduler catches up on the next wake-up
+  and SuperDirt still gets events in time.
+- `currentStepStore` updates fire from scheduled `setTimeout`
+  callbacks at each step boundary — the playhead matches the
+  audible beat, not the 100 ms-ahead schedule horizon.
 
 ### Sub-phases
 
 Each step is an independently-verifiable commit.
 
-**26a — Bridge router.** Add `routes` to config + `RoutingTable`
-+ `peek_osc_address` + multi-socket per-WS setup + per-target
-recv tasks + cleanup-on-default-only. Verify pass-through:
-`routes: []` (or absent) makes the bridge behave identically to
-today. Then with one route entry pointing at a synthetic
-`nc -lu 57199` listener, verify packets to addresses matching
-that prefix arrive there and replies fan back to the WS. No
-frontend changes yet.
+**27a — MVP step sequencer.** Single pattern; configurable length
+(8/16/32 from the start); arbitrary tracks (user adds/removes via
+"+ track" button); transport (BPM 60–240, Play/Stop, length picker);
+per-track sample name + gain slider + step grid; animated playhead;
+JS scheduler with 100 ms lookahead. Empty pattern by default (no
+pre-filled `bd` etc.). Acceptance: type "bd" in row 1, toggle some
+cells, hit Play → kick plays at the right rate, BPM change updates
+mid-flight, Stop halts cleanly. ~1 day.
 
-**26b — SuperDirt foundations.** Bring forward `superdirt/`
-submodule + `superdirt-deps/` + setup-superdirt-deps + sclang
-startup script + scsynth flag values. Add `start-osc.sh`. Add
-`{ prefix: "/dirt", target: "127.0.0.1:57120" }` to local
-config. Verify `/dirt/play` reaches sclang and the reply lands
-back at the bridge.
+**27b — Per-step parameters.** Right-click a cell (or
+shift-click) → tiny popup with `amp`, `cutoff`, `speed`, `pan`
+sliders. Track-level defaults overridable per-cell. Per-cell
+overrides shown as a small dot in the cell. ~½ day.
 
-**26c — Frontend rewire.** Bring `dirtCommands` / `types` /
-`replParser` / `DirtPanel`; rewrite `DirtClient` against
-`WorkerClient`. Hello probe in `setupDashboard` per Q1/Q2.
-Wire `DirtPanel` into the dashboard. End-to-end: REPL `bd`
-plays a kick. Verify exactly one WS in DevTools.
+**27c — Pattern bank + persistence.** Up to 8 patterns,
+keyboard-switchable (1–8). Auto-save to `localStorage` on every
+mutation (debounced 500 ms). Load on dashboard mount. The pattern
+bank is its own reactive store; SequencerController reads the
+"active" pattern from it. ~½ day.
 
-**26d — Documentation.** `CLAUDE.md` architecture diagram +
-routes section. `docs/raspberry-pi.md` install + systemd units
-(Q4). `history.md` Phase 26 entry. README run-modes section.
+**27d — Pattern chain mode (optional, defer if not needed).**
+Chain patterns into a longer arrangement: pattern A plays for N
+cycles, then B for M, etc. UI: a small horizontal strip below the
+grid with pattern letters + cycle counts. Loop the chain or play
+once. ~½ day. Punt until someone asks for it.
+
+### Files (planned)
+
+```
+src/sequencer/
+  types.ts                 NEW — Track, Pattern, TransportState
+  SequencerController.ts   NEW — pattern state + scheduler + stores
+  scheduler.ts             NEW — setTimeout lookahead loop
+                                 (extracted so it's testable in
+                                 isolation)
+
+src/ui/SequencerPanel/
+  SequencerPanel.tsx       NEW — top-level panel, composes the
+                                 transport bar + track list
+  TransportBar.tsx         NEW — BPM input, Play/Stop button,
+                                 length picker, current step
+                                 indicator
+  TrackRow.tsx             NEW — sample input, gain slider, N
+                                 step cells, remove button
+  StepCell.tsx             NEW — toggle button, "current" highlight
+  SequencerPanel.scss      NEW — styles
+  index.ts                 NEW
+
+src/AppShell.tsx           EDIT — add `sequencer: SequencerController`
+                                  to DashboardResources, construct in
+                                  setupDashboard, dispose in
+                                  teardownServerState. Render
+                                  <SequencerPanel /> after <DirtPanel />.
+
+src/dirt/DirtClient.ts     EDIT (minor) — confirm `play(event,
+                                  { lookaheadMs })` honours the
+                                  override; the existing default
+                                  is 100 ms. Sequencer passes its
+                                  own per-event lookahead.
+
+CLAUDE.md                  EDIT — add sequencer to architecture
+                                  diagram + a short "scheduling"
+                                  note in Code conventions.
+docs/history.md            APPEND — Phase 27 entry on completion.
+plan.md                    MOVE entry → docs/history.md on completion.
+```
 
 ### Acceptance criteria
 
-- Frontend opens exactly one WS. DevTools Network panel shows
-  one upgraded `/ws` connection, no `/ws/dirt`.
-- `yarn osc` brings up scsynth + sclang+SuperDirt with one
-  command.
-- Existing oscilloscope / recording flows behave identically to
-  pre-Phase-26 master (the demux is transparent for `/s_new`,
-  `/b_getn`, etc.).
-- `DirtPanel` shows `alive` after dashboard mount when SuperDirt
-  is up; REPL `bd` plays a kick within ≤ 200 ms.
-- Disconnect → reconnect cycle leaves no leaked sockets:
-  `netstat` count stable across N cycles.
-- Bridge config with `routes: []` (or absent) operates
-  identically to today (single-target backward-compat).
-- A synthetic third route entry pointing at a `nc -lu` listener
-  works without recompilation.
+- Adding a track, typing "bd", toggling 4 cells (e.g. steps 0, 4,
+  8, 12), hitting Play with BPM=120 → kick plays at 2 Hz (every
+  500 ms). Stop halts within ≤ one step interval.
+- Changing BPM mid-playback updates the rate on the next
+  scheduled step (no glitch, no skip).
+- Adding a second track with "sn" on steps 4 and 12 plays a
+  basic kick-snare pattern on top of the kick.
+- Pattern length picker (16 → 32) doubles the grid and rescales
+  the playhead correctly.
+- Per-track gain slider audibly attenuates that track only.
+- DirtPanel REPL still works alongside the sequencer (one-shot
+  events fire over the same connection; the sequencer doesn't
+  monopolise the DirtClient).
+- chunkSize re-init from the dashboard header preserves the
+  pattern (sequencer state lives outside `setupDashboard`'s
+  rebuild path; it's mounted on `DashboardResources` but the
+  `Pattern` value should survive the rebuild).
+- Stop → Play resumes from step 0 (not from the paused
+  position). For "resume from where I stopped," see 27d's chain
+  mode or a future "pause" toggle.
 
-### Decisions (locked)
+### Decisions (locked, with my defaults — override before
+implementing if you disagree)
 
-- **Q1. `DirtStatus`:** three-state enum
-  `'probing' | 'alive' | 'unreachable'`.
-- **Q2. Hello probe cadence:** once at dashboard mount. Future
-  enhancement: on-demand "ping" button if needed.
-- **Q3. Individual debug scripts:** rename + keep
-  (`start-scsynth-only.sh`, `start-superdirt-only.sh`) alongside
-  unified `start-osc.sh`.
-- **Q4. Pi systemd shape:** three units —
-  `scsynth.service`, `sc-app-superdirt.service`,
-  `sc-app-bridge.service` — with `After=` / `Wants=` chains.
-- **Q5. Route order in config:** user's explicit order;
-  top-to-bottom first-match-wins. Document the most-specific-
-  first convention; no auto-sort, no startup warning (yet).
-- **Q6. `/healthz` endpoint:** deferred. Add when a real
-  operator need surfaces.
+- **Q1. Track count: arbitrary.** User adds/removes tracks via
+  "+ track" / "× remove" buttons. Same UX as SynthsPanel.
+- **Q2. Pattern length: configurable from the start.** 8 / 16 /
+  32 picker in TransportBar. Default 16. Per-track length
+  variation (polymeters) is out of scope.
+- **Q3. Per-track gain in 27a:** include. ~5 LoC of slider and
+  it stops the user feeling locked to one volume per sample.
+- **Q4. Visual style: compact panel matching dashboard.**
+  CSS-grid for the step grid, similar density to ScopeList /
+  RecordingPanel. Not a full-width "DAW strip."
+- **Q5. Default sample names: empty.** Users type their own.
+  More honest than pre-filling `bd` in row 1.
+- **Q6. Tempo source: independent.** SequencerController owns
+  its own BPM, separate from sc-app's `ClockController`
+  (which is driven by chunkSize/sampleRate, not musical tempo).
+  The two clocks don't interact.
+- **Q7. Multi-cycle: loop by default, no toggle in 27a.** Hit
+  Play, pattern loops until Stop. One-shot mode lives in the
+  chain phase if needed.
+
+### Open Q (settle before each sub-phase as it starts)
+
+**Q8. Scheduler lifecycle on chunkSize re-init.** When the user
+changes chunkSize and `setupDashboard` rebuilds, does the
+sequencer keep playing through the rebuild, pause cleanly, or
+get re-mounted from scratch? The chunkSize re-init can take ~½ s
+(re-uploading SynthDefs, re-creating clock); during that window
+the dashboard is unmounted. Easiest answer: pause on re-init,
+resume after — but the pattern state must survive. Cleanest:
+keep the SequencerController alive across re-init via a separate
+lifecycle, but that's an extra plumbing layer.
+- (i) Pause + resume; pattern state lives on `DashboardResources`
+  and the rebuild reuses it (~10 LoC of plumbing).
+- (ii) Stop entirely and reset to step 0; user re-hits Play.
+  Simplest, most honest about what re-init means.
+- (iii) Hide the issue: forbid chunkSize change while the
+  sequencer is playing. Annoying.
+
+Recommendation: (ii) for 27a, revisit if it's a real friction.
+
+**Q9. Sample-name typing UX.** Plain text input, autocomplete
+from SuperDirt's loaded banks (sclang prints the list at
+startup; we'd need to expose it via OSC), or both?
+- (i) Plain text input — user types `bd`, gets a kick. Sample
+  not found = silence. Same UX as DirtPanel's REPL today.
+- (ii) Datalist-style autocomplete from a static list (we hard-
+  code the bank names from Dirt-Samples).
+- (iii) Live autocomplete via a `/dirt/listSamples` OSC command
+  (would need a SuperDirt-side responder).
+
+Recommendation: (i) for 27a. (ii) is a follow-up if "what
+samples do I have" is a frequent question. (iii) is overkill.
+
+**Q10. Step-cell colour coding.** Pure on/off, or visualise
+gain / cutoff / etc. via per-cell shading?
+- (i) On/off (filled vs empty cell). Simplest, readable.
+- (ii) Cell opacity = gain, hue = cutoff (or similar). Pretty
+  but easy to overdo.
+- (iii) On/off + a single dot for "has per-cell overrides"
+  (post-27b only).
+
+Recommendation: (i) for 27a, (iii) when 27b lands.
+
+**Q11. Keyboard shortcuts.** Should Play/Stop bind to spacebar?
+Step toggles via numeric input (1-9 = first 9 cells of focused
+track)?
+- (i) None for 27a; mouse-only.
+- (ii) Spacebar Play/Stop only.
+- (iii) Full keyboard navigation (arrow keys to move the
+  highlight, space to toggle, Enter to add a track, …).
+
+Recommendation: (i) for 27a. Spacebar Play/Stop is a tempting
+add but conflicts with text-input focus; defer.
 
 ---
 
@@ -462,8 +333,8 @@ routes section. `docs/raspberry-pi.md` install + systemd units
    config if a deployment uses a non-default
    `numAudioBusChannels`.
 4. **Phase boundary parity.** `completedHalf = tickIndex % 2` (see
-   Phase 5 / 8 gotchas in `history.md`). The original plan had it
-   inverted; verified empirically.
+   Phase 5 / 8 gotchas in `docs/history.md`). The original plan had
+   it inverted; verified empirically.
 5. **`BufWr` is zero-order-hold.** Does not anti-alias on
    decimation. After Phase 13's revert to `decimation = 1` this
    is no longer an issue — every audio frame is written. If a
@@ -482,6 +353,10 @@ routes section. `docs/raspberry-pi.md` install + systemd units
 9. **Ordering constraints within parent group.** Clock at head;
    everything else `AddToTail`; producers must be created before
    consumers that read their buses. Documented in `CLAUDE.md`.
+10. **Parent group placement at root.** `AddToTail` of the root
+    group is now load-bearing (Phase 26 deployments share scsynth
+    with sclang+SuperDirt). Documented in `CLAUDE.md` gotchas
+    and at the constructor of `GroupController`.
 
 ---
 
@@ -528,6 +403,9 @@ worth pinning:
   dropped reply, assert reorder + gap accounting.
 - `BufferManager` — refcount semantics under interleaved
   acquire/release.
+- `SequencerController` (post-Phase-27) — feed a fake clock,
+  assert the schedule queue against expected `dirtClient.play`
+  calls.
 
 Vitest is already set up in workspace packages.
 
@@ -537,7 +415,7 @@ Vitest is already set up in workspace packages.
 
 `localStorage` per-session: last-used scsynth address (already
 done), preferred chunkSize, channel count, recording bus, window
-size.
+size, sequencer pattern bank (lands in Phase 27c).
 
 **Cost:** ~½ day.
 
