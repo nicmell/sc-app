@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ClockPanel } from '@/ui/ClockPanel';
 import { ConnectScreen } from '@/ui/ConnectScreen';
 import { DebugLog } from '@/ui/DebugLog';
+import { DirtPanel } from '@/ui/DirtPanel';
 import { Footer } from '@/ui/Footer';
 import { AlertModal, ConfirmModal, LoadingModal } from '@/ui/Modal';
 import { RecordingPanel } from '@/ui/RecordingPanel';
@@ -12,6 +13,7 @@ import {
   practicalChunkSizes,
 } from '@/config/clockConfig';
 import { BufferManager } from '@/buffer/BufferManager';
+import { DirtClient } from '@/dirt/DirtClient';
 import { RecordingManager } from '@/recording/RecordingManager';
 import {
   gFreeAll,
@@ -55,6 +57,11 @@ interface DashboardResources {
    *  fresh per `setupDashboard` (cheap; no server-side state).
    *  Disposed by `teardownServerState`. */
   errorBus: ServerErrorBus;
+  /** Phase 26 — SuperDirt OSC client layered on the same
+   *  `WorkerClient`. Sends flow over `/ws`, demuxed to SuperDirt
+   *  by the bridge's `/dirt` route. Fresh per `setupDashboard`;
+   *  disposed by `teardownServerState`. */
+  dirtClient: DirtClient;
   /** Stashed for in-place re-init: re-issuing `notify(1)` over the
    *  same WS would either be rejected by scsynth or hand back a
    *  different `clientId`, orphaning the existing parent group. The
@@ -131,6 +138,7 @@ function Dashboard({
         clock={resources.clock}
         sampleRate={resources.clock.env.sampleRate}
       />
+      <DirtPanel client={resources.dirtClient} />
       <Footer status={resources.status} version={resources.version} />
     </main>
   );
@@ -236,6 +244,12 @@ async function setupDashboard(
   // subscribing on the same WorkerClient again is fine.
   const errorBus = new ServerErrorBus(client);
 
+  // Phase 26: SuperDirt client over the same WS. Fire-and-forget
+  // hello probe (Q2 = once on mount); status flips when reply
+  // lands or the timeout expires.
+  const dirtClient = new DirtClient(client);
+  void dirtClient.probe();
+
   // One-shot /version fetch. Informational only — fail open with
   // null rather than blocking the dashboard if it times out (which
   // shouldn't happen against a healthy scsynth, but old or exotic
@@ -274,6 +288,7 @@ async function setupDashboard(
     status: createStore<ScsynthStatus | null>(null),
     version: parsedVersion,
     errorBus,
+    dirtClient,
   };
 }
 
@@ -292,6 +307,11 @@ async function teardownServerState(resources: DashboardResources): Promise<void>
     resources.errorBus.dispose();
   } catch (err) {
     console.warn('[sc:app] errorBus.dispose failed', err);
+  }
+  try {
+    resources.dirtClient.dispose();
+  } catch (err) {
+    console.warn('[sc:app] dirtClient.dispose failed', err);
   }
   try {
     await resources.recordingManager.stopAll();
