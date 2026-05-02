@@ -53,7 +53,17 @@ export function dirtSetControlBus(idx: number, value: number): OSC.Message {
   return new OSC.Message('/dirt/setControlBus', idx, value);
 }
 
+/** `/dirt/listSamples` — sc-app extension (Phase 27). Custom OSCdef
+ *  in `scripts/sc-app-superdirt-startup.scd` replies with
+ *  `/dirt/samples bank1 count1 bank2 count2 …`. Used by the
+ *  SequencerPanel's TrackRow to populate a sample-name autocomplete
+ *  datalist. */
+export function dirtListSamples(): OSC.Message {
+  return new OSC.Message('/dirt/listSamples');
+}
+
 // ── Reply addresses ──────────────────────────────────────────────────
 
 export const DIRT_HELLO_REPLY = '/dirt/hello/reply';
 export const DIRT_HANDSHAKE_REPLY = '/dirt/handshake/reply';
+export const DIRT_SAMPLES_REPLY = '/dirt/samples';

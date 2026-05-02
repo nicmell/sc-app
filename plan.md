@@ -9,12 +9,12 @@ audio config schema, file layout, workspace packages, and the
 chunkSize × sampleRate practical table all live in
 [`CLAUDE.md`](./CLAUDE.md) — don't duplicate them here.
 
-**Phase 27 in design.** Phases 0–26 shipped (see
-`docs/history.md`). Phase 27 below introduces a step-sequencer
-panel that drives SuperDirt — turning the dashboard from
-"oscilloscope + recorder + REPL" into "oscilloscope + recorder +
-sequencer." Earlier longer-term candidates remain in
-*Future Improvements*.
+**Phase 27a shipped; 27b in design.** Phases 0–26 + 27a shipped
+(see `docs/history.md`; 27a entry pending until the parent Phase
+27 closes). Phase 27 below introduces a step-sequencer panel that
+drives SuperDirt — turning the dashboard from "oscilloscope +
+recorder + REPL" into "oscilloscope + recorder + sequencer."
+Earlier longer-term candidates remain in *Future Improvements*.
 
 ---
 
@@ -228,14 +228,16 @@ users to sclang's post-window log every session.
 
 Each step is an independently-verifiable commit.
 
-**27a — MVP step sequencer.** Single pattern; configurable length
-(8/16/32 from the start); arbitrary tracks (user adds/removes via
-"+ track" button); transport (BPM 60–240, Play/Stop, length picker);
-per-track sample name + gain slider + step grid; animated playhead;
-JS scheduler with 100 ms lookahead. Empty pattern by default (no
-pre-filled `bd` etc.). Acceptance: type "bd" in row 1, toggle some
-cells, hit Play → kick plays at the right rate, BPM change updates
-mid-flight, Stop halts cleanly. ~1 day.
+**27a — MVP step sequencer.** ✅ Shipped. Single pattern;
+configurable length (8/16/32 from the start); arbitrary tracks
+(user adds/removes via "+ Track" button); transport (BPM 60–240,
+Play/Stop, length picker); per-track sample name + gain slider +
+step grid; animated playhead; JS scheduler with ~106 ms lookahead
+horizon (5 ticks at chunkSize 1024 / 48 k). Empty pattern by
+default. Pattern survives chunkSize re-init via `initialPattern`
+threading through `setupDashboard`; playback restarts at step 0.
+Sample-name autocomplete fed by `/dirt/listSamples` OSCdef in the
+sclang startup script.
 
 **27b — Per-step parameters.** Right-click a cell (or
 shift-click) → tiny popup with `amp`, `cutoff`, `speed`, `pan`
@@ -254,54 +256,74 @@ cycles, then B for M, etc. UI: a small horizontal strip below the
 grid with pattern letters + cycle counts. Loop the chain or play
 once. ~½ day. Punt until someone asks for it.
 
-### Files (planned)
+### Files (planned, with 27a marks)
+
+✅ = landed in 27a. Unmarked entries are 27b+ scope.
 
 ```
 src/sequencer/
-  types.ts                 NEW — Track, Pattern, TransportState
-  SequencerController.ts   NEW — pattern state + scheduler + stores;
-                                 takes `clock: ClockController` +
-                                 `dirtClient: DirtClient` in ctor
-  scheduler.ts             NEW — tick-anchored lookahead loop;
+  types.ts                 ✅ NEW — Track, Pattern, TransportState,
+                                 ClockLike, DirtClientLike, helpers
+  SequencerController.ts   ✅ NEW — pattern state + transport + wake
+                                 loop + reactive stores; takes
+                                 ClockLike + DirtClientLike (adapter
+                                 wrapping ClockController in AppShell
+                                 because the controller exposes
+                                 tickRate under .derived)
+  scheduler.ts             ✅ NEW — tick-anchored lookahead loop;
                                  extracted so it's testable in
                                  isolation against a fake Clock
 
 src/ui/SequencerPanel/
-  SequencerPanel.tsx       NEW — top-level panel, composes the
-                                 transport bar + track list
-  TransportBar.tsx         NEW — BPM input, Play/Stop button,
-                                 length picker, current step
-                                 indicator
-  TrackRow.tsx             NEW — sample input (HTML <datalist>
-                                 backed by DirtClient.sampleBanks),
-                                 gain slider, N step cells,
-                                 remove button
-  StepCell.tsx             NEW — toggle button, "current" highlight
-  SequencerPanel.scss      NEW — styles
-  index.ts                 NEW
+  SequencerPanel.tsx       ✅ NEW — top-level panel; useSyncExternalStore
+                                 for pattern + transport + sampleBanks;
+                                 useId-backed shared <datalist>
+  TransportBar.tsx         ✅ NEW — Play/Stop, BPM input, length
+                                 select, "+ Track" button; Play
+                                 disabled when clockReady=false
+  TrackRow.tsx             ✅ NEW — sample input (list= shared
+                                 datalist), gain slider 0..2 step
+                                 0.01, step grid, × remove button
+  StepCell.tsx             ✅ NEW — memo() toggle button; is-active /
+                                 is-playhead / is-beat classes
+  SequencerPanel.scss      ✅ NEW — styles, beat-boundary borders,
+                                 playhead halo
+  index.ts                 ✅ NEW
 
-src/dirt/DirtClient.ts     EDIT — add `playAtTimetag(event, timetag)`
-                                  for sample-accurate scheduling
-                                  (alongside existing `play(event,
-                                  { lookaheadMs })` for one-shot use).
-                                  Add `listSamples()` + `sampleBanks`
-                                  reactive store backed by the new
-                                  `/dirt/samples` reply.
+src/dirt/DirtClient.ts     ✅ EDIT — added `playAtTimetag(event, timetag)`
+                                  for sample-accurate scheduling.
+                                  Added `listSamples(timeoutMs)` +
+                                  `sampleBanks` reactive store backed
+                                  by `/dirt/samples` reply
+                                  (interleaved [name, count] args
+                                  parsed by parseSampleBanks helper).
+                                  Pending list-samples promise tracked
+                                  on a single slot; concurrent calls
+                                  rejected.
 
-src/AppShell.tsx           EDIT — add `sequencer: SequencerController`
-                                  to DashboardResources, construct in
-                                  setupDashboard (passing `clock` +
-                                  `dirtClient`), dispose in
-                                  teardownServerState. Render
-                                  <SequencerPanel /> after <DirtPanel />.
-                                  After `dirtClient.probe()` resolves
-                                  `'alive'`, fire-and-forget
-                                  `dirtClient.listSamples()`.
+src/dirt/dirtCommands.ts   ✅ EDIT — added `dirtListSamples()` builder
+                                  + DIRT_SAMPLES_REPLY constant.
+src/dirt/types.ts          ✅ EDIT — added `SampleBank` interface.
+
+src/AppShell.tsx           ✅ EDIT — added `sequencer: SequencerController`
+                                  to DashboardResources, constructed in
+                                  setupDashboard, disposed in
+                                  teardownServerState (before dirtClient
+                                  so wake loop stops first). Renders
+                                  <SequencerPanel /> after <DirtPanel />,
+                                  with clockReady=clockState==='running'.
+                                  After dirtClient.probe() resolves
+                                  alive, fire-and-forget listSamples().
+                                  setupDashboard now takes optional
+                                  initialPattern; runReinit captures
+                                  current pattern + threads through.
 
 scripts/sc-app-superdirt-startup.scd
-                           EDIT — add the `/dirt/listSamples`
-                                  OSCdef described in *Sample
-                                  enumeration via SuperDirt OSC*.
+                           ✅ EDIT — added /dirt/listSamples OSCdef
+                                  flattening ~dirt.buffers into
+                                  /dirt/samples reply, registered
+                                  after ~dirt.start so the dict is
+                                  populated.
 
 CLAUDE.md                  EDIT — add sequencer to architecture
                                   diagram + a short "scheduling"

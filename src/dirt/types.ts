@@ -44,6 +44,14 @@ export interface DirtReply {
   args: ReadonlyArray<unknown>;
 }
 
+/** Phase 27 — entry in the live sample-bank list returned by
+ *  `/dirt/listSamples`. `count` is the number of variants in the
+ *  bank (the `n` parameter on /dirt/play picks among them). */
+export interface SampleBank {
+  name: string;
+  count: number;
+}
+
 /** One entry in the bounded `recentEvents` ring.
  *
  *  - `direction: 'out'` — outgoing `/dirt/play`. `label` is the

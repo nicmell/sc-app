@@ -1,0 +1,189 @@
+// Chrome lives in the global `.panel` class.
+
+.sequencer-panel {
+  .step-readout {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .toolbar {
+    align-items: center;
+
+    label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.85rem;
+      color: var(--text-dim);
+    }
+
+    input[type='number'] {
+      width: 4rem;
+      padding: 0.25rem 0.4rem;
+      background: var(--surface-2);
+      color: var(--text);
+      border: 1px solid var(--border-2);
+      border-radius: 3px;
+      font: inherit;
+      font-size: 0.85rem;
+      font-family: var(--font-mono);
+    }
+
+    select {
+      padding: 0.25rem 0.4rem;
+      background: var(--surface-2);
+      color: var(--text);
+      border: 1px solid var(--border-2);
+      border-radius: 3px;
+      font: inherit;
+      font-size: 0.85rem;
+    }
+  }
+
+  button {
+    padding: 0.35rem 0.8rem;
+    background: var(--accent);
+    border: none;
+    border-radius: 4px;
+    color: white;
+    font: inherit;
+    font-weight: 500;
+    cursor: pointer;
+
+    &:disabled {
+      background: var(--border-3);
+      cursor: not-allowed;
+      opacity: 0.7;
+    }
+    &:not(:disabled):hover {
+      background: var(--accent-hover);
+    }
+  }
+
+  .transport-stop {
+    background: var(--danger);
+    &:not(:disabled):hover {
+      background: var(--danger-hover);
+    }
+  }
+
+  .empty {
+    margin: 0;
+    padding: 0.6rem 0.8rem;
+    background: var(--surface-2);
+    border: 1px dashed var(--border-2);
+    border-radius: 4px;
+    color: var(--text-mute);
+    font-size: 0.85rem;
+    text-align: center;
+  }
+
+  // ── Track grid ─────────────────────────────────────────────────────
+
+  .tracks {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .track-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.4rem;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+
+  .track-sample {
+    flex: 0 0 6rem;
+    padding: 0.25rem 0.4rem;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border-2);
+    border-radius: 3px;
+    font: inherit;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+  }
+
+  .track-gain {
+    flex: 0 0 5rem;
+    accent-color: var(--accent);
+  }
+
+  .track-gain-value {
+    flex: 0 0 2.4rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-mute);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  .track-steps {
+    flex: 1 1 auto;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    gap: 0.2rem;
+    min-width: 0;
+  }
+
+  .track-remove {
+    flex: 0 0 auto;
+    padding: 0.1rem 0.45rem;
+    background: transparent;
+    color: var(--text-mute);
+    border: 1px solid var(--border-2);
+    font-size: 1rem;
+    line-height: 1;
+
+    &:hover {
+      background: var(--danger);
+      color: white;
+      border-color: var(--danger);
+    }
+  }
+
+  // ── Step cells ─────────────────────────────────────────────────────
+
+  .step-cell {
+    aspect-ratio: 1 / 1;
+    min-height: 1.6rem;
+    padding: 0;
+    background: var(--surface);
+    border: 1px solid var(--border-2);
+    border-radius: 3px;
+    cursor: pointer;
+    transition:
+      background 80ms ease,
+      border-color 80ms ease;
+
+    &:hover {
+      border-color: var(--accent);
+    }
+
+    // Beat boundaries (every 4th cell) get a slightly heavier
+    // border so the 4/4 grid is readable at a glance.
+    &.is-beat {
+      border-color: var(--border-3);
+    }
+
+    &.is-active {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+
+    &.is-playhead {
+      box-shadow: 0 0 0 2px var(--accent-hover);
+    }
+
+    &.is-active.is-playhead {
+      background: var(--accent-hover);
+    }
+  }
+}

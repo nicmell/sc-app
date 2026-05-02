@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { ClockPanel } from '@/ui/ClockPanel';
 import { ConnectScreen } from '@/ui/ConnectScreen';
 import { DebugLog } from '@/ui/DebugLog';
@@ -8,6 +8,7 @@ import { AlertModal, ConfirmModal, LoadingModal } from '@/ui/Modal';
 import { OscConsole } from '@/ui/OscConsole';
 import { RecordingPanel } from '@/ui/RecordingPanel';
 import { ScopeList } from '@/ui/ScopeList';
+import { SequencerPanel } from '@/ui/SequencerPanel';
 import { SynthsPanel } from '@/ui/SynthsPanel';
 import {
   DEFAULT_PARAMS,
@@ -27,6 +28,8 @@ import { ClockController } from '@/clock/ClockController';
 import { GroupController } from '@/server/GroupController';
 import { IdAllocator } from '@/server/IdAllocator';
 import { ScopeManager } from '@/scope/ScopeManager';
+import { SequencerController } from '@/sequencer/SequencerController';
+import type { Pattern } from '@/sequencer/types';
 import { ServerErrorBus } from '@/server/ServerErrorBus';
 import { SynthDefRegistry } from '@/server/SynthDefRegistry';
 import { SynthManager } from '@/synth/SynthManager';
@@ -81,6 +84,12 @@ interface DashboardResources {
    *  by the bridge's `/dirt` route. Fresh per `setupDashboard`;
    *  disposed by `teardownServerState`. */
   dirtClient: DirtClient;
+  /** Phase 27 — step sequencer driving SuperDirt via `dirtClient`.
+   *  Anchored to `clock.tick0Ms`/`tickRate` for sample-accurate
+   *  scheduling. Fresh per `setupDashboard`; chunkSize re-init
+   *  rebuilds with an empty pattern (Q8 = ii — pattern survival
+   *  across re-init isn't currently a goal). */
+  sequencer: SequencerController;
   /** scsynth-assigned clientId from the `/done /notify` reply.
    *  Stashed for the re-init flow so the IdAllocators stay scoped
    *  to the same per-client range. Non-zero when scsynth is shared
@@ -124,6 +133,14 @@ function Dashboard({
   onDisconnect: () => void;
 }) {
   const options = practicalChunkSizes(resources.sampleRate);
+  // Sequencer's Play button needs the audio clock to be running
+  // (`tick0Ms !== null`). `effectiveState` is reactive: 'stopped'
+  // until the clock starts, 'running' once /tr packets are
+  // flowing, 'paused' across re-init / explicit pause.
+  const clockState = useSyncExternalStore(
+    (cb) => resources.clock.effectiveState.subscribe(cb),
+    () => resources.clock.effectiveState.get(),
+  );
   return (
     <main className="dashboard-shell">
       <header>
@@ -163,6 +180,11 @@ function Dashboard({
         sampleRate={resources.clock.env.sampleRate}
       />
       <DirtPanel client={resources.dirtClient} />
+      <SequencerPanel
+        controller={resources.sequencer}
+        dirtClient={resources.dirtClient}
+        clockReady={clockState === 'running'}
+      />
       <OscConsole client={resources.client} />
       <Footer status={resources.status} version={resources.version} />
     </main>
@@ -215,6 +237,7 @@ async function setupDashboard(
   parentGroupId: number,
   sampleRate: number,
   chunkSize: number,
+  initialPattern?: Pattern,
 ): Promise<DashboardResources> {
   // Phase 26 — scope node/buffer IDs by clientId so we don't collide
   // with sclang+SuperDirt at clientId=0. Bus allocator stays at 32
@@ -285,9 +308,40 @@ async function setupDashboard(
 
   // Phase 26: SuperDirt client over the same WS. Fire-and-forget
   // hello probe (Q2 = once on mount); status flips when reply
-  // lands or the timeout expires.
+  // lands or the timeout expires. After hello lands `'alive'`,
+  // fire `/dirt/listSamples` once to populate the sequencer's
+  // sample-name autocomplete (Phase 27a). Failure is silent —
+  // the OSCdef may not be loaded on older sclang scripts; the
+  // datalist just stays empty and the user types free-text.
   const dirtClient = new DirtClient(client);
-  void dirtClient.probe();
+  void dirtClient.probe().then((alive) => {
+    if (!alive) return;
+    void dirtClient.listSamples().catch((err) => {
+      console.warn('[sc:app] /dirt/listSamples failed:', err);
+    });
+  });
+
+  // Phase 27a: step sequencer. Owns its own pattern + transport
+  // stores; reads tick0Ms/tickRate live from `clock` so BPM
+  // changes mid-pattern don't require a restart. Adapter object
+  // because `ClockController` exposes `tickRate` under `derived`,
+  // while the sequencer's `ClockLike` interface keeps the surface
+  // flat for testability. `initialPattern` is forwarded from the
+  // re-init flow so the user's tracks/steps/BPM survive a
+  // chunkSize change (the controller itself is re-built; only the
+  // pattern data is preserved — playback always restarts at step 0).
+  const sequencer = new SequencerController({
+    clock: {
+      get tick0Ms() {
+        return clock.tick0Ms;
+      },
+      get tickRate() {
+        return clock.derived.tickRate;
+      },
+    },
+    dirtClient,
+    initialPattern,
+  });
 
   // One-shot /version fetch. Informational only — fail open with
   // null rather than blocking the dashboard if it times out (which
@@ -329,6 +383,7 @@ async function setupDashboard(
     version: parsedVersion,
     errorBus,
     dirtClient,
+    sequencer,
   };
 }
 
@@ -347,6 +402,15 @@ async function teardownServerState(resources: DashboardResources): Promise<void>
     resources.errorBus.dispose();
   } catch (err) {
     console.warn('[sc:app] errorBus.dispose failed', err);
+  }
+  // Sequencer first, then dirtClient — sequencer.dispose() stops
+  // playback (cancels pending playhead timers) and the wake loop;
+  // it must finish before the dirtClient teardown nulls its
+  // reply listener.
+  try {
+    resources.sequencer.dispose();
+  } catch (err) {
+    console.warn('[sc:app] sequencer.dispose failed', err);
   }
   try {
     resources.dirtClient.dispose();
@@ -595,6 +659,10 @@ export function AppShell() {
       if (!current) return;
       setReiniting(true);
       try {
+        // Capture the sequencer pattern BEFORE teardown so the
+        // user's tracks/steps/BPM survive the rebuild. Q8 = ii:
+        // playback always stops on re-init, but the data persists.
+        const survivingPattern = current.sequencer.pattern.get();
         await teardownServerState(current);
         const rebuilt = await setupDashboard(
           current.client,
@@ -602,6 +670,7 @@ export function AppShell() {
           current.parentGroupId,
           current.sampleRate,
           next,
+          survivingPattern,
         );
         setResources(rebuilt);
         setChunkSize(next);
