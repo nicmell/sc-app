@@ -48,25 +48,14 @@
     }
   }
 
-  button {
-    padding: 0.6rem;
-    background: var(--accent);
-    border: none;
-    border-radius: 4px;
-    color: white;
-    font: inherit;
-    font-weight: 500;
-    cursor: pointer;
-
-    &:disabled {
-      background: var(--border-3);
-      cursor: not-allowed;
-      opacity: 0.7;
-    }
-    &:not(:disabled):hover {
-      background: var(--accent-hover);
-    }
-  }
+  // Phase 28c: button styling now comes from
+  // @sc-app/ui-foundation's `button` element rules (default
+  // variant = primary, default size = normal). The submit
+  // button below is plain `<button type="submit">…</button>`
+  // — no data-* attributes needed, no local CSS.
+  // Input + .error rules above will move to the foundation
+  // (input as base/elements, .error as components/error-alert)
+  // during the ConnectScreen panel migration in 28e.
 
   .error {
     margin: 0.25rem 0 0;
