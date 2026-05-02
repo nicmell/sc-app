@@ -1,0 +1,144 @@
+/**
+ * DirtPanel — REPL row + recent-events log + collapsible
+ * replies disclosure. Status pill + buttons + .empty / .error
+ * + base form fields all come from the foundation.
+ *
+ * Local-only:
+ *   - .repl-row's prompt + flex-grow input
+ *   - .recent and .replies log layouts
+ *   - dot-pulse animation on the status pill while probing
+ */
+
+/* Status pill — when status === 'probing' the dot opts into a
+   local pulse animation. The keyframe is scoped here because
+   no other consumer in the app needs it; if a second one
+   appears, lift it to the foundation's components/status-pill
+   layer. */
+.dirt-panel .status-pill .dot.pulse {
+  animation: dirt-panel-dot-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes dirt-panel-dot-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+/* REPL row — `> ` glyph + flex-grow mono input. The cluster
+   handles flex layout; this rule adds the row-specific
+   tightening + the input's flex-grow + mono styling. */
+.dirt-panel .repl-row {
+  align-items: center;
+  gap: var(--space-2xs);
+}
+
+.dirt-panel .repl-prompt {
+  font-family: var(--font-mono);
+  color: var(--color-text-mute);
+  font-size: var(--font-size-md);
+  line-height: 1;
+  user-select: none;
+}
+
+.dirt-panel .repl-input {
+  flex: 1 1 auto;
+  /* Override the foundation's input padding to match the row
+     height the prompt sets visually. */
+  padding: var(--space-2xs) var(--space-xs);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+
+/* Recent outgoing events. Compact one-liners, label left,
+   relative-age right. */
+.dirt-panel .recent {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+}
+
+.dirt-panel .recent li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+  padding: var(--space-2xs) var(--space-xs);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+}
+
+.dirt-panel .recent .recent-label {
+  flex: 1 1 auto;
+  font-family: var(--font-mono);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dirt-panel .recent .recent-age {
+  flex: 0 0 auto;
+  color: var(--color-text-mute);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.75rem;
+}
+
+/* Replies disclosure — collapsed by default; hello-replies are
+   noise. The summary picks up base details/summary styling
+   from the foundation and adds a chrome wrapper. */
+.dirt-panel .replies {
+  margin: 0;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.dirt-panel .replies > summary {
+  padding: var(--space-2xs) var(--space-xs);
+}
+
+.dirt-panel .replies[open] > summary {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.dirt-panel .replies ul {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-2xs) var(--space-xs);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+}
+
+.dirt-panel .replies li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+  padding: var(--space-3xs) 0;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.dirt-panel .replies .reply-addr {
+  color: var(--color-text);
+  flex: 0 0 auto;
+}
+
+.dirt-panel .replies .reply-args {
+  flex: 1 1 auto;
+  color: var(--color-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dirt-panel .replies .reply-age {
+  flex: 0 0 auto;
+  color: var(--color-text-mute);
+  font-size: 0.7rem;
+}

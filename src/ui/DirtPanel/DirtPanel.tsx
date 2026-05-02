@@ -7,7 +7,7 @@ import {
 import type { DirtClient } from '@/dirt/DirtClient';
 import { parseDirtRepl } from '@/dirt/replParser';
 import type { DirtEventLog, DirtStatus } from '@/dirt/types';
-import './DirtPanel.scss';
+import './DirtPanel.css';
 
 const REPL_PLACEHOLDER = 'bd cutoff:800 amp:0.5';
 
@@ -50,8 +50,20 @@ export function DirtPanel({ client }: DirtPanelProps) {
     <section className="panel dirt-panel">
       <header>
         <span>Dirt</span>
-        <span className={`status-pill status-${status}`}>
-          <span className="dot" aria-hidden="true">
+        <span
+          className="status-pill"
+          data-variant={
+            status === 'alive'
+              ? 'ok'
+              : status === 'unreachable'
+                ? 'error'
+                : 'info'
+          }
+        >
+          <span
+            className={`dot ${status === 'probing' ? 'pulse' : ''}`}
+            aria-hidden="true"
+          >
             ●
           </span>
           {STATUS_LABELS[status]}
@@ -101,7 +113,7 @@ function DirtPanelBody({
 
   return (
     <>
-      <div className="row repl-row">
+      <div className="cluster repl-row">
         <span className="repl-prompt" aria-hidden="true">
           &gt;
         </span>
