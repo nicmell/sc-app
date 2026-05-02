@@ -8,6 +8,63 @@
     font-variant-numeric: tabular-nums;
   }
 
+  // ── Bank selector ──────────────────────────────────────────────────
+
+  .bank-selector {
+    display: flex;
+    gap: 0.3rem;
+    flex-wrap: wrap;
+  }
+
+  .bank-slot {
+    position: relative;
+    flex: 1 1 0;
+    min-width: 2.4rem;
+    padding: 0.35rem 0.5rem;
+    background: var(--surface-2);
+    color: var(--text-dim);
+    border: 1px solid var(--border-2);
+    border-radius: 4px;
+    font: inherit;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition:
+      background 80ms ease,
+      border-color 80ms ease,
+      color 80ms ease;
+
+    &:hover {
+      border-color: var(--border-3);
+      color: var(--text);
+    }
+
+    // Slots that have at least one track get a small indicator
+    // dot. Distinct from .is-active so the user can see which
+    // slots have content even when a different slot is selected.
+    &.is-filled::after {
+      content: '';
+      position: absolute;
+      bottom: 0.25rem;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 0.35rem;
+      height: 0.35rem;
+      border-radius: 50%;
+      background: var(--text-mute);
+    }
+
+    &.is-active {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+
+      &::after {
+        background: white;
+      }
+    }
+  }
+
   .toolbar {
     align-items: center;
 

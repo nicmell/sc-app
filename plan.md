@@ -9,13 +9,13 @@ audio config schema, file layout, workspace packages, and the
 chunkSize × sampleRate practical table all live in
 [`CLAUDE.md`](./CLAUDE.md) — don't duplicate them here.
 
-**Phase 27a + 27b shipped; 27c in design.** Phases 0–26 + 27a +
-27b shipped (see `docs/history.md`; 27a/b entries pending until
-the parent Phase 27 closes). Phase 27 below introduces a
-step-sequencer panel that drives SuperDirt — turning the dashboard
-from "oscilloscope + recorder + REPL" into "oscilloscope +
-recorder + sequencer." Earlier longer-term candidates remain in
-*Future Improvements*.
+**Phase 27a + 27b + 27c shipped; 27d optional.** Phases 0–26 +
+27a + 27b + 27c shipped (see `docs/history.md`; 27a/b/c entries
+pending until the parent Phase 27 closes). Phase 27 below
+introduces a step-sequencer panel that drives SuperDirt — turning
+the dashboard from "oscilloscope + recorder + REPL" into
+"oscilloscope + recorder + sequencer." Earlier longer-term
+candidates remain in *Future Improvements*.
 
 ---
 
@@ -255,11 +255,27 @@ data model migrated `Track.steps` from `boolean[]` to `Step[]`
 where `Step = { active; params? }`; `params` is dropped entirely
 when the last override clears so `stepHasOverrides` stays cheap.
 
-**27c — Pattern bank + persistence.** Up to 8 patterns,
-keyboard-switchable (1–8). Auto-save to `localStorage` on every
-mutation (debounced 500 ms). Load on dashboard mount. The pattern
-bank is its own reactive store; SequencerController reads the
-"active" pattern from it. ~½ day.
+**27c — Pattern bank + persistence.** ✅ Shipped. New
+`PatternBank` class (`src/sequencer/PatternBank.ts`) holds an
+8-element `Pattern[]` plus an `activeIndex`, all as reactive
+stores. `SequencerController` is now a thin wrapper that reads
+`bank.activePattern` and forwards mutations through
+`bank.updateActivePattern(...)`. Slot switching is mid-playback
+safe — the scheduler reads the pattern fresh each pump, so 1..8
+A/B'ing just cuts to the new pattern at the next step. The
+`BankSelector` row of 8 buttons sits above the transport bar;
+filled slots get a small indicator. Document-level keydown
+listener gated on editable focus (input/textarea/select/
+contenteditable) makes 1..8 keys work without fighting the BPM
+field. Persistence: schema-versioned (V1) JSON in
+`localStorage['sc.sequencer.bank']`, debounced 500 ms; flushed
+synchronously on `bank.dispose()` (called by handleDisconnect,
+WS-onError, heartbeat-fail, and reinit-failure). On load,
+patterns are sanitised — pre-27b boolean steps coerce to
+`{active}`, malformed entries fall back to empty patterns.
+Bank is long-lived across chunkSize re-init; live subscriptions
+in `SequencerController.pattern` keep firing because the bank
+instance is reused.
 
 **27d — Pattern chain mode (optional, defer if not needed).**
 Chain patterns into a longer arrangement: pattern A plays for N
@@ -267,27 +283,31 @@ cycles, then B for M, etc. UI: a small horizontal strip below the
 grid with pattern letters + cycle counts. Loop the chain or play
 once. ~½ day. Punt until someone asks for it.
 
-### Files (planned, with 27a + 27b marks)
+### Files (planned, with 27a + 27b + 27c marks)
 
-✅ = landed. ✳ = touched again in 27b. Unmarked entries are 27c+ scope.
+✅ = landed. ✳ = touched again in 27b. ✦ = touched again in 27c.
 
 ```
 src/sequencer/
   types.ts                 ✳ EDIT — Step interface (was boolean),
                                  ParamMap, PARAM_SPECS,
                                  stepHasOverrides, resolveParam
-  SequencerController.ts   ✳ EDIT — setStepParam / clearStepParam /
-                                 clearAllStepParams /
-                                 setTrackDefault / clearTrackDefault;
-                                 toggleStep migrated to Step shape
+  SequencerController.ts   ✦ EDIT — refactored to read/write through
+                                 PatternBank.updateActivePattern;
+                                 27b mutation set retained
   scheduler.ts             ✳ EDIT — eventForTrack now takes the Step
                                  and merges resolved params into the
                                  OSC payload
+  PatternBank.ts           ✦ NEW  — 8-slot reactive store + debounced
+                                 localStorage persistence + sanitise/
+                                 migrate on load
 
 src/ui/SequencerPanel/
-  SequencerPanel.tsx       ✅ NEW — top-level panel; useSyncExternalStore
-                                 for pattern + transport + sampleBanks;
-                                 useId-backed shared <datalist>
+  SequencerPanel.tsx       ✦ EDIT — now takes `bank` prop; renders
+                                 BankSelector; document keydown 1..8
+                                 listener gated on editable focus
+  BankSelector.tsx         ✦ NEW  — 8-button slot picker with active
+                                 + filled indicators
   TransportBar.tsx         ✅ NEW — Play/Stop, BPM input, length
                                  select, "+ Track" button; Play
                                  disabled when clockReady=false
@@ -323,18 +343,18 @@ src/dirt/dirtCommands.ts   ✅ EDIT — added `dirtListSamples()` builder
                                   + DIRT_SAMPLES_REPLY constant.
 src/dirt/types.ts          ✅ EDIT — added `SampleBank` interface.
 
-src/AppShell.tsx           ✅ EDIT — added `sequencer: SequencerController`
-                                  to DashboardResources, constructed in
-                                  setupDashboard, disposed in
-                                  teardownServerState (before dirtClient
-                                  so wake loop stops first). Renders
-                                  <SequencerPanel /> after <DirtPanel />,
-                                  with clockReady=clockState==='running'.
-                                  After dirtClient.probe() resolves
-                                  alive, fire-and-forget listSamples().
-                                  setupDashboard now takes optional
-                                  initialPattern; runReinit captures
-                                  current pattern + threads through.
+src/AppShell.tsx           ✦ EDIT — added `bank: PatternBank` to
+                                  DashboardResources alongside
+                                  `sequencer`. Bank is constructed
+                                  fresh per handleConnect (loads from
+                                  localStorage), reused across
+                                  chunkSize re-init, disposed by
+                                  handleDisconnect / onError /
+                                  heartbeat-fail / reinit-fail (which
+                                  flushes a final save). setupDashboard
+                                  signature: `initialPattern` →
+                                  `bank: PatternBank`. SequencerPanel
+                                  now receives `bank` as a prop.
 
 scripts/sc-app-superdirt-startup.scd
                            ✅ EDIT — added /dirt/listSamples OSCdef

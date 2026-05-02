@@ -1,23 +1,29 @@
 /**
  * Step-sequencer controller (Phase 27).
  *
- * Owns the pattern state + transport + JS wake-up loop. Drives
- * SuperDirt via the existing `DirtClient`. Anchors all timing to
+ * Owns the transport + JS wake-up loop and exposes a thin
+ * mutation API over the active pattern. Drives SuperDirt via the
+ * existing `DirtClient`. Anchors all timing to
  * `ClockController.tick0Ms` + `tickRate` so playback stays
  * sample-accurate against the audio engine's clock; the JS
  * scheduler just keeps OSC bundles on the wire ahead of their
  * fire time.
  *
+ * Phase 27c reshape: the controller no longer owns its own
+ * `Pattern` store. Pattern state lives on the `PatternBank`
+ * (8-slot reactive store with localStorage persistence); the
+ * controller reads `bank.activePattern` and forwards mutations
+ * back through `bank.updateActivePattern(...)`. Switching slots
+ * (1..8 keys, or the panel's bank selector) takes effect at the
+ * next pump — playback is intentionally NOT stopped on switch
+ * so the user can A/B between patterns mid-loop.
+ *
  * Lifecycle:
- * - Created in `setupDashboard`, given the live `clock` and
- *   `dirtClient`.
+ * - Created in `setupDashboard`, given the live `clock`,
+ *   `dirtClient`, and `bank`.
  * - `dispose()` stops playback + cancels pending playhead
- *   timeouts; safe to call multiple times.
- * - chunkSize re-init (Q8 = ii) tears down the controller and
- *   re-creates it with a fresh, empty pattern. If you want
- *   pattern survival across re-init, lift the `Pattern` to
- *   `DashboardResources` outside the controller; it's a small
- *   plumbing change.
+ *   timeouts; safe to call multiple times. The bank itself is
+ *   long-lived across re-init — disposed at the AppShell level.
  *
  * Pattern mutations are immutable: every method that touches the
  * pattern produces a new object reference, so `Object.is`-based
@@ -26,6 +32,7 @@
 
 import { createStore, type ReadonlyStore } from '@/util/reactiveStore';
 
+import type { PatternBank } from './PatternBank';
 import {
   cancelPendingPlayheadTimers,
   makeInitialSchedulerState,
@@ -34,7 +41,6 @@ import {
   type SchedulerState,
 } from './scheduler';
 import {
-  makeEmptyPattern,
   makeEmptyStep,
   makeEmptyTrack,
   PARAM_NAMES,
@@ -61,16 +67,16 @@ const STOPPED_TRANSPORT: TransportState = {
 export interface SequencerControllerOptions {
   clock: ClockLike;
   dirtClient: DirtClientLike;
-  /** Override the initial pattern. Defaults to an empty 16-step
-   *  pattern with no tracks. */
-  initialPattern?: Pattern;
+  /** Source of truth for pattern state. The controller never
+   *  mutates other slots — only the active one. */
+  bank: PatternBank;
 }
 
 export class SequencerController {
   private readonly clock: ClockLike;
   private readonly dirtClient: DirtClientLike;
+  private readonly bank: PatternBank;
 
-  private readonly _pattern;
   private readonly _transport;
   private readonly schedulerState: SchedulerState;
   private wakeTimer: number | null = null;
@@ -79,14 +85,18 @@ export class SequencerController {
   constructor(opts: SequencerControllerOptions) {
     this.clock = opts.clock;
     this.dirtClient = opts.dirtClient;
-    this._pattern = createStore<Pattern>(opts.initialPattern ?? makeEmptyPattern());
+    this.bank = opts.bank;
     this._transport = createStore<TransportState>(STOPPED_TRANSPORT);
     this.schedulerState = makeInitialSchedulerState();
   }
 
+  /** Active pattern, sourced from the bank. The reactive store
+   *  fires whenever the user mutates the active slot OR switches
+   *  to a different slot — both flow through the bank's internal
+   *  derivations. */
   readonly pattern: ReadonlyStore<Pattern> = {
-    get: () => this._pattern.get(),
-    subscribe: (cb) => this._pattern.subscribe(cb),
+    get: () => this.bank.activePattern.get(),
+    subscribe: (cb) => this.bank.activePattern.subscribe(cb),
   };
 
   readonly transport: ReadonlyStore<TransportState> = {
@@ -98,7 +108,7 @@ export class SequencerController {
 
   addTrack(sample = ''): void {
     if (this.disposed) return;
-    this._pattern.update((p) => ({
+    this.bank.updateActivePattern((p) => ({
       ...p,
       tracks: [...p.tracks, makeEmptyTrack(p.length, sample)],
     }));
@@ -106,7 +116,7 @@ export class SequencerController {
 
   removeTrack(trackId: string): void {
     if (this.disposed) return;
-    this._pattern.update((p) => ({
+    this.bank.updateActivePattern((p) => ({
       ...p,
       tracks: p.tracks.filter((t) => t.id !== trackId),
     }));
@@ -114,7 +124,7 @@ export class SequencerController {
 
   setTrackSample(trackId: string, sample: string): void {
     if (this.disposed) return;
-    this._pattern.update((p) => ({
+    this.bank.updateActivePattern((p) => ({
       ...p,
       tracks: p.tracks.map((t) => (t.id === trackId ? { ...t, sample } : t)),
     }));
@@ -123,7 +133,7 @@ export class SequencerController {
   setTrackGain(trackId: string, gain: number): void {
     if (this.disposed) return;
     const clamped = Math.max(0, Math.min(2, gain));
-    this._pattern.update((p) => ({
+    this.bank.updateActivePattern((p) => ({
       ...p,
       tracks: p.tracks.map((t) => (t.id === trackId ? { ...t, gain: clamped } : t)),
     }));
@@ -131,7 +141,7 @@ export class SequencerController {
 
   toggleStep(trackId: string, stepIndex: number): void {
     if (this.disposed) return;
-    this._pattern.update((p) => ({
+    this.bank.updateActivePattern((p) => ({
       ...p,
       tracks: p.tracks.map((t) => {
         if (t.id !== trackId) return t;
@@ -157,7 +167,7 @@ export class SequencerController {
   ): void {
     if (this.disposed) return;
     if (!Number.isFinite(value)) return;
-    this._pattern.update((p) => ({
+    this.bank.updateActivePattern((p) => ({
       ...p,
       tracks: p.tracks.map((t) => {
         if (t.id !== trackId) return t;
@@ -176,7 +186,7 @@ export class SequencerController {
    *  `stepHasOverrides` short-circuits cleanly). */
   clearStepParam(trackId: string, stepIndex: number, name: ParamName): void {
     if (this.disposed) return;
-    this._pattern.update((p) => ({
+    this.bank.updateActivePattern((p) => ({
       ...p,
       tracks: p.tracks.map((t) => {
         if (t.id !== trackId) return t;
@@ -196,7 +206,7 @@ export class SequencerController {
    *  emits in a row. */
   clearAllStepParams(trackId: string, stepIndex: number): void {
     if (this.disposed) return;
-    this._pattern.update((p) => ({
+    this.bank.updateActivePattern((p) => ({
       ...p,
       tracks: p.tracks.map((t) => {
         if (t.id !== trackId) return t;
@@ -219,7 +229,7 @@ export class SequencerController {
   setTrackDefault(trackId: string, name: ParamName, value: number): void {
     if (this.disposed) return;
     if (!Number.isFinite(value)) return;
-    this._pattern.update((p) => ({
+    this.bank.updateActivePattern((p) => ({
       ...p,
       tracks: p.tracks.map((t) => {
         if (t.id !== trackId) return t;
@@ -231,7 +241,7 @@ export class SequencerController {
   /** Drop a track-level default. */
   clearTrackDefault(trackId: string, name: ParamName): void {
     if (this.disposed) return;
-    this._pattern.update((p) => ({
+    this.bank.updateActivePattern((p) => ({
       ...p,
       tracks: p.tracks.map((t) => {
         if (t.id !== trackId) return t;
@@ -245,7 +255,7 @@ export class SequencerController {
   setBpm(bpm: number): void {
     if (this.disposed) return;
     const clamped = Math.max(30, Math.min(300, Math.round(bpm)));
-    this._pattern.update((p) => ({ ...p, bpm: clamped }));
+    this.bank.updateActivePattern((p) => ({ ...p, bpm: clamped }));
     // Note: stepIntervalTicks is recomputed on every wake-up, so
     // an in-flight pattern adopts the new BPM at the next
     // unscheduled step. No manual reset.
@@ -253,7 +263,7 @@ export class SequencerController {
 
   setLength(length: PatternLength): void {
     if (this.disposed) return;
-    this._pattern.update((p) => {
+    this.bank.updateActivePattern((p) => {
       if (p.length === length) return p;
       return {
         ...p,
@@ -325,7 +335,7 @@ export class SequencerController {
     if (this.disposed) return;
     if (!this._transport.get().isPlaying) return;
     pump(
-      this._pattern.get(),
+      this.bank.activePattern.get(),
       this.clock,
       this.dirtClient,
       this.schedulerState,

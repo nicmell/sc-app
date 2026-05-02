@@ -28,8 +28,8 @@ import { ClockController } from '@/clock/ClockController';
 import { GroupController } from '@/server/GroupController';
 import { IdAllocator } from '@/server/IdAllocator';
 import { ScopeManager } from '@/scope/ScopeManager';
+import { PatternBank } from '@/sequencer/PatternBank';
 import { SequencerController } from '@/sequencer/SequencerController';
-import type { Pattern } from '@/sequencer/types';
 import { ServerErrorBus } from '@/server/ServerErrorBus';
 import { SynthDefRegistry } from '@/server/SynthDefRegistry';
 import { SynthManager } from '@/synth/SynthManager';
@@ -86,10 +86,16 @@ interface DashboardResources {
   dirtClient: DirtClient;
   /** Phase 27 — step sequencer driving SuperDirt via `dirtClient`.
    *  Anchored to `clock.tick0Ms`/`tickRate` for sample-accurate
-   *  scheduling. Fresh per `setupDashboard`; chunkSize re-init
-   *  rebuilds with an empty pattern (Q8 = ii — pattern survival
-   *  across re-init isn't currently a goal). */
+   *  scheduling. Fresh per `setupDashboard`; pattern data lives
+   *  on `bank` (below), which survives re-init. */
   sequencer: SequencerController;
+  /** Phase 27c — 8-slot pattern bank with localStorage
+   *  persistence. Long-lived: created at initial connect (loads
+   *  from localStorage), reused across chunkSize re-init,
+   *  disposed by `handleDisconnect` (which flushes a final save).
+   *  The controller reads `bank.activePattern` and forwards
+   *  mutations through `bank.updateActivePattern(...)`. */
+  bank: PatternBank;
   /** scsynth-assigned clientId from the `/done /notify` reply.
    *  Stashed for the re-init flow so the IdAllocators stay scoped
    *  to the same per-client range. Non-zero when scsynth is shared
@@ -182,6 +188,7 @@ function Dashboard({
       <DirtPanel client={resources.dirtClient} />
       <SequencerPanel
         controller={resources.sequencer}
+        bank={resources.bank}
         dirtClient={resources.dirtClient}
         clockReady={clockState === 'running'}
       />
@@ -237,7 +244,7 @@ async function setupDashboard(
   parentGroupId: number,
   sampleRate: number,
   chunkSize: number,
-  initialPattern?: Pattern,
+  bank: PatternBank,
 ): Promise<DashboardResources> {
   // Phase 26 — scope node/buffer IDs by clientId so we don't collide
   // with sclang+SuperDirt at clientId=0. Bus allocator stays at 32
@@ -321,15 +328,13 @@ async function setupDashboard(
     });
   });
 
-  // Phase 27a: step sequencer. Owns its own pattern + transport
-  // stores; reads tick0Ms/tickRate live from `clock` so BPM
-  // changes mid-pattern don't require a restart. Adapter object
-  // because `ClockController` exposes `tickRate` under `derived`,
-  // while the sequencer's `ClockLike` interface keeps the surface
-  // flat for testability. `initialPattern` is forwarded from the
-  // re-init flow so the user's tracks/steps/BPM survive a
-  // chunkSize change (the controller itself is re-built; only the
-  // pattern data is preserved — playback always restarts at step 0).
+  // Phase 27a/c: step sequencer. Owns transport + wake loop;
+  // pattern state lives on the long-lived `bank`. Reads
+  // tick0Ms/tickRate live from `clock` so BPM changes mid-pattern
+  // don't require a restart. Adapter object because
+  // `ClockController` exposes `tickRate` under `derived`, while
+  // the sequencer's `ClockLike` interface keeps the surface flat
+  // for testability.
   const sequencer = new SequencerController({
     clock: {
       get tick0Ms() {
@@ -340,7 +345,7 @@ async function setupDashboard(
       },
     },
     dirtClient,
-    initialPattern,
+    bank,
   });
 
   // One-shot /version fetch. Informational only — fail open with
@@ -384,6 +389,7 @@ async function setupDashboard(
     errorBus,
     dirtClient,
     sequencer,
+    bank,
   };
 }
 
@@ -598,6 +604,14 @@ export function AppShell() {
       );
     }
 
+    // Phase 27c: construct the pattern bank up here, before
+    // setupDashboard AND before the onError handler so it can
+    // dispose the bank on WS death. Constructor loads from
+    // localStorage; if bring-up fails, the bank is GC'd
+    // untouched (no save happens because nothing has mutated
+    // it yet).
+    const bank = new PatternBank();
+
     // Wire disconnection handler *before* the async bring-up so a
     // mid-bring-up WebSocket error still unwinds cleanly. Runtime
     // errors (post-connect WS death) surface as a modal alert
@@ -607,6 +621,14 @@ export function AppShell() {
     next.onError((message) => {
       if (clientRef.current === next) {
         setRuntimeError(message);
+        // Flush any pending pattern saves before the bank is
+        // dropped — the user may have been editing right up
+        // to the WS death.
+        try {
+          bank.dispose();
+        } catch {
+          /* best effort */
+        }
         next.dispose();
         clientRef.current = null;
         setResources(null);
@@ -621,6 +643,7 @@ export function AppShell() {
         parentGroupId,
         sampleRate,
         DEFAULT_PARAMS.chunkSize,
+        bank,
       );
     } catch (err) {
       console.error('[sc:app] dashboard bring-up failed', err);
@@ -643,6 +666,14 @@ export function AppShell() {
       } catch (err) {
         console.warn('[sc:app] /notify 0 on disconnect failed', err);
       }
+      // Bank only goes away on full disconnect (not on
+      // chunkSize re-init). dispose() flushes a final save —
+      // important if a mutation happened in the last 500 ms.
+      try {
+        current.bank.dispose();
+      } catch (err) {
+        console.warn('[sc:app] bank.dispose failed', err);
+      }
       current.client.dispose();
       clientRef.current = null;
     }
@@ -659,10 +690,13 @@ export function AppShell() {
       if (!current) return;
       setReiniting(true);
       try {
-        // Capture the sequencer pattern BEFORE teardown so the
-        // user's tracks/steps/BPM survive the rebuild. Q8 = ii:
-        // playback always stops on re-init, but the data persists.
-        const survivingPattern = current.sequencer.pattern.get();
+        // Phase 27c: bank is long-lived across re-init (its
+        // reactive stores are still subscribed by anyone holding
+        // the prior `pattern`/`activeIndex` references — they
+        // just won't fire while the controller's torn down).
+        // Pass the same instance through so the user's pattern
+        // bank survives intact; playback restarts at step 0.
+        const bank = current.bank;
         await teardownServerState(current);
         const rebuilt = await setupDashboard(
           current.client,
@@ -670,7 +704,7 @@ export function AppShell() {
           current.parentGroupId,
           current.sampleRate,
           next,
-          survivingPattern,
+          bank,
         );
         setResources(rebuilt);
         setChunkSize(next);
@@ -682,6 +716,11 @@ export function AppShell() {
         // back to the connect screen.
         setRuntimeError(`Reinitialization failed: ${msg}`);
         // Tear down completely — the previous resources are now stale.
+        try {
+          current.bank.dispose();
+        } catch {
+          /* best effort */
+        }
         try {
           current.client.dispose();
         } catch {
@@ -764,7 +803,7 @@ export function AppShell() {
   // for the first 3 s of the session.
   useEffect(() => {
     if (!resources) return;
-    const { client, status: statusStore } = resources;
+    const { client, status: statusStore, bank } = resources;
     const HEARTBEAT_INTERVAL_MS = 3000;
     const HEARTBEAT_TIMEOUT_MS = 2000;
     let cancelled = false;
@@ -791,6 +830,11 @@ export function AppShell() {
           `scsynth stopped responding to /status (${msg}). The ` +
             `dashboard has been torn down.`,
         );
+        try {
+          bank.dispose();
+        } catch {
+          /* best effort */
+        }
         client.dispose();
         clientRef.current = null;
         setResources(null);
