@@ -26,6 +26,7 @@ use axum::routing::get;
 use axum::Router;
 use serde::Deserialize;
 use tokio::net::TcpListener;
+use uuid::Uuid;
 
 mod api;
 mod routing;
@@ -45,9 +46,19 @@ pub(crate) struct AppState {
 
 #[derive(Deserialize)]
 struct WsQuery {
-    /// Per-connection override for the default route's target —
-    /// preserves the pre-Phase-26 `?scsynth=` semantics.
+    /// Phase 26 legacy: per-connection override for the default
+    /// route's target. The bridge opens its own per-WS UDP
+    /// sockets and runs its own `/notify 1` handshake. Coexists
+    /// with `?session=` during the 29b/29c transition; once the
+    /// frontend always supplies `?session=`, this path will be
+    /// removed.
     scsynth: Option<String>,
+    /// Phase 29: identifier for a bridge-managed Session minted
+    /// via `POST /api/session`. The WS attaches to that
+    /// Session's pre-bound UDP sockets and broadcast channels.
+    /// Mutually exclusive with `?scsynth=` in practice — if
+    /// both are supplied, `session` wins.
+    session: Option<Uuid>,
 }
 
 /// Bind the TCP listener loopback-only on `port`. Returns the listener
@@ -120,9 +131,28 @@ async fn ws_handler(
     State(state): State<AppState>,
     Query(query): Query<WsQuery>,
 ) -> Result<Response, (StatusCode, String)> {
-    // Per-WS routing table: clone the global, optionally override
-    // the default with the `?scsynth=` query param. The other routes
-    // (e.g. `/dirt`) keep their globally-configured targets.
+    // Phase 29 path: ?session=<uuid> attaches to a pre-existing
+    // Session minted via POST /api/session. Sockets, broadcasts,
+    // and the scsynth /notify subscription all live on the
+    // Session — the WS is just a forwarder.
+    if let Some(session_id) = query.session {
+        let Some(session) = state.sessions.get_and_touch(&session_id).await else {
+            return Err((
+                StatusCode::NOT_FOUND,
+                format!("session {session_id} not found (expired or never existed)"),
+            ));
+        };
+        return Ok(ws.on_upgrade(move |socket| async move {
+            if let Err(e) = ws_bridge::handle_ws_session(socket, session).await {
+                tracing::warn!(error = %e, "ws_bridge session-path error");
+            }
+        }));
+    }
+
+    // Phase 26 legacy path: per-WS routing table, ?scsynth=
+    // override, per-WS UDP sockets, per-WS notify handshake.
+    // Stays alive for the 29b → 29c transition; goes away when
+    // the frontend always supplies ?session=.
     let mut routes = (*state.routes).clone();
     if let Some(raw) = query.scsynth.as_deref() {
         let addr = raw.parse::<SocketAddr>().map_err(|e| {
@@ -136,7 +166,7 @@ async fn ws_handler(
 
     Ok(ws.on_upgrade(move |socket| async move {
         if let Err(e) = ws_bridge::handle_ws(socket, routes).await {
-            tracing::warn!(error = %e, "ws_bridge session error");
+            tracing::warn!(error = %e, "ws_bridge legacy-path error");
         }
     }))
 }

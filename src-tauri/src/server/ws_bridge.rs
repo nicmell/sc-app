@@ -46,13 +46,15 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use axum::extract::ws::{Message, WebSocket};
-use futures_util::stream::StreamExt;
+use futures_util::stream::{SplitSink, StreamExt};
 use futures_util::SinkExt;
 use tokio::net::UdpSocket;
+use tokio::sync::broadcast;
 use tokio::sync::Mutex as TokioMutex;
 use tokio::task::JoinHandle;
 
 use super::routing::{peek_osc_address, RoutingTable};
+use super::session::Session;
 use super::ws_cleanup::WsCleanup;
 
 /// Bridge a single WebSocket session against a routing table.
@@ -175,4 +177,131 @@ pub async fn handle_ws(ws: WebSocket, routes: RoutingTable) -> Result<()> {
     drop(sockets); // make explicit that we're done with the bound ports
     drop(tx);      // close the WS sink Arc — last reference dropped here
     Ok(())
+}
+
+/// Phase 29b — bridge a WebSocket against an existing
+/// [`Session`]'s pre-bound UDP sockets.
+///
+/// Differs from [`handle_ws`] (the Phase 26 legacy path) in two
+/// ways:
+/// 1. **No socket binding here.** The Session bound its sockets
+///    + ran `/notify 1` + `/status` at HTTP-level creation time;
+///    this WS just attaches as a forwarder. The session's UDP
+///    sockets outlive the WS — multiple WS may attach over the
+///    session's lifetime.
+/// 2. **No bridge-side cleanup on WS close.** Cleanup runs at
+///    Session end (DELETE or TTL — see `Session::cleanup`).
+///    Closing the WS only aborts the per-WS forwarder tasks.
+///
+/// Inbound replies fan out via `broadcast::Sender` per target —
+/// each WS subscribes once per target and forwards to its sink.
+/// `RecvError::Lagged(n)` fires a warning and continues; this is
+/// the trapdoor for a slow consumer to lose messages, but at our
+/// throughput + 4096-deep buffer we'd need to be in the seconds-
+/// of-stalled-IO range before it bites.
+pub async fn handle_ws_session(ws: WebSocket, session: Arc<Session>) -> Result<()> {
+    let (tx, mut rx) = ws.split();
+    let tx = Arc::new(TokioMutex::new(tx));
+
+    // Subscribe to each target's broadcast channel and spawn a
+    // forwarder task per channel. Each forwarder reads one
+    // payload at a time and writes it to the WS sink.
+    let mut forwarder_tasks: Vec<JoinHandle<()>> = Vec::new();
+    for (target, sender) in session.broadcast_senders.iter() {
+        let receiver = sender.subscribe();
+        let target = *target;
+        let tx_clone = tx.clone();
+        let task = tokio::spawn(forward_broadcast(receiver, tx_clone, target));
+        forwarder_tasks.push(task);
+    }
+
+    // WS → UDP loop. Per binary frame:
+    //   1. Peek the OSC address (None ⇒ default route).
+    //   2. session.routes.route_for(addr) → SocketAddr.
+    //   3. Look up the matching pre-bound socket on the session.
+    //   4. Send.
+    while let Some(msg) = rx.next().await {
+        match msg {
+            Ok(Message::Binary(bytes)) => {
+                let target = match peek_osc_address(&bytes) {
+                    Some(addr) => session.routes.route_for(addr),
+                    None => session.scsynth_addr,
+                };
+                let Some(sock) = session.target_sockets.get(&target) else {
+                    tracing::warn!(
+                        ?target,
+                        session_id = %session.session_id,
+                        "no socket for routed target on session; dropping packet"
+                    );
+                    continue;
+                };
+                if let Err(e) = sock.send(&bytes).await {
+                    tracing::warn!(
+                        error = %e,
+                        ?target,
+                        session_id = %session.session_id,
+                        "udp send error on session socket"
+                    );
+                    break;
+                }
+            }
+            Ok(Message::Close(_)) => break,
+            Ok(_) => {} // ignore text / ping / pong
+            Err(e) => {
+                tracing::warn!(error = %e, "ws recv error (session path)");
+                break;
+            }
+        }
+    }
+
+    // Abort forwarders so they don't keep the broadcast
+    // subscriptions alive after the WS sink closes.
+    for task in &forwarder_tasks {
+        task.abort();
+    }
+
+    // Don't run any session cleanup here. Sessions outlive the
+    // WS by design — DELETE /api/session/:id or the future TTL
+    // job (29d) calls `Session::cleanup`.
+    drop(tx);
+    Ok(())
+}
+
+/// Per-target forwarder task body. Pulls payloads off the
+/// session's broadcast channel and pushes each to the WS sink.
+/// `Lagged` warns + continues; `Closed` (sender gone — Session
+/// dropped) breaks cleanly.
+async fn forward_broadcast(
+    mut receiver: broadcast::Receiver<Vec<u8>>,
+    tx: Arc<TokioMutex<SplitSink<WebSocket, Message>>>,
+    target: SocketAddr,
+) {
+    loop {
+        match receiver.recv().await {
+            Ok(payload) => {
+                let mut tx_guard = tx.lock().await;
+                if let Err(e) = tx_guard.send(Message::Binary(payload.into())).await {
+                    tracing::debug!(
+                        error = %e,
+                        ?target,
+                        "ws send error from session forwarder (probably closed)"
+                    );
+                    break;
+                }
+            }
+            Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                tracing::warn!(
+                    skipped,
+                    ?target,
+                    "session forwarder lagged; some replies dropped"
+                );
+                // Continue — broadcast::Receiver auto-recovers.
+            }
+            Err(broadcast::error::RecvError::Closed) => {
+                // Session dropped; the recv-broadcast task already
+                // exited, no more bytes coming.
+                break;
+            }
+        }
+    }
 }

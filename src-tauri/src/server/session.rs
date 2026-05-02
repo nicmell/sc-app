@@ -48,11 +48,19 @@ use anyhow::{anyhow, bail, Context, Result};
 use rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType};
 use serde::Serialize;
 use tokio::net::UdpSocket;
-use tokio::sync::RwLock;
+use tokio::sync::{broadcast, RwLock};
+use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use uuid::Uuid;
 
 use super::routing::RoutingTable;
+
+/// Capacity of each per-socket broadcast channel — how many UDP
+/// payloads we'll queue when no WS is currently subscribed (or a
+/// subscriber is briefly slow). 4096 at the steady ~48 Hz tick
+/// rate is ~85 s of buffer, comfortably more than any realistic
+/// WS-attach gap.
+const BROADCAST_CAPACITY: usize = 4096;
 
 /// Notify round-trip ceiling. scsynth replies in milliseconds on
 /// loopback; 2 seconds is generous against pathological GC pauses
@@ -79,14 +87,23 @@ pub struct Session {
     /// The default-route UDP socket — the one connected to
     /// scsynth. Bound at session creation, kept alive for the
     /// session's lifetime so the `/notify` subscription persists
-    /// across WS reconnects within TTL.
+    /// across WS reconnects within TTL. Same `Arc` as the entry
+    /// in `target_sockets[scsynth_addr]`.
     pub scsynth_socket: Arc<UdpSocket>,
     /// Per-route-target UDP sockets, indexed by target address.
-    /// Includes the default route's socket (same `Arc` as
-    /// `scsynth_socket`). Phase 29a: populated but not yet read
-    /// from. Phase 29b: ws_bridge attaches WS recv tasks to these.
-    #[allow(dead_code)] // 29b reads from these.
+    /// Each one has a broadcast recv task running against it
+    /// (see `broadcast_senders`).
     pub target_sockets: HashMap<SocketAddr, Arc<UdpSocket>>,
+    /// Per-target broadcast channels. The recv task for each
+    /// `target_sockets[addr]` reads UDP datagrams and pushes
+    /// payloads onto `broadcast_senders[addr]`. Each WS that
+    /// attaches to this Session subscribes once per target.
+    pub broadcast_senders: HashMap<SocketAddr, broadcast::Sender<Vec<u8>>>,
+    /// Routing table the session was created with. Frozen at
+    /// creation time — `?scsynth=` per-WS overrides aren't
+    /// supported on session-attached WS (the user picks the
+    /// scsynth address at session-creation time, not per-WS).
+    pub routes: Arc<RoutingTable>,
     pub scsynth_addr: SocketAddr,
     pub client_id: i32,
     pub sample_rate: u32,
@@ -94,16 +111,27 @@ pub struct Session {
     #[allow(dead_code)] // 29d uses this for the TTL job's cold-start log line.
     pub created_at: Instant,
     pub last_active: RwLock<Instant>,
+    /// Per-target recv-broadcast task handles. Aborted by
+    /// `cleanup` BEFORE sending the teardown bundle so the
+    /// /fail replies it provokes don't get fanned out to
+    /// (now-detached) WS connections.
+    recv_tasks: Vec<JoinHandle<()>>,
 }
 
 impl Session {
     /// Mint a new session: open one UDP socket per unique route
     /// target, send `/notify 1` to scsynth and capture the
     /// `clientId` from `/done /notify`, send `/status` and capture
-    /// `nominalSampleRate` from `/status.reply`. Errors propagate
-    /// up to the HTTP handler, which renders them to the
-    /// frontend's recovery surface.
-    pub async fn create(routes: &RoutingTable) -> Result<Self> {
+    /// `nominalSampleRate` from `/status.reply`, then spawn one
+    /// recv-broadcast task per socket. Errors propagate up to
+    /// the HTTP handler, which renders them to the frontend's
+    /// recovery surface.
+    ///
+    /// Ordering matters: the handshake recvs the replies
+    /// EXCLUSIVELY (no broadcast tasks running yet). Once both
+    /// handshakes complete, the broadcast tasks take over and
+    /// own all subsequent reads.
+    pub async fn create(routes: Arc<RoutingTable>) -> Result<Self> {
         let default_addr = routes.default_target();
         let unique_targets = routes.unique_targets();
 
@@ -139,6 +167,44 @@ impl Session {
         // Round-trip 2: /status → /status.reply (nominalSampleRate).
         let sample_rate = status_handshake(&scsynth_socket).await?;
 
+        // Phase 29b: spawn one recv-broadcast task per target
+        // socket. Each task reads UDP datagrams and broadcasts
+        // them on a per-target channel; WS connections that
+        // later attach to the session subscribe to consume.
+        let mut broadcast_senders: HashMap<SocketAddr, broadcast::Sender<Vec<u8>>> =
+            HashMap::new();
+        let mut recv_tasks: Vec<JoinHandle<()>> = Vec::new();
+        for (target, sock) in &target_sockets {
+            let (tx, _initial_rx) = broadcast::channel::<Vec<u8>>(BROADCAST_CAPACITY);
+            broadcast_senders.insert(*target, tx.clone());
+            let sock = sock.clone();
+            let target = *target;
+            let task = tokio::spawn(async move {
+                let mut buf = vec![0u8; 65_536];
+                loop {
+                    match sock.recv(&mut buf).await {
+                        Ok(n) => {
+                            // `send` returns Err(SendError(_)) if
+                            // there are no live receivers — that's
+                            // fine, we just drop and keep going.
+                            // It does NOT block on a full buffer;
+                            // slow consumers see Lagged on recv.
+                            let _ = tx.send(buf[..n].to_vec());
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                error = %e,
+                                ?target,
+                                "session udp recv error; broadcast task exiting"
+                            );
+                            break;
+                        }
+                    }
+                }
+            });
+            recv_tasks.push(task);
+        }
+
         let session_id = Uuid::new_v4();
         let now = Instant::now();
         tracing::info!(
@@ -153,12 +219,15 @@ impl Session {
             session_id,
             scsynth_socket,
             target_sockets,
+            broadcast_senders,
+            routes,
             scsynth_addr: default_addr,
             client_id,
             sample_rate,
             parent_group_id,
             created_at: now,
             last_active: RwLock::new(now),
+            recv_tasks,
         })
     }
 
@@ -174,7 +243,16 @@ impl Session {
     /// `Arc<Session>` goes out of scope. Best-effort — scsynth may
     /// already be dead, UDP doesn't error on send-to-nothing, and
     /// we never read the reply.
+    ///
+    /// Aborts the recv-broadcast tasks BEFORE sending the cleanup
+    /// bundle so the `/fail` replies it provokes (if scsynth's
+    /// state is already inconsistent) don't get fanned out to
+    /// any WS still attached. Same ordering rationale as the
+    /// pre-29 `ws_bridge` cleanup tail.
     pub async fn cleanup(&self) {
+        for task in &self.recv_tasks {
+            task.abort();
+        }
         if let Err(e) = send_cleanup(&self.scsynth_socket, self.parent_group_id).await {
             tracing::warn!(
                 session_id = %self.session_id,

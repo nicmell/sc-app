@@ -49,7 +49,7 @@ fn error_response(status: StatusCode, message: impl Into<String>) -> Response {
 /// info. Body is ignored (reserved for future fields like a
 /// returning client_id hint).
 pub async fn post_session(State(state): State<AppState>) -> Response {
-    let session = match Session::create(&state.routes).await {
+    let session = match Session::create(state.routes.clone()).await {
         Ok(s) => Arc::new(s),
         Err(e) => {
             tracing::warn!(error = ?e, "POST /api/session failed");
