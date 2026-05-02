@@ -9,12 +9,12 @@ installDebugLog();
 
 import { AppShell } from './AppShell';
 
-// @sc-app/ui-foundation is loaded BEFORE styles.scss so the
-// existing dark-theme rules in styles.scss can override / extend
-// the foundation defaults during the gradual migration. By the
-// end of Phase 28 styles.scss is gone and this is the only entry.
+// @sc-app/ui-foundation provides design tokens, base element
+// styles, and semantic component classes. ./app.css adds the
+// thin app-level layout chrome on top (dashboard-shell,
+// chunk-size-picker). Per-panel CSS is imported by each panel.
 import '@sc-app/ui-foundation';
-import './styles.scss';
+import './app.css';
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>

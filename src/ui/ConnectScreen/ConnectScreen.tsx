@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import './ConnectScreen.scss';
+import './ConnectScreen.css';
 
 const ADDRESS_REGEXP = /^([^\s:]+):(\d{1,5})$/;
 

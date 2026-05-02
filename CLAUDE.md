@@ -356,32 +356,34 @@ When working on a phase:
    `plan.md` of the moved content, and (if relevant) update
    the "Current phase progress" line below.
 
-Current phase progress: **Phase 28 in flight (28a–d shipped,
-28e–f pending) — Shared UI foundation package.** Goal: pull
-design tokens + base element styles + semantic component
-classes out of the React app into `@sc-app/ui-foundation`, a
-framework-agnostic CSS package shared between the React host
-(today) and future runtime HTML plugins (light DOM, inheriting
-via the global cascade). 28a scaffolded the package + PostCSS
-build pipeline (`dist/index.css` for plugin runtime). 28b
-filled `tokens/semantic.css` + `themes/dark.css` (full
+Current phase progress: **Phase 28 shipped — Shared UI foundation
+package.** Six sub-phases delivered the package + per-panel
+migration end-to-end. 28a scaffolded `packages/ui-foundation/`
++ the PostCSS build (postcss-import + autoprefixer →
+`dist/index.css` for plugin runtime). 28b filled
+`tokens/semantic.css` + `themes/dark.css` with the full
 `--color-*` / `--space-*` / `--radius-*` / `--font-*` /
-`--shadow-*` vocabulary, including the 9 hardcoded hexes
-promoted to `--color-tx`, `--color-rx`, `--color-log-*`,
-`--color-overlay`) plus `reset.css` + `base/elements.css` +
-`base/typography.css`, with `demo.html` as the regression
-gate. 28c proved the reference Button via ConnectScreen —
-its submit button is now plain `<button type="submit">…</button>`
-picking up styling from the foundation. 28d filled the
-component primitive classes (`.panel`, `.cluster`, `.stack`,
-`.status-pill[data-variant=…]`, `.badge`, `.range-field`,
-`.empty`, `.error`, `.modal*`). Per-panel SCSS still shadows
-the foundation in the running app — 28e migrates each panel
-one commit at a time (12 panels in priority order, smallest
-first); 28f closes Phase 28 by deleting `src/styles.scss`,
-removing `sass` from devDependencies, and moving the
-consolidated entry to `docs/history.md`. See `plan.md` for
-the panel order + acceptance criteria.
+`--shadow-*` vocabulary (including 9 hexes promoted to
+`--color-tx`, `--color-rx`, `--color-log-*`, `--color-overlay`)
+plus `reset.css` + `base/elements.css` + `base/typography.css`,
+with `demo.html` as the regression gate. 28c established the
+reference Button by routing ConnectScreen's submit button
+through `<button type="submit">…</button>` only. 28d filled
+the component primitive classes (`.panel`, `.cluster`,
+`.stack`, `.status-pill[data-variant=…]`, `.badge`,
+`.range-field`, `.empty`, `.error`, `.modal*`). 28e migrated
+12 panels in 12 commits (Footer → dashboard-shell header →
+ScopeList → ScopeView → ClockPanel → SynthsPanel → Modal →
+DebugLog → OscConsole → RecordingPanel → DirtPanel →
+SequencerPanel) — each panel's `.scss` deleted, all colour /
+spacing / radius / typography references re-routed through
+foundation tokens, button variants via `data-variant` /
+`data-size` attributes. 28f closed by deleting
+`src/styles.scss` (a thin `src/app.css` retains the
+dashboard-shell + chunk-size-picker layout), dropping `sass`
+from devDependencies, and moving the consolidated entry to
+`docs/history.md`. See `docs/history.md` Phase 28 for the
+full write-up.
 
 Phase 27 shipped — Step Sequencer for SuperDirt. Four
 sub-phases delivered the panel end-to-end (27a MVP grid, 27b

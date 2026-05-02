@@ -45,6 +45,7 @@ is the cleaner read.
 - [Phase 25 — Bundle & Dev Workflow Refresh](#phase-25--bundle--dev-workflow-refresh)
 - [Phase 26 — SuperDirt via Bridge-Internal OSC Router](#phase-26--superdirt-via-bridge-internal-osc-router)
 - [Phase 27 — Step Sequencer for SuperDirt](#phase-27--step-sequencer-for-superdirt)
+- [Phase 28 — Shared UI Foundation Package](#phase-28--shared-ui-foundation-package)
 
 ---
 
@@ -1698,3 +1699,250 @@ across four sub-phases: 27a (MVP grid), 27b (per-step parameters),
   mode off). The store fires on every transition during
   chain playback, so the highlighted entry tracks live —
   no UI-side debouncing needed.
+
+---
+
+## Phase 28 — Shared UI Foundation Package
+
+**Goal.** Extract design tokens + base element styles + a small
+set of semantic component classes from the React app into
+`packages/ui-foundation/` (`@sc-app/ui-foundation`), a
+framework-agnostic CSS-only package. Same stylesheet consumed by
+the React host (today) and future runtime HTML plugins (light
+DOM, inheriting via the global cascade) — plugins write plain
+semantic HTML with `data-*` variants and pick up the host's
+palette without bundling their own design system. Plain CSS, no
+Sass, no Tailwind. Six sub-phases delivered the package + the
+panel-by-panel migration; closes by deleting `src/styles.scss`
++ removing the `sass` devDep.
+
+### What shipped
+
+*28a — Scaffold + build pipeline (commit be38902).*
+- `packages/ui-foundation/` workspace package. `package.json`
+  exposes `.`, `./dist`, `./reset`, `./tokens`, `./themes/dark`,
+  `./themes/light` exports.
+- Open Props installed as the primitive token source
+  (`open-props/open-props.min.css` — the package's `style`-key
+  doesn't auto-resolve through `@import`, so the explicit path).
+- PostCSS pipeline (`postcss-import` + `autoprefixer`) builds
+  `dist/index.css`. `dist/` is gitignored; `yarn build` from
+  the package dir regenerates.
+- `src/index.css` with the @import cascade (tokens → theme →
+  reset → base → components); each leaf shipped as a stub
+  comment so the chain resolved cleanly.
+- App-side wiring: workspace dep added to root `package.json`,
+  Vite alias + `tsconfig.json` path, single
+  `import '@sc-app/ui-foundation';` in `src/main.tsx` ordered
+  BEFORE the legacy `styles.scss` so the dark theme could
+  shadow the foundation during the gradual migration.
+
+*28b — Tokens + reset + base elements (commit 9ce63f7).*
+- `tokens/semantic.css` — non-colour vocabulary
+  (theme-independent): `--space-3xs..2xl` (8 stops),
+  `--radius-xs..pill` (5 stops), `--font-mono` / `--font-sans`,
+  `--font-size-xs..xl`, `--line-height-{tight,normal}`,
+  `--font-weight-*`, `--shadow-{sm,md,lg}` mapped to Open
+  Props, `--layout-max-width`, `--transition-{fast,base}`.
+- `themes/dark.css` — full `--color-*` palette ported from
+  `src/styles.scss`. Promoted 9 hardcoded hexes that had
+  escaped per-panel SCSS (OscConsole, DebugLog, ScopeView)
+  into semantic tokens: `--color-tx`, `--color-rx`,
+  `--color-log-{info,warn,error}`, `--color-overlay`.
+- `themes/light.css` — placeholder; ships dark only.
+- `reset.css` — minimal: box-sizing border-box + form elements
+  inherit font/colour. html/body live in `base/elements.css`.
+- `base/typography.css` — html font defaults, h1-h6, code/pre,
+  links.
+- `base/elements.css` — body, button (with
+  `data-variant="secondary|ghost|danger"` + `data-size="sm"`),
+  input/select/textarea/range, checkbox/radio with
+  accent-color, number-input spinner suppression, label,
+  details/summary.
+- `demo.html` — self-contained validation page rendering every
+  base element + variant against `./dist/index.css`. README
+  documents this as the regression gate.
+
+*28c — Reference component (commit deb9aa4).*
+- ConnectScreen submit button refactored to plain
+  `<button type="submit">…</button>` (no className), picking up
+  styling from the foundation. Local button rule deleted from
+  ConnectScreen.scss.
+- Footer was named alongside ConnectScreen in the original plan
+  but has no buttons (pure status display) — reference test
+  runs through ConnectScreen alone.
+
+*28d — Primitive component classes (commit dd2d696).*
+- Filled `components/{panel,cluster,stack,status-pill,badge,
+  range-field,empty-state,error-alert,modal}.css`.
+- `.panel` + `.panel > header` (replaces global `.panel` chrome
+  in `src/styles.scss`).
+- `.cluster` + `.stack` flex layout primitives with
+  `data-gap="sm|md|lg"`.
+- `.status-pill[data-variant="ok|warn|error|info|muted"]`
+  consolidates the per-panel `.pill` / `.status-pill` /
+  `.state-pill` variants.
+- `.badge[data-variant="ok|warn|error"]` for the
+  dashboard-shell connection indicator.
+- `.range-field` + `.range-field-value` for label + slider +
+  monospace value layout.
+- `.empty` / `.error` placeholders.
+- `.modal-backdrop` + `.modal` + `.modal-{title,body,actions,
+  progress}` with the `@keyframes modal-progress-slide`
+  shipped in the same file.
+- demo.html extended with sections for each primitive.
+
+*28e — Per-panel migration (commits 5cc0766 → 34a122e, one
+panel per commit, smallest-first).*
+- 28e/1 Footer → tokens, drop dead `status` className.
+- 28e/2 dashboard-shell header → `.cluster` + `.badge` +
+  `<button data-variant="ghost">` Disconnect; the entire
+  `.dashboard-shell > header` block deleted from
+  `src/styles.scss`.
+- 28e/3 ScopeList → `.cluster` toolbar, button data-variants;
+  ~80 → 50 lines.
+- 28e/4 ScopeView → zoom buttons become
+  `data-variant="secondary" data-size="sm"`, overlay text
+  uses `--color-overlay`, `rgba(21,23,27,0.8)` becomes
+  `color-mix(in srgb, --color-surface-2 80%, transparent)`.
+- 28e/5 ClockPanel → status pill becomes
+  `<span className="status-pill" data-variant={…}>` (running
+  → ok, paused → warn, stopped → muted); Reset button gets
+  `data-variant="secondary"`; tick-flash dot uses
+  `color-mix()` for the green halo.
+- 28e/6 SynthsPanel → first production use of
+  foundation .range-field; `<span className="range-value">`
+  renamed to `range-field-value` to match the foundation's
+  child contract.
+- 28e/7 Modal → Modal.scss deleted entirely; foundation has
+  identical class names. Cancel = `data-variant="secondary"`,
+  Confirm = `data-variant={variant === 'danger' ? 'danger' :
+  undefined}`.
+- 28e/8 DebugLog → log-level colours flushed to
+  `--color-log-{info,warn,error}`; rgba backdrop +
+  errors-section bg use `color-mix()`.
+- 28e/9 OscConsole → `--color-tx` / `--color-rx`; quick-action
+  buttons become `data-variant="secondary" data-size="sm"`.
+- 28e/10 RecordingPanel → StatePill maps state →
+  `.status-pill[data-variant=…]` (recording=ok, preparing/
+  finalizing=warn, done=info, error=error, idle=muted);
+  `.window-selector` segmented button group kept local;
+  live-button overlay uses `color-mix()` against
+  `--color-primary`.
+- 28e/11 DirtPanel → status-pill via `data-variant`;
+  `dirt-pulse` keyframe renamed `dirt-panel-dot-pulse` and
+  scoped to `.status-pill .dot.pulse`; class set when
+  `status === 'probing'`.
+- 28e/12 SequencerPanel (largest) → 672 → 370 lines, all
+  bespoke layouts (.bank-slot, .step-cell, .chain-entry,
+  .step-popover-clear, etc.) keep their local styling but
+  consume foundation tokens. Hover rules add `:not(:disabled)`
+  for specificity parity (class+:hover:not = (0,3,0) beats
+  foundation `button:hover:not(:disabled)` = (0,2,1)).
+  Stop/Play toggle becomes
+  `<button data-variant={isPlaying ? 'danger' : undefined}>`.
+
+*28f — Cleanup + parent close (this commit).*
+- `src/styles.scss` deleted entirely.
+- Two app-level layout rules (`.dashboard-shell`,
+  `.chunk-size-picker`) moved to a new `src/app.css` —
+  imported once at `src/main.tsx` after the foundation.
+- `sass` removed from devDependencies; yarn lockfile
+  regenerated.
+- ConnectScreen.scss → ConnectScreen.css (the file 28c
+  trimmed but didn't fully migrate; this commit finishes it).
+- CLAUDE.md "Current phase progress" updated; arch diagram
+  + "Workspace layout" + "Styling" convention bullet were
+  added in earlier 28d-era doc commit (4166a39).
+- This entry written; `plan.md` Phase 28 section trimmed to
+  zero.
+
+### Decisions
+
+- **Open Props as the primitive source, not Tailwind.** A
+  Tailwind config could mirror the same vocabulary, but
+  Tailwind locks consumers into JS toolchain semantics
+  (`@apply`, content scanning, etc.). The plugin scenario
+  loads CSS at runtime — Open Props' pure-CSS variables
+  cascade naturally into plugin HTML without a build step.
+  Future plugin authors get the full primitive vocabulary
+  (`--gray-N`, `--size-N`, etc.) for free even if they
+  prefer to bypass our semantic layer.
+- **Semantic tokens are the public API; primitives are not.**
+  The README documents `--color-*` / `--space-*` /
+  `--radius-*` etc. as stable contracts; Open Props is the
+  current backing source but replaceable. Renaming a
+  semantic token is a breaking change.
+- **`data-*` for variants over class composition.** A
+  plugin's HTML reads `<button data-variant="danger">` more
+  naturally than `<button class="btn btn--danger">`. Easier
+  for plugins not using a CSS-in-JS toolchain. Also matches
+  modern web-component conventions.
+- **Light DOM cascade, not shadow DOM.** Plugins are
+  trusted; sandbox isn't a goal. The cascade reach is the
+  whole point. Constraints that follow: avoid overly-specific
+  selectors (`body .panel input` chains), prefer single-class
+  selectors, document `data-*` contracts in the README.
+- **One commit per panel migration in 28e.** A 12-panel
+  big-bang would have produced one ungreppable diff. Per-panel
+  commits make `git bisect` useful if a regression turns up
+  in a specific panel; each commit's CSS delta is small enough
+  to read end-to-end.
+- **Bespoke buttons keep their local class instead of moving
+  to data-variant.** Some panel buttons (.bank-slot,
+  .step-cell, .step-popover-clear, .chain-entry-remove) are
+  visually distinct enough that wrapping them in a foundation
+  variant + N overrides would be more code than just keeping
+  the local class. Local class + foundation tokens for colours
+  was the right cut.
+- **Specificity dance with `:not(:disabled)`.** Foundation's
+  `button:hover:not(:disabled)` has specificity (0, 2, 1)
+  which beats local `.foo:hover` at (0, 2, 0). Local rules
+  add `:not(:disabled)` to bump to (0, 3, 0) and win. The
+  alternative (lift specificity via `button.foo:hover` or
+  attribute selectors) was uglier; the not-disabled
+  qualifier is also semantically correct (the local hover
+  shouldn't fire on disabled buttons anyway).
+
+### Gotchas worth carrying forward
+
+- **`open-props/open-props.min.css` is the right import
+  path.** Open Props' `package.json` has a `style: "open-
+  props.min.css"` field but `postcss-import` doesn't
+  consult it — `@import "open-props/style"` fails. Always
+  use the explicit `open-props/open-props.min.css`.
+- **`color-mix(in srgb, var(--token) X%, transparent)` over
+  rgba() literals.** Where the alpha needs to come from a
+  themed colour, `color-mix()` keeps the source-of-truth
+  in tokens. Lightning CSS in Vite handles it natively.
+- **Foundation rules apply globally; per-panel CSS shadows.**
+  A bare `<button>` anywhere in the app picks up the
+  foundation's primary styling. Panels with bespoke button
+  classes still need to override (or accept) — no
+  surprise-reset by default. New panels should use foundation
+  defaults + data-* attributes wherever possible.
+- **`textarea` defaults to sans, every other input to mono.**
+  Foundation's `base/elements.css` makes this choice. If a
+  textarea needs mono (debug log entry, code editor),
+  override locally. Most current uses are happy with the
+  default.
+- **`yarn build` in the package only matters for plugin
+  runtime.** App dev / build go through Vite's @import
+  resolution against `src/index.css`; `dist/index.css` is
+  only needed when a future plugin loader reaches for a
+  single bundled file. CI doesn't need to build the package
+  unless we add a plugin runtime test.
+- **Modal action buttons use `data-variant`, not local
+  className overrides.** The previous Modal.scss had its
+  own `.modal-actions button.primary` / `.danger` rules.
+  Now ConfirmModal renders `<button data-variant="danger">`
+  and the foundation handles it. If a future modal needs a
+  visually-distinct button (e.g. a "destructive" stripe
+  along the top of the card), prefer adding a
+  `data-variant` to `.modal` itself rather than reaching
+  back into per-button styling.
+- **Sass is gone from devDependencies.** Don't reintroduce
+  it for a single panel that "would be more readable with
+  nesting". Modern CSS nesting (Lightning CSS in Vite)
+  supports `&` natively if you really want it; otherwise
+  flat selectors are fine and grep cleanly.

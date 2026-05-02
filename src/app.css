@@ -1,0 +1,38 @@
+/**
+ * App-level layout. Anything that's structural to the AppShell
+ * but isn't a panel-local concern AND isn't reusable enough to
+ * earn a foundation primitive lives here.
+ *
+ * After Phase 28f this is the only project-owned global
+ * stylesheet outside per-panel CSS files; the host imports
+ * @sc-app/ui-foundation first (tokens + reset + base elements +
+ * primitive classes) then this file at app entry.
+ */
+
+/* Dashboard container — single max-width column with consistent
+   gap between panels. */
+.dashboard-shell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  margin: 0 auto;
+  max-width: var(--layout-max-width);
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+/* chunk-size picker in the dashboard header — a small
+   inline-flex utility that pushes itself + downstream items
+   (the Disconnect button) to the right via margin-left:auto.
+   Lives at app level because the same .badge / button / select
+   primitives are used here and inside individual panels; only
+   the layout glue is app-specific. */
+.chunk-size-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  margin-left: auto;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-dim);
+}
