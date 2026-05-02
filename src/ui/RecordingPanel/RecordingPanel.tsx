@@ -11,7 +11,7 @@ import type {
 import type { RecordingManager } from '@/recording/RecordingManager';
 import type { ClockController } from '@/clock/ClockController';
 import { RecordingWaveformView } from './RecordingWaveformView';
-import './RecordingPanel.scss';
+import './RecordingPanel.css';
 
 type Channels = number;
 
@@ -85,7 +85,7 @@ export function RecordingPanel({
   return (
     <section className="panel recording-panel">
       <header>Recordings</header>
-      <div className="row toolbar">
+      <div className="cluster">
         <label>
           bus&nbsp;
           <input
@@ -126,7 +126,7 @@ export function RecordingPanel({
         </button>
         <button
           type="button"
-          className="danger"
+          data-variant="danger"
           onClick={onStopAll}
           disabled={busy || !anyActive}
         >
@@ -260,7 +260,8 @@ function RecordingItem({
           {(state === 'recording' || state === 'preparing') && (
             <button
               type="button"
-              className="danger small"
+              data-variant="danger"
+              data-size="sm"
               onClick={() => void onStop()}
               disabled={busy || state === 'preparing'}
             >
@@ -271,7 +272,7 @@ function RecordingItem({
             <>
               <button
                 type="button"
-                className="small"
+                data-size="sm"
                 onClick={() => void onDownloadWav()}
                 title={`Download ${result.suggestedFilename}.wav`}
               >
@@ -280,7 +281,8 @@ function RecordingItem({
               {result.gapsBlob && (
                 <button
                   type="button"
-                  className="secondary small"
+                  data-variant="secondary"
+                  data-size="sm"
                   onClick={() => void onDownloadGaps()}
                   title="Download the gaps sidecar JSON"
                 >
@@ -289,7 +291,8 @@ function RecordingItem({
               )}
               <button
                 type="button"
-                className="secondary small"
+                data-variant="secondary"
+                data-size="sm"
                 onClick={onRemove}
                 title="Discard this recording from the list (frees the WAV blob)"
               >
@@ -300,7 +303,8 @@ function RecordingItem({
           {state === 'error' && (
             <button
               type="button"
-              className="secondary small"
+              data-variant="secondary"
+              data-size="sm"
               onClick={onRemove}
             >
               Dismiss
@@ -350,7 +354,20 @@ function WindowSelector({
 }
 
 function StatePill({ state }: { state: RecordingState }) {
-  const className = `state-pill ${state}`;
+  // Map RecordingState to a foundation .status-pill variant.
+  // Phase 28e/10: the per-state pill chrome (preparing/finalizing
+  // = warn, recording = ok, done = info, error = error, idle =
+  // muted) all live on components/status-pill.css now.
+  const variant: 'ok' | 'warn' | 'info' | 'error' | 'muted' =
+    state === 'recording'
+      ? 'ok'
+      : state === 'preparing' || state === 'finalizing'
+        ? 'warn'
+        : state === 'done'
+          ? 'info'
+          : state === 'error'
+            ? 'error'
+            : 'muted';
   const label =
     state === 'idle'
       ? 'Idle'
@@ -363,7 +380,11 @@ function StatePill({ state }: { state: RecordingState }) {
             : state === 'done'
               ? '✓ Done'
               : '⚠ Error';
-  return <span className={className}>{label}</span>;
+  return (
+    <span className="status-pill" data-variant={variant}>
+      {label}
+    </span>
+  );
 }
 
 function formatElapsed(seconds: number): string {

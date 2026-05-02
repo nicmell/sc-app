@@ -1,0 +1,164 @@
+/**
+ * RecordingPanel — only panel-specific layout remains. Toolbar,
+ * buttons, .empty / .error placeholders all come from the
+ * foundation. The state pill is foundation .status-pill +
+ * data-variant. The window selector is a custom radio-like
+ * button group, kept local.
+ */
+
+.recording-panel input[type='number'] {
+  width: 5rem;
+}
+
+.recording-panel input[type='text'] {
+  width: 8rem;
+}
+
+.recording-panel .recordings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.recording-item {
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+}
+
+.recording-item.state-recording {
+  border-color: var(--color-ok-strong);
+}
+.recording-item.state-error {
+  border-color: var(--color-error-border);
+}
+.recording-item.state-done {
+  border-color: var(--color-info-border);
+}
+
+.recording-item-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-wrap: wrap;
+}
+
+.recording-item-header .label {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text);
+}
+
+.recording-item-header .meta {
+  flex: 1 1 auto;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.recording-item-header .gaps {
+  color: var(--color-error-text);
+  cursor: help;
+}
+
+.recording-item-header .actions {
+  display: inline-flex;
+  gap: var(--space-2xs);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Window selector — custom radio-style button group. Doesn't fit
+   the foundation's button variants because the segments need to
+   share a border (no gap between them) + the active one swaps
+   to accent. Worth keeping local. */
+.window-selector {
+  display: inline-flex;
+  gap: 0;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--color-border-stronger);
+}
+
+.window-selector .window-option {
+  padding: var(--space-3xs) var(--space-xs);
+  background: var(--color-surface-3);
+  color: var(--color-text-dim);
+  border: none;
+  border-radius: 0;
+  font: inherit;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  min-width: 2.2rem;
+  /* Override foundation button transitions explicitly so the
+     segmented look stays crisp on hover. */
+  transition: background var(--transition-fast);
+}
+
+.window-selector .window-option + .window-option {
+  border-left: 1px solid var(--color-border-stronger);
+}
+
+.window-selector .window-option:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.window-selector .window-option:not(:disabled):hover {
+  background: var(--color-border-stronger);
+}
+
+.window-selector .window-option.active {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+/* Recording waveform canvas + overlay live button */
+.recording-waveform {
+  position: relative;
+  width: 100%;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  cursor: default;
+}
+
+.recording-waveform[data-can-scroll='true'] {
+  cursor: grab;
+}
+.recording-waveform[data-can-scroll='true']:active {
+  cursor: grabbing;
+}
+
+.recording-waveform canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.recording-waveform .waveform-live-button {
+  position: absolute;
+  top: var(--space-2xs);
+  right: var(--space-2xs);
+  padding: var(--space-3xs) var(--space-xs);
+  background: color-mix(in srgb, var(--color-primary) 85%, transparent);
+  color: var(--color-on-primary);
+  border: 1px solid var(--color-primary-hover);
+  border-radius: var(--radius-xs);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
+
+.recording-waveform .waveform-live-button:hover {
+  background: var(--color-primary-hover);
+}
