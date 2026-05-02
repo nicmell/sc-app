@@ -1,0 +1,8 @@
+/**
+ * Dark theme — applied at :root by default. The current sc-app
+ * palette only has dark; this file holds the colour-side tokens
+ * that point at concrete Open Props colour ramps.
+ *
+ * Phase 28a: empty. 28b ports the existing --bg / --surface /
+ * --text / --color-* values from src/styles.scss.
+ */

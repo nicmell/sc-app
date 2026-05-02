@@ -1,0 +1,12 @@
+/**
+ * Raw HTML element styles. After this layer a bare <button> /
+ * <input> / <select> / <textarea> looks correct without any
+ * classes — load-bearing constraint for the plugin future.
+ *
+ * Variants via data-* attributes:
+ *   button[data-variant="secondary|ghost|danger"]
+ *   button[data-size="sm"]
+ *
+ * Phase 28a: empty. 28b populates from src/styles.scss + the
+ * per-panel SCSS files' button/input rules.
+ */

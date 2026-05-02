@@ -1,0 +1,46 @@
+/**
+ * @sc-app/ui-foundation — entry point.
+ *
+ * Imports run in cascade order: primitives first (so semantic
+ * tokens can reference them), then theme (so semantic tokens
+ * resolve to a concrete palette), then reset, base elements,
+ * components.
+ *
+ * Phase 28a: this file ships with empty layer files so the
+ * @import chain resolves and the app can wire the alias.
+ * 28b fills tokens + reset + base; 28d fills components.
+ */
+
+/* Token primitives. Open Props (full vocabulary) — exposed via
+   the cascade so plugins can use --gray-N, --size-N, etc. The
+   semantic layer below is the documented public API. */
+@import "open-props/open-props.min.css";
+
+/* Our semantic tokens — --color-*, --space-*, --radius-* etc.
+   Map onto Open Props primitives. Documented in README as
+   the stable contract. */
+@import "./tokens/semantic.css";
+
+/* Theme palette. Default = dark; light theme applies under
+   [data-theme="light"]. */
+@import "./themes/dark.css";
+@import "./themes/light.css";
+
+/* Minimal reset / normalize. */
+@import "./reset.css";
+
+/* Raw HTML element styles. After this point a bare <button>
+   already looks correct. */
+@import "./base/elements.css";
+@import "./base/typography.css";
+
+/* Semantic component classes. */
+@import "./components/panel.css";
+@import "./components/cluster.css";
+@import "./components/stack.css";
+@import "./components/status-pill.css";
+@import "./components/badge.css";
+@import "./components/range-field.css";
+@import "./components/empty-state.css";
+@import "./components/error-alert.css";
+@import "./components/modal.css";

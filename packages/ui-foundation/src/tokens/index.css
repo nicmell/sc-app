@@ -1,0 +1,11 @@
+/**
+ * Tokens-only entry. Importable as `@sc-app/ui-foundation/tokens`
+ * for consumers that want just the token vocabulary without the
+ * reset / element / component layers (e.g. a plugin that brings
+ * its own component library but wants to match the host palette).
+ */
+
+@import "open-props/open-props.min.css";
+@import "./semantic.css";
+@import "../themes/dark.css";
+@import "../themes/light.css";

@@ -1,0 +1,9 @@
+/**
+ * Light theme — applied under `[data-theme="light"]`. Stub for
+ * Phase 28; real values land when there's a UI affordance for
+ * theme switching.
+ *
+ * Plugin authors writing components that should adapt: define
+ * your own [data-theme="light"] overrides if needed; the host
+ * scope is :root (dark) and html[data-theme="light"] otherwise.
+ */

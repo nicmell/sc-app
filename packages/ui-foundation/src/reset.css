@@ -1,0 +1,8 @@
+/**
+ * Minimal reset. Stub for Phase 28a; 28b fills with the modern
+ * baseline (box-sizing border-box, body margin reset, form
+ * elements inherit font, etc.).
+ *
+ * Importable as `@sc-app/ui-foundation/reset` if a consumer wants
+ * just the reset without the rest of the foundation.
+ */

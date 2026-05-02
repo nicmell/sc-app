@@ -4,6 +4,7 @@ import react from "@vitejs/plugin-react";
 
 const serverCommandsPkg = path.resolve(__dirname, "packages/server-commands/src");
 const synthdefCompilerPkg = path.resolve(__dirname, "packages/synthdef-compiler/src");
+const uiFoundationPkg = path.resolve(__dirname, "packages/ui-foundation/src");
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -28,6 +29,10 @@ export default defineConfig({
       // sources, no pre-build step.
       { find: /^@sc-app\/server-commands$/, replacement: `${serverCommandsPkg}/index.ts` },
       { find: /^@sc-app\/synthdef-compiler$/, replacement: `${synthdefCompilerPkg}/index.ts` },
+      // ui-foundation is pure CSS; Vite resolves the @import chain
+      // natively. The dist/ build is for the future plugin runtime,
+      // not for the app itself.
+      { find: /^@sc-app\/ui-foundation$/, replacement: `${uiFoundationPkg}/index.css` },
     ],
   },
 

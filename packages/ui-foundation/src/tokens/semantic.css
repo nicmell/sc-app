@@ -1,0 +1,12 @@
+/**
+ * Semantic tokens — the public API of @sc-app/ui-foundation.
+ *
+ * Layered on top of Open Props primitives. Plugins should
+ * prefer these names (they're stable; the underlying primitive
+ * source is replaceable). Renaming any --color-* / --space-* /
+ * --radius-* below is a BREAKING CHANGE for plugins.
+ *
+ * Phase 28a: empty. 28b fills with the spacing / radius /
+ * typography / shadow scales that don't depend on theme.
+ * Theme-dependent colour tokens land in themes/{dark,light}.css.
+ */

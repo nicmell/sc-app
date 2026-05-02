@@ -25,7 +25,8 @@
     "paths": {
       "@/*": ["src/*"],
       "@sc-app/server-commands": ["packages/server-commands/src/index.ts"],
-      "@sc-app/synthdef-compiler": ["packages/synthdef-compiler/src/index.ts"]
+      "@sc-app/synthdef-compiler": ["packages/synthdef-compiler/src/index.ts"],
+      "@sc-app/ui-foundation": ["packages/ui-foundation/src/index.css"]
     }
   },
   "include": [

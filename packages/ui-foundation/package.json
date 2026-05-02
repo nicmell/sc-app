@@ -1,0 +1,29 @@
+{
+  "name": "@sc-app/ui-foundation",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Framework-agnostic CSS foundation for sc-app: tokens, base element styles, and a small set of semantic-class primitives. Shared between the React host and future runtime HTML plugins.",
+  "exports": {
+    ".": "./src/index.css",
+    "./dist": "./dist/index.css",
+    "./reset": "./src/reset.css",
+    "./tokens": "./src/tokens/index.css",
+    "./themes/dark": "./src/themes/dark.css",
+    "./themes/light": "./src/themes/light.css",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "postcss src/index.css -o dist/index.css",
+    "build:watch": "postcss src/index.css -o dist/index.css --watch"
+  },
+  "dependencies": {
+    "open-props": "^1.7.15"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "postcss-cli": "^11.0.0",
+    "postcss-import": "^16.1.0"
+  }
+}

@@ -8,6 +8,12 @@ import { installDebugLog } from './util/debugLog';
 installDebugLog();
 
 import { AppShell } from './AppShell';
+
+// @sc-app/ui-foundation is loaded BEFORE styles.scss so the
+// existing dark-theme rules in styles.scss can override / extend
+// the foundation defaults during the gradual migration. By the
+// end of Phase 28 styles.scss is gone and this is the only entry.
+import '@sc-app/ui-foundation';
 import './styles.scss';
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
