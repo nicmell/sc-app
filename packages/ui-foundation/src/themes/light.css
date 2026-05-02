@@ -1,9 +1,16 @@
 /**
- * Light theme — applied under `[data-theme="light"]`. Stub for
- * Phase 28; real values land when there's a UI affordance for
- * theme switching.
+ * Light theme — applied under [data-theme="light"] on the root
+ * (typically <html>). Phase 28 ships dark only; this file is a
+ * placeholder so plugin authors know the contract:
  *
- * Plugin authors writing components that should adapt: define
- * your own [data-theme="light"] overrides if needed; the host
- * scope is :root (dark) and html[data-theme="light"] otherwise.
+ *   :root[data-theme="light"] {
+ *     --color-bg: ...;
+ *     --color-text: ...;
+ *     --color-surface-1: ...;
+ *     -- (all other --color-* tokens overridden here)
+ *   }
+ *
+ * Real values land when the host adds a theme-toggle UI. Until
+ * then, [data-theme="light"] inherits the dark palette from
+ * :root above.
  */

@@ -1,12 +1,81 @@
 /**
- * Semantic tokens — the public API of @sc-app/ui-foundation.
+ * Semantic tokens — non-colour side. Theme-independent values
+ * that don't flip between dark and light. The colour palette
+ * lives in themes/{dark,light}.css.
  *
- * Layered on top of Open Props primitives. Plugins should
- * prefer these names (they're stable; the underlying primitive
- * source is replaceable). Renaming any --color-* / --space-* /
- * --radius-* below is a BREAKING CHANGE for plugins.
+ * Every name below is part of @sc-app/ui-foundation's PUBLIC
+ * API: plugin authors and host code consume these and the
+ * underlying source (Open Props primitives, raw rems, etc.) is
+ * replaceable behind them. Renaming any of these is a breaking
+ * change.
  *
- * Phase 28a: empty. 28b fills with the spacing / radius /
- * typography / shadow scales that don't depend on theme.
- * Theme-dependent colour tokens land in themes/{dark,light}.css.
+ * Migration policy from the legacy src/styles.scss vocabulary:
+ * existing values that don't land on a scale step round to the
+ * nearest one (0.6rem → space-xs, 0.7rem → space-sm). The point
+ * of the system is fewer canonical values, not faithful
+ * preservation of every ad-hoc rem.
  */
+
+:root {
+  /* ── Spacing scale (8 stops) ──────────────────────────────────
+     Most existing panels use values in [0.125, 2]rem. Scale
+     rounds them to canonical stops; per-panel scss using
+     0.3 / 0.4 / 0.6rem will collapse to the nearest. */
+  --space-3xs: 0.125rem;  /* 2px  */
+  --space-2xs: 0.25rem;   /* 4px  */
+  --space-xs:  0.5rem;    /* 8px  */
+  --space-sm:  0.75rem;   /* 12px */
+  --space-md:  1rem;      /* 16px */
+  --space-lg:  1.25rem;   /* 20px */
+  --space-xl:  1.5rem;    /* 24px */
+  --space-2xl: 2rem;      /* 32px */
+
+  /* ── Radii ───────────────────────────────────────────────────
+     -md matches the legacy --panel-radius (6px). -pill is
+     used for status badges + bank-selector slots. */
+  --radius-xs:   3px;
+  --radius-sm:   4px;
+  --radius-md:   6px;
+  --radius-lg:   12px;
+  --radius-pill: 999px;
+
+  /* ── Typography ──────────────────────────────────────────────
+     Mono is the primary in this app — almost every label,
+     numeric readout, and form field is mono. Sans is the
+     prose default. */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-sans: system-ui, sans-serif;
+
+  --font-size-xs: 0.75rem;    /* 12px */
+  --font-size-sm: 0.875rem;   /* 14px */
+  --font-size-md: 1rem;       /* 16px */
+  --font-size-lg: 1.125rem;   /* 18px */
+  --font-size-xl: 1.5rem;     /* 24px — was 1.6rem in ConnectScreen h1 */
+
+  --line-height-tight:  1.2;
+  --line-height-normal: 1.5;
+
+  --font-weight-regular: 400;
+  --font-weight-medium:  500;
+  --font-weight-bold:    700;
+
+  /* ── Shadows ─────────────────────────────────────────────────
+     Mapped to Open Props for a sensible elevation curve.
+     Plugins authoring popovers / modals use --shadow-lg by
+     default. */
+  --shadow-sm: var(--shadow-2);
+  --shadow-md: var(--shadow-4);
+  --shadow-lg: var(--shadow-6);
+
+  /* ── Layout ──────────────────────────────────────────────────
+     Single max-width for the dashboard shell; exposed so
+     plugins that render full-width can match. */
+  --layout-max-width: 1100px;
+
+  /* ── Animation ───────────────────────────────────────────────
+     Reused by hover/focus transitions across interactive
+     elements. -fast for micro-interactions (background, border
+     colour), -base for slower state changes. */
+  --transition-fast: 80ms ease;
+  --transition-base: 160ms ease;
+}

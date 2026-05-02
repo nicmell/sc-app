@@ -82,6 +82,19 @@ yarn build          # one-shot
 yarn build:watch    # rebuild on change (during local plugin dev)
 ```
 
+## Demo page
+
+`demo.html` renders every base element + variant against the
+built `dist/index.css`. **This is the foundation's regression
+gate** — if a raw `<button>` here doesn't look right, the
+foundation is broken and a plugin's HTML won't look right
+either.
+
+```bash
+yarn build              # populate dist/
+open demo.html          # macOS; or load file:// in any browser
+```
+
 ## Constraints
 
 - **Plain CSS only.** No `@apply`, no Tailwind directives, no Sass,

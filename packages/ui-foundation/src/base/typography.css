@@ -1,5 +1,67 @@
 /**
- * Typography defaults — body font, headings, code/pre, links.
- * Phase 28a: empty. 28b ports from src/styles.scss + DirtPanel /
- * DebugLog mono-text rules.
+ * Typography defaults. After this layer paragraphs, headings,
+ * and code blocks render correctly without any classes — the
+ * load-bearing constraint for plugin HTML.
+ *
+ * Headings have no margin by default (per modern reset
+ * conventions); callers compose spacing via .stack / .cluster
+ * gaps or per-section padding. Same logic for <p>.
  */
+
+html {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-normal);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  margin: 0;
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-tight);
+  letter-spacing: 0.02em;
+}
+
+h1 { font-size: var(--font-size-xl); }
+h2 { font-size: var(--font-size-lg); }
+h3 { font-size: var(--font-size-md); }
+h4, h5, h6 { font-size: var(--font-size-sm); }
+
+p {
+  margin: 0;
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+}
+
+code {
+  padding: 0 var(--space-3xs);
+  background: var(--color-surface-2);
+  border-radius: var(--radius-xs);
+}
+
+pre {
+  margin: 0;
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--color-surface-2);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+}
+
+pre > code {
+  padding: 0;
+  background: transparent;
+}
+
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}

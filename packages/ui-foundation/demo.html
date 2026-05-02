@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>@sc-app/ui-foundation — demo</title>
+  <link rel="stylesheet" href="./dist/index.css">
+  <style>
+    /* Demo-only chrome. Not part of the foundation; just enough
+       structure to render the sections side-by-side without
+       overflowing tiny screens. */
+    .demo-shell {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: var(--space-xl);
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-lg);
+    }
+    .demo-section {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-sm);
+      padding: var(--space-md);
+      background: var(--color-surface-1);
+      border: 1px solid var(--color-border-strong);
+      border-radius: var(--radius-md);
+    }
+    .demo-section > .demo-section-title {
+      margin: 0;
+      color: var(--color-text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: var(--font-size-xs);
+    }
+    .demo-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-sm);
+      align-items: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="demo-shell">
+    <h1>@sc-app/ui-foundation</h1>
+    <p>
+      Phase 28b — tokens + reset + base elements. Raw HTML below;
+      no React, no classes for variants (other than <code>data-*</code>
+      attributes). If anything looks off here, the foundation is
+      leaking — fix before migrating panels.
+    </p>
+
+    <section class="demo-section">
+      <h2 class="demo-section-title">Buttons — variants</h2>
+      <div class="demo-row">
+        <button>Primary</button>
+        <button data-variant="secondary">Secondary</button>
+        <button data-variant="ghost">Ghost</button>
+        <button data-variant="danger">Danger</button>
+      </div>
+      <div class="demo-row">
+        <button data-size="sm">Small</button>
+        <button data-variant="secondary" data-size="sm">Small secondary</button>
+        <button data-variant="ghost" data-size="sm">Small ghost</button>
+        <button data-variant="danger" data-size="sm">Small danger</button>
+      </div>
+      <div class="demo-row">
+        <button disabled>Disabled</button>
+        <button data-variant="secondary" disabled>Disabled secondary</button>
+        <button data-variant="ghost" disabled>Disabled ghost</button>
+        <button data-variant="danger" disabled>Disabled danger</button>
+      </div>
+    </section>
+
+    <section class="demo-section">
+      <h2 class="demo-section-title">Form fields</h2>
+      <div class="demo-row">
+        <input type="text" placeholder="text input">
+        <input type="number" value="120">
+        <select>
+          <option>option a</option>
+          <option>option b</option>
+          <option>option c</option>
+        </select>
+      </div>
+      <div class="demo-row">
+        <input type="range" min="0" max="100" value="50">
+        <input type="text" disabled value="disabled">
+      </div>
+      <textarea placeholder="textarea" rows="3"></textarea>
+      <div class="demo-row">
+        <label>
+          <input type="checkbox"> a checkbox label
+        </label>
+        <label>
+          <input type="checkbox" checked> checked
+        </label>
+        <label>
+          <input type="radio" name="r"> radio
+        </label>
+        <label>
+          <input type="radio" name="r" checked> checked
+        </label>
+      </div>
+    </section>
+
+    <section class="demo-section">
+      <h2 class="demo-section-title">Typography</h2>
+      <h1>Heading 1</h1>
+      <h2>Heading 2</h2>
+      <h3>Heading 3</h3>
+      <h4>Heading 4</h4>
+      <p>
+        A paragraph of body text. <a href="#">A link</a> looks like
+        this. Inline <code>code</code> is monospaced and uses the
+        surface-2 fill. Tabular numerics: 12345.67 / 0.12.
+      </p>
+      <pre>function dirtPlay(event) {
+  // a code block, multi-line
+  return new OSC.Message('/dirt/play', ...args);
+}</pre>
+    </section>
+
+    <section class="demo-section">
+      <h2 class="demo-section-title">Disclosure</h2>
+      <details>
+        <summary>Details summary (click to expand)</summary>
+        <p>
+          Hidden content revealed on click. Inherits body
+          typography; no extra classes needed.
+        </p>
+      </details>
+      <details open>
+        <summary>Open by default</summary>
+        <p>Already showing.</p>
+      </details>
+    </section>
+
+    <section class="demo-section">
+      <h2 class="demo-section-title">Token sampler</h2>
+      <p>Spacing scale (size = token rem):</p>
+      <div class="demo-row">
+        <span style="background: var(--color-primary); width: var(--space-3xs); height: 1.5rem;" title="3xs"></span>
+        <span style="background: var(--color-primary); width: var(--space-2xs); height: 1.5rem;" title="2xs"></span>
+        <span style="background: var(--color-primary); width: var(--space-xs);  height: 1.5rem;" title="xs"></span>
+        <span style="background: var(--color-primary); width: var(--space-sm);  height: 1.5rem;" title="sm"></span>
+        <span style="background: var(--color-primary); width: var(--space-md);  height: 1.5rem;" title="md"></span>
+        <span style="background: var(--color-primary); width: var(--space-lg);  height: 1.5rem;" title="lg"></span>
+        <span style="background: var(--color-primary); width: var(--space-xl);  height: 1.5rem;" title="xl"></span>
+        <span style="background: var(--color-primary); width: var(--space-2xl); height: 1.5rem;" title="2xl"></span>
+      </div>
+      <p>Radii (32px squares):</p>
+      <div class="demo-row">
+        <span style="background: var(--color-primary); width: 32px; height: 32px; border-radius: var(--radius-xs);"   title="xs"></span>
+        <span style="background: var(--color-primary); width: 32px; height: 32px; border-radius: var(--radius-sm);"   title="sm"></span>
+        <span style="background: var(--color-primary); width: 32px; height: 32px; border-radius: var(--radius-md);"   title="md"></span>
+        <span style="background: var(--color-primary); width: 32px; height: 32px; border-radius: var(--radius-lg);"   title="lg"></span>
+        <span style="background: var(--color-primary); width: 64px; height: 32px; border-radius: var(--radius-pill);" title="pill"></span>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

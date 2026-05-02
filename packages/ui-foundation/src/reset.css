@@ -1,8 +1,28 @@
 /**
- * Minimal reset. Stub for Phase 28a; 28b fills with the modern
- * baseline (box-sizing border-box, body margin reset, form
- * elements inherit font, etc.).
+ * Minimal reset. Two universally-useful rules:
+ *   1. Border-box sizing for everything (matches modern habits;
+ *      no surprises when adding padding to a sized box).
+ *   2. Form elements inherit the surrounding font + colour so
+ *      the user's text doesn't suddenly switch to the browser
+ *      default sans inside an <input>.
  *
- * Importable as `@sc-app/ui-foundation/reset` if a consumer wants
- * just the reset without the rest of the foundation.
+ * Doesn't touch html/body — those are styled in
+ * base/elements.css so a consumer importing only the reset
+ * (`@sc-app/ui-foundation/reset`) doesn't get coloured
+ * automatically. Importable independently for plugins that
+ * want just the box-sizing baseline.
  */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+input,
+button,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}

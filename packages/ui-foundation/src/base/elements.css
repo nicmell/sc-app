@@ -1,12 +1,190 @@
 /**
- * Raw HTML element styles. After this layer a bare <button> /
- * <input> / <select> / <textarea> looks correct without any
- * classes — load-bearing constraint for the plugin future.
+ * Raw HTML element styles. After this layer, bare <button> /
+ * <input> / <select> / <textarea> / <label> elements look
+ * correct without any classes — the load-bearing constraint
+ * for the plugin future. Variants are exposed via data-*
+ * attributes so plugin HTML can opt in by writing the right
+ * attribute, no class boilerplate.
  *
- * Variants via data-* attributes:
+ * The body rule lives here (not in reset.css) so a consumer
+ * importing only the reset doesn't get the host palette
+ * forced on it.
+ *
+ * data-* contract:
  *   button[data-variant="secondary|ghost|danger"]
  *   button[data-size="sm"]
+ * (default = primary, default size = normal)
  *
- * Phase 28a: empty. 28b populates from src/styles.scss + the
- * per-panel SCSS files' button/input rules.
+ * Per-app local overrides in src/ui/* scss currently shadow
+ * these; that's expected during the Phase 28d migration. By
+ * the end of Phase 28 the foundation is the only source.
  */
+
+/* ── Document ──────────────────────────────────────────────── */
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+}
+
+/* ── Buttons ───────────────────────────────────────────────── */
+
+button {
+  padding: var(--space-xs) var(--space-md);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+button:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button[data-variant="secondary"] {
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+}
+
+button[data-variant="secondary"]:hover:not(:disabled) {
+  background: var(--color-surface-3);
+  border-color: var(--color-border-stronger);
+}
+
+button[data-variant="ghost"] {
+  background: transparent;
+  color: var(--color-text);
+  border-color: var(--color-border-stronger);
+}
+
+button[data-variant="ghost"]:hover:not(:disabled) {
+  background: var(--color-surface-3);
+}
+
+button[data-variant="danger"] {
+  background: var(--color-danger);
+  color: var(--color-on-primary);
+}
+
+button[data-variant="danger"]:hover:not(:disabled) {
+  background: var(--color-danger-hover);
+}
+
+button[data-size="sm"] {
+  padding: var(--space-2xs) var(--space-sm);
+  font-size: var(--font-size-xs);
+}
+
+/* ── Form fields ───────────────────────────────────────────── */
+
+input,
+select,
+textarea {
+  padding: var(--space-2xs) var(--space-xs);
+  background: var(--color-surface-input);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-stronger);
+  border-radius: var(--radius-xs);
+  font: inherit;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  transition: border-color var(--transition-fast);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--color-border-focus);
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+select {
+  cursor: pointer;
+}
+
+textarea {
+  /* Long-form text: sans is more readable than mono. */
+  font-family: var(--font-sans);
+  resize: vertical;
+}
+
+/* Range — strip the input chrome and use the accent for track + thumb. */
+input[type="range"] {
+  padding: 0;
+  background: transparent;
+  border: none;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+/* Checkbox / radio — match accent. Browsers handle most of
+   the visual; the accent-color hint is what we care about. */
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+/* Number inputs — hide the spin buttons; arrow keys still
+   work. The legacy panels did this per-context; promoted to
+   a default since it matches the app's visual language. */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* ── Labels ────────────────────────────────────────────────── */
+
+label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-dim);
+}
+
+/* ── Details / summary ─────────────────────────────────────── */
+
+details > summary {
+  cursor: pointer;
+  user-select: none;
+  color: var(--color-text-dim);
+  font-size: var(--font-size-sm);
+  transition: color var(--transition-fast);
+}
+
+details > summary:hover,
+details[open] > summary {
+  color: var(--color-text);
+}
