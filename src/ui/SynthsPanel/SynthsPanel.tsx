@@ -10,7 +10,7 @@ import {
   type Waveform,
 } from '@/synth/SynthController';
 import type { SynthManager } from '@/synth/SynthManager';
-import './SynthsPanel.scss';
+import './SynthsPanel.css';
 
 interface SynthsPanelProps {
   manager: SynthManager;
@@ -100,7 +100,7 @@ export function SynthsPanel({ manager }: SynthsPanelProps) {
   return (
     <section className="panel synths-panel">
       <header>Synths</header>
-      <div className="row toolbar">
+      <div className="cluster">
         <label>
           kind&nbsp;
           <select
@@ -141,7 +141,7 @@ export function SynthsPanel({ manager }: SynthsPanelProps) {
                 if (Number.isFinite(v) && v > 0) setFreqMono(v);
               }}
             />
-            <span className="range-value">{formatHz(freqMono)}</span>
+            <span className="range-field-value">{formatHz(freqMono)}</span>
           </label>
         ) : (
           <>
@@ -159,7 +159,7 @@ export function SynthsPanel({ manager }: SynthsPanelProps) {
                   if (Number.isFinite(v) && v > 0) setFreqL(v);
                 }}
               />
-              <span className="range-value">{formatHz(freqL)}</span>
+              <span className="range-field-value">{formatHz(freqL)}</span>
             </label>
             <label className="range-field">
               <span>freqR</span>
@@ -175,7 +175,7 @@ export function SynthsPanel({ manager }: SynthsPanelProps) {
                   if (Number.isFinite(v) && v > 0) setFreqR(v);
                 }}
               />
-              <span className="range-value">{formatHz(freqR)}</span>
+              <span className="range-field-value">{formatHz(freqR)}</span>
             </label>
           </>
         )}
@@ -193,7 +193,7 @@ export function SynthsPanel({ manager }: SynthsPanelProps) {
               if (Number.isFinite(v) && v >= 0) setAmp(v);
             }}
           />
-          <span className="range-value">{formatAmp(amp)}</span>
+          <span className="range-field-value">{formatAmp(amp)}</span>
         </label>
         <label>
           label&nbsp;
@@ -210,7 +210,7 @@ export function SynthsPanel({ manager }: SynthsPanelProps) {
         </button>
         <button
           type="button"
-          className="danger"
+          data-variant="danger"
           onClick={onClear}
           disabled={busy || synths.length === 0}
         >
@@ -282,13 +282,14 @@ function SynthsPanelItem({
         </span>
         <button
           type="button"
-          className="danger small"
+          data-variant="danger"
+          data-size="sm"
           onClick={() => void onRemove()}
         >
           Remove
         </button>
       </div>
-      <div className="row controls">
+      <div className="cluster controls">
         <label>
           waveform&nbsp;
           <select
@@ -326,7 +327,7 @@ function SynthsPanelItem({
                 }
               }}
             />
-            <span className="range-value">{formatHz(hz)}</span>
+            <span className="range-field-value">{formatHz(hz)}</span>
           </label>
         ))}
         <label className="range-field">
@@ -342,11 +343,12 @@ function SynthsPanelItem({
               if (Number.isFinite(v) && v >= 0) synth.setAmp(v);
             }}
           />
-          <span className="range-value">{formatAmp(amp)}</span>
+          <span className="range-field-value">{formatAmp(amp)}</span>
         </label>
         <button
           type="button"
-          className={gateOpen ? 'danger small' : 'small'}
+          data-variant={gateOpen ? 'danger' : 'secondary'}
+          data-size="sm"
           onClick={onToggleGate}
           title={
             gateOpen

@@ -1,0 +1,70 @@
+/**
+ * SynthsPanel — only panel-specific layout remains. The toolbar
+ * + controls clusters use foundation primitives; range-fields
+ * use foundation .range-field/.range-field-value; buttons use
+ * data-variant/data-size; .empty / .error use foundation
+ * placeholders.
+ *
+ * Local-only:
+ *   - input widths inside the toolbar
+ *   - .range-field range-input width override (foundation lets
+ *     it flex-grow; here we want a fixed inline width to keep
+ *     the cluster row predictable)
+ *   - .synths list reset + gap, .synth-item card layout
+ */
+
+.synths-panel input[type='number'] {
+  width: 5rem;
+}
+
+.synths-panel input[type='text'] {
+  width: 8rem;
+}
+
+.synths-panel .range-field > input[type='range'] {
+  width: 8rem;
+  flex: 0 0 auto;
+}
+
+.synths-panel .range-field-value {
+  min-width: 3.6rem;
+}
+
+.synths-panel .synths {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.synth-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.synth-item-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-wrap: wrap;
+}
+
+.synth-item-header .label {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text);
+}
+
+.synth-item-header .meta {
+  flex: 1 1 auto;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
