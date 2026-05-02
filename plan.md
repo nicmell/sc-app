@@ -558,33 +558,3 @@ running. Implementable as `/n_run 0 nodeId` on the specific
 synth, with state tracked per-controller.
 
 **Cost:** ~½ day.
-
-### 9. Hardware-output-bus tapping (record bus 0/1 directly)
-
-Phase 26 works around scsynth's hardware-output read semantics
-by routing SuperDirt to a private bus (16) with a monitor synth
-mirroring to bus 0/1. sc-app records the private bus + speakers
-play via the monitor. Works, but means: any non-sc-app source
-that writes directly to bus 0/1 (a third-party synth, an MIDI-
-driven pattern, etc.) can't be tapped — sc-app's `bufferTap`
-uses `In.ar(0)`, which returns silence for `< numOutputBusChannels`
-buses regardless of node tree position.
-
-The cleaner fix: compile a second variant of `bufferTapSynthDef`
-that uses `InFeedback.ar` instead of `In.ar`. `InFeedback` reads
-the bus without the auto-zero treatment at the cost of a one-
-block delay (~21 ms at chunkSize 1024 / 48 kHz — within the
-recording's tick window, no impact on offsets). The controller
-picks the variant based on `bus < numOutputBusChannels`.
-
-Or expose a "source is hardware out" flag on the
-RecordingController / ScopeController so the user can override
-when the auto-detect heuristic isn't right (e.g. a hardware bus
-that's been re-routed by an external sclang script).
-
-**Cost:** ~½ day. New synthdef variant + a `bus <
-numOutputBusChannels` check in `BufferManager.acquire`. After
-this lands, `~dirtBus = 16` workaround in
-`scripts/sc-app-superdirt-startup.scd` can be reverted to
-`~dirtBus = 0` (no monitor synth, just direct hardware out) and
-sc-app records bus 0 transparently.

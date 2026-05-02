@@ -88,35 +88,10 @@ Routine.run({
         s.notify;
         s.sync;
 
-        // SuperDirt orbits route to a private stereo bus pair (16/17),
-        // not directly to hardware out (0/1). The dirtMonitor synth
-        // below mirrors 16 → 0 so we still hear it on speakers.
-        //
-        // Why the indirection: scsynth's hardware-output buses
-        // (< numOutputBusChannels) have read semantics that prevent
-        // sc-app's tap synth from sampling them reliably from a
-        // different node group — In.ar(0) returns silence even when
-        // the audio engine is sending bus 0 to the sound card. Routing
-        // SuperDirt to a private bus + tapping that bus + monitoring
-        // to hardware is the standard SC pattern for "record before
-        // master." sc-app records bus 16 (channels 2) to capture the
-        // SuperDirt mix.
-        ~dirtBus = 16;
-
         ~dirt = SuperDirt(2, s);   // stereo
         ~dirt.loadSoundFiles(samplesPath);
-        ~dirt.start(57120, ~dirtBus ! 12); // 12 orbits → ~dirtBus (16/17)
-
-        SynthDef(\dirtMonitor, {
-            Out.ar(0, In.ar(~dirtBus, 2));
-        }).add;
-        s.sync;
-        // Synth.tail(s.defaultGroup) places this monitor at the END of
-        // defaultGroup, after every orbit master, so In.ar(16) sees the
-        // fully-mixed SuperDirt output.
-        Synth.tail(s.defaultGroup, \dirtMonitor);
-
-        "[sc-app] SuperDirt ready on UDP 57120, mix on bus % (mirrored to 0/1)".format(~dirtBus).postln;
+        ~dirt.start(57120, 0 ! 12); // 12 orbits, all routing to bus 0
+        "[sc-app] SuperDirt ready on UDP 57120".postln;
     };
 });
 );
