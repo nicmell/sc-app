@@ -1,0 +1,67 @@
+/**
+ * OscConsole — debug panel exercising raw OSC commands. Buttons
+ * use foundation data-variant="secondary" data-size="sm". The
+ * tx/rx log uses --color-tx / --color-rx (promoted from
+ * hardcoded #8ab4f8 / #96f2a7 in 28b) so plugins authoring
+ * similar debug surfaces can adopt the same palette.
+ */
+
+.osc-console .quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+.osc-console .log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
+.osc-console .log li {
+  display: grid;
+  grid-template-columns: 3em 5em 1fr;
+  grid-row-gap: var(--space-3xs);
+  gap: var(--space-xs);
+  padding: var(--space-2xs) var(--space-xs);
+  border-bottom: 1px solid var(--color-surface-1);
+}
+
+.osc-console .log li[data-dir='tx'] .dir {
+  color: var(--color-tx);
+}
+
+.osc-console .log li[data-dir='rx'] .dir {
+  color: var(--color-rx);
+}
+
+.osc-console .log li[data-dir='err'] {
+  color: var(--color-error-text);
+}
+
+.osc-console .log .dir {
+  font-weight: var(--font-weight-bold);
+}
+
+.osc-console .log .t {
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+}
+
+.osc-console .log .summary {
+  overflow-wrap: anywhere;
+}
+
+.osc-console .log .detail {
+  grid-column: 3 / -1;
+  opacity: 0.7;
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+}

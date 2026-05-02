@@ -8,7 +8,7 @@ import {
 } from '@sc-app/server-commands';
 import type { WorkerClient } from '@/server/WorkerClient';
 import type { OscReply } from '@/server/workerProtocol';
-import './OscConsole.scss';
+import './OscConsole.css';
 
 interface LogEntry {
   id: number;
@@ -96,11 +96,11 @@ export function OscConsole({ client }: OscConsoleProps) {
     <section className="panel osc-console">
       <header>OSC console</header>
       <div className="quick-actions">
-        <button onClick={() => send(status())}>Status</button>
-        <button onClick={() => send(dumpOsc(1))}>DumpOSC on</button>
-        <button onClick={() => send(dumpOsc(0))}>DumpOSC off</button>
-        <button onClick={() => send(queryTree(0))}>QueryTree(0)</button>
-        <button onClick={probe}>sendAndAwaitReply(Status)</button>
+        <button data-variant="secondary" data-size="sm" onClick={() => send(status())}>Status</button>
+        <button data-variant="secondary" data-size="sm" onClick={() => send(dumpOsc(1))}>DumpOSC on</button>
+        <button data-variant="secondary" data-size="sm" onClick={() => send(dumpOsc(0))}>DumpOSC off</button>
+        <button data-variant="secondary" data-size="sm" onClick={() => send(queryTree(0))}>QueryTree(0)</button>
+        <button data-variant="secondary" data-size="sm" onClick={probe}>sendAndAwaitReply(Status)</button>
       </div>
       <ol className="log">
         {log.map((e) => (
