@@ -7,7 +7,7 @@ import {
   type RefObject,
 } from 'react';
 import type { BufferChunk } from '@/server/workerProtocol';
-import './ScopeView.scss';
+import './ScopeView.css';
 
 type ScopeLayout = 'stacked' | 'overlay';
 
@@ -271,6 +271,8 @@ export function ScopeView({
         <div className="zoom">
           <button
             type="button"
+            data-variant="secondary"
+            data-size="sm"
             onClick={onZoomOut}
             disabled={!canZoomOut}
             title="Zoom out (longer window)"
@@ -284,6 +286,8 @@ export function ScopeView({
           </span>
           <button
             type="button"
+            data-variant="secondary"
+            data-size="sm"
             onClick={onZoomIn}
             disabled={!canZoomIn}
             title="Zoom in (shorter window)"
@@ -292,6 +296,8 @@ export function ScopeView({
           </button>
           <button
             type="button"
+            data-variant="secondary"
+            data-size="sm"
             onClick={onZoomReset}
             disabled={zoomFactor === 1}
             title="Reset to 1×"
