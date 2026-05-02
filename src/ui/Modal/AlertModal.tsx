@@ -1,5 +1,6 @@
 import { createPortal } from 'react-dom';
-import './Modal.scss';
+
+// Modal chrome lives in @sc-app/ui-foundation; see ConfirmModal.
 
 export interface AlertModalProps {
   title: string;
@@ -34,7 +35,7 @@ export function AlertModal({
         <div className="modal-actions">
           <button
             type="button"
-            className={variant === 'danger' ? 'danger' : 'primary'}
+            data-variant={variant === 'danger' ? 'danger' : undefined}
             onClick={onDismiss}
           >
             {dismissLabel}

@@ -1,5 +1,8 @@
 import { createPortal } from 'react-dom';
-import './Modal.scss';
+
+// Modal chrome (.modal-backdrop, .modal, .modal-title, .modal-body,
+// .modal-actions, .modal-progress) lives in @sc-app/ui-foundation,
+// loaded once at app entry. No local stylesheet needed.
 
 export interface ConfirmModalProps {
   title: string;
@@ -40,12 +43,12 @@ export function ConfirmModal({
         <h3 className="modal-title">{title}</h3>
         <div className="modal-body">{body}</div>
         <div className="modal-actions">
-          <button type="button" onClick={onCancel}>
+          <button type="button" data-variant="secondary" onClick={onCancel}>
             {cancelLabel}
           </button>
           <button
             type="button"
-            className={variant === 'danger' ? 'danger' : 'primary'}
+            data-variant={variant === 'danger' ? 'danger' : undefined}
             onClick={onConfirm}
           >
             {confirmLabel}

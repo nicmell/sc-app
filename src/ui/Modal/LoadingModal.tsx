@@ -1,5 +1,6 @@
 import { createPortal } from 'react-dom';
-import './Modal.scss';
+
+// Modal chrome lives in @sc-app/ui-foundation; see ConfirmModal.
 
 export interface LoadingModalProps {
   /** Body copy. Brief — "Reinitializing dashboard…" or similar. */
