@@ -5,6 +5,7 @@ import { DebugLog } from '@/ui/DebugLog';
 import { DirtPanel } from '@/ui/DirtPanel';
 import { Footer } from '@/ui/Footer';
 import { AlertModal, ConfirmModal, LoadingModal } from '@/ui/Modal';
+import { OscConsole } from '@/ui/OscConsole';
 import { RecordingPanel } from '@/ui/RecordingPanel';
 import { ScopeList } from '@/ui/ScopeList';
 import { SynthsPanel } from '@/ui/SynthsPanel';
@@ -162,6 +163,7 @@ function Dashboard({
         sampleRate={resources.clock.env.sampleRate}
       />
       <DirtPanel client={resources.dirtClient} />
+      <OscConsole client={resources.client} />
       <Footer status={resources.status} version={resources.version} />
     </main>
   );
