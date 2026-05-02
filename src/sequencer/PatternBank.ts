@@ -35,7 +35,10 @@ import { createStore, type ReadonlyStore, type Store } from '@/util/reactiveStor
 
 import {
   PATTERN_LENGTHS,
+  makeEmptyChain,
   makeEmptyPattern,
+  type ChainEntry,
+  type ChainState,
   type Pattern,
   type PatternLength,
   type Step,
@@ -44,13 +47,30 @@ import {
 
 export const SLOT_COUNT = 8;
 const STORAGE_KEY = 'sc.sequencer.bank';
-const SCHEMA_VERSION = 1;
 const SAVE_DEBOUNCE_MS = 500;
 
+/** V1 (pre-27d) — slots + activeIndex only. Still accepted on
+ *  load; promoted to V2 by attaching a default empty chain. */
 interface SerializedBankV1 {
   version: 1;
   activeIndex: number;
   slots: Pattern[];
+}
+
+/** V2 (27d) — adds `chain`. Saves are V2 going forward. */
+interface SerializedBankV2 {
+  version: 2;
+  activeIndex: number;
+  slots: Pattern[];
+  chain: ChainState;
+}
+
+type SerializedBank = SerializedBankV1 | SerializedBankV2;
+
+interface BankInitialState {
+  slots: ReadonlyArray<Pattern>;
+  activeIndex: number;
+  chain: ChainState;
 }
 
 export interface PatternBankOptions {
@@ -58,7 +78,7 @@ export interface PatternBankOptions {
    *  `localStorage` (key `sc.sequencer.bank`); if that's empty or
    *  malformed, a fresh bank with 8 empty 16-step patterns is
    *  used. */
-  initial?: { slots: ReadonlyArray<Pattern>; activeIndex: number };
+  initial?: BankInitialState;
   /** Disable persistence. Used by tests; default off (= persist). */
   disablePersistence?: boolean;
 }
@@ -67,10 +87,12 @@ export class PatternBank {
   private readonly _slots: Store<ReadonlyArray<Pattern>>;
   private readonly _activeIndex: Store<number>;
   private readonly _activePattern: Store<Pattern>;
+  private readonly _chain: Store<ChainState>;
   private readonly persistEnabled: boolean;
   private saveTimer: number | null = null;
   private offSlots: () => void;
   private offIndex: () => void;
+  private offChain: () => void;
   private disposed = false;
 
   constructor(opts: PatternBankOptions = {}) {
@@ -79,6 +101,7 @@ export class PatternBank {
     this._slots = createStore<ReadonlyArray<Pattern>>(slots);
     this._activeIndex = createStore<number>(clampIndex(initial.activeIndex));
     this._activePattern = createStore<Pattern>(slots[this._activeIndex.get()]);
+    this._chain = createStore<ChainState>(initial.chain);
     this.persistEnabled = !opts.disablePersistence;
 
     // Whenever slots OR activeIndex changes, recompute
@@ -94,6 +117,7 @@ export class PatternBank {
       this._activePattern.set(this._slots.get()[i]);
       this.scheduleSave();
     });
+    this.offChain = this._chain.subscribe(() => this.scheduleSave());
   }
 
   readonly slots: ReadonlyStore<ReadonlyArray<Pattern>> = {
@@ -107,6 +131,10 @@ export class PatternBank {
   readonly activePattern: ReadonlyStore<Pattern> = {
     get: () => this._activePattern.get(),
     subscribe: (cb) => this._activePattern.subscribe(cb),
+  };
+  readonly chain: ReadonlyStore<ChainState> = {
+    get: () => this._chain.get(),
+    subscribe: (cb) => this._chain.subscribe(cb),
   };
 
   /** Switch the active slot. Out-of-range / disposed → no-op.
@@ -148,6 +176,67 @@ export class PatternBank {
     this._slots.set(nextSlots);
   }
 
+  // ── Chain mutations (Phase 27d) ────────────────────────────────────
+
+  setChainEnabled(enabled: boolean): void {
+    if (this.disposed) return;
+    this._chain.update((c) => (c.enabled === enabled ? c : { ...c, enabled }));
+  }
+
+  setChainLoop(loop: boolean): void {
+    if (this.disposed) return;
+    this._chain.update((c) => (c.loop === loop ? c : { ...c, loop }));
+  }
+
+  /** Append a chain entry. Defaults to (slotIndex=0, cycles=1).
+   *  Returns the new entry's index for the UI to focus / scroll
+   *  to if it wants. */
+  appendChainEntry(slotIndex = 0, cycles = 1): number {
+    if (this.disposed) return -1;
+    const entry: ChainEntry = {
+      slotIndex: clampIndex(slotIndex),
+      cycles: clampCycles(cycles),
+    };
+    let newIndex = -1;
+    this._chain.update((c) => {
+      newIndex = c.steps.length;
+      return { ...c, steps: [...c.steps, entry] };
+    });
+    return newIndex;
+  }
+
+  removeChainEntry(index: number): void {
+    if (this.disposed) return;
+    this._chain.update((c) => {
+      if (index < 0 || index >= c.steps.length) return c;
+      const steps = c.steps.slice();
+      steps.splice(index, 1);
+      return { ...c, steps };
+    });
+  }
+
+  updateChainEntry(index: number, patch: Partial<ChainEntry>): void {
+    if (this.disposed) return;
+    this._chain.update((c) => {
+      if (index < 0 || index >= c.steps.length) return c;
+      const cur = c.steps[index];
+      const next: ChainEntry = {
+        slotIndex:
+          patch.slotIndex !== undefined
+            ? clampIndex(patch.slotIndex)
+            : cur.slotIndex,
+        cycles:
+          patch.cycles !== undefined ? clampCycles(patch.cycles) : cur.cycles,
+      };
+      if (next.slotIndex === cur.slotIndex && next.cycles === cur.cycles) {
+        return c;
+      }
+      const steps = c.steps.slice();
+      steps[index] = next;
+      return { ...c, steps };
+    });
+  }
+
   /** Force a synchronous save (used by `dispose`). */
   flush(): void {
     if (!this.persistEnabled) return;
@@ -155,11 +244,7 @@ export class PatternBank {
       window.clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
-    saveToStorage({
-      version: SCHEMA_VERSION,
-      activeIndex: this._activeIndex.get(),
-      slots: this._slots.get() as Pattern[],
-    });
+    saveToStorage(this.snapshot());
   }
 
   dispose(): void {
@@ -168,30 +253,37 @@ export class PatternBank {
     this.flush();
     this.offSlots();
     this.offIndex();
+    this.offChain();
   }
 
   // ── private ────────────────────────────────────────────────────────
+
+  private snapshot(): SerializedBankV2 {
+    return {
+      version: 2,
+      activeIndex: this._activeIndex.get(),
+      slots: this._slots.get() as Pattern[],
+      chain: this._chain.get(),
+    };
+  }
 
   private scheduleSave(): void {
     if (!this.persistEnabled || this.disposed) return;
     if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
     this.saveTimer = window.setTimeout(() => {
       this.saveTimer = null;
-      saveToStorage({
-        version: SCHEMA_VERSION,
-        activeIndex: this._activeIndex.get(),
-        slots: this._slots.get() as Pattern[],
-      });
+      saveToStorage(this.snapshot());
     }, SAVE_DEBOUNCE_MS);
   }
 }
 
 // ── persistence helpers ────────────────────────────────────────────────
 
-function freshState(): { slots: Pattern[]; activeIndex: number } {
+function freshState(): BankInitialState {
   return {
     slots: Array.from({ length: SLOT_COUNT }, () => makeEmptyPattern()),
     activeIndex: 0,
+    chain: makeEmptyChain(),
   };
 }
 
@@ -208,9 +300,7 @@ function clampIndex(i: number): number {
   return Math.floor(i);
 }
 
-function loadFromStorage():
-  | { slots: Pattern[]; activeIndex: number }
-  | null {
+function loadFromStorage(): BankInitialState | null {
   let raw: string | null;
   try {
     raw = window.localStorage.getItem(STORAGE_KEY);
@@ -225,17 +315,24 @@ function loadFromStorage():
   } catch {
     return null;
   }
-  if (!isSerializedBankV1(parsed)) return null;
+  if (!isSerializedBank(parsed)) return null;
   // Sanitise each slot — the user might be loading data from a
   // hand-edited localStorage entry, an older client, or a build
   // with subtly different defaults. Each slot is normalised to
   // the current Pattern shape; anything that can't be coerced
   // falls back to an empty pattern.
   const slots = parsed.slots.map(sanitisePattern);
-  return { slots, activeIndex: clampIndex(parsed.activeIndex) };
+  // Forward-migrate V1 → V2 by attaching a default empty chain.
+  // Don't reject V1 saves — Phase 27c users have valid bank
+  // data we want to keep across the upgrade.
+  const chain =
+    parsed.version === 2
+      ? sanitiseChain(parsed.chain)
+      : makeEmptyChain();
+  return { slots, activeIndex: clampIndex(parsed.activeIndex), chain };
 }
 
-function saveToStorage(data: SerializedBankV1): void {
+function saveToStorage(data: SerializedBankV2): void {
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch {
@@ -245,13 +342,43 @@ function saveToStorage(data: SerializedBankV1): void {
   }
 }
 
-function isSerializedBankV1(x: unknown): x is SerializedBankV1 {
+function isSerializedBank(x: unknown): x is SerializedBank {
   if (typeof x !== 'object' || x === null) return false;
   const o = x as Record<string, unknown>;
-  if (o.version !== 1) return false;
+  if (o.version !== 1 && o.version !== 2) return false;
   if (typeof o.activeIndex !== 'number') return false;
   if (!Array.isArray(o.slots)) return false;
+  // V2 must have `chain` (sanitiseChain handles malformed values).
+  // V1 has no `chain` field; that's fine, we synthesise one.
   return true;
+}
+
+function sanitiseChain(x: unknown): ChainState {
+  if (typeof x !== 'object' || x === null) return makeEmptyChain();
+  const o = x as Record<string, unknown>;
+  const enabled = o.enabled === true;
+  const loop = o.loop !== false; // default true
+  const stepsRaw = Array.isArray(o.steps) ? (o.steps as unknown[]) : [];
+  const steps: ChainEntry[] = [];
+  for (const e of stepsRaw) {
+    if (typeof e !== 'object' || e === null) continue;
+    const eo = e as Record<string, unknown>;
+    const slotIndex =
+      typeof eo.slotIndex === 'number' && Number.isFinite(eo.slotIndex)
+        ? clampIndex(eo.slotIndex)
+        : 0;
+    const cyclesRaw =
+      typeof eo.cycles === 'number' && Number.isFinite(eo.cycles)
+        ? eo.cycles
+        : 1;
+    steps.push({ slotIndex, cycles: clampCycles(cyclesRaw) });
+  }
+  return { enabled, loop, steps };
+}
+
+function clampCycles(n: number): number {
+  if (!Number.isFinite(n)) return 1;
+  return Math.max(1, Math.min(64, Math.round(n)));
 }
 
 /** Coerce an arbitrary deserialised value into the current

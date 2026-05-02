@@ -4,6 +4,7 @@ import type { PatternBank } from '@/sequencer/PatternBank';
 import { SLOT_COUNT } from '@/sequencer/PatternBank';
 import type { SequencerController } from '@/sequencer/SequencerController';
 import { BankSelector } from './BankSelector';
+import { ChainEditor } from './ChainEditor';
 import { TransportBar } from './TransportBar';
 import { TrackRow } from './TrackRow';
 import './SequencerPanel.scss';
@@ -98,6 +99,8 @@ export function SequencerPanel({
       </header>
 
       <BankSelector bank={bank} />
+
+      <ChainEditor bank={bank} controller={controller} />
 
       <TransportBar
         controller={controller}

@@ -43,8 +43,17 @@ Browser (React, main thread)
   │                              off the same chunk stream.
   ├── DirtClient                SuperDirt OSC client over the SAME
   │                              WorkerClient — encodes /dirt/play +
-  │                              /dirt/hello, filters /dirt/* replies
-  │                              from the shared onReply pump.
+  │                              /dirt/hello + /dirt/listSamples,
+  │                              filters /dirt/* replies from the
+  │                              shared onReply pump; `sampleBanks`
+  │                              reactive store for autocomplete.
+  ├── PatternBank +             8-slot reactive store + debounced
+  │   SequencerController +      localStorage. SequencerController
+  │   SequencerPanel             reads bank.activePattern, drives
+  │                              SuperDirt via dirtClient.playAtTimetag
+  │                              with tick-anchored OSC bundles. Chain
+  │                              mode advances bank.activeIndex at
+  │                              cycle boundaries.
   ├── ServerErrorBus            decoded /fail ring, surfaced via
   │                              DebugLog header badge.
   └── WorkerClient              postMessage wrapper around…
@@ -319,40 +328,50 @@ When working on a phase:
    `plan.md` of the moved content, and (if relevant) update
    the "Current phase progress" line below.
 
-Current phase progress: **Phase 26 shipped — SuperDirt via
-bridge-internal OSC router.** Frontend keeps exactly one
+Current phase progress: **Phase 27 shipped — Step Sequencer for
+SuperDirt.** Four sub-phases delivered the panel end-to-end. 27a
+brought the MVP grid: `SequencerController` + extracted
+`scheduler.ts` driving `/dirt/play` events at tick-anchored
+timetags via `tickToTimetag(tick0Ms, targetTick, tickRate)`,
+plus `DirtClient.playAtTimetag` and `listSamples`/`sampleBanks`
+(backed by a `/dirt/listSamples` OSCdef in the sclang startup
+script). 27b layered per-step + per-track parameter overrides
+(`amp` / `cutoff` / `speed` / `pan`) with a portal-rendered
+`StepPopover`; `Track.steps` migrated from `boolean[]` to
+`Step[]` where `Step = { active; params? }` and `step.params`
+is dropped entirely when the last override clears. 27c
+introduced the `PatternBank` — 8-slot reactive store with
+debounced (500 ms) localStorage persistence under
+`sc.sequencer.bank`, schema-versioned (V1 → V2 forward-migrated
+in `loadFromStorage`); `SequencerController` is now a thin
+wrapper that reads `bank.activePattern` and forwards mutations
+through `bank.updateActivePattern(...)`; document-level keydown
+1..8 listener gated on editable focus switches slots. 27d added
+chain mode: `bank.chain = { enabled; loop; steps: ChainEntry[] }`
+persisted to V2 schema, controller advances `bank.activeIndex`
+at cycle boundaries (granularity = "next pump" — < 1 step at
+sane BPMs), `chainPlaybackIndex` reactive store drives the
+ChainEditor's currently-playing highlight. See
+`docs/history.md` Phase 27 for the consolidated write-up.
+
+Earlier landings still in effect: SuperDirt via bridge-internal
+OSC router (Phase 26) — frontend keeps exactly one
 `WorkerClient` / one `/ws`; the bridge's `RoutingTable`
-(config-driven prefix table) demuxes outbound packets to N
-UDP targets and fans replies back. SuperDirt is the first
-non-default target (`/dirt → 127.0.0.1:57120`); the launch
-story collapses to two supervised processes via
-`scripts/start-osc.sh` (scsynth + sclang+SuperDirt). The bridge
-has no SuperDirt awareness; it just walks `config.json -> routes`.
-
-Two load-bearing fixes that landed mid-phase: `GroupController`
-default `addAction` flipped from `AddToHead` to `AddToTail` so
-sc-app's parent group sits *after* sclang's defaultGroup in the
-root tree (without this, sc-app's tap synth runs before
-SuperDirt's orbits write to bus 0/1 and reads silence); and
-node + buffer `IdAllocator` scoped per-clientId
-(`idBase = clientId * 1_000_000 + 1000`) so sc-app's `/s_new` IDs
-don't collide with sclang's allocator at clientId=0. See
-`docs/history.md` Phase 26 for the full play-by-play, including
-`OscConsole` revival as a debug surface and the
-`ServerErrorBus`-must-subscribe-before-first-/s_new race.
-
-Earlier landings still in effect: producer/consumer split
-(Phase 15) — `SynthManager` + `SynthsPanel` are the producers;
-scopes and recordings are pure consumers of user-typed bus
-numbers. Shared Buffer Layer (Phase 16–21) — `BufferController`
-+ `BufferManager` ref-count `(inputBus, channels, chunkSize)`-keyed
-taps so two consumers on the same spec share one tap synth +
-buffer + worker subscription. Bundle & Dev Workflow Refresh
-(Phase 25) — `dist/` ships once via `bundle.resources`, single
-`/ws` origin, daily-rotated tracing, `yarn dev:full` /
-`yarn bridge` / `yarn osc` script trio. `setupDashboard` /
-`teardownServerState` are shared between initial connect,
-disconnect, and the chunkSize-driven re-init.
+demuxes outbound packets by OSC-address prefix, with
+`/dirt → 127.0.0.1:57120` as the first non-default target.
+GroupController defaults to `AddToTail` so sc-app's parent group
+sits after sclang's defaultGroup; node + buffer `IdAllocator`
+scoped per-clientId (`idBase = clientId * 1_000_000 + 1000`).
+Producer/consumer split (Phase 15) — `SynthManager` +
+`SynthsPanel` are producers; scopes and recordings are pure
+consumers of user-typed bus numbers. Shared Buffer Layer
+(Phase 16–21) — `BufferController` + `BufferManager` ref-count
+`(inputBus, channels, chunkSize)`-keyed taps. Bundle & Dev
+Workflow Refresh (Phase 25) — `dist/` ships once via
+`bundle.resources`, single `/ws` origin, daily-rotated tracing,
+`yarn dev:full` / `yarn bridge` / `yarn osc` script trio.
+`setupDashboard` / `teardownServerState` are shared between
+initial connect, disconnect, and the chunkSize-driven re-init.
 
 ## Where scsynth conventions matter
 

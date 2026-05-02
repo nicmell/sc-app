@@ -115,6 +115,35 @@ export interface TransportState {
   currentStep: number;
 }
 
+/** One entry in the chain (Phase 27d). The chain plays each entry
+ *  for `cycles` full passes through its slot's pattern, then
+ *  advances to the next entry. */
+export interface ChainEntry {
+  /** 0..SLOT_COUNT-1 — index into `bank.slots`. */
+  slotIndex: number;
+  /** ≥ 1. How many full pattern cycles to spend on this entry. */
+  cycles: number;
+}
+
+/** Chain configuration. Lives on the bank; persisted to
+ *  localStorage alongside `slots` + `activeIndex`. */
+export interface ChainState {
+  /** When `enabled` + `steps.length > 0`, `play()` engages chain
+   *  mode — the controller advances `bank.activeIndex` through
+   *  `steps` at cycle boundaries. With either condition unmet,
+   *  playback loops the user-selected slot as in 27a..c. */
+  enabled: boolean;
+  /** When the chain reaches the end: loop to step 0 (true) or
+   *  stop playback (false). */
+  loop: boolean;
+  /** Ordered chain entries. */
+  steps: ChainEntry[];
+}
+
+export function makeEmptyChain(): ChainState {
+  return { enabled: false, loop: true, steps: [] };
+}
+
 /** What the scheduler needs from a `ClockController`. Defined as
  *  an interface so the scheduler is testable without a real clock
  *  / scsynth round-trip. */

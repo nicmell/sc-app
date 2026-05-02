@@ -64,6 +64,16 @@ const STOPPED_TRANSPORT: TransportState = {
   currentStep: -1,
 };
 
+/** Mutable chain-playback state, owned by the controller. Only
+ *  meaningful while chain mode + playing — `currentEntryIndex`
+ *  is set to -1 outside that window. */
+interface ChainPlaybackInternal {
+  currentEntryIndex: number;
+  /** `schedulerState.nextStepIndex` value at the moment the
+   *  current chain entry began. Used to count elapsed steps. */
+  startedAtSchedulerStep: number;
+}
+
 export interface SequencerControllerOptions {
   clock: ClockLike;
   dirtClient: DirtClientLike;
@@ -78,7 +88,16 @@ export class SequencerController {
   private readonly bank: PatternBank;
 
   private readonly _transport;
+  /** UI-facing index of the chain entry currently playing
+   *  (Phase 27d). `null` when chain mode is off, the chain is
+   *  empty, or playback is stopped. The bank-selector pane
+   *  reads this to highlight the playing entry. */
+  private readonly _chainPlaybackIndex;
   private readonly schedulerState: SchedulerState;
+  private chainPlayback: ChainPlaybackInternal = {
+    currentEntryIndex: -1,
+    startedAtSchedulerStep: 0,
+  };
   private wakeTimer: number | null = null;
   private disposed = false;
 
@@ -87,6 +106,7 @@ export class SequencerController {
     this.dirtClient = opts.dirtClient;
     this.bank = opts.bank;
     this._transport = createStore<TransportState>(STOPPED_TRANSPORT);
+    this._chainPlaybackIndex = createStore<number | null>(null);
     this.schedulerState = makeInitialSchedulerState();
   }
 
@@ -102,6 +122,11 @@ export class SequencerController {
   readonly transport: ReadonlyStore<TransportState> = {
     get: () => this._transport.get(),
     subscribe: (cb) => this._transport.subscribe(cb),
+  };
+
+  readonly chainPlaybackIndex: ReadonlyStore<number | null> = {
+    get: () => this._chainPlaybackIndex.get(),
+    subscribe: (cb) => this._chainPlaybackIndex.subscribe(cb),
   };
 
   // ── Pattern mutations ──────────────────────────────────────────────
@@ -280,7 +305,12 @@ export class SequencerController {
 
   /** Start playback. Pattern starts at step 0, scheduled
    *  `INITIAL_LOOKAHEAD_TICKS` ahead of "now" so the first event
-   *  has time to traverse the wire. No-op if already playing. */
+   *  has time to traverse the wire. No-op if already playing.
+   *
+   *  Phase 27d: if `bank.chain.enabled` and the chain has at least
+   *  one entry, we engage chain mode — selecting `chain[0]`'s slot
+   *  in the bank and tracking cycle progression so the controller
+   *  can advance through the chain at cycle boundaries. */
   play(): void {
     if (this.disposed) return;
     if (this._transport.get().isPlaying) return;
@@ -293,6 +323,27 @@ export class SequencerController {
 
     const nowTick = ((Date.now() - this.clock.tick0Ms) * this.clock.tickRate) / 1000;
     resetForPlay(this.schedulerState, nowTick);
+
+    // If chain mode is engaged at play time, snap activeIndex to
+    // the first chain entry. This guarantees pump's first call
+    // sees the chain's starting pattern. Subsequent transitions
+    // happen inside pumpOnce.
+    const chain = this.bank.chain.get();
+    if (chain.enabled && chain.steps.length > 0) {
+      this.chainPlayback = {
+        currentEntryIndex: 0,
+        startedAtSchedulerStep: 0,
+      };
+      this._chainPlaybackIndex.set(0);
+      this.bank.selectIndex(chain.steps[0].slotIndex);
+    } else {
+      this.chainPlayback = {
+        currentEntryIndex: -1,
+        startedAtSchedulerStep: 0,
+      };
+      this._chainPlaybackIndex.set(null);
+    }
+
     this._transport.set({ isPlaying: true, currentStep: -1 });
     this.startWakeLoop();
   }
@@ -302,6 +353,11 @@ export class SequencerController {
     if (!this._transport.get().isPlaying) return;
     this.stopWakeLoop();
     cancelPendingPlayheadTimers(this.schedulerState);
+    this.chainPlayback = {
+      currentEntryIndex: -1,
+      startedAtSchedulerStep: 0,
+    };
+    this._chainPlaybackIndex.set(null);
     this._transport.set(STOPPED_TRANSPORT);
   }
 
@@ -334,6 +390,19 @@ export class SequencerController {
   private pumpOnce(): void {
     if (this.disposed) return;
     if (!this._transport.get().isPlaying) return;
+    // Phase 27d: check the chain BEFORE pumping. If the elapsed
+    // step count for the current entry has reached its target
+    // (cycles × current pattern length), advance — possibly
+    // looping back to entry 0 or stopping at end-of-chain. The
+    // bank's `selectIndex` swaps `activePattern`, which the
+    // pump call below picks up immediately.
+    if (this.chainPlayback.currentEntryIndex >= 0) {
+      this.maybeAdvanceChain();
+      // maybeAdvanceChain may have called stop() (end-of-chain
+      // with loop=false), in which case we shouldn't pump.
+      if (!this._transport.get().isPlaying) return;
+    }
+
     pump(
       this.bank.activePattern.get(),
       this.clock,
@@ -346,6 +415,47 @@ export class SequencerController {
         },
       },
     );
+  }
+
+  /** Phase 27d. If the current chain entry has played its
+   *  target number of cycles, advance to the next entry —
+   *  looping if `chain.loop` is set, stopping otherwise. The
+   *  cycle target is `cycles × pattern.length`; pattern length
+   *  can change between entries (different slots), so we count
+   *  steps relative to `nextStepIndex` at the entry's start.
+   *
+   *  Granularity is "next pump" — we only check at the start of
+   *  pumpOnce, so a transition can lag by up to LOOKAHEAD ticks
+   *  (< 1 step at sane BPMs). Acceptable for the chain-mode UX. */
+  private maybeAdvanceChain(): void {
+    const chain = this.bank.chain.get();
+    const idx = this.chainPlayback.currentEntryIndex;
+    if (idx < 0 || idx >= chain.steps.length) return;
+    const entry = chain.steps[idx];
+    const elapsed =
+      this.schedulerState.nextStepIndex -
+      this.chainPlayback.startedAtSchedulerStep;
+    const length = this.bank.activePattern.get().length;
+    const target = entry.cycles * length;
+    if (elapsed < target) return;
+
+    let nextIdx = idx + 1;
+    if (nextIdx >= chain.steps.length) {
+      if (chain.loop) {
+        nextIdx = 0;
+      } else {
+        // End of chain, no loop — stop. stop() resets
+        // chainPlayback + clears _chainPlaybackIndex.
+        this.stop();
+        return;
+      }
+    }
+    this.chainPlayback = {
+      currentEntryIndex: nextIdx,
+      startedAtSchedulerStep: this.schedulerState.nextStepIndex,
+    };
+    this._chainPlaybackIndex.set(nextIdx);
+    this.bank.selectIndex(chain.steps[nextIdx].slotIndex);
   }
 }
 

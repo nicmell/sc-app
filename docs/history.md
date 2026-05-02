@@ -44,6 +44,7 @@ is the cleaner read.
 - [Phase 24 — scsynth `/fail` Surface](#phase-24--scsynth-fail-surface)
 - [Phase 25 — Bundle & Dev Workflow Refresh](#phase-25--bundle--dev-workflow-refresh)
 - [Phase 26 — SuperDirt via Bridge-Internal OSC Router](#phase-26--superdirt-via-bridge-internal-osc-router)
+- [Phase 27 — Step Sequencer for SuperDirt](#phase-27--step-sequencer-for-superdirt)
 
 ---
 
@@ -1420,3 +1421,280 @@ extra process; better hot-path latency than C.
   When debugging tree issues, the OscConsole panel's
   `QueryTree(0)` button gives you this directly. Parse mentally
   by tracking the numChildren value of each group.
+
+---
+
+## Phase 27 — Step Sequencer for SuperDirt
+
+**Goal.** Add a step-sequencer panel that drives the existing
+`DirtClient`. Users build patterns by toggling cells in a grid;
+transport plays the pattern at a configured BPM, sending
+`/dirt/play` events at step boundaries. Anchored to
+`ClockController.tick0Ms` + `tickRate` so playback stays
+sample-accurate against the audio engine's clock; the JS scheduler
+just keeps OSC bundles on the wire ahead of fire time. Shipped
+across four sub-phases: 27a (MVP grid), 27b (per-step parameters),
+27c (8-slot pattern bank + localStorage), 27d (chain mode).
+
+### What shipped
+
+*27a — MVP step sequencer (commit 1b0a226).*
+- `src/sequencer/types.ts` (NEW). `Track`, `Pattern`,
+  `TransportState`, `PatternLength` (8|16|32), `ClockLike`,
+  `DirtClientLike`, helpers (`makeEmptyTrack`,
+  `makeEmptyPattern`).
+- `src/sequencer/scheduler.ts` (NEW). `pump()` walks from
+  `state.nextStepTick` to `nowTick + LOOKAHEAD_HORIZON_TICKS` (5
+  ticks ≈ 106 ms at chunkSize 1024 / 48 k), firing
+  `dirtClient.playAtTimetag()` for each active step on each
+  track. `tickToTimetag(tick0Ms, targetTick, tickRate)` produces
+  the OSC bundle's timetag so SuperDirt schedules the event at a
+  sample-accurate audio frame. Playhead callback fires from a
+  delayed `setTimeout` aligned to the audible step boundary, so
+  the UI matches the kick rather than the lookahead horizon.
+- `src/sequencer/SequencerController.ts` (NEW). Pattern + transport
+  reactive stores; mutation API (`addTrack`, `removeTrack`,
+  `setTrackSample`, `setTrackGain`, `toggleStep`, `setBpm`,
+  `setLength`); `play()` / `stop()` / `dispose()`. 25 ms wake
+  loop via `setInterval`. Refuses `play()` when `clock.tick0Ms`
+  is null.
+- `src/dirt/DirtClient.ts` (EDIT). New `playAtTimetag(event,
+  timetag)` for sample-accurate scheduling. New
+  `listSamples(timeoutMs)` + `sampleBanks` reactive store backed
+  by `/dirt/samples` reply (interleaved `[name, count, …]` args
+  parsed by a `parseSampleBanks` helper).
+- `src/dirt/dirtCommands.ts` (EDIT). `dirtListSamples()` builder
+  + `DIRT_SAMPLES_REPLY` constant.
+- `src/dirt/types.ts` (EDIT). `SampleBank` interface.
+- `src/ui/SequencerPanel/{SequencerPanel,TransportBar,TrackRow,
+  StepCell}.tsx` + `.scss` + `index.ts` (NEW). Top-level panel
+  composes the others; `useSyncExternalStore` for pattern +
+  transport + sampleBanks; `useId`-backed shared `<datalist>`
+  used by every `TrackRow` for sample-name autocomplete.
+- `scripts/sc-app-superdirt-startup.scd` (EDIT). Added a
+  `/dirt/listSamples` OSCdef (registered after `~dirt.start`)
+  that flattens `~dirt.buffers` (a `Symbol → Array<BufferProxy>`
+  dict) into a `/dirt/samples bank1 count1 bank2 count2 …` reply.
+  `addr.sendMsg(...)` replies on the same socket the request
+  came in on; the bridge fans the reply back onto the originating
+  WebSocket.
+- `src/AppShell.tsx` (EDIT). Added `sequencer: SequencerController`
+  to `DashboardResources`. Bank-less `setupDashboard` here:
+  threaded an `initialPattern?: Pattern` parameter through so the
+  user's tracks/steps survived chunkSize re-init; `runReinit`
+  captured the current pattern before teardown and passed it in.
+  After `dirtClient.probe()` resolves alive, fire-and-forget
+  `dirtClient.listSamples()`. `clockReady` derived from
+  `clock.effectiveState === 'running'`.
+- ClockController exposes `tickRate` under `derived`, while the
+  sequencer's `ClockLike` interface is flat for testability —
+  AppShell passes a small adapter object.
+
+*27b — Per-step + per-track parameters (commit b90f0d6).*
+- `src/sequencer/types.ts` (EDIT). Migrated `Track.steps` from
+  `boolean[]` to `Step[]` where `Step = { active; params? }`.
+  Added `PARAM_NAMES = ['amp', 'cutoff', 'speed', 'pan']`,
+  `ParamMap = Partial<Record<ParamName, number>>`,
+  `PARAM_SPECS` (label + min/max/step/default for each param),
+  `stepHasOverrides`, `resolveParam(track, step, name)`. `Track`
+  gains `defaults: ParamMap` for track-level fall-throughs.
+- `src/sequencer/SequencerController.ts` (EDIT). New mutations
+  `setStepParam` / `clearStepParam` / `clearAllStepParams` /
+  `setTrackDefault` / `clearTrackDefault`. The cell's `params`
+  object is dropped entirely when the last override clears (a
+  `paramsObjectToStep` helper enforces this), so
+  `stepHasOverrides` stays cheap.
+- `src/sequencer/scheduler.ts` (EDIT). `eventForTrack(track,
+  step)` builds the OSC payload by iterating `PARAM_NAMES` and
+  calling `resolveParam` — `step.params[k]` → `track.defaults[k]`
+  → omit (let SuperDirt default).
+- `src/ui/SequencerPanel/StepCell.tsx` (EDIT). Right-click
+  `onContextMenu` and shift-click open the popover; corner
+  override-dot (top-right) appears when `stepHasOverrides`.
+- `src/ui/SequencerPanel/StepPopover.tsx` (NEW). Portal-rendered
+  to `document.body`, viewport-clamped post-mount via
+  `getBoundingClientRect` + flip-to-other-side fallback. Four
+  sliders (one per param) + per-row clear (⊘) + header "reset"
+  that wipes every override on the cell. Closes on Escape,
+  outside `pointerdown` (capturing phase), scroll, or resize so
+  a stale anchor never sits on screen.
+- `src/ui/SequencerPanel/TrackDefaults.tsx` (NEW). Inline
+  track-default editor; same four sliders + per-row clear.
+- `src/ui/SequencerPanel/TrackRow.tsx` (EDIT). Added a chevron
+  expander that toggles `TrackDefaults`; one popover slot per
+  row (state co-located here so opening one cell's popover
+  closes the previous); chevron lights up when the track has
+  any default set.
+
+*27c — Pattern bank + localStorage persistence (commit 0bf631a).*
+- `src/sequencer/PatternBank.ts` (NEW). 8-slot reactive store:
+  `_slots: Store<ReadonlyArray<Pattern>>`,
+  `_activeIndex: Store<number>`, derived
+  `_activePattern: Store<Pattern>` (kept in sync via internal
+  subs). Mutations: `selectIndex`, `updateActivePattern(updater)`,
+  `clearSlot`. Persistence: schema-versioned (V1) JSON in
+  `localStorage['sc.sequencer.bank']`, debounced 500 ms via
+  `setTimeout`; `flush()` runs synchronously on `dispose()` so a
+  disconnect within the debounce window doesn't drop the
+  in-flight write. Loads sanitise each pattern (pre-27b
+  `boolean[]` steps coerce to `{active}`; malformed entries fall
+  back to empty pattern).
+- `src/sequencer/SequencerController.ts` (EDIT). Refactored from
+  owning a private `_pattern` store to delegating reads/writes
+  through `bank.activePattern` / `bank.updateActivePattern(...)`.
+  All mutation methods are now thin wrappers. `pumpOnce` reads
+  `bank.activePattern.get()` fresh, so switching slots mid-pump
+  cuts to the new pattern's tracks at the next step.
+- `src/ui/SequencerPanel/BankSelector.tsx` (NEW). Row of 8
+  numbered buttons; active slot highlighted; filled slots get a
+  small dot (the BankSelector reads `bank.slots` and counts
+  `tracks.length > 0`).
+- `src/ui/SequencerPanel/SequencerPanel.tsx` (EDIT). Now takes
+  `bank` prop. Renders `BankSelector`. Document-level keydown
+  listener maps 1..8 to `bank.selectIndex`, gated on editable
+  focus (`INPUT`/`TEXTAREA`/`SELECT`/`contenteditable`) so the
+  shortcut doesn't fight the BPM box.
+- `src/AppShell.tsx` (EDIT). `bank: PatternBank` added to
+  `DashboardResources`. Bank constructed fresh in
+  `handleConnect` (loads from localStorage), reused across
+  `chunkSize` re-init (long-lived — passed back into the
+  rebuilt controller), disposed by `handleDisconnect` /
+  `onError` / heartbeat-fail / reinit-fail (each path flushes
+  a final save before drop). The `initialPattern?: Pattern`
+  parameter from 27a was replaced with `bank: PatternBank`.
+
+*27d — Pattern chain mode (commit pending).*
+- `src/sequencer/types.ts` (EDIT). `ChainEntry`,
+  `ChainState { enabled; loop; steps: ChainEntry[] }`,
+  `makeEmptyChain()`. `ChainEntry.cycles` clamps 1..64.
+- `src/sequencer/PatternBank.ts` (EDIT). New `_chain` store +
+  mutations: `setChainEnabled`, `setChainLoop`,
+  `appendChainEntry(slotIndex, cycles)`, `removeChainEntry`,
+  `updateChainEntry(index, patch)`. Schema bumped V1 → V2;
+  V1 saves still load (forward-migrated by attaching default
+  empty chain). `sanitiseChain` coerces malformed entries.
+- `src/sequencer/SequencerController.ts` (EDIT). New
+  `chainPlayback: { currentEntryIndex; startedAtSchedulerStep }`
+  internal state + reactive `chainPlaybackIndex: number | null`
+  store for UI highlighting. `play()` engages chain mode if
+  `bank.chain.enabled && steps.length > 0`, snapping
+  `bank.activeIndex` to `chain[0].slotIndex`. `pumpOnce` calls
+  `maybeAdvanceChain()` before each pump: when
+  `(nextStepIndex - startedAtSchedulerStep) >=
+  cycles × pattern.length`, advance to the next chain entry
+  (loop to 0 if `chain.loop`, else `stop()` end-of-chain).
+  Granularity = "next pump" — transitions can lag by up to
+  LOOKAHEAD ticks (< 1 step at sane BPMs); acceptable.
+- `src/ui/SequencerPanel/ChainEditor.tsx` (NEW). Compact
+  horizontal strip: header carries Chain/Loop checkboxes + "+
+  Step" button; entries are `[slot select × cycles input ⊘]`
+  cells. Currently-playing entry highlighted via
+  `controller.chainPlaybackIndex`.
+- `src/ui/SequencerPanel/SequencerPanel.tsx` (EDIT). Renders
+  `<ChainEditor />` between `<BankSelector />` and
+  `<TransportBar />`.
+
+### Decisions
+
+- **Tick-anchored scheduling, not `performance.now()`** (Q
+  during 27a design). The JS scheduler runs in real time, but
+  bundle timetags use `tickToTimetag(tick0Ms, targetTick,
+  tickRate)`, anchoring playback to the same audio clock as the
+  scopes/recordings. Pattern: read pattern → compute target
+  tick → derive timetag → bundle the `/dirt/play` →
+  `client.sendCommand(bundle)`. The bridge forwards; SuperDirt
+  scheduler honours the timetag at sample-accurate boundaries.
+- **Sample enumeration via SuperDirt OSC**, not parsing
+  `superdirt-deps/Dirt-Samples/`. The startup script's OSCdef
+  reflects what SuperDirt actually loaded (some banks may fail
+  to load; some may be added at runtime), and avoids embedding
+  a directory walker in the frontend or asking the user to type
+  paths. ~10 lines of sclang for a clean dynamic source.
+- **Track-level + per-cell params (27b).** Two-tier resolution
+  (cell → track → omit) means a track can have a pleasant
+  default character (e.g., `cutoff: 600`) and individual cells
+  can spike or drop without the user re-editing every cell.
+- **Bank lives outside the controller (27c).** Started as
+  on-the-controller in 27a's `_pattern`; refactored to
+  external. Two wins: (1) bank persistence is decoupled from
+  controller lifecycle, so chunkSize re-init (which rebuilds
+  the controller) doesn't churn localStorage; (2) the bank's
+  reactive surface (`slots`, `activeIndex`, `chain`) is shared
+  by the panel UI and the controller, with a single source of
+  truth.
+- **Schema versioning, not migration code (27c/d).** V1 →
+  V2 migration is a one-liner ("attach default empty chain").
+  Future schema breaks have two paths: forward-migrate (write
+  the migration in `loadFromStorage`) or drop saves (return
+  `null`, user starts fresh). The version field gives us
+  optionality without committing to N years of migration code
+  upfront.
+- **Mid-playback slot switching is seamless (27c/d).** The
+  scheduler reads `bank.activePattern.get()` fresh on every
+  pump; switching slots cuts to the new pattern at the next
+  step. This is what makes chain mode work at all (chain
+  transitions are just bank.selectIndex calls), AND what makes
+  manual A/B'ing while playing feel right. Don't break this
+  invariant.
+- **Chain advances `bank.activeIndex` (27d).** Considered a
+  separate "chain playhead" store but rejected — would mean
+  two highlight concepts in the BankSelector (which slot are
+  you editing? which is playing?). Single source of truth is
+  cleaner. Manual click while chain is playing transiently
+  overrides; next chain transition snaps back. Treated as
+  feature, not bug.
+- **Cycle granularity at "next pump" (27d).** A chain
+  transition could in principle happen mid-pump (when the
+  lookahead crosses the cycle boundary), but threading a
+  boundary callback through `pump()` was complex for sub-step
+  precision the user can't hear. Cap is < 1 step at sane BPMs.
+
+### Gotchas worth carrying forward
+
+- **`Track.steps` is `Step[]`, not `boolean[]`.** Pre-27b code
+  read `track.steps[i]` as a boolean directly; post-27b, it's
+  an object with `active` + optional `params`. Anything new
+  that reads steps must use `step.active`.
+- **Step `params` is dropped, not emptied.**
+  `step.params === undefined` ⇔ no overrides. Don't write
+  `step.params = {}`. The `paramsObjectToStep` helper in the
+  controller enforces this on `clearStepParam`.
+- **The bank is long-lived across chunkSize re-init.** Don't
+  `dispose()` the bank in `teardownServerState` — that's the
+  re-init path, and the bank survives. Disposal happens only at
+  full-disconnect / WS-error / heartbeat-fail. If you add a new
+  teardown path, decide explicitly: re-init (don't touch bank)
+  vs. tear-down (dispose + flush).
+- **Bank dispose() flushes synchronously.** A `handleDisconnect`
+  immediately after a step toggle relies on this — the
+  500 ms debounce is still in flight. If you ever switch the
+  debounce mechanism (e.g., `requestIdleCallback`), keep the
+  synchronous flush path intact.
+- **Schema V1 saves are still accepted.** `loadFromStorage`
+  accepts `version: 1 || version: 2`, attaches default chain
+  on V1. Don't tighten the version check without a migration
+  plan; users with bank data from 27c will hit it.
+- **`/dirt/listSamples` is sc-app-specific, not stock SuperDirt.**
+  The OSCdef lives in `scripts/sc-app-superdirt-startup.scd`. A
+  vanilla SuperDirt instance won't reply, which is fine —
+  `DirtClient.listSamples()` times out at 2 s and the panel's
+  datalist stays empty (free-text input still works). If a
+  future build wants stock-SuperDirt compatibility, this is
+  where it'll need a fallback.
+- **Keyboard 1..8 listener gates on editable focus.** Document-
+  level `keydown` listener in `SequencerPanel`; checks
+  `INPUT`/`TEXTAREA`/`SELECT`/`contenteditable` before acting,
+  also rejects Ctrl/Meta/Alt modifiers. If you add another
+  global shortcut, follow the same gate pattern — global
+  hotkeys that fire while the user is typing are the worst.
+- **Chain advancement reads `bank.activePattern.get().length`.**
+  Different slots can have different lengths (8/16/32); the
+  cycles-to-steps calculation (`cycles × length`) uses the
+  current entry's pattern. If you add new slot lengths or a
+  pattern-length-change-while-playing path, double-check
+  `maybeAdvanceChain` still computes the right target.
+- **ChainPlaybackIndex resets to null on stop.** UI consumers
+  should treat `null` as "nothing playing" (stopped or chain
+  mode off). The store fires on every transition during
+  chain playback, so the highlighted entry tracks live —
+  no UI-side debouncing needed.

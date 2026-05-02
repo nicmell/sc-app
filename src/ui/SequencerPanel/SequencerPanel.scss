@@ -16,6 +16,159 @@
     flex-wrap: wrap;
   }
 
+  // ── Chain editor (Phase 27d) ───────────────────────────────────────
+
+  .chain-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 0.4rem 0.5rem;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+
+    &.is-enabled {
+      border-color: var(--border-3);
+    }
+  }
+
+  .chain-editor-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .chain-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    cursor: pointer;
+
+    input[type='checkbox'] {
+      accent-color: var(--accent);
+    }
+    input:disabled + span {
+      opacity: 0.5;
+    }
+  }
+
+  .chain-append {
+    margin-left: auto;
+    padding: 0.25rem 0.6rem;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border-2);
+    border-radius: 3px;
+    font: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+
+    &:not(:disabled):hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+
+  .chain-entries {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 1.6rem;
+  }
+
+  .chain-empty {
+    font-size: 0.78rem;
+    color: var(--text-mute);
+    font-style: italic;
+  }
+
+  .chain-entry {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.2rem 0.35rem;
+    background: var(--surface);
+    border: 1px solid var(--border-2);
+    border-radius: 3px;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    transition:
+      border-color 80ms ease,
+      box-shadow 80ms ease;
+
+    &.is-playing {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent-hover);
+    }
+
+    select,
+    input[type='number'] {
+      background: transparent;
+      color: var(--text);
+      border: none;
+      font: inherit;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      padding: 0;
+
+      &:focus {
+        outline: 1px solid var(--accent);
+        outline-offset: 1px;
+      }
+    }
+
+    .chain-entry-slot {
+      // Native arrow takes a lot of width on macOS; keep it
+      // tight by using the appearance:none approach plus a
+      // narrow box.
+      width: 2.2rem;
+      cursor: pointer;
+    }
+
+    .chain-entry-cycles {
+      width: 2.4rem;
+      text-align: right;
+      // Hide the native spinner; the arrow keys still work for
+      // keyboard nudge.
+      &::-webkit-inner-spin-button,
+      &::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+      -moz-appearance: textfield;
+    }
+
+    .chain-entry-x {
+      color: var(--text-mute);
+      font-size: 0.7rem;
+    }
+
+    .chain-entry-remove {
+      padding: 0;
+      width: 1.1rem;
+      height: 1.1rem;
+      background: transparent;
+      color: var(--text-mute);
+      border: 1px solid transparent;
+      border-radius: 2px;
+      font-size: 0.7rem;
+      line-height: 1;
+      cursor: pointer;
+
+      &:hover {
+        color: var(--danger);
+        border-color: var(--danger);
+      }
+    }
+  }
+
   .bank-slot {
     position: relative;
     flex: 1 1 0;
