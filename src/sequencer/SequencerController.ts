@@ -35,11 +35,16 @@ import {
 } from './scheduler';
 import {
   makeEmptyPattern,
+  makeEmptyStep,
   makeEmptyTrack,
+  PARAM_NAMES,
   type ClockLike,
   type DirtClientLike,
+  type ParamMap,
+  type ParamName,
   type Pattern,
   type PatternLength,
+  type Step,
   type TransportState,
 } from './types';
 
@@ -132,8 +137,107 @@ export class SequencerController {
         if (t.id !== trackId) return t;
         if (stepIndex < 0 || stepIndex >= t.steps.length) return t;
         const nextSteps = t.steps.slice();
-        nextSteps[stepIndex] = !nextSteps[stepIndex];
+        const cur = nextSteps[stepIndex];
+        nextSteps[stepIndex] = { ...cur, active: !cur.active };
         return { ...t, steps: nextSteps };
+      }),
+    }));
+  }
+
+  /** Phase 27b — set a per-cell param override. Pass `undefined`
+   *  via `clearStepParam` to drop the override (don't pass NaN /
+   *  undefined here). The cell's `params` object is created on
+   *  demand and dropped entirely when its last key clears, so
+   *  `step.params === undefined` always means "no overrides". */
+  setStepParam(
+    trackId: string,
+    stepIndex: number,
+    name: ParamName,
+    value: number,
+  ): void {
+    if (this.disposed) return;
+    if (!Number.isFinite(value)) return;
+    this._pattern.update((p) => ({
+      ...p,
+      tracks: p.tracks.map((t) => {
+        if (t.id !== trackId) return t;
+        if (stepIndex < 0 || stepIndex >= t.steps.length) return t;
+        const nextSteps = t.steps.slice();
+        const cur = nextSteps[stepIndex];
+        const nextParams: ParamMap = { ...(cur.params ?? {}), [name]: value };
+        nextSteps[stepIndex] = { ...cur, params: nextParams };
+        return { ...t, steps: nextSteps };
+      }),
+    }));
+  }
+
+  /** Drop a per-cell override. If it was the only override the
+   *  whole `params` object is dropped from the step (so
+   *  `stepHasOverrides` short-circuits cleanly). */
+  clearStepParam(trackId: string, stepIndex: number, name: ParamName): void {
+    if (this.disposed) return;
+    this._pattern.update((p) => ({
+      ...p,
+      tracks: p.tracks.map((t) => {
+        if (t.id !== trackId) return t;
+        if (stepIndex < 0 || stepIndex >= t.steps.length) return t;
+        const cur = t.steps[stepIndex];
+        if (!cur.params || cur.params[name] === undefined) return t;
+        const { [name]: _dropped, ...rest } = cur.params;
+        const nextSteps = t.steps.slice();
+        nextSteps[stepIndex] = paramsObjectToStep(cur, rest);
+        return { ...t, steps: nextSteps };
+      }),
+    }));
+  }
+
+  /** Drop ALL per-cell overrides on a step in one shot. Cheaper
+   *  than four `clearStepParam` calls and avoids four reactive
+   *  emits in a row. */
+  clearAllStepParams(trackId: string, stepIndex: number): void {
+    if (this.disposed) return;
+    this._pattern.update((p) => ({
+      ...p,
+      tracks: p.tracks.map((t) => {
+        if (t.id !== trackId) return t;
+        if (stepIndex < 0 || stepIndex >= t.steps.length) return t;
+        const cur = t.steps[stepIndex];
+        if (!cur.params) return t;
+        const nextSteps = t.steps.slice();
+        const next: Step = { active: cur.active };
+        nextSteps[stepIndex] = next;
+        return { ...t, steps: nextSteps };
+      }),
+    }));
+  }
+
+  /** Set a track-level default for a param. Cells without an
+   *  override inherit this. Passing the SuperDirt-default value
+   *  does NOT short-circuit — the user explicitly said "this
+   *  track should send pan=0.5", which is a different statement
+   *  from "no override". */
+  setTrackDefault(trackId: string, name: ParamName, value: number): void {
+    if (this.disposed) return;
+    if (!Number.isFinite(value)) return;
+    this._pattern.update((p) => ({
+      ...p,
+      tracks: p.tracks.map((t) => {
+        if (t.id !== trackId) return t;
+        return { ...t, defaults: { ...t.defaults, [name]: value } };
+      }),
+    }));
+  }
+
+  /** Drop a track-level default. */
+  clearTrackDefault(trackId: string, name: ParamName): void {
+    if (this.disposed) return;
+    this._pattern.update((p) => ({
+      ...p,
+      tracks: p.tracks.map((t) => {
+        if (t.id !== trackId) return t;
+        if (t.defaults[name] === undefined) return t;
+        const { [name]: _dropped, ...rest } = t.defaults;
+        return { ...t, defaults: rest };
       }),
     }));
   }
@@ -235,9 +339,30 @@ export class SequencerController {
   }
 }
 
-/** Pad with `false` or truncate to match the new pattern length. */
-function resizeSteps(steps: boolean[], length: PatternLength): boolean[] {
+/** Pad with empty inactive steps or truncate to match the new
+ *  pattern length. Existing steps (active flag + per-cell overrides)
+ *  are preserved when shrinking down to `length`; the discarded tail
+ *  is gone. */
+function resizeSteps(steps: Step[], length: PatternLength): Step[] {
   if (steps.length === length) return steps;
   if (steps.length > length) return steps.slice(0, length);
-  return steps.concat(new Array<boolean>(length - steps.length).fill(false));
+  const tail = Array.from(
+    { length: length - steps.length },
+    makeEmptyStep,
+  );
+  return steps.concat(tail);
+}
+
+/** Helper for `clearStepParam`: produce a new step value that
+ *  drops the `params` field entirely if `rest` is empty, or
+ *  keeps it otherwise. Centralises the "no params object means
+ *  no overrides" invariant so `stepHasOverrides` stays cheap. */
+function paramsObjectToStep(prev: Step, rest: ParamMap): Step {
+  for (const key of PARAM_NAMES) {
+    if (rest[key] !== undefined) {
+      return { ...prev, params: rest };
+    }
+  }
+  // All cleared → drop the params object entirely.
+  return { active: prev.active };
 }

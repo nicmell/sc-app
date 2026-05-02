@@ -13,11 +13,14 @@
 
 import { tickToTimetag } from '@sc-app/server-commands';
 
-import type {
-  ClockLike,
-  DirtClientLike,
-  Pattern,
-  Track,
+import {
+  PARAM_NAMES,
+  resolveParam,
+  type ClockLike,
+  type DirtClientLike,
+  type Pattern,
+  type Step,
+  type Track,
 } from './types';
 
 /**
@@ -128,8 +131,9 @@ export function pump(
 
     for (const track of pattern.tracks) {
       if (!track.sample) continue; // empty sample name ⇒ silent
-      if (!track.steps[stepIndex]) continue;
-      dirtClient.playAtTimetag(eventForTrack(track), timetag);
+      const step = track.steps[stepIndex];
+      if (!step?.active) continue;
+      dirtClient.playAtTimetag(eventForTrack(track, step), timetag);
     }
 
     // Playhead update: fire at the audible step time so the UI
@@ -151,8 +155,18 @@ export function pump(
   return true;
 }
 
-/** Build the OSC event payload for a track. Only `s` and `gain`
- *  for now; per-step parameters land in 27b. */
-function eventForTrack(track: Track): Record<string, string | number> {
-  return { s: track.sample, gain: track.gain };
+/** Build the OSC event payload for a step on a track. Always
+ *  carries `s` (sample bank) and `gain` (track-level trim);
+ *  per-step params layered in via `resolveParam` (cell override
+ *  → track default → omit). Phase 27b. */
+function eventForTrack(track: Track, step: Step): Record<string, string | number> {
+  const event: Record<string, string | number> = {
+    s: track.sample,
+    gain: track.gain,
+  };
+  for (const name of PARAM_NAMES) {
+    const value = resolveParam(track, step, name);
+    if (value !== undefined) event[name] = value;
+  }
+  return event;
 }

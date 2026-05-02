@@ -9,12 +9,13 @@ audio config schema, file layout, workspace packages, and the
 chunkSize × sampleRate practical table all live in
 [`CLAUDE.md`](./CLAUDE.md) — don't duplicate them here.
 
-**Phase 27a shipped; 27b in design.** Phases 0–26 + 27a shipped
-(see `docs/history.md`; 27a entry pending until the parent Phase
-27 closes). Phase 27 below introduces a step-sequencer panel that
-drives SuperDirt — turning the dashboard from "oscilloscope +
-recorder + REPL" into "oscilloscope + recorder + sequencer."
-Earlier longer-term candidates remain in *Future Improvements*.
+**Phase 27a + 27b shipped; 27c in design.** Phases 0–26 + 27a +
+27b shipped (see `docs/history.md`; 27a/b entries pending until
+the parent Phase 27 closes). Phase 27 below introduces a
+step-sequencer panel that drives SuperDirt — turning the dashboard
+from "oscilloscope + recorder + REPL" into "oscilloscope +
+recorder + sequencer." Earlier longer-term candidates remain in
+*Future Improvements*.
 
 ---
 
@@ -239,10 +240,20 @@ threading through `setupDashboard`; playback restarts at step 0.
 Sample-name autocomplete fed by `/dirt/listSamples` OSCdef in the
 sclang startup script.
 
-**27b — Per-step parameters.** Right-click a cell (or
-shift-click) → tiny popup with `amp`, `cutoff`, `speed`, `pan`
-sliders. Track-level defaults overridable per-cell. Per-cell
-overrides shown as a small dot in the cell. ~½ day.
+**27b — Per-step parameters.** ✅ Shipped. Right-click *or*
+shift-click a cell opens a portal-rendered `StepPopover` with
+sliders for `amp` / `cutoff` / `speed` / `pan` plus a per-row
+clear (⊘) and a header "reset" that drops every override on
+the cell at once. Track-level defaults editable via a chevron
+that expands an inline `TrackDefaults` panel under the row.
+Resolution at fire time: `step.params[k]` → `track.defaults[k]`
+→ omit (let SuperDirt default). Override-dot (top-right of the
+cell) lights up whenever `step.params` is non-empty; the chevron
+on the track row lights up whenever any track default is set.
+Popover closes on Escape, click-outside, scroll, or resize. The
+data model migrated `Track.steps` from `boolean[]` to `Step[]`
+where `Step = { active; params? }`; `params` is dropped entirely
+when the last override clears so `stepHasOverrides` stays cheap.
 
 **27c — Pattern bank + persistence.** Up to 8 patterns,
 keyboard-switchable (1–8). Auto-save to `localStorage` on every
@@ -256,23 +267,22 @@ cycles, then B for M, etc. UI: a small horizontal strip below the
 grid with pattern letters + cycle counts. Loop the chain or play
 once. ~½ day. Punt until someone asks for it.
 
-### Files (planned, with 27a marks)
+### Files (planned, with 27a + 27b marks)
 
-✅ = landed in 27a. Unmarked entries are 27b+ scope.
+✅ = landed. ✳ = touched again in 27b. Unmarked entries are 27c+ scope.
 
 ```
 src/sequencer/
-  types.ts                 ✅ NEW — Track, Pattern, TransportState,
-                                 ClockLike, DirtClientLike, helpers
-  SequencerController.ts   ✅ NEW — pattern state + transport + wake
-                                 loop + reactive stores; takes
-                                 ClockLike + DirtClientLike (adapter
-                                 wrapping ClockController in AppShell
-                                 because the controller exposes
-                                 tickRate under .derived)
-  scheduler.ts             ✅ NEW — tick-anchored lookahead loop;
-                                 extracted so it's testable in
-                                 isolation against a fake Clock
+  types.ts                 ✳ EDIT — Step interface (was boolean),
+                                 ParamMap, PARAM_SPECS,
+                                 stepHasOverrides, resolveParam
+  SequencerController.ts   ✳ EDIT — setStepParam / clearStepParam /
+                                 clearAllStepParams /
+                                 setTrackDefault / clearTrackDefault;
+                                 toggleStep migrated to Step shape
+  scheduler.ts             ✳ EDIT — eventForTrack now takes the Step
+                                 and merges resolved params into the
+                                 OSC payload
 
 src/ui/SequencerPanel/
   SequencerPanel.tsx       ✅ NEW — top-level panel; useSyncExternalStore
@@ -281,13 +291,21 @@ src/ui/SequencerPanel/
   TransportBar.tsx         ✅ NEW — Play/Stop, BPM input, length
                                  select, "+ Track" button; Play
                                  disabled when clockReady=false
-  TrackRow.tsx             ✅ NEW — sample input (list= shared
-                                 datalist), gain slider 0..2 step
-                                 0.01, step grid, × remove button
-  StepCell.tsx             ✅ NEW — memo() toggle button; is-active /
-                                 is-playhead / is-beat classes
-  SequencerPanel.scss      ✅ NEW — styles, beat-boundary borders,
-                                 playhead halo
+  TrackRow.tsx             ✳ EDIT — chevron expander; hosts
+                                 popover state (one slot per row);
+                                 portals StepPopover to document.body
+  StepCell.tsx             ✳ EDIT — onContextMenu / shift-click open
+                                 popover; override-dot in corner;
+                                 has-overrides class
+  StepPopover.tsx          ✳ NEW — portal-rendered, viewport-clamped,
+                                 4 sliders + per-row clear + reset;
+                                 closes on outside / Esc / scroll /
+                                 resize
+  TrackDefaults.tsx        ✳ NEW — inline track-default editor
+                                 (chevron-toggled), 4 sliders +
+                                 clear buttons
+  SequencerPanel.scss      ✳ EDIT — popover, override-dot, chevron,
+                                 expander, source-tier opacities
   index.ts                 ✅ NEW
 
 src/dirt/DirtClient.ts     ✅ EDIT — added `playAtTimetag(event, timetag)`

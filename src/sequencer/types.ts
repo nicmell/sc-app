@@ -16,9 +16,63 @@ import type { Timetag } from '@sc-app/server-commands';
 export type PatternLength = 8 | 16 | 32;
 export const PATTERN_LENGTHS: ReadonlyArray<PatternLength> = [8, 16, 32];
 
+/** Per-step / per-track parameter set (Phase 27b). The four
+ *  parameters cover the most common SuperDirt mods that aren't
+ *  already track-level (`gain`, `s`):
+ *  - `amp`   — linear amplitude. SuperDirt's default is 0.4.
+ *  - `cutoff`— low-pass filter cutoff Hz. Bypassed when omitted.
+ *  - `speed` — playback speed multiplier (also pitch-shifts).
+ *  - `pan`   — stereo position (0=L, 0.5=center, 1=R).
+ *
+ *  More can be added later (e.g. `room`, `delay`); the resolution
+ *  pipeline doesn't care about the key set as long as it lines up
+ *  between defaults + overrides. */
+export const PARAM_NAMES = ['amp', 'cutoff', 'speed', 'pan'] as const;
+export type ParamName = (typeof PARAM_NAMES)[number];
+
+/** Sparse param map: only set keys are sent. An undefined value at
+ *  a given key means "fall through" — to the track default, then
+ *  to SuperDirt's built-in default. */
+export type ParamMap = Partial<Record<ParamName, number>>;
+
+/** UI metadata + slider config for each param. The slider's
+ *  `default` is what we pre-fill the slider with when the user
+ *  enables an override on a previously-unset parameter — i.e.
+ *  it's the *starting point* for editing, not what gets sent
+ *  when the override is cleared. */
+export interface ParamSpec {
+  name: ParamName;
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  /** Pre-fill value when the user creates an override for the
+   *  first time. Chosen to be a sensible "no-op" or center
+   *  position. */
+  default: number;
+}
+
+export const PARAM_SPECS: ReadonlyArray<ParamSpec> = [
+  { name: 'amp', label: 'amp', min: 0, max: 2, step: 0.01, default: 1 },
+  { name: 'cutoff', label: 'cutoff', min: 100, max: 8000, step: 10, default: 800 },
+  { name: 'speed', label: 'speed', min: 0.25, max: 4, step: 0.01, default: 1 },
+  { name: 'pan', label: 'pan', min: 0, max: 1, step: 0.01, default: 0.5 },
+];
+
+/** A single step in a track. Active = fire `/dirt/play` at this
+ *  step. `params` is sparse — present keys override the track's
+ *  default, missing keys inherit from track default → SuperDirt
+ *  default. The whole `params` object is omitted (not just empty)
+ *  when there are no overrides, so `Object.keys(step.params).length`
+ *  in the UI directly counts overrides. */
+export interface Step {
+  active: boolean;
+  params?: ParamMap;
+}
+
 /** A single sequencer track. `steps.length` always equals
  *  `pattern.length`; resizing the pattern resizes every track's
- *  steps array (truncate or pad with `false`). */
+ *  steps array (truncate or pad with empty inactive steps). */
 export interface Track {
   /** Stable id for React keys + lookup; not exposed to OSC. */
   id: string;
@@ -29,9 +83,12 @@ export interface Track {
    *  param. SuperDirt's default gain is around 1.0; we bias to
    *  0.8 so unattended tracks don't clip when stacked. */
   gain: number;
-  /** Step on/off. `steps[i] === true` ⇒ fire `/dirt/play` at step
-   *  `i`. */
-  steps: boolean[];
+  /** Track-level default values for the per-step params. Sparse:
+   *  unset keys fall through to SuperDirt's defaults. Per-cell
+   *  overrides win over these. */
+  defaults: ParamMap;
+  /** Step on/off + per-step param overrides. */
+  steps: Step[];
 }
 
 /** Top-level pattern structure. Editable via SequencerController
@@ -78,12 +135,17 @@ export interface DirtClientLike {
 /** Helpers — building blocks for both the controller and the
  *  scheduler. */
 
+export function makeEmptyStep(): Step {
+  return { active: false };
+}
+
 export function makeEmptyTrack(length: PatternLength, sample = ''): Track {
   return {
     id: makeTrackId(),
     sample,
     gain: 0.8,
-    steps: new Array<boolean>(length).fill(false),
+    defaults: {},
+    steps: Array.from({ length }, makeEmptyStep),
   };
 }
 
@@ -94,6 +156,26 @@ export function makeEmptyPattern(length: PatternLength = 16): Pattern {
     bpm: 120,
     subdivision: 4,
   };
+}
+
+/** True if a step has any param overrides set. Used by the UI to
+ *  draw the "modified" dot inside the cell. */
+export function stepHasOverrides(step: Step): boolean {
+  if (!step.params) return false;
+  for (const key of PARAM_NAMES) {
+    if (step.params[key] !== undefined) return true;
+  }
+  return false;
+}
+
+/** Resolve a param's effective value at a given step:
+ *  per-cell override → track default → undefined (= omit). */
+export function resolveParam(
+  track: Track,
+  step: Step,
+  name: ParamName,
+): number | undefined {
+  return step.params?.[name] ?? track.defaults[name];
 }
 
 let trackIdCounter = 0;
