@@ -1,63 +1,56 @@
-import { useEffect, useState } from 'react';
 import './ConnectScreen.css';
 
-const ADDRESS_REGEXP = /^([^\s:]+):(\d{1,5})$/;
-
+/** Phase 29c — recovery / loading surface. The pre-29 address
+ *  input is gone (the bridge owns the scsynth address via
+ *  `config.json`); this screen just shows status during boot
+ *  and surfaces session-creation errors with a Retry button.
+ *
+ *  Three modes, picked by `mode`:
+ *  - `loading` — bootstrap or handleConnect in flight. No
+ *    button; just a spinner-flavoured message. Auto-transitions
+ *    when the parent finishes its bootstrap.
+ *  - `disconnected` — user clicked Disconnect. "Reconnect"
+ *    button triggers a fresh bootstrap.
+ *  - `error` — bootstrap failed (scsynth down, network, etc.).
+ *    Shows the message inline + Retry button.
+ */
 export interface ConnectScreenProps {
-  defaultAddress?: string;
-  /** Called when the user submits a valid address. Resolves on success;
-   *  rejects (or AppShell supplies `error`) on failure. */
-  onConnect: (address: string) => Promise<void>;
-  /** Externally-surfaced error (e.g. from a prior connect attempt). */
+  mode: 'loading' | 'disconnected' | 'error';
+  /** Error message — shown only when `mode === 'error'`. */
   error?: string | null;
+  /** Triggers a fresh bootstrap. Wired only when `mode` allows
+   *  retry (`disconnected` or `error`). */
+  onRetry?: () => void;
 }
 
-export function ConnectScreen({ defaultAddress, onConnect, error }: ConnectScreenProps) {
-  const [address, setAddress] = useState(defaultAddress ?? '127.0.0.1:57110');
-  const [connecting, setConnecting] = useState(false);
-  const [localError, setLocalError] = useState<string | null>(null);
-
-  const valid = ADDRESS_REGEXP.test(address);
-
-  // When the parent surfaces a new error, stop the "Connecting…" spinner.
-  useEffect(() => {
-    if (error) setConnecting(false);
-  }, [error]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!valid || connecting) return;
-    setConnecting(true);
-    setLocalError(null);
-    try {
-      await onConnect(address);
-    } catch (err) {
-      setLocalError(err instanceof Error ? err.message : String(err));
-      setConnecting(false);
-    }
-  };
-
-  const shownError = error ?? localError;
-
+export function ConnectScreen({ mode, error, onRetry }: ConnectScreenProps) {
   return (
     <div className="connect-screen">
       <h1>SC-App</h1>
-      <form onSubmit={handleSubmit}>
-        <label htmlFor="sc-address">scsynth address</label>
-        <input
-          id="sc-address"
-          value={address}
-          onChange={(e) => setAddress(e.currentTarget.value)}
-          placeholder="127.0.0.1:57110"
-          disabled={connecting}
-          autoComplete="off"
-          spellCheck={false}
-        />
-        <button type="submit" disabled={!valid || connecting}>
-          {connecting ? 'Connecting…' : 'Connect'}
-        </button>
-        {shownError && <p className="error">{shownError}</p>}
-      </form>
+      <div className="connect-screen-body">
+        {mode === 'loading' && (
+          <p className="connect-screen-status">Connecting…</p>
+        )}
+        {mode === 'disconnected' && (
+          <>
+            <p className="connect-screen-status">Disconnected.</p>
+            <button type="button" onClick={onRetry}>
+              Reconnect
+            </button>
+          </>
+        )}
+        {mode === 'error' && (
+          <>
+            <p className="connect-screen-status">
+              Couldn't connect to scsynth.
+            </p>
+            {error && <p className="error">{error}</p>}
+            <button type="button" onClick={onRetry}>
+              Retry
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }

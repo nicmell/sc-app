@@ -1,14 +1,15 @@
 /**
- * ConnectScreen — fullscreen centred form with the scsynth
- * address input + Connect button. Foundation handles input /
- * label / button base styling + .error placeholder.
+ * ConnectScreen — fullscreen centred recovery / loading
+ * surface. Phase 29c demoted this from "form with address
+ * input" to "status + retry button"; the bridge owns the
+ * scsynth address via config.json.
+ *
+ * Foundation handles button base styling + .error placeholder.
  *
  * Local-only:
  *   - .connect-screen container (full-height centred chrome)
  *   - h1 sizing (slightly smaller than foundation's --font-size-xl)
- *   - form column-flex layout + max-width
- *   - input width + override padding (foundation default is
- *     0.25/0.5rem; the connect input feels right slightly bigger)
+ *   - body column-flex layout + max-width
  */
 
 .connect-screen {
@@ -30,26 +31,17 @@
   letter-spacing: 0.02em;
 }
 
-.connect-screen form {
+.connect-screen-body {
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
-  width: min(320px, 90vw);
+  gap: var(--space-md);
+  width: min(360px, 90vw);
+  align-items: center;
+  text-align: center;
 }
 
-.connect-screen label {
-  font-size: var(--font-size-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  opacity: 0.7;
-  /* Override foundation .label inline-flex — connect-screen
-     wants stacked label+input, not inline. */
-  display: block;
-}
-
-.connect-screen input {
-  /* Slightly more generous padding than foundation's default
-     so the address field reads as a primary input. */
-  padding: var(--space-xs) var(--space-sm);
-  border-radius: var(--radius-sm);
+.connect-screen-status {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-dim);
 }
