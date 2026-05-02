@@ -1,0 +1,42 @@
+/**
+ * ClockPanel — only panel-specific bits remain. The status pill
+ * (running / paused / stopped) is now a foundation .status-pill
+ * with data-variant; the toolbar buttons are bare <button> /
+ * <button data-variant="secondary">.
+ *
+ * Local-only:
+ *   .elapsed / .tick — monospace tabular readouts.
+ *   .dot              — the small flashing tick indicator beside
+ *                       the elapsed counter (NOT the pill's dot).
+ */
+
+.clock-panel .elapsed,
+.clock-panel .tick {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+
+.clock-panel .elapsed {
+  color: var(--color-text);
+}
+
+.clock-panel .tick {
+  color: var(--color-text-dim);
+}
+
+.clock-panel .dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--color-border-stronger);
+  transition:
+    background-color 120ms ease-out,
+    box-shadow 120ms ease-out;
+}
+
+.clock-panel .dot.flash {
+  background: var(--color-ok);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--color-ok) 70%, transparent);
+}

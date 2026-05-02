@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import type { ClockController, ClockState } from '@/clock/ClockController';
-import './ClockPanel.scss';
+import './ClockPanel.css';
 
 const PULSE_FLASH_MS = 90;
 
@@ -8,14 +8,21 @@ interface ClockPanelProps {
   clock: ClockController;
 }
 
-function pillFor(state: ClockState): { className: string; label: string } {
+/** Map clock state to a foundation .status-pill variant + label.
+ *  Phase 28e/5: variants align with the foundation's pill palette
+ *  — ok for running (ok-themed pill), warn for paused (amber),
+ *  muted for stopped (surface-2 + dim text). */
+function pillFor(state: ClockState): {
+  variant: 'ok' | 'warn' | 'muted';
+  label: string;
+} {
   switch (state) {
     case 'running':
-      return { className: 'pill running', label: '● Running' };
+      return { variant: 'ok', label: '● Running' };
     case 'paused':
-      return { className: 'pill paused', label: '⏸ Paused' };
+      return { variant: 'warn', label: '⏸ Paused' };
     case 'stopped':
-      return { className: 'pill stopped', label: '○ Stopped' };
+      return { variant: 'muted', label: '○ Stopped' };
   }
 }
 
@@ -106,8 +113,10 @@ export function ClockPanel({ clock }: ClockPanelProps) {
   return (
     <section className="panel clock-panel">
       <header>Clock</header>
-      <div className="row">
-        <span className={pill.className}>{pill.label}</span>
+      <div className="cluster" data-gap="md">
+        <span className="status-pill" data-variant={pill.variant}>
+          {pill.label}
+        </span>
         <span className="elapsed">{elapsed}</span>
         <span className="tick">tick {tickIndex}</span>
         <span className={`dot ${pulse ? 'flash' : ''}`} aria-hidden="true" />
@@ -120,7 +129,7 @@ export function ClockPanel({ clock }: ClockPanelProps) {
         </button>
         <button
           type="button"
-          className="secondary"
+          data-variant="secondary"
           onClick={onReset}
           disabled={busy || state === 'stopped'}
         >
