@@ -37,11 +37,12 @@ export default defineConfig({
   },
 
   // Tauri dev server config: fixed port, no clobbering Rust stderr.
-  // Same-origin /ws is proxied to the Rust bridge so the frontend
-  // doesn't need a separate VITE_OSC_WS_URL env var — `yarn dev`
-  // alone (or `yarn dev:full`, which adds the bridge) gives a
-  // working setup. `ws: true` makes the proxy upgrade the request
-  // for the WebSocket handshake.
+  // Same-origin /ws AND /api/* are proxied to the Rust bridge so
+  // the frontend doesn't need a separate VITE_OSC_WS_URL env var —
+  // `yarn dev` alone (or `yarn dev:full`, which adds the bridge)
+  // gives a working setup. `ws: true` upgrades the /ws handshake;
+  // /api forwards Phase 29 session HTTP traffic
+  // (POST/GET/DELETE /api/session[/:id]).
   clearScreen: false,
   server: {
     port: 1420,
@@ -54,6 +55,9 @@ export default defineConfig({
       "/ws": {
         target: process.env.SC_BRIDGE_URL || "http://127.0.0.1:3000",
         ws: true,
+      },
+      "/api": {
+        target: process.env.SC_BRIDGE_URL || "http://127.0.0.1:3000",
       },
     },
     watch: {

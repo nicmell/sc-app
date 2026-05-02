@@ -12,7 +12,8 @@ WS↔UDP bridge between the frontend worker and scsynth, optionally
 also serving the bundled `dist/` over HTTP.
 
 **scsynth is not managed by this app** — it's expected to be already
-running at `127.0.0.1:57110` (or wherever the Connect screen points).
+running at `127.0.0.1:57110` (or whatever the bridge's
+`config.json -> scsynth` points to).
 
 Forward-looking design lives in `plan.md` (pending phases, open
 questions, acceptance criteria); the historical record of shipped
@@ -22,7 +23,14 @@ phases — what landed and why — is in [`docs/history.md`](./docs/history.md).
 
 ```
 Browser (React, main thread)
-  ├── AppShell                  connect ↔ dashboard orchestration
+  ├── AppShell                  bootstrap ↔ dashboard orchestration;
+  │                             always-rendered dashboard with header
+  │                             Connect/Disconnect toggle
+  ├── sessionBootstrap +        per-tab session id in sessionStorage;
+  │   SessionContext             GET/POST /api/session on mount;
+  │                              SessionProvider exposes ConnectionStatus
+  │                              (connected/connecting/disconnected) +
+  │                              sessionId via React context
   ├── ClockController           global /tr-driven clock; tick0Ms anchor;
   │                             clockBus phasor
   ├── GroupController           parent group lifecycle (/g_new /n_run)
@@ -56,6 +64,10 @@ Browser (React, main thread)
   │                              cycle boundaries.
   ├── ServerErrorBus            decoded /fail ring, surfaced via
   │                              DebugLog header badge.
+  ├── ToastContainer +          bottom-right toast stack for runtime
+  │   useToasts                  errors / warnings / successes
+  │                              (success/info/warn/error variants;
+  │                              error sticks until manual dismiss).
   └── WorkerClient              postMessage wrapper around…
       │   - sendCommand / onReply / onError / onTick
       │   - subscribeBuffer(sub, cb) — tick-driven /b_getn pipeline
@@ -78,13 +90,23 @@ src-tauri backend (Rust)
   │                              starter-config OnceLock
   ├── logging.rs                tracing init (stderr + daily-rotated file)
   ├── server/
-  │   ├── mod.rs                axum router, bind/serve_on/run_bridge
-  │   ├── ws_bridge.rs          WS ↔ UDP bridge with N+1 sockets per
-  │   │                          session (one per route target),
-  │   │                          outbound prefix demux + reply fan-in
+  │   ├── mod.rs                axum router, bind/serve_on/run_bridge,
+  │   │                          /ws + /api/session* routes, TTL task
+  │   ├── session.rs            bridge-managed Session — owns one UDP
+  │   │                          socket per route target, runs
+  │   │                          /notify+/status handshake at create,
+  │   │                          fans inbound replies via tokio
+  │   │                          broadcast channels; SessionStore
+  │   │                          (Arc<RwLock<HashMap<Uuid,Session>>>)
+  │   │                          + evict_idle for the TTL job
+  │   ├── api.rs                POST/GET/DELETE /api/session[/:id]
+  │   │                          handlers; { error } JSON envelope
+  │   ├── ws_bridge.rs          WS ↔ Session bridge: per-target
+  │   │                          forwarder tasks subscribe to the
+  │   │                          session's broadcast channels;
+  │   │                          WS→UDP routes via session.routes
   │   ├── routing.rs            RoutingTable + peek_osc_address —
   │   │                          config.json `routes` ⟹ N targets
-  │   ├── session.rs            per-WS state (clientId snoop + cleanup)
   │   └── static_assets.rs      SPA fallback + dist resolution
   └── tauri-plugin-{dialog,fs,opener}  native save-as / file IO / etc.
 
@@ -227,27 +249,51 @@ subcommand.
 
 ## Runtime config (`config.json`)
 
-Both modes consult an optional `config.json` for `port`, `scsynth`,
-and `log_dir`. Schema lives in `src-tauri/src/config.rs` (`Config`
-struct, `deny_unknown_fields` so typos error out). All fields are
-`Option<…>`; missing fields fall through.
+Both modes consult an optional `config.json`. Schema lives in
+`src-tauri/src/config.rs` (`Config` struct, `deny_unknown_fields`
+so typos error out). All fields are `Option<…>`; missing fields
+fall through. Fields:
+
+- `port` — HTTP port to bind for the bridge.
+- `scsynth` — default scsynth address (host:port). The implicit
+  catch-all route target — packets whose OSC address doesn't
+  match any prefix in `routes` are sent here.
+- `log_dir` — directory for daily-rotated NDJSON logs.
+- `routes` — OSC address-prefix routes (`[{ prefix, target }]`).
+  Walked top-to-bottom; first `starts_with` match wins. The
+  starter config seeds `/dirt → 127.0.0.1:57120` so a
+  first-launch session routes SuperDirt traffic correctly
+  without the user editing the file.
+- `session_ttl_seconds` — how long an idle bridge-managed
+  session lingers before TTL eviction runs `Session::cleanup`
+  (`/g_freeAll` + `/n_free` + `/notify 0`). Default 1800
+  (30 min). Background scan fires once per minute.
 
 Discovery:
 
 - **GUI mode** reads `app.path().app_config_dir()/config.json` and
-  writes a starter file (`port` + `scsynth` defaults) on first
-  launch via `Config::write_default_if_missing`. Subsequent
-  launches never overwrite the user's edits.
+  writes a starter file (port + scsynth + `/dirt → 57120` route
+  defaults) on first launch via
+  `Config::write_default_if_missing`. Subsequent launches never
+  overwrite the user's edits — even when `Config` gains new
+  fields, an old user-written file just keeps its existing
+  shape and the bridge defaults the missing fields. (Caveat:
+  if a user has a stale starter config from before the `/dirt`
+  route was seeded, SuperDirt routing breaks silently with
+  `/fail /dirt/hello: Command not found`. Fix: delete the
+  config-dir file or hand-edit the route in.)
 - **Bridge mode** uses `--config <path>` if explicitly passed (must
   exist; fails loudly otherwise), else auto-discovers
-  `/etc/sc-app/config.json` (silent if absent).
+  `./config.json` (CWD-relative, for `yarn bridge` / `yarn
+  dev:full`) then `/etc/sc-app/config.json` (silent if absent).
 
 Precedence (highest → lowest):
 
 1. CLI flag (bridge only — `--port`, `--scsynth`, `--log-dir`)
 2. Env var (`SC_PORT`, `SC_SCSYNTH_ADDR`)
 3. `config.json` value
-4. Built-in default (3000 / `127.0.0.1:57110` / stderr-only)
+4. Built-in default (3000 / `127.0.0.1:57110` / stderr-only /
+   1800 s TTL / no routes)
 
 `dist` is intentionally *not* in the config schema — it has its own
 resolution path (resource_dir auto-resolves in bundle, `--dist`
@@ -255,12 +301,13 @@ overrides) and adding it would just create a duplicate knob. Same
 reasoning kept it out of the env-var surface earlier.
 
 Frontend asset URLs are always same-origin: `wsUrlFor` in
-`AppShell.tsx` builds from `window.location.origin`, no env-var
-indirection. In dev (`yarn dev` / `yarn tauri dev`) the origin is
-Vite's `:1420`; Vite's `/ws` proxy forwards the WebSocket upgrade
-to the bridge. In production (Tauri webview pointed at axum, or a
-remote browser hitting a deployed bundle) the origin already *is*
-the bridge.
+`AppShell.tsx` builds from `window.location.origin` and adds
+`?session=<uuid>`. In dev (`yarn dev` / `yarn tauri dev`) the
+origin is Vite's `:1420`; Vite's `/ws` and `/api` proxy entries
+forward both the WebSocket upgrade and the session HTTP traffic
+to the bridge. In production (Tauri webview pointed at axum, or
+a remote browser hitting a deployed bundle) the origin already
+*is* the bridge.
 
 ## Code conventions
 
@@ -284,15 +331,15 @@ the bridge.
   `--shadow-*`), base element styles, and a small set of
   semantic component classes (`.panel`, `.cluster`, `.stack`,
   `.status-pill`, `.badge`, `.range-field`, `.empty`, `.error`,
-  `.modal*`). Plain CSS, no Sass. Variants via `data-*`
+  `.modal*`, `.toast*`). Plain CSS, no Sass. Variants via `data-*`
   attributes (`<button data-variant="danger">`, `<span class=
-  "status-pill" data-variant="ok">`). Per-panel styles in
-  `src/ui/*/*.scss` are deprecated and migrate to the
-  foundation's vocabulary panel-by-panel during Phase 28e;
-  during the transition the per-panel SCSS shadows the
-  foundation rules (later cascade order). Hardcoded hex colours
-  outside `themes/{dark,light}.css` are a regression — open the
-  PR with a token name instead.
+  "status-pill" data-variant="ok">`). The disabled-panel
+  treatment (Phase 29d) is a foundation-level
+  `.panel[aria-disabled="true"]` rule — opacity dimming +
+  `pointer-events: none` — so a card stays visible during
+  disconnected state without reflowing the layout. Hardcoded
+  hex colours outside `themes/{dark,light}.css` are a
+  regression — open the PR with a token name instead.
 - **OSC**: construct `OSC.Message` / `OSC.Bundle` on the main
   thread using `@sc-app/server-commands` helpers. Pass to
   `WorkerClient.sendCommand(packet)` — it encodes locally and
@@ -356,57 +403,66 @@ When working on a phase:
    `plan.md` of the moved content, and (if relevant) update
    the "Current phase progress" line below.
 
-Current phase progress: **Phase 28 shipped — Shared UI foundation
-package.** Six sub-phases delivered the package + per-panel
-migration end-to-end. 28a scaffolded `packages/ui-foundation/`
-+ the PostCSS build (postcss-import + autoprefixer →
-`dist/index.css` for plugin runtime). 28b filled
-`tokens/semantic.css` + `themes/dark.css` with the full
-`--color-*` / `--space-*` / `--radius-*` / `--font-*` /
-`--shadow-*` vocabulary (including 9 hexes promoted to
-`--color-tx`, `--color-rx`, `--color-log-*`, `--color-overlay`)
-plus `reset.css` + `base/elements.css` + `base/typography.css`,
-with `demo.html` as the regression gate. 28c established the
-reference Button by routing ConnectScreen's submit button
-through `<button type="submit">…</button>` only. 28d filled
-the component primitive classes (`.panel`, `.cluster`,
-`.stack`, `.status-pill[data-variant=…]`, `.badge`,
-`.range-field`, `.empty`, `.error`, `.modal*`). 28e migrated
-12 panels in 12 commits (Footer → dashboard-shell header →
-ScopeList → ScopeView → ClockPanel → SynthsPanel → Modal →
-DebugLog → OscConsole → RecordingPanel → DirtPanel →
-SequencerPanel) — each panel's `.scss` deleted, all colour /
-spacing / radius / typography references re-routed through
-foundation tokens, button variants via `data-variant` /
-`data-size` attributes. 28f closed by deleting
-`src/styles.scss` (a thin `src/app.css` retains the
-dashboard-shell + chunk-size-picker layout), dropping `sass`
-from devDependencies, and moving the consolidated entry to
-`docs/history.md`. See `docs/history.md` Phase 28 for the
-full write-up.
+Current phase progress: **Phase 29 shipped — Bridge-managed
+sessions + auto-connect.** Four sub-phases collapsed the
+pre-29 per-WS scsynth handshake onto the Rust bridge,
+materialised as a per-tab `Session` keyed by a UUID in
+`sessionStorage`. 29a added `server/session.rs` +
+`server/api.rs` (POST/GET/DELETE `/api/session[/:id]`) — the
+Session opens one UDP socket per unique route target, runs
+`/notify 1` + `/status` against scsynth at creation time, and
+captures `clientId` / `sampleRate` / `parentGroupId`. 29b
+cut WS over to attach to existing Sessions via
+`?session=<uuid>`; per-target `tokio::sync::broadcast`
+channels fan replies out to attached WS. Per-WS UDP sockets
++ per-WS `/notify` are gone. 29c rewrote the frontend
+bootstrap: on mount, `bootstrapSession()` reads
+`sessionStorage["sc.session"]` and either
+`GET /api/session/:id` or `POST /api/session`. The
+returned `SessionInfo` flows into `setupDashboard` directly,
+skipping the pre-29 `/status` + `/notify(1)` handshake. 29d
+added the once-a-minute TTL eviction task (default 1800 s,
+configurable via `config.session_ttl_seconds`), dropped the
+legacy `?scsynth=` query parameter, deleted the
+ConnectScreen, and reworked the dashboard chrome: header
+shows a `connected/connecting/disconnected` badge +
+Connect/Disconnect button, panels stay rendered in a
+disabled-state placeholder while disconnected, and runtime
+errors surface via a bottom-right `ToastContainer` instead
+of blocking modals. F5 within TTL preserves scsynth-side
+state (clock, recordings, sequencer) — the bridge keeps the
+UDP socket + `/notify` subscription alive across WS
+reconnects. See `docs/history.md` Phase 29 for the full
+write-up.
 
-Phase 27 shipped — Step Sequencer for SuperDirt. Four
-sub-phases delivered the panel end-to-end (27a MVP grid, 27b
-per-step/per-track parameter overrides, 27c PatternBank +
-localStorage persistence, 27d chain mode). See
-`docs/history.md` Phase 27 for the consolidated write-up.
+Earlier landings still in effect:
+- **Phase 28** — `@sc-app/ui-foundation` CSS package
+  (Open Props primitives + semantic tokens + base element
+  styles + component classes; `data-variant`/`data-size`
+  attributes for button + status-pill variants; disabled-panel
+  styling via `.panel[aria-disabled="true"]`).
+- **Phase 27** — step sequencer for SuperDirt (PatternBank
+  with localStorage persistence, chain mode advances at
+  cycle boundaries).
+- **Phase 26** — SuperDirt via bridge-internal OSC router:
+  one `WorkerClient` / one `/ws`; the bridge's
+  `RoutingTable` demuxes outbound packets by OSC-address
+  prefix, with `/dirt → 127.0.0.1:57120` as the first
+  non-default target. `GroupController` defaults to
+  `AddToTail` so sc-app's parent group sits after sclang's
+  defaultGroup. Node + buffer `IdAllocator` scoped
+  per-clientId (`idBase = clientId * 1_000_000 + 1000`).
+- **Phases 16–21** — Shared Buffer Layer:
+  `BufferController` + `BufferManager` ref-count
+  `(inputBus, channels, chunkSize)`-keyed taps.
+- **Phase 15** — producer/consumer split: `SynthManager` +
+  `SynthsPanel` are producers; scopes and recordings are
+  pure consumers of user-typed bus numbers.
+- **Phase 25** — bundle & dev workflow: `dist/` ships once
+  via `bundle.resources`, same-origin `/ws` + `/api`,
+  daily-rotated tracing, `yarn dev:full` / `yarn bridge` /
+  `yarn osc` script trio.
 
-Earlier landings still in effect: SuperDirt via bridge-internal
-OSC router (Phase 26) — frontend keeps exactly one
-`WorkerClient` / one `/ws`; the bridge's `RoutingTable`
-demuxes outbound packets by OSC-address prefix, with
-`/dirt → 127.0.0.1:57120` as the first non-default target.
-GroupController defaults to `AddToTail` so sc-app's parent group
-sits after sclang's defaultGroup; node + buffer `IdAllocator`
-scoped per-clientId (`idBase = clientId * 1_000_000 + 1000`).
-Producer/consumer split (Phase 15) — `SynthManager` +
-`SynthsPanel` are producers; scopes and recordings are pure
-consumers of user-typed bus numbers. Shared Buffer Layer
-(Phase 16–21) — `BufferController` + `BufferManager` ref-count
-`(inputBus, channels, chunkSize)`-keyed taps. Bundle & Dev
-Workflow Refresh (Phase 25) — `dist/` ships once via
-`bundle.resources`, single `/ws` origin, daily-rotated tracing,
-`yarn dev:full` / `yarn bridge` / `yarn osc` script trio.
 `setupDashboard` / `teardownServerState` are shared between
 initial connect, disconnect, and the chunkSize-driven re-init.
 
@@ -432,44 +488,75 @@ initial connect, disconnect, and the chunkSize-driven re-init.
     worker demuxes these into `clockTick` events, suppressing
     them from the generic `onReply` channel.
   No other synth may reuse this id.
-- **Connect handshake** (in order, all in `AppShell.handleConnect`):
-  1. `/status` probe — verifies the chain is alive; reads
-     `actualSampleRate` from `args[8]` and rejects only if it's
-     non-finite or `<= 0`. The captured value flows forward as
-     the session's `AudioEnvironment.sampleRate` — there's no
-     compile-time `DEFAULT_ENV` anymore.
-  2. `/notify 1` via `sendAndAwaitReply` matching `/done /notify`,
-     captures the assigned `clientId` for parent-group
-     derivation. Required — scsynth doesn't broadcast async
-     replies (`/tr`, `/n_go`, `/done`) to un-notified clients.
-  3. `setupDashboard(client, parentGroupId, sampleRate, chunkSize)`
-     — constructs `GroupController`, `ClockController` (allocates
+- **Session bootstrap + connect handshake** (Phase 29):
+  the scsynth handshake (`/status`, `/notify 1`) is owned by
+  the bridge, run once at session creation. The frontend's
+  job on boot is a session GET-or-POST round-trip; the
+  response carries everything `setupDashboard` needs.
+  1. `bootstrapSession()` reads
+     `sessionStorage["sc.session"]`. If present, `GET
+     /api/session/:id` — on 404 / network error, fall through
+     to `POST /api/session`. POST asks the bridge to mint a
+     fresh session: open one UDP socket per unique route
+     target, run `/notify 1` → `/done /notify <cid>` and
+     `/status` → `/status.reply` against scsynth on the
+     default-route socket, capture `clientId` + nominal
+     `sampleRate`, derive `parentGroupId = clientId × 100`
+     (with the `clientId == 0 ⇒ 100` fallback). On success
+     the new id is stored in `sessionStorage`.
+  2. `handleConnect(info)` opens the WS at `/ws?session=<uuid>`.
+     The bridge attaches the WS to the existing Session — no
+     per-WS UDP socket, no per-WS handshake. Outbound bytes
+     forward through the session's pre-bound sockets
+     (route-prefix-demuxed); inbound replies fan out to all
+     attached WS via `tokio::sync::broadcast`.
+  3. `setupDashboard(client, sessionId, clientId, parentGroupId,
+     sampleRate, chunkSize, bank)` — constructs
+     `GroupController`, `ClockController` (allocates
      `clockBus = ids.bus.next()`, derives `tickRate = sampleRate /
      chunkSize`), calls `clock.start()`. Then constructs
      `SynthManager` (producer side), `BufferManager` (shared tap
      layer), `ScopeManager` + `RecordingManager` (consumers, both
-     pointed at `BufferManager` for handle acquisition). Reused by
-     the in-place re-init flow when the user changes chunkSize
+     pointed at `BufferManager` for handle acquisition). Reused
+     by the in-place re-init flow when the user changes chunkSize
      from the header.
-- **Disconnect cleanup** (best-effort; covers serve mode + Tauri):
+
+  Disconnected/connecting/connected state lives on a
+  React context (`SessionProvider`) so any component (panel
+  guards, header chrome, future inspectors) can read it via
+  `useSessionContext()`.
+- **Disconnect cleanup** (Phase 29; the bridge runs the
+  scsynth-side teardown bundle now, frontend just signals):
   - **`handleDisconnect`** (button click): `teardownServerState`
     (recordings → scopes → buffers → synths → clock → group, each
-    try/caught) → `client.sendAndSync(notify(0))` →
-    `client.dispose()`. The recording / scope managers release
-    their `BufferHandle`s; `bufferManager.clear()` then runs as a
+    try/caught) → `bank.dispose()` (flushes a final pattern
+    save) → `client.dispose()` → `deleteSession(sessionId)`
+    (fire-and-forget `DELETE /api/session/:id`) →
+    `clearStoredSession()`. The bridge's DELETE handler runs
+    `Session::cleanup` — `/g_freeAll(parentGroupId)` +
+    `/n_free(parentGroupId)` + `/notify 0` — against the
+    session's pre-bound scsynth socket, then drops the sockets.
+    The recording / scope managers release their
+    `BufferHandle`s; `bufferManager.clear()` then runs as a
     safety net — by that point its map should be empty, and a
-    non-empty one logs a warning ("refcount leak suspected") and
-    disposes the stragglers before `group.free()` does the
-    coarser /g_freeAll. The `teardownServerState` helper is
-    shared with the in-place chunkSize re-init path, which runs
-    the same teardown but *without* the notify(0) +
-    client.dispose tail.
-  - **`pagehide` listener** (tab/window close): fire-and-forget
-    `gFreeAll(parentGroupId) + nFree(parentGroupId) + notify(0)`.
-    Best-effort — worker postMessage + WS send usually flush
-    before the browser reaps the tab; if not, the leaked group
-    survives until next reconnect's defensive cleanup. Hard
-    SIGKILL of `serve` still leaks; not currently addressed.
+    non-empty one logs a warning ("refcount leak suspected").
+    The `teardownServerState` helper is shared with the
+    in-place chunkSize re-init path, which runs the same
+    teardown but *without* the deleteSession + client.dispose
+    tail.
+  - **`pagehide` listener** (tab/window close): `fetch(DELETE
+    /api/session/:id, { keepalive: true })`. Best-effort — the
+    keepalive flag lets the request outlive the page begin
+    unloading. Hard SIGKILL of the browser / Tauri webview
+    skips this; the bridge's TTL task (default 30 min, scans
+    every minute) is the safety net.
+  - **TTL eviction** (bridge side, Phase 29d): once a minute
+    the bridge scans `SessionStore` and runs
+    `Session::cleanup` on entries whose `last_active` is older
+    than `config.session_ttl_seconds` (default 1800 / 30 min).
+    `last_active` is bumped on every `GET /api/session/:id`
+    and on every WS attach via `get_and_touch`. Reload (F5)
+    well within TTL doesn't trigger eviction.
 - **Timing**: the server's audio clock is the truth.
   `ClockController` captures a `tick0Ms` anchor on the first
   `/tr`, extrapolates forward. The main-thread clock is only used
@@ -591,14 +678,16 @@ Observations:
   `(channels, chunkSize)` — never `(channels)` alone, or you get
   stale bytes after a re-init. Old SynthDefs sit on scsynth until
   the parent group is freed; harmless, just wasted slots.
-- **In-place re-init runs over the same WS — DO NOT re-issue
-  `notify(1)`.** The `parentGroupId` and the notify subscription
-  are captured once at initial `handleConnect` and stashed on
-  `DashboardResources`. Re-issuing `notify(1)` over the same WS
-  either gets rejected by scsynth or hands back a different
-  `clientId`, orphaning the existing parent group. The reinit
-  path calls `teardownServerState` (which doesn't touch notify)
-  and then `setupDashboard` with the stashed `parentGroupId`.
+- **In-place re-init runs over the same WS + same Session —
+  the frontend never issues `/notify`.** Phase 29 moved the
+  `/notify 1` round-trip to `Session::create` on the bridge;
+  `setupDashboard` consumes the supplied `clientId` /
+  `parentGroupId` / `sampleRate` from `SessionInfo` and never
+  touches `/notify` itself. The reinit path calls
+  `teardownServerState` and then `setupDashboard` with the
+  same values stashed on `DashboardResources` — the parent
+  group, the notify subscription, and the bridge-side UDP
+  socket all persist.
 - **Producers must be `/s_new`'d before consumers that read their
   buses — same control-block ordering rule as the clock.** Tone
   synths (producers), scope/recording tap synths (consumers via
@@ -672,3 +761,60 @@ Observations:
   enough bytes to extract the address (no full rosc decode).
   Adding a future target (metronome, MIDI, analyzer) is a
   config entry, not a code edit.
+- **`?scsynth=HOST:PORT` query parameter is GONE (Phase 29d).**
+  Pre-29 every WS upgrade carried a per-connection scsynth
+  override. Sessions are now bound to `config.json -> scsynth`
+  at creation time and don't accept overrides. To point a
+  session at a different scsynth, edit `config.json` and
+  restart the bridge. The WS upgrade requires
+  `?session=<uuid>` and 400s without it.
+- **Bridge owns scsynth-side cleanup (Phase 29d).** Pre-29 the
+  frontend fired `/g_freeAll` + `/notify 0` from a `pagehide`
+  listener. Now the frontend just sends `DELETE
+  /api/session/:id` (with `keepalive: true` from `pagehide`)
+  and the bridge runs `Session::cleanup` on receipt. The TTL
+  task (default 30 min, scans every minute) catches whatever
+  the keepalive doesn't (hard SIGKILL of the browser, etc.).
+  Hard SIGKILL of the bridge skips both paths; sessions die
+  with the process.
+- **scsynth `maxLogins=8` is the per-bridge session ceiling.**
+  Each session holds one `/notify` slot for its TTL window
+  (not just for a WS lifetime). `scripts/sc-app-superdirt-startup.scd`
+  + the systemd unit + `start-scsynth-only.sh` all set it to
+  8; bumping requires editing all three together. 8
+  simultaneous sc-app tabs is well above realistic use.
+- **`tauri dev` reads `app_config_dir/config.json`, NOT the
+  project's `./config.json`.** On macOS that's
+  `~/Library/Application Support/com.sc-app.dev/`. A stale
+  starter file written by an older sc-app build (without the
+  `/dirt` route seeded) breaks SuperDirt routing silently
+  with `/fail /dirt/hello: Command not found` — the bridge
+  has no `/dirt` route so the message goes to scsynth. Fix:
+  delete the file (let starter regenerate) or hand-edit the
+  route in. `yarn dev:full` reads the project-root
+  `./config.json` instead and doesn't hit this.
+- **Session UUID lives in `sessionStorage`, not
+  `localStorage`.** `sessionStorage` is per-tab and dies on
+  tab close — exactly the boundary we want. `localStorage`
+  would share the id across tabs and collapse them onto the
+  same scsynth `clientId` → `IdAllocator` collisions →
+  `/s_new duplicate node ID`. The storage key is
+  `sc.session`; `sessionBootstrap.ts` is the only writer.
+  Incognito / Private mode wipes `sessionStorage` per tab
+  on close, which means private browsing always generates
+  a fresh session — fine, just document.
+- **Vite dev proxy must forward both `/ws` and `/api`.** Phase
+  29 added the HTTP API surface; `vite.config.ts` lists both.
+  Forgetting the `/api` entry surfaces as a 404 in the
+  browser DevTools network tab when the frontend tries to
+  bootstrap — the Vite dev server returns its own 404 page
+  for unproxied paths.
+- **Don't shadow the `status` OSC builder import with a
+  local `status: ConnectionStatus` variable.** AppShell
+  imports `status` from `@sc-app/server-commands` for the
+  heartbeat tick AND has a local connection-state
+  enum (`'connected' | 'connecting' | 'disconnected'`).
+  Name the local variable `connectionStatus`; calling the
+  enum `status` triggers a TS error
+  (`'status' is callable. No constituent of type
+  'ConnectionStatus' is callable`).

@@ -22,9 +22,14 @@
 
 use std::net::SocketAddr;
 
+use tauri::utils::config::BackgroundThrottlingPolicy;
 use tauri::Manager;
 
-use crate::config::{Config, DEFAULT_PORT, DEFAULT_SCSYNTH};
+use std::time::Duration;
+
+use crate::config::{
+    Config, DEFAULT_PORT, DEFAULT_SCSYNTH, DEFAULT_SESSION_TTL_SECONDS,
+};
 use crate::logging;
 use crate::server::{self, RoutingTable};
 use crate::server::static_assets::DIST_SUBPATH;
@@ -84,6 +89,10 @@ pub fn run() {
                 .parse()
                 .map_err(|e| format!("invalid scsynth {scsynth_str:?}: {e}"))?;
 
+            let session_ttl = Duration::from_secs(
+                cfg.session_ttl_seconds.unwrap_or(DEFAULT_SESSION_TTL_SECONDS),
+            );
+
             // 3.5 Build the routing table. `cfg.routes` resolves
             //     each `target` host:port via lookup_host. Failure
             //     is fatal — we'd rather refuse to boot than start
@@ -114,7 +123,7 @@ pub fn run() {
             tracing::info!(addr = %addr, "sc-app listening on http://{addr}");
 
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = server::serve_on(listener, table, dist).await {
+                if let Err(e) = server::serve_on(listener, table, dist, session_ttl).await {
                     tracing::error!(error = %e, "bridge error");
                 }
             });
@@ -139,6 +148,7 @@ pub fn run() {
             tauri::WebviewWindowBuilder::new(app, "main", url)
                 .title("sc-app")
                 .inner_size(800.0, 600.0)
+                .background_throttling(BackgroundThrottlingPolicy::Disabled)
                 .build()?;
 
             Ok(())

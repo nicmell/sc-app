@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { ClockPanel } from '@/ui/ClockPanel';
-import { ConnectScreen } from '@/ui/ConnectScreen';
 import { DebugLog } from '@/ui/DebugLog';
 import { DirtPanel } from '@/ui/DirtPanel';
 import { Footer } from '@/ui/Footer';
-import { AlertModal, ConfirmModal, LoadingModal } from '@/ui/Modal';
+import { ConfirmModal, LoadingModal } from '@/ui/Modal';
 import { OscConsole } from '@/ui/OscConsole';
 import { RecordingPanel } from '@/ui/RecordingPanel';
 import { ScopeList } from '@/ui/ScopeList';
 import { SequencerPanel } from '@/ui/SequencerPanel';
 import { SynthsPanel } from '@/ui/SynthsPanel';
+import { ToastContainer, useToasts } from '@/ui/Toast';
+import { SessionProvider, type ConnectionStatus } from '@/session/SessionContext';
 import {
   DEFAULT_PARAMS,
   practicalChunkSizes,
@@ -17,13 +18,13 @@ import {
 import { BufferManager } from '@/buffer/BufferManager';
 import { DirtClient } from '@/dirt/DirtClient';
 import { RecordingManager } from '@/recording/RecordingManager';
+import { status, version } from '@sc-app/server-commands';
 import {
-  gFreeAll,
-  nFree,
-  notify,
-  status,
-  version,
-} from '@sc-app/server-commands';
+  bootstrapSession,
+  clearStoredSession,
+  deleteSession,
+  type SessionInfo,
+} from '@/session/sessionBootstrap';
 import { ClockController } from '@/clock/ClockController';
 import { GroupController } from '@/server/GroupController';
 import { IdAllocator } from '@/server/IdAllocator';
@@ -42,10 +43,6 @@ import {
   type ScsynthVersion,
 } from '@/server/serverInfo';
 
-const STORAGE_KEY = 'sc.address';
-const STATUS_PROBE_TIMEOUT_MS = 1000;
-/** Fallback when scsynth returns clientId 0 (can't use root group 0). */
-const FALLBACK_PARENT_GROUP_ID = 100;
 /** Per-client offset for node + buffer ID allocators.
  *
  *  scsynth doesn't enforce per-client ID ranges — it just rejects
@@ -96,19 +93,23 @@ interface DashboardResources {
    *  The controller reads `bank.activePattern` and forwards
    *  mutations through `bank.updateActivePattern(...)`. */
   bank: PatternBank;
-  /** scsynth-assigned clientId from the `/done /notify` reply.
-   *  Stashed for the re-init flow so the IdAllocators stay scoped
-   *  to the same per-client range. Non-zero when scsynth is shared
-   *  with sclang+SuperDirt at clientId=0. */
+  /** Phase 29 — bridge-managed session id (uuid stored per-tab
+   *  in `sessionStorage`). Used by handleDisconnect to fire
+   *  `DELETE /api/session/:id` and by the WS URL builder. */
+  sessionId: string;
+  /** scsynth-assigned clientId. Phase 29: minted by the bridge
+   *  at `POST /api/session` time and supplied to the frontend
+   *  via `SessionInfo`. Stashed here so the re-init flow keeps
+   *  the same IdAllocator scoping. Non-zero when scsynth is
+   *  shared with sclang+SuperDirt at clientId=0. */
   clientId: number;
-  /** Stashed for in-place re-init: re-issuing `notify(1)` over the
-   *  same WS would either be rejected by scsynth or hand back a
-   *  different `clientId`, orphaning the existing parent group. The
-   *  initial connect derives this once; every rebuild reuses it. */
+  /** Phase 29: derived bridge-side from `clientId` (× 100, with
+   *  the 0 → 100 fallback). The frontend reuses it across
+   *  chunkSize re-init so the parent group doesn't change. */
   parentGroupId: number;
-  /** Captured from `/status.reply.args[8]` at initial connect. The
-   *  re-init path forwards the same value to `setupDashboard` —
-   *  scsynth's sample rate doesn't change during a session. */
+  /** Phase 29: bridge-supplied via `SessionInfo` (read from
+   *  scsynth's `/status.reply` at session creation). Round to
+   *  integer Hz already done bridge-side. */
   sampleRate: number;
   /** Live status snapshot, updated by the heartbeat in `AppShell`.
    *  `null` until the first reply lands (~tick after dashboard
@@ -119,26 +120,166 @@ interface DashboardResources {
   version: ScsynthVersion | null;
 }
 
-/**
- * Dashboard — the live UI when connected. The header carries the
- * connected-state badge, the chunk-size selector (which drives a
- * full re-init when changed), and the Disconnect button. Below
- * that: clock panel, scope list, recording panel.
- */
+// ConnectionStatus is the shared app-wide enum, re-exported from
+// the SessionContext module so any component can read it without
+// importing AppShell internals.
+
+const STATUS_LABELS: Record<ConnectionStatus, string> = {
+  connected: 'connected',
+  connecting: 'connecting…',
+  disconnected: 'disconnected',
+};
+
+const STATUS_BADGE_VARIANT: Record<ConnectionStatus, string | undefined> = {
+  // foundation .badge defaults to ok-themed; explicit data-variant
+  // overrides give us the connecting/disconnected chrome.
+  connected: undefined,
+  connecting: 'warn',
+  disconnected: 'error',
+};
+
+/** Dashboard chrome shown in every connection state. The header
+ *  always renders; the body (panels) is conditional on a live
+ *  `resources`. Phase 29d removed the always-mount-or-nothing
+ *  dichotomy with ConnectScreen; users now see the same shell
+ *  in both connected and disconnected states, with the action
+ *  button toggling Connect/Disconnect. */
 function Dashboard({
   resources,
+  status,
   chunkSize,
   reiniting,
   onChunkSizeChange,
+  onConnect,
   onDisconnect,
 }: {
-  resources: DashboardResources;
+  resources: DashboardResources | null;
+  status: ConnectionStatus;
   chunkSize: number;
   reiniting: boolean;
   onChunkSizeChange: (next: number) => void;
+  onConnect: () => void;
   onDisconnect: () => void;
 }) {
-  const options = practicalChunkSizes(resources.sampleRate);
+  return (
+    <main className="dashboard-shell">
+      <DashboardHeader
+        resources={resources}
+        status={status}
+        chunkSize={chunkSize}
+        reiniting={reiniting}
+        onChunkSizeChange={onChunkSizeChange}
+        onConnect={onConnect}
+        onDisconnect={onDisconnect}
+      />
+      {resources ? <DashboardPanels resources={resources} /> : <DisabledPanels />}
+    </main>
+  );
+}
+
+/** Disabled-panel placeholders rendered while the session is
+ *  bootstrapping or disconnected. Each card has the same
+ *  chrome as the live panel but with the foundation's
+ *  `aria-disabled="true"` styling (opacity dimming +
+ *  pointer-events: none). Keeps the dashboard layout stable
+ *  across connect/disconnect transitions instead of collapsing
+ *  to just-the-header. */
+function DisabledPanels() {
+  // Order mirrors DashboardPanels so panels don't reflow when
+  // we transition between live and disabled states.
+  const titles = [
+    'Clock',
+    'Synths',
+    'Scopes',
+    'Recordings',
+    'Dirt',
+    'Sequencer',
+    'OSC Console',
+  ];
+  return (
+    <>
+      {titles.map((title) => (
+        <section key={title} className="panel" aria-disabled="true">
+          <header>{title}</header>
+          <p className="empty">not connected</p>
+        </section>
+      ))}
+    </>
+  );
+}
+
+function DashboardHeader({
+  resources,
+  status,
+  chunkSize,
+  reiniting,
+  onChunkSizeChange,
+  onConnect,
+  onDisconnect,
+}: {
+  resources: DashboardResources | null;
+  status: ConnectionStatus;
+  chunkSize: number;
+  reiniting: boolean;
+  onChunkSizeChange: (next: number) => void;
+  onConnect: () => void;
+  onDisconnect: () => void;
+}) {
+  // chunk-size dropdown options need a sample rate. While
+  // disconnected we don't have one — fall back to the default
+  // 48 k so the picker renders something, but disable it.
+  const sampleRate = resources?.sampleRate ?? 48000;
+  const options = practicalChunkSizes(sampleRate);
+  const pickerDisabled = !resources || reiniting;
+  return (
+    <header className="cluster" data-gap="md">
+      <span
+        className="badge"
+        data-variant={STATUS_BADGE_VARIANT[status]}
+      >
+        {STATUS_LABELS[status]}
+      </span>
+      <label className="chunk-size-picker">
+        chunk size&nbsp;
+        <select
+          value={chunkSize}
+          disabled={pickerDisabled}
+          onChange={(e) => onChunkSizeChange(Number(e.target.value))}
+          title={
+            `Tick rate = sampleRate / chunkSize. Changing this ` +
+            `re-initialises the dashboard.`
+          }
+        >
+          {options.map((cs) => (
+            <option key={cs} value={cs}>
+              {cs} ({(sampleRate / cs).toFixed(2)} Hz tick)
+            </option>
+          ))}
+        </select>
+      </label>
+      {status === 'connected' ? (
+        <button
+          type="button"
+          data-variant="ghost"
+          onClick={onDisconnect}
+          disabled={reiniting}
+        >
+          Disconnect
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={onConnect}
+          disabled={status === 'connecting'}
+        >
+          Connect
+        </button>
+      )}
+    </header>
+  );
+}
+
+function DashboardPanels({ resources }: { resources: DashboardResources }) {
   // Sequencer's Play button needs the audio clock to be running
   // (`tick0Ms !== null`). `effectiveState` is reactive: 'stopped'
   // until the clock starts, 'running' once /tr packets are
@@ -148,36 +289,7 @@ function Dashboard({
     () => resources.clock.effectiveState.get(),
   );
   return (
-    <main className="dashboard-shell">
-      <header className="cluster" data-gap="md">
-        <span className="badge">connected</span>
-        <label className="chunk-size-picker">
-          chunk size&nbsp;
-          <select
-            value={chunkSize}
-            disabled={reiniting}
-            onChange={(e) => onChunkSizeChange(Number(e.target.value))}
-            title={
-              `Tick rate = sampleRate / chunkSize. Changing this ` +
-              `re-initialises the dashboard.`
-            }
-          >
-            {options.map((cs) => (
-              <option key={cs} value={cs}>
-                {cs} ({(resources.sampleRate / cs).toFixed(2)} Hz tick)
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          type="button"
-          data-variant="ghost"
-          onClick={onDisconnect}
-          disabled={reiniting}
-        >
-          Disconnect
-        </button>
-      </header>
+    <>
       <ClockPanel clock={resources.clock} />
       <SynthsPanel manager={resources.synthManager} />
       <ScopeList manager={resources.scopeManager} />
@@ -195,28 +307,21 @@ function Dashboard({
       />
       <OscConsole client={resources.client} />
       <Footer status={resources.status} version={resources.version} />
-    </main>
+    </>
   );
 }
 
-function readInitialAddress(): string {
-  try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (stored) return stored;
-  } catch {
-    // localStorage can throw in private modes / sandboxed contexts.
-  }
-  const urlParam = new URL(window.location.href).searchParams.get('scsynth');
-  return urlParam ?? '127.0.0.1:57110';
-}
-
-function wsUrlFor(address: string): string {
+/** Build the WS URL for an existing bridge-managed session.
+ *  Phase 29: replaces the pre-29 `wsUrlFor(address)` which used
+ *  `?scsynth=` to drive per-WS notify handshake. The session
+ *  already did the handshake bridge-side; the WS just attaches. */
+function wsUrlFor(sessionId: string): string {
   // Always same-origin: in production the webview / browser hits
   // axum directly; in dev Vite proxies `/ws` to the bridge (see
   // `vite.config.ts`). No env var indirection needed.
   const url = new URL('/ws', window.location.origin);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-  url.searchParams.set('scsynth', address);
+  url.searchParams.set('session', sessionId);
   return url.href;
 }
 
@@ -241,6 +346,7 @@ function wsUrlFor(address: string): string {
  */
 async function setupDashboard(
   client: WorkerClient,
+  sessionId: string,
   clientId: number,
   parentGroupId: number,
   sampleRate: number,
@@ -382,6 +488,7 @@ async function setupDashboard(
     synthManager,
     scopeManager,
     recordingManager,
+    sessionId,
     clientId,
     parentGroupId,
     sampleRate,
@@ -462,17 +569,39 @@ async function teardownServerState(resources: DashboardResources): Promise<void>
   }
 }
 
+/** Phase 29c — bootstrap state machine driving the auto-connect
+ *  flow. The frontend hits the bridge once on mount to read or
+ *  mint a session; AppShell consumes the resulting `SessionInfo`
+ *  to skip the per-WS scsynth handshake and go straight to
+ *  setupDashboard.
+ *
+ *  Phases:
+ *  - `pending`: bootstrap in flight (initial render, after retry,
+ *    after explicit Reset Session).
+ *  - `ready`: bootstrap returned `SessionInfo` — the connect
+ *    effect fires `handleConnect(info)` next render.
+ *  - `disconnected`: user clicked Disconnect; session DELETEd,
+ *    sessionStorage cleared. ConnectScreen offers Reconnect,
+ *    which transitions back to `pending`.
+ *  - `error`: bootstrap or handleConnect threw. ConnectScreen
+ *    shows the message inline + Retry button (→ `pending`). */
+type BootstrapState =
+  | { phase: 'pending' }
+  | { phase: 'ready'; info: SessionInfo }
+  | { phase: 'disconnected' }
+  | { phase: 'error'; error: string };
+
 export function AppShell() {
-  const [defaultAddress] = useState(readInitialAddress);
   const [resources, setResources] = useState<DashboardResources | null>(null);
-  /** Modal-style error shown after a *runtime* failure — typically a
-   *  WebSocket close mid-session, or a re-init failure. The
-   *  dashboard tears down, the connect screen renders behind, and
-   *  this modal fronts it until the user dismisses. (Connect-time
-   *  failures, by contrast, surface inline on the connect screen
-   *  via `ConnectScreen`'s own `localError` — those are caught from
-   *  `handleConnect`'s thrown promise inside the form submit.) */
-  const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  const [bootstrapState, setBootstrapState] = useState<BootstrapState>({
+    phase: 'pending',
+  });
+  /** Phase 29d: toast surface for transient errors, warnings,
+   *  and successes. Replaces both the AlertModal flow (for
+   *  runtime failures) and the ConnectScreen inline error (for
+   *  bootstrap failures). Toasts auto-dismiss except errors,
+   *  which stay until the user clicks ×. */
+  const { toasts, show: showToast, dismiss: dismissToast } = useToasts();
   /** Currently-applied chunk size. Updated atomically with
    *  `setResources` after a successful re-init. */
   const [chunkSize, setChunkSize] = useState(DEFAULT_PARAMS.chunkSize);
@@ -492,15 +621,42 @@ export function AppShell() {
     clientRef.current = resources?.client ?? null;
   }, [resources]);
 
-  const handleConnect = useCallback(async (address: string) => {
-    console.log('[sc:app] handleConnect', address);
-    try {
-      window.localStorage.setItem(STORAGE_KEY, address);
-    } catch {
-      /* ignore */
-    }
+  // Phase 29c: bootstrap. On mount and on every transition back
+  // into the `pending` phase (e.g. user clicks Retry / Reconnect),
+  // hit the bridge to read or mint the per-tab session. Aborts if
+  // the component unmounts mid-flight.
+  useEffect(() => {
+    if (bootstrapState.phase !== 'pending') return;
+    let cancelled = false;
+    bootstrapSession()
+      .then((info) => {
+        if (cancelled) return;
+        setBootstrapState({ phase: 'ready', info });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('[sc:app] session bootstrap failed', message);
+        showToast(`Couldn't connect to bridge: ${message}`, 'error');
+        setBootstrapState({ phase: 'disconnected' });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [bootstrapState, showToast]);
 
-    const url = wsUrlFor(address);
+  /** Phase 29: handleConnect now consumes a `SessionInfo` from
+   *  the bridge — the scsynth handshake (`/status` + `/notify 1`)
+   *  has already happened bridge-side at session-creation time,
+   *  so the WS just attaches and we go straight to setupDashboard.
+   *
+   *  The WS URL uses `?session=<uuid>`; the bridge forwards bytes
+   *  via the Session's pre-bound UDP sockets and broadcasts inbound
+   *  replies to all attached WS. */
+  const handleConnect = useCallback(async (info: SessionInfo) => {
+    console.log('[sc:app] handleConnect', info);
+
+    const url = wsUrlFor(info.sessionId);
     console.log('[sc:app] ws url', url);
     const next = new WorkerClient(url);
 
@@ -512,99 +668,6 @@ export function AppShell() {
       throw err;
     }
 
-    // Status probe — proves the full chain (worker → bridge → UDP →
-    // scsynth → back) is actually responsive before mounting the
-    // dashboard. Silent UDP "nothing listening" can only be detected
-    // here, because UDP sends don't fail. We also use the reply to
-    // capture scsynth's sample rate, which becomes the session-wide
-    // `AudioEnvironment.sampleRate`.
-    //
-    // We use `nominalSampleRate` (args[7]) rather than
-    // `actualSampleRate` (args[8]) — the latter is the
-    // measured-against-audio-hardware rate, which drifts by 10s of
-    // ppm (e.g. 48000.28 instead of 48000) due to the audio device's
-    // actual crystal. That tiny drift propagates into a non-integer
-    // sampleRate that breaks `WavMemoryWriter`'s WAV-header math
-    // (the format's rate field is a uint32) and any other consumer
-    // that assumes integer Hz. Nominal is what scsynth was *asked*
-    // to run at, always an integer round number, and it's what
-    // downstream tools (DAWs, ffmpeg, etc.) expect to see in WAV
-    // headers anyway. Round defensively in case scsynth ever
-    // returns it as 48000.0 — `Math.round` is a no-op on integers.
-    console.log('[sc:app] running /status probe');
-    let sampleRate: number;
-    try {
-      const reply = await next.sendAndAwaitReply(
-        status(),
-        (r) => r.address === '/status.reply',
-        STATUS_PROBE_TIMEOUT_MS,
-      );
-      // args index per scsynth's /status.reply spec:
-      // 0=unused, 1=numUgens, 2=numSynths, 3=numGroups, 4=numSynthDefs,
-      // 5=avgCpu, 6=peakCpu, 7=nominalSampleRate, 8=actualSampleRate.
-      const nominal = reply.args[7] as number;
-      const actual = reply.args[8] as number;
-      if (!Number.isFinite(nominal) || nominal <= 0) {
-        next.dispose();
-        throw new Error(
-          `scsynth reported a non-positive nominal sample rate: ${nominal}`,
-        );
-      }
-      sampleRate = Math.round(nominal);
-      console.log(
-        `[sc:app] /status probe OK (nominal=${nominal}, actual=${actual}, ` +
-          `using sr=${sampleRate})`,
-      );
-    } catch (err) {
-      console.error('[sc:app] /status probe failed', err);
-      next.dispose();
-      throw new Error(
-        `scsynth didn't reply to /status at ${address}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-    }
-
-    // Subscribe to async notifications (/tr, /n_go, /n_end, /done, …)
-    // and capture the assigned clientId from `/done /notify`. The
-    // per-session parent group id is derived from it (see below).
-    console.log('[sc:app] enabling /notify');
-    let clientId: number;
-    try {
-      const reply = await next.sendAndAwaitReply(
-        notify(1),
-        (r) => r.address === '/done' && r.args[0] === '/notify',
-        STATUS_PROBE_TIMEOUT_MS,
-      );
-      clientId = reply.args[1] as number;
-      console.log(
-        `[sc:app] /notify enabled, clientId=${clientId}, maxLogins=${reply.args[2]}`,
-      );
-    } catch (err) {
-      console.error('[sc:app] /notify failed', err);
-      next.dispose();
-      throw new Error(
-        `scsynth didn't accept /notify at ${address}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-    }
-
-    // Per-session root group, derived from the notify-assigned clientId.
-    // Reconnects usually get a different clientId (because /notify 0
-    // on the prior session frees the slot, but the OS port is also
-    // different), so collisions across sessions are avoided as long as
-    // scsynth hasn't recycled the slot. `clientId = 0` is the
-    // single-client default; we can't use root group 0, so fall back
-    // to the old hardcoded 100.
-    const parentGroupId =
-      clientId > 0 ? clientId * 100 : FALLBACK_PARENT_GROUP_ID;
-    if (clientId === 0) {
-      console.warn(
-        `[sc:app] scsynth returned clientId=0; using fallback group ${FALLBACK_PARENT_GROUP_ID}`,
-      );
-    }
-
     // Phase 27c: construct the pattern bank up here, before
     // setupDashboard AND before the onError handler so it can
     // dispose the bank on WS death. Constructor loads from
@@ -613,15 +676,16 @@ export function AppShell() {
     // it yet).
     const bank = new PatternBank();
 
-    // Wire disconnection handler *before* the async bring-up so a
-    // mid-bring-up WebSocket error still unwinds cleanly. Runtime
-    // errors (post-connect WS death) surface as a modal alert
-    // rather than an inline message on the connect screen — the
-    // user has been doing real work and deserves an explicit
-    // notification of why the dashboard just disappeared.
+    // Wire disconnection handler *before* the async bring-up so
+    // a mid-bring-up WebSocket error still unwinds cleanly.
+    // Runtime errors (post-connect WS death) surface as a toast;
+    // the dashboard's header drops to "disconnected" and the
+    // user can click Connect to retry. Don't DELETE the session
+    // — the bridge may still hold it; a fresh bootstrap can
+    // reuse on best-case or 404+POST on network blip.
     next.onError((message) => {
       if (clientRef.current === next) {
-        setRuntimeError(message);
+        showToast(`Connection lost: ${message}`, 'error');
         // Flush any pending pattern saves before the bank is
         // dropped — the user may have been editing right up
         // to the WS death.
@@ -633,6 +697,7 @@ export function AppShell() {
         next.dispose();
         clientRef.current = null;
         setResources(null);
+        setBootstrapState({ phase: 'disconnected' });
       }
     });
 
@@ -640,9 +705,10 @@ export function AppShell() {
     try {
       built = await setupDashboard(
         next,
-        clientId,
-        parentGroupId,
-        sampleRate,
+        info.sessionId,
+        info.clientId,
+        info.parentGroupId,
+        info.sampleRate,
         DEFAULT_PARAMS.chunkSize,
         bank,
       );
@@ -655,18 +721,39 @@ export function AppShell() {
     setResources(built);
   }, []);
 
+  // Phase 29c: auto-connect when bootstrap reports a ready
+  // session. If handleConnect throws (stale-session /s_new
+  // conflict, scsynth gone mid-bootstrap, anything else), we
+  // DELETE the session + clear sessionStorage so the next retry
+  // mints fresh. The user sees ConnectScreen with the error
+  // inline; clicking Retry re-enters `pending`.
+  useEffect(() => {
+    if (bootstrapState.phase !== 'ready') return;
+    if (resources !== null) return;
+
+    let cancelled = false;
+    const info = bootstrapState.info;
+    handleConnect(info).catch((err) => {
+      if (cancelled) return;
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('[sc:app] handleConnect failed', message);
+      showToast(`Failed to connect: ${message}`, 'error');
+      void deleteSession(info.sessionId);
+      clearStoredSession();
+      setBootstrapState({ phase: 'disconnected' });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bootstrapState, resources, handleConnect, showToast]);
+
   const handleDisconnect = useCallback(async () => {
     const current = resources;
     if (current) {
       // Server-side state goes first (recordings → scopes → clock →
-      // group). Then unregister /notify and tear down the worker.
-      // Each step is best-effort.
+      // group). Each step is best-effort.
       await teardownServerState(current);
-      try {
-        await current.client.sendAndSync(notify(0));
-      } catch (err) {
-        console.warn('[sc:app] /notify 0 on disconnect failed', err);
-      }
       // Bank only goes away on full disconnect (not on
       // chunkSize re-init). dispose() flushes a final save —
       // important if a mutation happened in the last 500 ms.
@@ -677,8 +764,16 @@ export function AppShell() {
       }
       current.client.dispose();
       clientRef.current = null;
+      // Phase 29: tell the bridge the session is gone. The bridge
+      // runs its cleanup bundle (/g_freeAll + /n_free + /notify 0)
+      // — same shape as the pre-29 frontend tail, just owned by
+      // the bridge now. clearStoredSession ensures the next
+      // bootstrap can't hit a 404 on the just-dead id.
+      void deleteSession(current.sessionId);
+      clearStoredSession();
     }
     setResources(null);
+    setBootstrapState({ phase: 'disconnected' });
   }, [resources]);
 
   /** Run a full in-place re-init with `next` as the new chunkSize.
@@ -701,6 +796,7 @@ export function AppShell() {
         await teardownServerState(current);
         const rebuilt = await setupDashboard(
           current.client,
+          current.sessionId,
           current.clientId,
           current.parentGroupId,
           current.sampleRate,
@@ -712,11 +808,11 @@ export function AppShell() {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error('[sc:app] reinit failed', msg);
-        // A re-init failure is also a runtime error — the dashboard
-        // is gone and the user needs to know why before being sent
-        // back to the connect screen.
-        setRuntimeError(`Reinitialization failed: ${msg}`);
-        // Tear down completely — the previous resources are now stale.
+        // A re-init failure means the dashboard is gone. Surface
+        // the error as a toast and drop the session — its
+        // scsynth-side state is in an ambiguous half-applied
+        // state; cleanest to start fresh.
+        showToast(`Reinitialization failed: ${msg}`, 'error');
         try {
           current.bank.dispose();
         } catch {
@@ -729,6 +825,9 @@ export function AppShell() {
         }
         clientRef.current = null;
         setResources(null);
+        void deleteSession(current.sessionId);
+        clearStoredSession();
+        setBootstrapState({ phase: 'disconnected' });
       } finally {
         setReiniting(false);
         setPendingChunkSize(null);
@@ -827,9 +926,9 @@ export function AppShell() {
         if (clientRef.current !== client) return;
         const msg = err instanceof Error ? err.message : String(err);
         console.warn('[sc:app] heartbeat failed:', msg);
-        setRuntimeError(
-          `scsynth stopped responding to /status (${msg}). The ` +
-            `dashboard has been torn down.`,
+        showToast(
+          `scsynth stopped responding to /status: ${msg}`,
+          'error',
         );
         try {
           bank.dispose();
@@ -839,6 +938,9 @@ export function AppShell() {
         client.dispose();
         clientRef.current = null;
         setResources(null);
+        // Don't DELETE the session — bridge may still have it; a
+        // fresh bootstrap can either reuse (best case) or 404+POST.
+        setBootstrapState({ phase: 'disconnected' });
       }
     };
 
@@ -852,22 +954,25 @@ export function AppShell() {
     };
   }, [resources]);
 
-  // Best-effort shutdown when the tab / Tauri window closes. `pagehide`
-  // fires synchronously on the main thread; the commands we emit here
-  // queue into the worker's message channel and its WebSocket, which
-  // typically flush before the process is reaped. If we get killed
-  // before they land (hard close / SIGKILL), the leftover state sits
-  // on scsynth until manual cleanup or next /g_new-with-same-id fails
-  // — current tradeoff; acceptable because the normal disconnect path
-  // above handles the happy case cleanly.
+  // Best-effort shutdown when the tab / Tauri window closes.
+  // Phase 29: send `DELETE /api/session/:id` with `keepalive: true`
+  // so the request completes after the page begins unloading. The
+  // bridge runs the cleanup bundle (/g_freeAll + /n_free + /notify
+  // 0) on receipt — same shape as the pre-29 frontend tail, just
+  // owned by the bridge now. If the request fails to land (hard
+  // SIGKILL, no keepalive support), the future TTL job (29d)
+  // catches the leak.
   useEffect(() => {
     if (!resources) return;
+    const sessionId = resources.sessionId;
     const handler = () => {
-      const { client, group } = resources;
       try {
-        client.sendCommand(gFreeAll(group.groupId));
-        client.sendCommand(nFree(group.groupId));
-        client.sendCommand(notify(0));
+        // `keepalive: true` lets the request outlive the page.
+        // Result is ignored — we're unloading anyway.
+        void fetch(`/api/session/${encodeURIComponent(sessionId)}`, {
+          method: 'DELETE',
+          keepalive: true,
+        });
       } catch {
         /* best effort */
       }
@@ -937,29 +1042,54 @@ export function AppShell() {
     };
   }, [resources]);
 
+  // Phase 29d: derive the dashboard's connection status from
+  // the bootstrap state machine + resources. Header chrome reads
+  // this to pick the badge variant, the action button label,
+  // and whether the chunk-size picker is interactive. Named
+  // `connectionStatus` (not just `status`) to avoid shadowing
+  // the imported `status` OSC command builder used by the
+  // heartbeat tick.
+  const connectionStatus: ConnectionStatus = resources
+    ? 'connected'
+    : bootstrapState.phase === 'pending' || bootstrapState.phase === 'ready'
+      ? 'connecting'
+      : 'disconnected';
+
+  // The "loading…" overlay gates the header + chunk-size picker
+  // from interaction during the initial bootstrap window. Re-init
+  // shares the overlay (different message) — they can't co-occur.
+  const showLoadingOverlay =
+    reiniting || (connectionStatus === 'connecting' && !resources);
+
+  const onConnect = useCallback(() => {
+    setBootstrapState({ phase: 'pending' });
+  }, []);
+
   return (
-    <>
-      {resources ? (
-        <Dashboard
-          resources={resources}
-          chunkSize={chunkSize}
-          reiniting={reiniting}
-          onChunkSizeChange={onChunkSizeChange}
-          onDisconnect={handleDisconnect}
-        />
-      ) : (
-        <ConnectScreen
-          defaultAddress={defaultAddress}
-          onConnect={handleConnect}
-        />
-      )}
-      {reiniting && (
+    <SessionProvider
+      value={{
+        status: connectionStatus,
+        sessionId: resources?.sessionId ?? null,
+      }}
+    >
+      <Dashboard
+        resources={resources}
+        status={connectionStatus}
+        chunkSize={chunkSize}
+        reiniting={reiniting}
+        onChunkSizeChange={onChunkSizeChange}
+        onConnect={onConnect}
+        onDisconnect={handleDisconnect}
+      />
+      {showLoadingOverlay && (
         <LoadingModal
-          title="Reinitializing dashboard…"
+          title={reiniting ? 'Reinitializing dashboard…' : 'Connecting…'}
           message={
-            `Applying chunk size = ${pendingChunkSize ?? chunkSize}. ` +
-            `Tearing down current scopes/recordings and rebuilding the ` +
-            `clock.`
+            reiniting
+              ? `Applying chunk size = ${pendingChunkSize ?? chunkSize}. ` +
+                `Tearing down current scopes/recordings and rebuilding the ` +
+                `clock.`
+              : 'Establishing the bridge session and connecting to scsynth.'
           }
         />
       )}
@@ -986,25 +1116,8 @@ export function AppShell() {
           onCancel={onCancelReinit}
         />
       )}
-      {runtimeError !== null && (
-        <AlertModal
-          title="Connection lost"
-          body={
-            <>
-              <p>
-                The connection to scsynth was interrupted and the
-                dashboard has been torn down.
-              </p>
-              <p style={{ opacity: 0.8 }}>{runtimeError}</p>
-              <p>Press OK to return to the connect screen.</p>
-            </>
-          }
-          dismissLabel="OK"
-          variant="danger"
-          onDismiss={() => setRuntimeError(null)}
-        />
-      )}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       <DebugLog errorBus={resources?.errorBus ?? null} />
-    </>
+    </SessionProvider>
   );
 }

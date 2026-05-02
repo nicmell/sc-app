@@ -1,22 +1,29 @@
 //! HTTP server.
 //!
-//! Two responsibilities:
-//! 1. Upgrade `GET /ws` to a WebSocket that the [`ws_bridge`]
-//!    forwards to per-session UDP sockets. Inside the bridge, each
-//!    outbound packet is routed to one of N targets by OSC-address
-//!    prefix via the [`routing::RoutingTable`] in `AppState`. The
-//!    default target can be overridden per connection via
-//!    `?scsynth=HOST:PORT`.
-//! 2. *Optionally* serve the Vite `dist/` directory as static files
-//!    with a SPA fallback to `index.html` — delegated to
-//!    [`static_assets`]. Used in production (Tauri webview points at
-//!    the local axum, or a remote browser hits the deployed
-//!    bundle). In dev the frontend is served by Vite, so the static
-//!    fallback is `None` and any non-`/ws` request 404s.
+//! Three responsibilities:
+//! 1. `GET /ws` — upgrade to a WebSocket and attach it to a
+//!    bridge-managed Session (`?session=<uuid>`). The Session
+//!    owns the UDP sockets to scsynth + any other route target;
+//!    the WS is a forwarder. Phase 29 collapsed the pre-26
+//!    per-WS-socket model — there's no `?scsynth=` legacy path
+//!    anymore.
+//! 2. `/api/session*` — REST endpoints for minting / reading /
+//!    deleting sessions (delegated to [`api`]).
+//! 3. *Optionally* serve the Vite `dist/` directory as static
+//!    files with a SPA fallback to `index.html` (delegated to
+//!    [`static_assets`]). In dev the frontend is served by
+//!    Vite, so the static fallback is `None` and any non-API,
+//!    non-`/ws` request 404s.
+//!
+//! A background TTL task (Phase 29d) scans the SessionStore once
+//! per minute and evicts sessions whose `last_active` is older
+//! than the configured TTL. Each evicted session runs its
+//! cleanup bundle (/g_freeAll + /n_free + /notify 0).
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use axum::extract::{Query, Request, State, WebSocketUpgrade};
@@ -26,24 +33,36 @@ use axum::routing::get;
 use axum::Router;
 use serde::Deserialize;
 use tokio::net::TcpListener;
+use uuid::Uuid;
 
+mod api;
 mod routing;
 mod session;
 pub mod static_assets;
 pub mod ws_bridge;
 
 pub use routing::RoutingTable;
+use session::SessionStore;
+
+/// How often the TTL eviction task scans the session store.
+/// One minute is well under the typical 30-minute TTL so a
+/// session that just expired won't linger more than a minute
+/// past its deadline.
+const TTL_SCAN_INTERVAL: Duration = Duration::from_secs(60);
 
 #[derive(Clone)]
-struct AppState {
-    routes: Arc<RoutingTable>,
+pub(crate) struct AppState {
+    pub routes: Arc<RoutingTable>,
+    pub sessions: SessionStore,
 }
 
 #[derive(Deserialize)]
 struct WsQuery {
-    /// Per-connection override for the default route's target —
-    /// preserves the pre-Phase-26 `?scsynth=` semantics.
-    scsynth: Option<String>,
+    /// Identifier for a bridge-managed Session minted via
+    /// `POST /api/session`. The WS attaches to that Session's
+    /// pre-bound UDP sockets and broadcast channels. Required —
+    /// the pre-29 `?scsynth=` legacy path is gone.
+    session: Option<Uuid>,
 }
 
 /// Bind the TCP listener loopback-only on `port`. Returns the listener
@@ -59,22 +78,40 @@ pub async fn bind(port: u16) -> Result<(TcpListener, SocketAddr)> {
 }
 
 /// Run the HTTP+WS server on a pre-bound listener. `dist = None`
-/// disables the static fallback — anything that's not `/ws` returns
-/// 404. The two-step `bind` + `serve_on` split lets the GUI mode
-/// learn the port early so it can navigate the webview at the right
-/// URL before the event loop opens it.
+/// disables the static fallback — anything that's not `/ws` or
+/// `/api/*` returns 404. The two-step `bind` + `serve_on` split
+/// lets GUI mode learn the port early so it can navigate the
+/// webview at the right URL before the event loop opens it.
+///
+/// Spawns a background TTL eviction task on the same runtime;
+/// no JoinHandle returned, the task lives until the bridge
+/// process exits.
 pub async fn serve_on(
     listener: TcpListener,
     routes: RoutingTable,
     dist: Option<PathBuf>,
+    session_ttl: Duration,
 ) -> Result<()> {
     tracing::info!("  /ws routing table:\n{}", routes.describe());
+    tracing::info!(
+        ttl_seconds = session_ttl.as_secs(),
+        "  session TTL"
+    );
 
     let state = AppState {
         routes: Arc::new(routes),
+        sessions: SessionStore::new(),
     };
 
-    let mut app = Router::new().route("/ws", get(ws_handler));
+    spawn_ttl_task(state.sessions.clone(), session_ttl);
+
+    let mut app = Router::new()
+        .route("/ws", get(ws_handler))
+        .route("/api/session", axum::routing::post(api::post_session))
+        .route(
+            "/api/session/{id}",
+            get(api::get_session).delete(api::delete_session),
+        );
 
     if let Some(dist) = dist {
         tracing::info!("  static → {}", dist.display());
@@ -98,10 +135,11 @@ pub async fn run_bridge(
     port: u16,
     routes: RoutingTable,
     dist: Option<PathBuf>,
+    session_ttl: Duration,
 ) -> Result<()> {
     let (listener, addr) = bind(port).await?;
     tracing::info!(addr = %addr, "sc-app listening on http://{addr}");
-    serve_on(listener, routes, dist).await
+    serve_on(listener, routes, dist, session_ttl).await
 }
 
 async fn ws_handler(
@@ -109,25 +147,44 @@ async fn ws_handler(
     State(state): State<AppState>,
     Query(query): Query<WsQuery>,
 ) -> Result<Response, (StatusCode, String)> {
-    // Per-WS routing table: clone the global, optionally override
-    // the default with the `?scsynth=` query param. The other routes
-    // (e.g. `/dirt`) keep their globally-configured targets.
-    let mut routes = (*state.routes).clone();
-    if let Some(raw) = query.scsynth.as_deref() {
-        let addr = raw.parse::<SocketAddr>().map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                format!("invalid scsynth address {raw:?}: {e}"),
-            )
-        })?;
-        routes.set_default(addr);
-    }
-
+    // Phase 29: only the `?session=<uuid>` path is supported.
+    // The Session owns the UDP sockets, broadcast channels, and
+    // scsynth /notify subscription; the WS is purely a forwarder.
+    let Some(session_id) = query.session else {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "WS upgrade requires ?session=<uuid> — mint a session via POST /api/session first".into(),
+        ));
+    };
+    let Some(session) = state.sessions.get_and_touch(&session_id).await else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            format!("session {session_id} not found (expired or never existed)"),
+        ));
+    };
     Ok(ws.on_upgrade(move |socket| async move {
-        if let Err(e) = ws_bridge::handle_ws(socket, routes).await {
+        if let Err(e) = ws_bridge::handle_ws_session(socket, session).await {
             tracing::warn!(error = %e, "ws_bridge session error");
         }
     }))
+}
+
+/// Spawn the once-a-minute TTL eviction loop. Detached — runs
+/// until the bridge process exits. The first tick fires after
+/// `TTL_SCAN_INTERVAL` (not immediately) so a freshly-bootstrapped
+/// frontend isn't racing with eviction during its first attach.
+fn spawn_ttl_task(sessions: SessionStore, ttl: Duration) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(TTL_SCAN_INTERVAL);
+        // tokio's first tick fires immediately by default; advance
+        // past it so we don't sweep before any session has even
+        // had a chance to be created.
+        interval.tick().await;
+        loop {
+            interval.tick().await;
+            sessions.evict_idle(ttl).await;
+        }
+    });
 }
 
 async fn no_static_fallback() -> Response {

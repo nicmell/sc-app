@@ -34,3 +34,17 @@
   opacity: 0.7;
   color: var(--color-text-dim);
 }
+
+/* Idle / not-yet-active panel chrome. The host marks a card
+   `aria-disabled="true"` when its underlying resources aren't
+   live (e.g. while the bridge session is offline). The card
+   stays visible so the dashboard layout doesn't reflow on
+   connect/disconnect, but its content is muted to read as
+   "out of service". Interactive children inside a disabled
+   panel are expected to honour the `aria-disabled` semantic
+   themselves (or be unmounted by the consumer). */
+.panel[aria-disabled="true"] {
+  opacity: 0.55;
+  pointer-events: none;
+  user-select: none;
+}

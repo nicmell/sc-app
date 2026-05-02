@@ -9,11 +9,11 @@ audio config schema, file layout, workspace packages, and the
 chunkSize × sampleRate practical table all live in
 [`CLAUDE.md`](./CLAUDE.md) — don't duplicate them here.
 
-**Phase 28 shipped (a + b + c + d + e + f).** Phases 0–28 are
-in [`docs/history.md`](./docs/history.md). No new phase is in
-flight; this file currently holds only *Open Points* and
-*Future Improvements*. When the next phase starts, it lands
-above *Open Points* with a full design sketch.
+**No phase currently in flight.** Phases 0–29 are in
+[`docs/history.md`](./docs/history.md). The next planned
+piece of work picks from the [Future Improvements](#future-improvements)
+list below — none is blocked by anything currently shipped,
+so promotion to a numbered phase is on demand.
 
 ---
 

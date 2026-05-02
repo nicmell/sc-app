@@ -29,7 +29,11 @@ use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
 
-use crate::config::{self, Config, DEFAULT_PORT, DEFAULT_SCSYNTH};
+use std::time::Duration;
+
+use crate::config::{
+    self, Config, DEFAULT_PORT, DEFAULT_SCSYNTH, DEFAULT_SESSION_TTL_SECONDS,
+};
 
 #[derive(Parser)]
 #[command(name = "sc-app", version, about = "SCSynth Oscilloscope & Recorder")]
@@ -103,8 +107,11 @@ pub fn run() {
             let scsynth = parse_scsynth_or_die(&scsynth_str);
             let log_dir = log_dir.or(cfg.log_dir);
             let routes = cfg.routes;
+            let session_ttl = Duration::from_secs(
+                cfg.session_ttl_seconds.unwrap_or(DEFAULT_SESSION_TTL_SECONDS),
+            );
 
-            bridge::run_blocking(port, scsynth, routes, dist, log_dir);
+            bridge::run_blocking(port, scsynth, routes, dist, log_dir, session_ttl);
         }
     }
 }

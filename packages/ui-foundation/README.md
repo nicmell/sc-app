@@ -37,6 +37,7 @@ src/
     empty-state.css      .empty
     error-alert.css      .error
     modal.css            .modal + .modal-backdrop[data-variant]
+    toast.css            .toast-stack + .toast[data-variant=success|warn|error|info]
 ```
 
 ## Public API contract

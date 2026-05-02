@@ -51,6 +51,19 @@ pub const DEFAULT_PORT: u16 = 3000;
 /// target).
 pub const DEFAULT_SCSYNTH: &str = "127.0.0.1:57110";
 
+/// Built-in default sclang+SuperDirt address. The starter config
+/// pre-populates a `/dirt → DEFAULT_DIRT` route so a first-launch
+/// GUI / tauri-dev session has working SuperDirt routing without
+/// the user having to edit `config.json` first. (Phase 26 +
+/// `scripts/start-osc.sh` always assume sclang on this port.)
+pub const DEFAULT_DIRT: &str = "127.0.0.1:57120";
+
+/// Built-in default TTL for idle bridge-managed sessions.
+/// 30 minutes is generous enough to forgive someone walking
+/// away from a tab, short enough that maxLogins=8 (scsynth's
+/// default) doesn't fill up after a handful of orphaned tabs.
+pub const DEFAULT_SESSION_TTL_SECONDS: u64 = 1800;
+
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
@@ -75,6 +88,14 @@ pub struct Config {
     /// identical to pre-Phase-26.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub routes: Vec<Route>,
+    /// Phase 29d: how long an idle bridge-managed session lingers
+    /// before TTL cleanup evicts it (and runs the
+    /// /g_freeAll + /n_free + /notify 0 teardown bundle). The
+    /// background scan runs once per minute; sessions whose
+    /// `last_active` is older than this value get dropped on the
+    /// next tick. None ⇒ DEFAULT_SESSION_TTL_SECONDS (1800).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_ttl_seconds: Option<u64>,
 }
 
 /// One entry in the bridge's routing table.
@@ -102,7 +123,11 @@ pub fn starter() -> &'static Config {
         port: Some(DEFAULT_PORT),
         scsynth: Some(DEFAULT_SCSYNTH.to_string()),
         log_dir: None,
-        routes: Vec::new(),
+        routes: vec![Route {
+            prefix: "/dirt".into(),
+            target: DEFAULT_DIRT.into(),
+        }],
+        session_ttl_seconds: None,
     })
 }
 
@@ -167,12 +192,16 @@ mod tests {
     #[test]
     fn starter_serializes_to_clean_json() {
         let body = serde_json::to_string_pretty(starter()).unwrap();
-        // Should have port, scsynth (Some); should NOT contain
-        // log_dir or routes (skipped because None / empty).
+        // Should have port, scsynth, and the SuperDirt route (the
+        // pre-populated /dirt → 57120 entry so first-launch GUI /
+        // tauri-dev sessions route SuperDirt traffic correctly
+        // without manual config editing). log_dir is None and
+        // serializes-skipped.
         assert!(body.contains("\"port\": 3000"));
         assert!(body.contains("\"scsynth\": \"127.0.0.1:57110\""));
+        assert!(body.contains("\"prefix\": \"/dirt\""));
+        assert!(body.contains("\"target\": \"127.0.0.1:57120\""));
         assert!(!body.contains("log_dir"));
-        assert!(!body.contains("routes"));
     }
 
     #[test]
@@ -185,6 +214,7 @@ mod tests {
                 prefix: "/dirt".into(),
                 target: "127.0.0.1:57120".into(),
             }],
+            session_ttl_seconds: Some(900),
         };
         let json = serde_json::to_string_pretty(&cfg).unwrap();
         let back: Config = serde_json::from_str(&json).unwrap();
