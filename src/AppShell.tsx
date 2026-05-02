@@ -224,6 +224,19 @@ async function setupDashboard(
     buffer: new IdAllocator(idBase),
     bus: new IdAllocator(32),
   };
+
+  console.log(
+    `[sc:app] setupDashboard clientId=${clientId} parentGroupId=${parentGroupId} ` +
+      `idBase=${idBase} (node + buffer allocator start)`,
+  );
+
+  // Phase 24: subscribe to /fail replies BEFORE any /s_new fires.
+  // Otherwise the very first /fail (e.g. clock /s_new collision with
+  // a SuperDirt node) lands before the bus has subscribed and gets
+  // dropped silently. Fresh ring per setupDashboard; subscribing on
+  // the same WorkerClient again is fine.
+  const errorBus = new ServerErrorBus(client);
+
   const registry = new SynthDefRegistry(client);
   const group = new GroupController(client, parentGroupId);
   const clock = new ClockController({
@@ -267,11 +280,6 @@ async function setupDashboard(
     bufferManager,
     clock,
   });
-
-  // Phase 24: subscribe to /fail replies for the lifetime of this
-  // dashboard. Created here so chunkSize re-init gets a fresh ring;
-  // subscribing on the same WorkerClient again is fine.
-  const errorBus = new ServerErrorBus(client);
 
   // Phase 26: SuperDirt client over the same WS. Fire-and-forget
   // hello probe (Q2 = once on mount); status flips when reply

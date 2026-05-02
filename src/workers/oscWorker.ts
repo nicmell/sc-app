@@ -388,7 +388,10 @@ function handleBufferBSetn(entry: BufferEntry, packet: OSC.Message): void {
 }
 
 setWorkerMessageHandler(async (msg: MainToWorker) => {
-  console.log('[sc:worker] main → worker', msg.type);
+  // Per-message log was useful during transport bring-up but spams
+  // DebugLog at runtime (every /b_getn, every clock tick, every
+  // status heartbeat). Branches below still log structurally
+  // significant events (connect, disconnect, errors).
   switch (msg.type) {
     case 'connect': {
       if (transport) {

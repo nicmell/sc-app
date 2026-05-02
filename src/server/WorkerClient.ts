@@ -133,7 +133,11 @@ export class WorkerClient {
       const msg = ev.data;
       switch (msg.type) {
         case 'reply':
-          console.log('[sc:client] reply', msg.reply.address);
+          // Per-reply log was useful while bringing the WS up but
+          // floods DebugLog at runtime (status heartbeats, /b_setn
+          // chunks, /tr ticks). Drop it; reply addresses still
+          // surface via specific listeners (footer status, scope
+          // stream, etc.) when relevant.
           for (const cb of this.replyListeners) cb(msg.reply);
           break;
         case 'oscError':
