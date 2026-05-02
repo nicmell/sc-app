@@ -217,6 +217,36 @@
     </section>
 
     <section class="demo-section">
+      <h2 class="demo-section-title">Toasts (inline preview, not portal)</h2>
+      <p>
+        Toasts normally live inside a fixed-position
+        <code>.toast-stack</code> at the bottom-right of the viewport.
+        Below renders the cards without the stack so they show in
+        flow.
+      </p>
+      <div class="toast">
+        <span class="toast-message">Default toast — muted accent.</span>
+        <button type="button" class="toast-close" aria-label="Dismiss">×</button>
+      </div>
+      <div class="toast" data-variant="info">
+        <span class="toast-message">Info toast — bridge bootstrap completed.</span>
+        <button type="button" class="toast-close" aria-label="Dismiss">×</button>
+      </div>
+      <div class="toast" data-variant="success">
+        <span class="toast-message">Success — recording saved as <code>track-12.wav</code>.</span>
+        <button type="button" class="toast-close" aria-label="Dismiss">×</button>
+      </div>
+      <div class="toast" data-variant="warn">
+        <span class="toast-message">Warning — scsynth replied late (1240 ms).</span>
+        <button type="button" class="toast-close" aria-label="Dismiss">×</button>
+      </div>
+      <div class="toast" data-variant="error">
+        <span class="toast-message">Error — couldn't reach scsynth: Connection refused (os error 61).</span>
+        <button type="button" class="toast-close" aria-label="Dismiss">×</button>
+      </div>
+    </section>
+
+    <section class="demo-section">
       <h2 class="demo-section-title">Token sampler</h2>
       <p>Spacing scale (size = token rem):</p>
       <div class="demo-row">
