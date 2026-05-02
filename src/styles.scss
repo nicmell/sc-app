@@ -126,65 +126,19 @@ body,
   max-width: var(--dashboard-max-width);
   min-height: 100vh;
   box-sizing: border-box;
+}
 
-  > header {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-
-    .badge {
-      padding: 0.25rem 0.6rem;
-      background: var(--ok-bg);
-      border: 1px solid var(--ok-strong);
-      border-radius: 999px;
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--ok-text);
-    }
-
-    .chunk-size-picker {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.3rem;
-      margin-left: auto;
-      font-size: 0.8rem;
-      color: var(--text-dim);
-
-      select {
-        padding: 0.25rem 0.5rem;
-        background: var(--surface-input);
-        color: var(--text);
-        border: 1px solid var(--border-3);
-        border-radius: 3px;
-        font: inherit;
-        font-size: 0.8rem;
-        font-variant-numeric: tabular-nums;
-        cursor: pointer;
-
-        &:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-      }
-    }
-
-    button {
-      padding: 0.4rem 0.8rem;
-      background: transparent;
-      border: 1px solid var(--border-3);
-      border-radius: 4px;
-      color: inherit;
-      cursor: pointer;
-      font: inherit;
-
-      &:hover:not(:disabled) {
-        background: var(--surface-3);
-      }
-      &:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-      }
-    }
-  }
+// Phase 28e/2: header chrome migrated to @sc-app/ui-foundation.
+// The <header> uses .cluster (foundation) for layout; .badge and
+// the Disconnect <button data-variant="ghost"> get their styling
+// from the foundation directly. Only .chunk-size-picker is
+// app-specific and kept here — small inline-flex utility that
+// pushes itself + downstream items to the right via margin-left.
+.chunk-size-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  margin-left: auto;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-dim);
 }

@@ -149,7 +149,7 @@ function Dashboard({
   );
   return (
     <main className="dashboard-shell">
-      <header>
+      <header className="cluster" data-gap="md">
         <span className="badge">connected</span>
         <label className="chunk-size-picker">
           chunk size&nbsp;
@@ -171,6 +171,7 @@ function Dashboard({
         </label>
         <button
           type="button"
+          data-variant="ghost"
           onClick={onDisconnect}
           disabled={reiniting}
         >
