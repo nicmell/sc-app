@@ -6,7 +6,7 @@ import {
 import type { ScopeController } from '@/scope/ScopeController';
 import type { ScopeManager } from '@/scope/ScopeManager';
 import { ScopeView } from '@/ui/ScopeView';
-import './ScopeList.scss';
+import './ScopeList.css';
 
 type Channels = number;
 
@@ -64,7 +64,7 @@ export function ScopeList({ manager }: ScopeListProps) {
   return (
     <section className="panel scope-list">
       <header>Scopes</header>
-      <div className="row toolbar">
+      <div className="cluster">
         <label>
           bus&nbsp;
           <input
@@ -105,7 +105,7 @@ export function ScopeList({ manager }: ScopeListProps) {
         </button>
         <button
           type="button"
-          className="danger"
+          data-variant="danger"
           onClick={onClear}
           disabled={busy || scopes.length === 0}
         >
@@ -155,7 +155,7 @@ function ScopeListItem({
         <span className="meta">
           {scope.channels}ch · {busDesc} · {chunksPerSec}/s
         </span>
-        <button type="button" className="danger small" onClick={() => void onRemove()}>
+        <button type="button" data-variant="danger" data-size="sm" onClick={() => void onRemove()}>
           Remove
         </button>
       </div>

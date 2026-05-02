@@ -1,0 +1,65 @@
+/**
+ * ScopeList — panel-local layout. Most styling now lives in the
+ * foundation: .panel chrome, .cluster toolbar layout, button +
+ * input + select base styles, .empty + .error placeholders.
+ *
+ * Only panel-specific bits remain: input widths in the toolbar,
+ * the small footer status bar, and the per-scope item card.
+ */
+
+.scope-list input[type='number'] {
+  width: 5rem;
+}
+
+.scope-list input[type='text'] {
+  width: 8rem;
+}
+
+.scope-list .footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-wrap: wrap;
+  padding-top: var(--space-3xs);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-dim);
+}
+
+.scope-list .scopes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.scope-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.scope-item-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-wrap: wrap;
+}
+
+.scope-item-header .label {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text);
+}
+
+.scope-item-header .meta {
+  flex: 1 1 auto;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-dim);
+  font-variant-numeric: tabular-nums;
+}
