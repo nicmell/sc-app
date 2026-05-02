@@ -46,6 +46,7 @@ is the cleaner read.
 - [Phase 26 — SuperDirt via Bridge-Internal OSC Router](#phase-26--superdirt-via-bridge-internal-osc-router)
 - [Phase 27 — Step Sequencer for SuperDirt](#phase-27--step-sequencer-for-superdirt)
 - [Phase 28 — Shared UI Foundation Package](#phase-28--shared-ui-foundation-package)
+- [Phase 29 — Bridge-Managed Sessions + Auto-Connect](#phase-29--bridge-managed-sessions--auto-connect)
 
 ---
 
@@ -1946,3 +1947,340 @@ panel per commit, smallest-first).*
   nesting". Modern CSS nesting (Lightning CSS in Vite)
   supports `&` natively if you really want it; otherwise
   flat selectors are fine and grep cleanly.
+
+## Phase 29 — Bridge-Managed Sessions + Auto-Connect
+
+**Goal.** Move the scsynth handshake (open UDP socket,
+`/notify 1`, capture `clientId`, `/status`, capture
+`sampleRate`) off the frontend and onto the Rust bridge,
+materialised as a per-tab **Session** keyed by a
+`sessionStorage`-persisted UUID. The frontend's first action
+on boot becomes a `GET`/`POST /api/session/...` round-trip;
+the response carries everything the dashboard needs
+(`clientId`, `scsynth`, `sampleRate`, `parentGroupId`),
+and the WebSocket attaches to the existing session via
+`?session=<uuid>`. The ConnectScreen disappears entirely
+in favour of an always-rendered dashboard with a
+Connect/Disconnect toggle in the header.
+
+The new wins:
+- **Auto-connect on launch** — happy-path users never see
+  a connect form again.
+- **scsynth-side state survives a page reload (F5)** within
+  the session's TTL — the bridge keeps the UDP socket and
+  `/notify` subscription alive across WS reconnects, so the
+  clock keeps ticking, in-flight recordings keep writing,
+  the sequencer keeps emitting `/dirt/play`.
+- **Multi-tab on the same browser** works for free —
+  `sessionStorage` is per-tab, each tab mints its own
+  Session, each Session opens its own UDP socket → its own
+  scsynth `clientId` → its own per-clientId `IdAllocator`
+  range (Phase 26's `clientId × 1_000_000 + 1000` already
+  scopes IDs cleanly).
+
+### What shipped
+
+Four sub-phases, four commits, plus three small fixes
+along the way.
+
+*29a — Rust: Session module + HTTP endpoints, no WS cutover
+(commit 70b83ee).*
+- `src-tauri/src/server/session.rs` — `Session` owns one
+  UDP socket per unique route target (default scsynth +
+  every distinct `routes[i].target`), runs `/notify 1` →
+  `/done /notify <cid>` and `/status` → `/status.reply`
+  on the default-route socket at creation, captures
+  `clientId` + `sampleRate`, derives `parentGroupId =
+  clientId * 100` (with the `clientId == 0 ⇒ 100` fallback
+  preserved from the pre-29 frontend). `SessionStore` is
+  an `Arc<RwLock<HashMap<Uuid, Arc<Session>>>>` — async
+  RwLock because we acquire `last_active` via async, but
+  contention is light (HTTP handlers + once-a-minute TTL).
+- `src-tauri/src/server/api.rs` — three handlers:
+  `POST /api/session` (create), `GET /api/session/:id`
+  (read-back, bumps `last_active`), `DELETE /api/session/:id`
+  (run cleanup bundle + drop sockets). Errors render as
+  `{ "error": "..." }` with appropriate HTTP statuses
+  (503 for create-time scsynth-not-responding, 404 for
+  missing/expired session).
+- `mod.rs` got `AppState { routes, sessions }`,
+  `WsQuery { session: Option<Uuid> }`, mounted the API
+  routes. Old per-WS sockets stayed in place — 29a
+  shipped the Session model in parallel with the legacy
+  path so we could test via curl + integration tests
+  before cutover.
+- `Cargo.toml` — added `uuid = { version = "1", features =
+  ["v4", "serde"] }`.
+
+*29b — Rust: WS bridge cutover (commit 5306dfa).*
+- `ws_bridge.rs` collapsed to one entry point —
+  `handle_ws_session(ws, Arc<Session>)`. Per attached WS:
+  subscribe to each `session.broadcast_senders[target]`
+  channel, spawn a forwarder task per target that pushes
+  bytes onto the WS sink. WS→UDP routes via
+  `session.routes.route_for(addr)` →
+  `session.target_sockets[target]`. Forwarder tasks are
+  aborted on WS close (don't tear down the Session itself).
+- `Session::create` spawns one recv-broadcast task per
+  socket AFTER the handshake completes — otherwise the
+  broadcast task would eat the handshake replies. Each
+  task reads `sock.recv()` and `tx.send()`s onto the
+  per-target `broadcast::Sender` (capacity 4096 — at the
+  steady ~48 Hz tick rate, that's ~85 s of buffer, which
+  is enough margin for any realistic WS-attach gap).
+- `Session::cleanup` aborts the recv tasks BEFORE sending
+  the teardown bundle so any `/fail` replies it provokes
+  (e.g. `/n_free` against a stale node) don't get fanned
+  out to attached WS connections.
+- Per-WS UDP sockets are gone. Per-WS `/notify 1` /
+  `WsCleanup` are gone. The pre-29 `ws_cleanup.rs` was
+  deleted in 29d.
+
+*29c — Frontend: bootstrap + skip per-WS handshake
+(commit 043df8f).*
+- `src/session/sessionBootstrap.ts` — `bootstrapSession()`
+  reads `sessionStorage["sc.session"]`, hits
+  `GET /api/session/:id` → on 404 / network error,
+  `POST /api/session`. Persists the resulting id and
+  returns the `SessionInfo`. `deleteSession(id)` is the
+  best-effort fire-and-forget for tab-close + Disconnect;
+  `clearStoredSession()` drops the stored id without
+  contacting the bridge (used after Disconnect to force a
+  fresh session next bootstrap).
+- `src/session/SessionContext.tsx` — `ConnectionStatus`
+  enum (`connected | connecting | disconnected`) +
+  `SessionProvider` + `useSessionContext()` so any
+  component can read app-wide connection state without
+  prop-drilling from `AppShell`.
+- `AppShell.tsx` — `bootstrapState` machine
+  (`pending | ready | disconnected`) drives the
+  bootstrap effect; on `ready`, `handleConnect(info)`
+  fires next render. The pre-29 `handleConnect` chain
+  (`/status` probe → `/notify 1` → `setupDashboard`) is
+  collapsed: the WS just opens at
+  `/ws?session=<uuid>` and `setupDashboard` is invoked
+  directly with the session-supplied
+  `clientId / parentGroupId / sampleRate / chunkSize`.
+- `vite.config.ts` — added `/api` proxy alongside `/ws`
+  (commit d2f7fbc) so dev mode forwards both to the bridge.
+
+*29d — TTL eviction + drop legacy + UI rework (commits
+e68efbd, c963c2a, 6b21358, 6655508).*
+- `Session::evict_idle(ttl)` (two-pass: read-lock to
+  collect stale ids, write-lock to remove + run cleanup
+  on detached `Arc<Session>`s without holding the map
+  lock). `serve_on()` spawns a once-a-minute background
+  task scanning the store; first tick is skipped so
+  freshly-bootstrapped sessions aren't racing eviction.
+  `config.session_ttl_seconds` (default 1800 = 30 min)
+  drives the TTL.
+- `WsQuery` lost the legacy `?scsynth=` field — the WS
+  upgrade now requires `?session=<uuid>` and 400s
+  without it. `ws_cleanup.rs` deleted entirely.
+- ConnectScreen deleted; `src/ui/ConnectScreen/` removed.
+  The `dashboard-shell` is the only top-level UI now.
+- Header chrome refactored: `<span class="badge"
+  data-variant={…}>` shows `connected | connecting | disconnected`,
+  and the action button toggles between Disconnect (when
+  connected) and Connect (when disconnected). The
+  chunk-size picker is disabled while disconnected /
+  re-initing.
+- Disconnected state shows the same dashboard layout as
+  connected but with disabled-state placeholder cards
+  (`<DisabledPanels>` — one `.panel[aria-disabled="true"]`
+  per upcoming live panel, in the same order). Layout
+  never reflows on connect/disconnect.
+- `useToasts()` + `<ToastContainer>` replace the runtime
+  AlertModal flow. Connection errors, heartbeat failures,
+  and re-init failures show as bottom-right toasts:
+  `success` (4 s auto-dismiss), `info` (5 s), `warn` (7 s),
+  `error` (sticky until manual dismiss). The error
+  variant uses `role="alert"` + `aria-live="assertive"`;
+  the rest are polite + `role="status"`.
+- `@sc-app/ui-foundation` — new `components/toast.css`
+  (`.toast-stack` fixed bottom-right + `.toast` cards
+  with per-variant left-border accent stripes
+  + `@keyframes toast-slide-in`), and `panel.css` got a
+  `.panel[aria-disabled="true"]` rule (opacity 0.55,
+  pointer-events: none, user-select: none).
+- `tab close` / pagehide handler now sends `DELETE
+  /api/session/:id` with `keepalive: true` instead of
+  the pre-29 fire-and-forget `/g_freeAll` + `/notify 0`
+  bundle. The bridge runs the cleanup bundle on receipt.
+  The TTL job catches whatever the keepalive request
+  doesn't (hard SIGKILL, browsers without keepalive).
+- Disconnect button: `teardownServerState` (recordings →
+  scopes → buffers → synths → clock → group, each
+  try/caught) → `client.dispose()` → `deleteSession(id)`
+  → `clearStoredSession()`. Reconnect from the same
+  state mints a fresh session next bootstrap.
+
+*Mid-phase fixes (not their own sub-phase).*
+- `e68efbd` (`feat(ui-foundation): add .toast component`)
+  shipped the foundation toast styles ahead of the UI
+  rework so 29d/3 could consume them.
+- `36d75cc` (`fix(config): pre-populate /dirt route in
+  starter config`) — first-launch `tauri dev` writes
+  `app_config_dir/config.json` from the starter struct;
+  pre-29d that file had empty `routes`, so SuperDirt
+  traffic hit scsynth's port 57110 and surfaced as
+  `/fail /dirt/hello: Command not found` in the debug
+  log. The starter now seeds `/dirt → 127.0.0.1:57120`
+  so a virgin install routes SuperDirt correctly. Users
+  with a stale `config.json` still need to add the
+  route manually (or delete the file to regenerate it).
+
+### Decisions
+
+- **Session ID storage = `sessionStorage`, not cookies, not URL.**
+  Cookies would be shared across tabs of the same browser
+  profile, collapsing two tabs onto the same scsynth
+  `clientId` and stepping on each other's IdAllocator
+  ranges. URL routing is over-engineering for our use
+  (no bookmarking, no session sharing). `sessionStorage`
+  is per-tab, survives F5, dies on tab close — exactly
+  the boundary we want.
+- **Sessions are in-memory only.** `RwLock<HashMap<Uuid,
+  Arc<Session>>>` on the bridge. Bridge restart = all
+  sessions die = next `GET /api/session/:id` returns
+  404 → frontend bootstraps fresh. No Postgres / sqlite
+  — scsynth restarts already lose their state, so adding
+  storage to persist the bridge's half doesn't buy
+  anything.
+- **Reply routing within a session: broadcast to all
+  attached WS, frontend filters.** Typically there's one
+  WS per session. Multiple WS per session is rare (would
+  need someone deliberately copying `sc.session` across
+  windows) and `tokio::sync::broadcast` handles it for
+  free. Frontend already correlates by sync-id / bufnum /
+  nodeId, so broadcast doesn't add bookkeeping.
+- **TTL cleanup, not explicit DELETE on close.** Tab
+  close runs `DELETE /api/session/:id` with `keepalive:
+  true` opportunistically, but the browser doesn't
+  guarantee delivery (especially on hard SIGKILL).
+  The 30-minute TTL is the canonical cleanup path —
+  the DELETE just shortens the window. Brief
+  no-WS-attached spans during F5 are well below TTL,
+  so reload doesn't trigger eviction.
+- **Cleanup ordering: abort recv tasks BEFORE the
+  teardown bundle.** Same rationale as the pre-29
+  `WsCleanup`: the `/g_freeAll` + `/n_free` bundle
+  provokes `/fail` replies if scsynth's state is
+  already inconsistent, and we don't want those
+  fanned out to a (now-detached) WS that could
+  surface them as user-visible errors.
+- **Recv-broadcast tasks spawn AFTER the handshake.**
+  In `Session::create`, the `/notify` and `/status`
+  round-trips own the socket exclusively; once both
+  complete, the per-target broadcast task takes over.
+  Spawning earlier would race the handshake replies
+  against the broadcast channel.
+- **No "Reset Session" button.** Originally planned in
+  29d as a separate UI affordance for forcing a fresh
+  session. Cut: Disconnect already clears
+  `sessionStorage` + DELETEs the session, and clicking
+  Connect again mints a fresh one. One button covers
+  both ergonomics.
+- **Always-render dashboard, not a connect screen.**
+  Originally 29d/3 rendered ConnectScreen on
+  disconnect; switched to disabled-panel placeholders
+  during review. The dashboard layout doesn't reflow
+  on connect/disconnect — header status badge + button
+  carry all the state the user needs to see, and the
+  panel chrome stays put. Less jarring, and matches the
+  "auto-connect by default" UX promise.
+- **Toasts over modals for runtime errors.** Pre-29 used
+  `AlertModal` for WS death / heartbeat failure / re-init
+  failure — modal-blocking is wrong here, the user can
+  still inspect the existing dashboard state. Toasts
+  let the existing UI stay interactive while surfacing
+  the error. Errors stick (no auto-dismiss); warnings
+  and successes auto-dismiss.
+
+### Gotchas worth carrying forward
+
+- **The bridge's session UDP socket holds a `/notify`
+  slot for the session's TTL — not just for a WS
+  lifetime.** scsynth's default `maxLogins=8` is the
+  hard ceiling on simultaneous sessions per scsynth.
+  The SuperDirt startup script + the systemd unit +
+  `start-scsynth-only.sh` all need bumping together if
+  more sessions are anticipated. 8 simultaneous sc-app
+  tabs is well above realistic use, but worth flagging.
+- **`?scsynth=` query param is GONE.** Pre-29 every WS
+  upgrade carried `?scsynth=HOST:PORT` so the per-WS
+  bridge knew where to send UDP. 29d dropped this
+  entirely — sessions are bound to the bridge's
+  configured default scsynth (from `config.json -> scsynth`)
+  at creation time and can't override. To point a
+  session at a different scsynth, edit `config.json`
+  and restart the bridge. (Single-server-per-bridge
+  was always the realistic deployment shape; the
+  per-WS override was a holdover from Phase 0.)
+- **Tab close is best-effort, not guaranteed.** The
+  `pagehide` listener fires `DELETE /api/session/:id`
+  with `keepalive: true`, but browsers don't promise
+  delivery. The 30-minute TTL is the actual cleanup
+  guarantee. Hard SIGKILL of the bridge skips both
+  paths; sessions just die with the process.
+- **`sessionStorage` is wiped by Incognito / Private
+  mode** (per-tab on close, no cross-tab). Means
+  private browsing always generates a fresh session.
+  Not a problem; document.
+- **`Vite dev proxy must forward both `/ws` and `/api`.**
+  Pre-29 only `/ws` needed proxying. Forgetting `/api`
+  was the gotcha that surfaced as a "404 Not Found"
+  on the (no-longer-existing) ConnectScreen during
+  29c testing — `vite.config.ts` now lists both.
+- **`tauri dev` reads from `app_config_dir/config.json`,
+  NOT the project's `./config.json`.** Specifically on
+  macOS: `~/Library/Application Support/com.sc-app.dev/`.
+  A stale `config.json` written by an older sc-app build
+  may have empty routes, breaking SuperDirt routing
+  silently. Symptom: `/fail /dirt/hello: Command not
+  found` in the debug log even though the project's
+  on-disk `./config.json` looks fine. Fix: delete the
+  app-config-dir file (let starter regenerate) or
+  manually add the `/dirt` route. Browser / `yarn dev:full`
+  picks up the project-root `./config.json` instead and
+  doesn't hit this.
+- **`SessionInfo.parentGroupId` flows through the API,
+  not derived on the frontend.** Pre-29 the frontend
+  computed `clientId * 100` with the `clientId == 0
+  ⇒ 100` fallback. Post-29 the bridge computes it once
+  at `Session::create` and the frontend just consumes
+  the value. The fallback logic still lives in
+  `Session::create`; if the frontend ever needs to
+  derive it again (say, for an offline mode), keep
+  the same shape.
+- **Heartbeat still detects scsynth-gone.** The
+  `setInterval(/status, 3 s, timeout 2 s)` heartbeat in
+  AppShell is unchanged; on timeout it disposes the
+  WorkerClient and drops to `disconnected` (showing a
+  toast). The bridge keeps the session alive — its UDP
+  socket is still happy to send/recv even though no
+  one's listening — until TTL or the next user action.
+  A user clicking Connect again after scsynth comes
+  back will reuse the still-live session and inherit
+  whatever scsynth state survived (typically nothing,
+  since scsynth restarted; the dashboard re-init
+  effectively starts fresh).
+- **`ConnectionStatus` derives from the bootstrap state +
+  resources, not its own store.** `bootstrapState.phase
+  === 'pending' || 'ready'` ⇒ `connecting`; `resources
+  !== null` ⇒ `connected`; otherwise `disconnected`.
+  Don't add a separate connection-state machine — the
+  derivation rules are simple enough.
+- **Don't shadow the `status` OSC builder import with a
+  local `status: ConnectionStatus`.** Cost a TypeScript
+  error during 29d wiring (`'status' is callable. No
+  constituent of type 'ConnectionStatus' is callable`).
+  The local connection-state variable in AppShell is
+  `connectionStatus` for this reason; the OSC builder
+  stays `status`.
+- **Config field rename caveat: `?scsynth=` removal is
+  one-way.** The `config.json` `scsynth` field still
+  exists (it's the bridge's default route target), but
+  the per-WS query parameter does not. Don't add it
+  back without first re-introducing the per-WS UDP
+  socket model — they were one feature.

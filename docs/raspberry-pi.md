@@ -183,15 +183,35 @@ hard error to catch typos:
 {
   "port": 3000,
   "scsynth": "127.0.0.1:57110",
-  "log_dir": "/var/log/sc-app"
+  "log_dir": "/var/log/sc-app",
+  "routes": [
+    { "prefix": "/dirt", "target": "127.0.0.1:57120" }
+  ],
+  "session_ttl_seconds": 1800
 }
 ```
+
+The `routes` array (Phase 26) lets the bridge fan OSC traffic to
+multiple targets by address prefix — the example above sends every
+`/dirt/*` packet to a sclang+SuperDirt instance on port 57120 and
+falls through to `scsynth` for everything else. Add more entries
+(e.g. `{ "prefix": "/midi", "target": "127.0.0.1:57130" }`) without
+recompiling. Empty / absent ⇒ single-target behaviour identical to
+pre-Phase-26.
+
+`session_ttl_seconds` (Phase 29) controls how long an idle
+bridge-managed session lingers before the bridge runs its cleanup
+bundle (`/g_freeAll` + `/n_free` + `/notify 0`) and drops the UDP
+sockets. Default 1800 (30 min) is generous against tab-reload
+windows and short enough that `maxLogins=8` doesn't fill up after
+a handful of orphaned tabs.
 
 Precedence (highest → lowest):
 1. CLI flag (`--port`, `--scsynth`, `--log-dir`)
 2. Env var (`SC_PORT`, `SC_SCSYNTH_ADDR`)
 3. `config.json` value
-4. Built-in default (3000 / `127.0.0.1:57110` / stderr-only)
+4. Built-in default (3000 / `127.0.0.1:57110` / stderr-only / 1800 s
+   TTL / no routes)
 
 So the systemd unit in §8b can drop most of its `--…` flags once
 the config file is in place — just `--dist /usr/local/share/sc-app/dist`
@@ -371,9 +391,12 @@ sudo cp -r dist /usr/local/share/sc-app/dist
 sudo systemctl restart sc-app-bridge.service
 ```
 
-The bridge restart is hot — clients reconnect via `pagehide` /
-manual reload. scsynth doesn't need restarting unless its config
-changed.
+The bridge restart drops every active session — sessions are
+in-memory, so on bridge restart the frontend's next
+`GET /api/session/:id` returns 404 and the bootstrap mints a
+fresh one transparently. scsynth-side state (synths, recordings)
+is lost on bridge restart, same as before. scsynth itself doesn't
+need restarting unless its config changed.
 
 `/etc/sc-app/config.json` is *not* touched by updates; your local
 edits survive across `git pull` + reinstall cycles. Schema changes
@@ -419,13 +442,25 @@ rustup self uninstall          # interactive
   systemd unit invokes `sc-app bridge`, not `sc-app` with no
   subcommand. The latter starts `Builder::run()` which calls
   `gtk::init()` and fails on a headless host.
-- **Frontend connects but `Connect` button hangs** — scsynth isn't
-  reachable on `127.0.0.1:57110`. Check `nc -uz 127.0.0.1 57110`
-  and `journalctl -u scsynth.service`.
+- **Browser hangs at "Connecting…"** — the bridge couldn't mint
+  a session (scsynth isn't reachable on `127.0.0.1:57110`, or
+  `/notify 1` timed out). A toast surfaces the error verbatim
+  (`POST /api/session` returns 503 with the anyhow chain
+  flattened into the body). Check `nc -uz 127.0.0.1 57110` and
+  `journalctl -u scsynth.service`. Note: bootstrapping an
+  already-stored session id against a restarted bridge is
+  expected — the `GET /api/session/:id` returns 404 and the
+  frontend falls through to `POST` automatically.
 - **Browser shows "WebSocket failed"** — likely the `--dist` flag
   is missing or pointing at a stale path; the bridge serves only
-  `/ws` and the browser couldn't load the SPA in the first place.
-  `curl http://<pi-ip>:3000/` should return HTML.
+  `/ws` + `/api/*` and the browser couldn't load the SPA in the
+  first place. `curl http://<pi-ip>:3000/` should return HTML.
+- **Sessions linger on scsynth after a tab close** — best-effort
+  `DELETE /api/session/:id` (with `keepalive: true`) doesn't
+  always land. The bridge's once-a-minute TTL job catches the
+  leak; default 30-minute window. To force immediate eviction,
+  edit `config.json` to a smaller `session_ttl_seconds` and
+  restart the bridge — or just wait it out.
 
 ---
 
@@ -435,7 +470,16 @@ rustup self uninstall          # interactive
   pulls in webkit + GTK at runtime for nothing.
 - TLS / reverse proxy — for LAN-only use the plain HTTP listener
   is fine. If you want to expose the bridge externally, put nginx
-  or Caddy in front and let it handle TLS + WS upgrades.
-- Multi-user setup with separate sc-app users per browser session
-  — not currently supported (the bridge has one default scsynth
-  target; clients can override per-WS via `?scsynth=HOST:PORT`).
+  or Caddy in front and let it handle TLS + WS upgrades + the
+  `/api/session*` HTTP endpoints (Phase 29 added these alongside
+  `/ws`).
+- Authentication — sessions are unauthenticated (anyone reaching
+  the bridge can mint one). Acceptable for LAN; revisit if the
+  bridge ever ships behind a public endpoint.
+- Multi-tenant scsynth pools — each bridge has one default
+  scsynth target (set in `config.json -> scsynth`). The Phase 29d
+  cutover removed the per-WS `?scsynth=` override; multiple
+  scsynth backends now mean multiple bridges. Multi-tab against
+  one scsynth is supported (each tab mints a separate session →
+  separate `clientId`); scsynth's `maxLogins` (default 8) is the
+  ceiling.
