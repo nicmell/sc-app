@@ -9,12 +9,184 @@ audio config schema, file layout, workspace packages, and the
 chunkSize × sampleRate practical table all live in
 [`CLAUDE.md`](./CLAUDE.md) — don't duplicate them here.
 
-**Phase 27 shipped (a + b + c + d).** Phases 0–27 are in
-[`docs/history.md`](./docs/history.md). No new phase is in
-flight; this file currently holds only *Open Points* (cross-
-cutting watchpoints) and *Future Improvements* (longer-term
-candidates). When the next phase starts, it lands above
-*Open Points* with a full design sketch.
+**Phase 27 shipped; Phase 28 in flight (28a–d shipped, 28e–f
+pending).** Phases 0–27 are in [`docs/history.md`](./docs/history.md).
+Phase 28 below is the active piece of work.
+
+---
+
+## Phase 28 — Shared UI foundation package
+
+**Goal.** Extract base styles and design tokens from the React
+app into a standalone, framework-agnostic CSS package
+(`@sc-app/ui-foundation`). Same stylesheet is consumed by the
+React host (today) and future runtime HTML plugins (trusted,
+light DOM, inheriting via the global cascade) — plugins write
+plain semantic HTML with `data-*` variants and pick up the host
+palette without bundling their own design system.
+
+### Architectural decisions (locked)
+
+- **Tokens layer:** Open Props as the primitive set (full
+  vocabulary so plugins have what they need); semantic tokens
+  on top.
+- **Styling approach:** Plain CSS — no Tailwind, no Panda, no
+  CSS-in-JS, no Sass. PostCSS during build does only `@import`
+  inlining + autoprefixing.
+- **Component variants:** `data-*` attributes (not class
+  combinations).
+- **Theming:** `data-theme` attribute on `<html>`, CSS variables
+  throughout. Phase 28 ships dark only; `themes/light.css` is a
+  documented stub for the future toggle.
+- **Plugin model (future):** light DOM by default so the global
+  cascade reaches plugin HTML; shadow DOM is opt-in. Trusted
+  plugins, no sandboxing.
+
+### Sub-phases
+
+- **28a — Scaffold + build pipeline.** ✅ Shipped (commit be38902).
+  `packages/ui-foundation/` with package.json, postcss config,
+  empty layer files. App imports `@sc-app/ui-foundation` once at
+  `src/main.tsx`. PostCSS produces `dist/index.css` for plugin
+  runtime loading. Open Props installed as a dependency.
+- **28b — Tokens + reset + base elements.** ✅ Shipped (commit
+  9ce63f7). `tokens/semantic.css` with the spacing / radius /
+  typography / shadow vocabulary; `themes/dark.css` with the
+  full `--color-*` palette ported from `src/styles.scss`
+  (including `--color-tx`, `--color-rx`, `--color-log-*`,
+  `--color-overlay` promoted from hardcoded hexes); `reset.css`
+  + `base/typography.css` + `base/elements.css` styling
+  `<button>` / `<input>` / `<select>` / `<textarea>` / `<label>`
+  / headings / code / details. `demo.html` is the regression
+  gate: raw HTML rendered against `./dist/index.css`.
+- **28c — Reference component (Button via ConnectScreen).** ✅
+  Shipped (commit deb9aa4). Dropped the local `button` rule
+  from `src/ui/ConnectScreen/ConnectScreen.scss`; the submit
+  button is now plain `<button type="submit">…</button>` and
+  picks up styling from the foundation. Footer was named in
+  the plan but has no buttons (pure status display) — reference
+  test runs through ConnectScreen alone.
+- **28d — Primitive component classes.** ✅ Shipped (commit
+  dd2d696). Filled `components/{panel,cluster,stack,status-pill,
+  badge,range-field,empty-state,error-alert,modal}.css` with
+  the actual rules. `demo.html` extended to render each
+  primitive in isolation.
+
+#### Pending sub-phases
+
+- **28e — Migrate panels to the foundation.** ~2 days. One
+  commit per panel. For each: rewrite the React component to
+  use foundation primitive classes + `data-variant` attributes,
+  replace `var(--bg)` etc. with `var(--color-bg)` etc., delete
+  the panel's `.scss` file. Panel order (smallest / lowest-risk
+  first):
+
+  1. **Footer** — single class, cleanest. Drops local SCSS,
+     wraps content in `.panel.dashboard-footer` (or just
+     uses panel chrome).
+  2. **Dashboard-shell header** — Disconnect button to
+     `<button data-variant="ghost">`, chunk-size picker to
+     foundation `<select>`, `.badge` to foundation `.badge`.
+     Removes the entire `.dashboard-shell > header` block from
+     `src/styles.scss`.
+  3. **ScopeList** — toolbar + items pattern; flushes
+     `.empty` / `.error` use.
+  4. **ScopeView** — canvas overlay + button group + select;
+     `--color-overlay` in place of the hardcoded `#b4b8c0`.
+  5. **ClockPanel** — exercises `.status-pill` variants
+     (running / paused / stopped) and button modifiers.
+  6. **SynthsPanel** — exercises `.range-field` for the
+     first time in production.
+  7. **Modal** — moves to thin React wrappers calling the
+     foundation classes. Modal.scss drops to zero, Modal.tsx
+     renders `<button data-variant="primary|danger">` for
+     actions instead of `className="primary|danger"`.
+  8. **DebugLog** — flushes `--color-log-{info,warn,error}`;
+     fixed-position overlay survives.
+  9. **OscConsole** — flushes `--color-tx` / `--color-rx`;
+     grid log layout survives.
+  10. **RecordingPanel** — exercises state-pill variants;
+      canvas container survives.
+  11. **DirtPanel** — REPL row, port `dirt-pulse` keyframe to
+      `base/elements.css` (or kept in components/status-pill.css
+      if it's the only consumer), details/summary disclosure.
+  12. **SequencerPanel** — biggest (BankSelector + ChainEditor
+      + TrackRow + StepCell + StepPopover + TrackDefaults).
+      Either one large commit or 2–3 sub-commits; each
+      sub-component still uses the foundation for buttons,
+      status pills, range-fields.
+
+  Acceptance per panel: visual parity (manual side-by-side at
+  the dev server vs. previous behaviour); `yarn build` clean;
+  the panel's `.scss` file is gone. Hardcoded hex colours
+  remaining in any TSX/SCSS is a regression — all colour goes
+  through `--color-*` tokens.
+
+- **28f — Cleanup + parent-phase close.** ½ day. Delete
+  `src/styles.scss` entirely (anything that survives moves into
+  the foundation's `tokens/semantic.css`, `base/elements.css`,
+  or `components/*.css`). Remove `sass` from `devDependencies`.
+  Update CLAUDE.md ("React in `src/ui/` only" → "Reusable
+  primitives in `@sc-app/ui-foundation`; app-specific React in
+  `src/ui/`"). Move the consolidated Phase 28 entry from
+  `plan.md` to `docs/history.md`. Trim this section out of
+  `plan.md`.
+
+### Acceptance criteria (parent phase)
+
+- `src/styles.scss` and every `src/ui/*/*.scss` deleted.
+- `yarn` workspace has no `sass` dependency.
+- All colour, spacing, radius, typography references go through
+  `var(--color-*)` / `var(--space-*)` / `var(--radius-*)` /
+  `var(--font-*)`. No hardcoded hex outside the dark / light
+  theme files.
+- `packages/ui-foundation/demo.html` renders all base elements
+  + primitives correctly when loaded against
+  `dist/index.css`.
+- The running app renders identically (or close enough that
+  any visual delta is intentional and noted).
+- Plugin authors (future) can `<link rel="stylesheet"
+  href=".../@sc-app/ui-foundation/dist/index.css">` and write
+  `<button>` / `<input>` / `<span class="status-pill"
+  data-variant="ok">` and have it look right with no extra
+  CSS.
+
+### Constraints / gotchas
+
+- **No `@apply`, no Tailwind directives, no Sass.** Plain CSS
+  only. PostCSS during build does only `@import` inlining and
+  autoprefixing.
+- **Token names are public API.** Renaming `--color-primary`
+  later is a breaking change. Document in the package README.
+- **Don't over-design components upfront.** The primitive list
+  in 28d is the entire scope. New patterns get added when they
+  appear twice in feature code, not before.
+- **The demo.html page is non-negotiable.** If a raw `<button>`
+  there doesn't look right without React, the foundation isn't
+  doing its job.
+- **Vendor prefixes for slider thumbs.** `input[type="range"]
+  ::-webkit-slider-thumb` and `::-moz-range-thumb` need explicit
+  styling. `autoprefixer` doesn't inject these.
+- **`@keyframes` go in `base/` or the single component that owns
+  them**, not duplicated. The two existing animations
+  (`dirt-pulse`, `modal-progress-slide`) are global; selectors
+  target `[data-state]` attributes so plugin HTML can opt in.
+- **Light DOM cascade** means a plugin's `<input>` will pick up
+  our styles automatically. Avoid overly-specific selectors
+  (`body .panel input` chains) that surprise plugin authors.
+
+### Out of scope
+
+- Plugin loader runtime, manifest format, lifecycle.
+- Lit / web-component implementations.
+- Shadow-DOM injection helper (`adoptedStyleSheets`).
+- Editor-specific primitives (forms, dialogs, toolbars beyond
+  the basics) — add when first needed.
+- Light-theme color palette — `themes/light.css` ships as a
+  stub; real values land when there's a UI affordance for
+  switching.
+- Visual regression tests (Playwright snapshots etc.) — manual
+  side-by-side via the demo page is the gate.
 
 ---
 

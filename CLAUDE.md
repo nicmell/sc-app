@@ -129,8 +129,8 @@ rate (60+ Hz) are intentionally decoupled.
 
 ## Workspace layout
 
-This is a yarn (v4) workspace. Two local packages under `packages/`
-are referenced from the app via `workspace:*`:
+This is a yarn (v4) workspace. Three local packages under
+`packages/` are referenced from the app via `workspace:*`:
 
 - **`packages/server-commands/`** (`@sc-app/server-commands`) — OSC
   layer over [`osc-js`](https://github.com/adzialocha/osc-js).
@@ -149,7 +149,21 @@ are referenced from the app via `workspace:*`:
   - Low-level `SynthDef.addControl` / `addUgen` for stringly-typed
     programmatic construction.
 
-Both packages have their own README with usage details. The
+- **`packages/ui-foundation/`** (`@sc-app/ui-foundation`) —
+  framework-agnostic CSS package (Phase 28). Open Props
+  primitives + semantic tokens (`--color-*`, `--space-*`,
+  `--radius-*`, `--font-*`) + reset + base element styles
+  (button / input / select / textarea with `data-variant` /
+  `data-size` variants) + a small set of semantic component
+  classes (`.panel`, `.cluster`, `.stack`, `.status-pill`,
+  `.badge`, `.range-field`, `.empty`, `.error`, `.modal*`).
+  Loaded by `src/main.tsx` via `import '@sc-app/ui-foundation';`.
+  PostCSS produces `dist/index.css` for future runtime HTML
+  plugins to load via `<link rel="stylesheet">` and inherit the
+  host palette via the global cascade. Contract: every `--color-*`
+  / `--space-*` token name is public API, renaming is breaking.
+
+Each package has its own README with usage details. The
 `src-tauri/` Rust crate is the desktop/CLI backend — nothing audio
 happens there, it just forwards bytes.
 
@@ -265,6 +279,20 @@ the bridge.
   per SynthDef) live in `src/synthdefs/` — distinct from the
   runtime synth controllers in `src/synth/`.
 - **`@/…` alias** → `src/…`. `@sc-app/…` → workspace packages.
+- **Styling (Phase 28+).** `@sc-app/ui-foundation` owns design
+  tokens (`--color-*`, `--space-*`, `--radius-*`, `--font-*`,
+  `--shadow-*`), base element styles, and a small set of
+  semantic component classes (`.panel`, `.cluster`, `.stack`,
+  `.status-pill`, `.badge`, `.range-field`, `.empty`, `.error`,
+  `.modal*`). Plain CSS, no Sass. Variants via `data-*`
+  attributes (`<button data-variant="danger">`, `<span class=
+  "status-pill" data-variant="ok">`). Per-panel styles in
+  `src/ui/*/*.scss` are deprecated and migrate to the
+  foundation's vocabulary panel-by-panel during Phase 28e;
+  during the transition the per-panel SCSS shadows the
+  foundation rules (later cascade order). Hardcoded hex colours
+  outside `themes/{dark,light}.css` are a regression — open the
+  PR with a token name instead.
 - **OSC**: construct `OSC.Message` / `OSC.Bundle` on the main
   thread using `@sc-app/server-commands` helpers. Pass to
   `WorkerClient.sendCommand(packet)` — it encodes locally and
@@ -328,30 +356,37 @@ When working on a phase:
    `plan.md` of the moved content, and (if relevant) update
    the "Current phase progress" line below.
 
-Current phase progress: **Phase 27 shipped — Step Sequencer for
-SuperDirt.** Four sub-phases delivered the panel end-to-end. 27a
-brought the MVP grid: `SequencerController` + extracted
-`scheduler.ts` driving `/dirt/play` events at tick-anchored
-timetags via `tickToTimetag(tick0Ms, targetTick, tickRate)`,
-plus `DirtClient.playAtTimetag` and `listSamples`/`sampleBanks`
-(backed by a `/dirt/listSamples` OSCdef in the sclang startup
-script). 27b layered per-step + per-track parameter overrides
-(`amp` / `cutoff` / `speed` / `pan`) with a portal-rendered
-`StepPopover`; `Track.steps` migrated from `boolean[]` to
-`Step[]` where `Step = { active; params? }` and `step.params`
-is dropped entirely when the last override clears. 27c
-introduced the `PatternBank` — 8-slot reactive store with
-debounced (500 ms) localStorage persistence under
-`sc.sequencer.bank`, schema-versioned (V1 → V2 forward-migrated
-in `loadFromStorage`); `SequencerController` is now a thin
-wrapper that reads `bank.activePattern` and forwards mutations
-through `bank.updateActivePattern(...)`; document-level keydown
-1..8 listener gated on editable focus switches slots. 27d added
-chain mode: `bank.chain = { enabled; loop; steps: ChainEntry[] }`
-persisted to V2 schema, controller advances `bank.activeIndex`
-at cycle boundaries (granularity = "next pump" — < 1 step at
-sane BPMs), `chainPlaybackIndex` reactive store drives the
-ChainEditor's currently-playing highlight. See
+Current phase progress: **Phase 28 in flight (28a–d shipped,
+28e–f pending) — Shared UI foundation package.** Goal: pull
+design tokens + base element styles + semantic component
+classes out of the React app into `@sc-app/ui-foundation`, a
+framework-agnostic CSS package shared between the React host
+(today) and future runtime HTML plugins (light DOM, inheriting
+via the global cascade). 28a scaffolded the package + PostCSS
+build pipeline (`dist/index.css` for plugin runtime). 28b
+filled `tokens/semantic.css` + `themes/dark.css` (full
+`--color-*` / `--space-*` / `--radius-*` / `--font-*` /
+`--shadow-*` vocabulary, including the 9 hardcoded hexes
+promoted to `--color-tx`, `--color-rx`, `--color-log-*`,
+`--color-overlay`) plus `reset.css` + `base/elements.css` +
+`base/typography.css`, with `demo.html` as the regression
+gate. 28c proved the reference Button via ConnectScreen —
+its submit button is now plain `<button type="submit">…</button>`
+picking up styling from the foundation. 28d filled the
+component primitive classes (`.panel`, `.cluster`, `.stack`,
+`.status-pill[data-variant=…]`, `.badge`, `.range-field`,
+`.empty`, `.error`, `.modal*`). Per-panel SCSS still shadows
+the foundation in the running app — 28e migrates each panel
+one commit at a time (12 panels in priority order, smallest
+first); 28f closes Phase 28 by deleting `src/styles.scss`,
+removing `sass` from devDependencies, and moving the
+consolidated entry to `docs/history.md`. See `plan.md` for
+the panel order + acceptance criteria.
+
+Phase 27 shipped — Step Sequencer for SuperDirt. Four
+sub-phases delivered the panel end-to-end (27a MVP grid, 27b
+per-step/per-track parameter overrides, 27c PatternBank +
+localStorage persistence, 27d chain mode). See
 `docs/history.md` Phase 27 for the consolidated write-up.
 
 Earlier landings still in effect: SuperDirt via bridge-internal
