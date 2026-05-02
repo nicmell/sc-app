@@ -5,7 +5,7 @@ import {
   type ScsynthVersion,
 } from '@/server/serverInfo';
 import type { Store } from '@/util/reactiveStore';
-import './Footer.scss';
+import './Footer.css';
 
 export interface FooterProps {
   /** Live `/status.reply` snapshot updated by the heartbeat. `null`
@@ -31,7 +31,7 @@ export function Footer({ status, version }: FooterProps) {
   const versionLabel = version ? formatVersion(version) : 'scsynth (version unknown)';
 
   return (
-    <footer className="dashboard-footer status">
+    <footer className="dashboard-footer">
       <span className="version">{versionLabel}</span>
       <span className="sep">·</span>
       <FooterStatus snapshot={snapshot} />

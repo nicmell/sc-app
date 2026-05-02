@@ -1,0 +1,43 @@
+/**
+ * Footer chrome — small status bar at the bottom of the
+ * dashboard. Self-contained layout (flex row with wrap + gap)
+ * + foundation tokens for everything else.
+ *
+ * Could in theory compose .cluster from the foundation, but
+ * the gap here is tighter than .cluster's default and the
+ * layout isn't reused — keeping it local is clearer.
+ */
+
+.dashboard-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2xs);
+  padding: var(--space-xs) var(--space-sm);
+  margin-top: var(--space-2xs);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-footer .version {
+  color: var(--color-text);
+  font-weight: var(--font-weight-medium);
+}
+
+.dashboard-footer .metric {
+  color: var(--color-text-dim);
+}
+
+.dashboard-footer .metric.placeholder {
+  opacity: 0.55;
+  font-style: italic;
+}
+
+.dashboard-footer .sep {
+  color: var(--color-text-faint);
+  user-select: none;
+}
