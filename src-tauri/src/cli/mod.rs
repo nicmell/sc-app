@@ -105,8 +105,9 @@ pub fn run() {
                 .unwrap_or_else(|| DEFAULT_SCSYNTH.to_string());
             let scsynth = parse_scsynth_or_die(&scsynth_str);
             let log_dir = log_dir.or(cfg.log_dir);
+            let routes = cfg.routes;
 
-            bridge::run_blocking(port, scsynth, dist, log_dir);
+            bridge::run_blocking(port, scsynth, routes, dist, log_dir);
         }
     }
 }

@@ -11,17 +11,25 @@
 //! daily-rotated file appender. Deploys typically pin the path from
 //! a systemd unit, so file logging stays explicit rather than
 //! auto-detected.
+//!
+//! Phase 26 — the `cfg.routes` table is resolved at startup (each
+//! `target` host:port goes through `tokio::net::lookup_host`) and
+//! handed to `server::run_bridge` as a [`RoutingTable`]. Resolution
+//! failure is fatal — the bridge exits with code 1 rather than
+//! booting with a half-broken route map.
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
+use crate::config::Route;
 use crate::logging;
-use crate::server;
+use crate::server::{self, RoutingTable};
 use crate::server::static_assets;
 
 pub fn run_blocking(
     port: u16,
     scsynth: SocketAddr,
+    routes: Vec<Route>,
     dist_override: Option<PathBuf>,
     log_dir: Option<PathBuf>,
 ) {
@@ -41,7 +49,14 @@ pub fn run_blocking(
 
     let rt = tokio::runtime::Runtime::new().expect("failed to start tokio runtime");
     rt.block_on(async move {
-        if let Err(e) = server::run_bridge(port, scsynth, dist).await {
+        let table = match RoutingTable::build(scsynth, &routes).await {
+            Ok(t) => t,
+            Err(e) => {
+                tracing::error!(error = %e, "failed to build routing table");
+                std::process::exit(1);
+            }
+        };
+        if let Err(e) = server::run_bridge(port, table, dist).await {
             tracing::error!(error = %e, "bridge error");
             std::process::exit(1);
         }

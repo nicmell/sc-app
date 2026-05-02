@@ -35,13 +35,32 @@ pub const LINUX_SYSTEM_PATH: &str = "/etc/sc-app/config.json";
 pub struct Config {
     /// HTTP port to bind for the bridge.
     pub port: Option<u16>,
-    /// Default scsynth address (host:port). Per-WS overrides via
-    /// `?scsynth=` still work.
+    /// Default scsynth address (host:port). Treated as the implicit
+    /// catch-all route target — packets whose OSC address doesn't
+    /// match any prefix in `routes` are sent here. Per-WS overrides
+    /// via `?scsynth=` still work.
     pub scsynth: Option<String>,
     /// Directory to write rotated NDJSON logs into. When `None` in
     /// both config + env + flag, the bridge stays stderr-only and
     /// the GUI falls back to `app.path().app_log_dir()`.
     pub log_dir: Option<PathBuf>,
+    /// Optional OSC address-prefix routes. Walked top-to-bottom;
+    /// first `prefix` whose value is a `starts_with` match against
+    /// the packet's OSC address wins. Non-matching packets fall back
+    /// to `scsynth`. Empty / absent ⇒ single-target behaviour
+    /// identical to pre-Phase-26.
+    #[serde(default)]
+    pub routes: Vec<Route>,
+}
+
+/// One entry in the bridge's routing table.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Route {
+    /// OSC address prefix to match (e.g. `"/dirt"`, `"/midi/note"`).
+    pub prefix: String,
+    /// `host:port` for the route's UDP target. Resolved at boot.
+    pub target: String,
 }
 
 impl Config {

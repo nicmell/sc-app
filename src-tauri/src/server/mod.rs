@@ -2,9 +2,11 @@
 //!
 //! Two responsibilities:
 //! 1. Upgrade `GET /ws` to a WebSocket that the [`ws_bridge`]
-//!    forwards to a per-session UDP socket connected to scsynth. The
-//!    target address can be overridden per connection via
-//!    `?scsynth=HOST:PORT`. This is the only required route.
+//!    forwards to per-session UDP sockets. Inside the bridge, each
+//!    outbound packet is routed to one of N targets by OSC-address
+//!    prefix via the [`routing::RoutingTable`] in `AppState`. The
+//!    default target can be overridden per connection via
+//!    `?scsynth=HOST:PORT`.
 //! 2. *Optionally* serve the Vite `dist/` directory as static files
 //!    with a SPA fallback to `index.html` — delegated to
 //!    [`static_assets`]. Used in production (Tauri webview points at
@@ -14,6 +16,7 @@
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use axum::extract::{Query, Request, State, WebSocketUpgrade};
@@ -24,17 +27,22 @@ use axum::Router;
 use serde::Deserialize;
 use tokio::net::TcpListener;
 
+mod routing;
 mod session;
 pub mod static_assets;
 pub mod ws_bridge;
 
+pub use routing::RoutingTable;
+
 #[derive(Clone)]
 struct AppState {
-    default_scsynth: SocketAddr,
+    routes: Arc<RoutingTable>,
 }
 
 #[derive(Deserialize)]
 struct WsQuery {
+    /// Per-connection override for the default route's target —
+    /// preserves the pre-Phase-26 `?scsynth=` semantics.
     scsynth: Option<String>,
 }
 
@@ -57,16 +65,16 @@ pub async fn bind(port: u16) -> Result<(TcpListener, SocketAddr)> {
 /// URL before the event loop opens it.
 pub async fn serve_on(
     listener: TcpListener,
-    default_scsynth: SocketAddr,
+    routes: RoutingTable,
     dist: Option<PathBuf>,
 ) -> Result<()> {
-    let state = AppState { default_scsynth };
+    tracing::info!("  /ws routing table:\n{}", routes.describe());
+
+    let state = AppState {
+        routes: Arc::new(routes),
+    };
 
     let mut app = Router::new().route("/ws", get(ws_handler));
-
-    tracing::info!(
-        "  /ws → {default_scsynth} (override per-connection via ?scsynth=HOST:PORT)"
-    );
 
     if let Some(dist) = dist {
         tracing::info!("  static → {}", dist.display());
@@ -88,12 +96,12 @@ pub async fn serve_on(
 /// one call, with an info log on the listening address.
 pub async fn run_bridge(
     port: u16,
-    default_scsynth: SocketAddr,
+    routes: RoutingTable,
     dist: Option<PathBuf>,
 ) -> Result<()> {
     let (listener, addr) = bind(port).await?;
     tracing::info!(addr = %addr, "sc-app listening on http://{addr}");
-    serve_on(listener, default_scsynth, dist).await
+    serve_on(listener, routes, dist).await
 }
 
 async fn ws_handler(
@@ -101,15 +109,22 @@ async fn ws_handler(
     State(state): State<AppState>,
     Query(query): Query<WsQuery>,
 ) -> Result<Response, (StatusCode, String)> {
-    let scsynth = match query.scsynth.as_deref() {
-        None => state.default_scsynth,
-        Some(raw) => raw
-            .parse::<SocketAddr>()
-            .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid scsynth address {raw:?}: {e}")))?,
-    };
+    // Per-WS routing table: clone the global, optionally override
+    // the default with the `?scsynth=` query param. The other routes
+    // (e.g. `/dirt`) keep their globally-configured targets.
+    let mut routes = (*state.routes).clone();
+    if let Some(raw) = query.scsynth.as_deref() {
+        let addr = raw.parse::<SocketAddr>().map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("invalid scsynth address {raw:?}: {e}"),
+            )
+        })?;
+        routes.set_default(addr);
+    }
 
     Ok(ws.on_upgrade(move |socket| async move {
-        if let Err(e) = ws_bridge::handle_ws(socket, scsynth).await {
+        if let Err(e) = ws_bridge::handle_ws(socket, routes).await {
             tracing::warn!(error = %e, "ws_bridge session error");
         }
     }))

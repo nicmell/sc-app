@@ -26,7 +26,7 @@ use tauri::Manager;
 
 use crate::config::Config;
 use crate::logging;
-use crate::server;
+use crate::server::{self, RoutingTable};
 use crate::server::static_assets::DIST_SUBPATH;
 
 const DEFAULT_PORT: u16 = 3000;
@@ -87,6 +87,16 @@ pub fn run() {
                 .parse()
                 .map_err(|e| format!("invalid scsynth {scsynth_str:?}: {e}"))?;
 
+            // 3.5 Build the routing table. `cfg.routes` resolves
+            //     each `target` host:port via lookup_host. Failure
+            //     is fatal — we'd rather refuse to boot than start
+            //     with a half-broken route map.
+            let routes_cfg = cfg.routes.clone();
+            let table = tauri::async_runtime::block_on(
+                RoutingTable::build(scsynth, &routes_cfg),
+            )
+            .map_err(|e| format!("routing table: {e}"))?;
+
             // 4. Static assets: in release the webview loads from
             //    the local axum, so we serve `dist/` from the
             //    bundle. In debug (`tauri dev`, `cargo run`) the
@@ -107,7 +117,7 @@ pub fn run() {
             tracing::info!(addr = %addr, "sc-app listening on http://{addr}");
 
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = server::serve_on(listener, scsynth, dist).await {
+                if let Err(e) = server::serve_on(listener, table, dist).await {
                     tracing::error!(error = %e, "bridge error");
                 }
             });
