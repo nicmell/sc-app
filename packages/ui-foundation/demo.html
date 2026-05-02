@@ -138,6 +138,85 @@
     </section>
 
     <section class="demo-section">
+      <h2 class="demo-section-title">Panel + cluster + stack</h2>
+      <section class="panel">
+        <header>Panel header</header>
+        <div class="cluster" data-gap="md">
+          <span>cluster: row of inline things</span>
+          <button data-size="sm">action</button>
+        </div>
+        <div class="stack" data-gap="sm">
+          <span>stack item 1</span>
+          <span>stack item 2</span>
+          <span>stack item 3</span>
+        </div>
+      </section>
+    </section>
+
+    <section class="demo-section">
+      <h2 class="demo-section-title">Status pills</h2>
+      <div class="cluster" data-gap="sm">
+        <span class="status-pill"><span class="dot">●</span>muted</span>
+        <span class="status-pill" data-variant="ok"><span class="dot">●</span>alive</span>
+        <span class="status-pill" data-variant="warn"><span class="dot">●</span>degraded</span>
+        <span class="status-pill" data-variant="error"><span class="dot">●</span>unreachable</span>
+        <span class="status-pill" data-variant="info"><span class="dot">●</span>probing</span>
+      </div>
+    </section>
+
+    <section class="demo-section">
+      <h2 class="demo-section-title">Badges</h2>
+      <div class="cluster" data-gap="sm">
+        <span class="badge">connected</span>
+        <span class="badge" data-variant="warn">degraded</span>
+        <span class="badge" data-variant="error">offline</span>
+      </div>
+    </section>
+
+    <section class="demo-section">
+      <h2 class="demo-section-title">Range field</h2>
+      <label class="range-field">
+        <span class="range-field-label">gain</span>
+        <input type="range" min="0" max="2" step="0.01" value="0.8">
+        <span class="range-field-value">0.80</span>
+      </label>
+      <label class="range-field">
+        <span class="range-field-label">cutoff</span>
+        <input type="range" min="100" max="8000" step="10" value="800">
+        <span class="range-field-value">800 Hz</span>
+      </label>
+    </section>
+
+    <section class="demo-section">
+      <h2 class="demo-section-title">Empty + error</h2>
+      <p class="empty">no items — click <strong>+ Item</strong> to add one</p>
+      <p class="error">scsynth didn't reply to /status at 127.0.0.1:57110</p>
+    </section>
+
+    <section class="demo-section">
+      <h2 class="demo-section-title">Modal (inline preview, not portal)</h2>
+      <p>
+        Below renders a modal card without the fixed-position
+        backdrop, so it shows in flow. In real use the
+        <code>.modal-backdrop</code> wrapper centres + dims.
+      </p>
+      <div class="modal" style="position: static;">
+        <h2 class="modal-title">Reinitialize dashboard?</h2>
+        <p class="modal-body">
+          Active recordings will be stopped, and any recordings
+          in this session — including ones already finalised —
+          will be lost when the dashboard reinitializes.
+        </p>
+        <div class="modal-actions">
+          <button data-variant="secondary">Cancel</button>
+          <button data-variant="danger">Reinitialize</button>
+        </div>
+      </div>
+      <p>Indeterminate progress (LoadingModal):</p>
+      <div class="modal-progress"></div>
+    </section>
+
+    <section class="demo-section">
       <h2 class="demo-section-title">Token sampler</h2>
       <p>Spacing scale (size = token rem):</p>
       <div class="demo-row">

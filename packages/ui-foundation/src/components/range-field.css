@@ -1,1 +1,42 @@
-/* .range-field — populated in Phase 28d. */
+/**
+ * .range-field — label + range slider + numeric readout in a
+ * single horizontal row. The bread-and-butter "knob with
+ * value" pattern (track gain, BPM, parameter overrides).
+ *
+ * HTML shape:
+ *   <label class="range-field">
+ *     <span class="range-field-label">gain</span>
+ *     <input type="range" min="0" max="2" step="0.01" />
+ *     <span class="range-field-value">0.80</span>
+ *   </label>
+ *
+ * The wrapper is a <label> so clicking the label focuses the
+ * input. The <input type="range"> picks up its base styling
+ * (accent-color, transparent bg) from base/elements.css.
+ */
+
+.range-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-dim);
+}
+
+.range-field-label {
+  font-family: var(--font-mono);
+  color: var(--color-text-dim);
+}
+
+.range-field > input[type="range"] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.range-field-value {
+  font-family: var(--font-mono);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  min-width: 2.5rem;
+}

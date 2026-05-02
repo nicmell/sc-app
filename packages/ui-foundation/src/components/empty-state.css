@@ -1,1 +1,23 @@
-/* .empty-state — populated in Phase 28d. */
+/**
+ * .empty — placeholder shown when a list / collection has no
+ * items yet. Dashed border to read as "nothing here", muted
+ * text, centred. Replaces the per-panel `.empty` declarations
+ * scattered across DirtPanel, SynthsPanel, RecordingPanel,
+ * ScopeList, ScopeView.
+ *
+ * HTML shape:
+ *   <p class="empty">
+ *     no tracks — click <strong>+ Track</strong> to add one
+ *   </p>
+ */
+
+.empty {
+  margin: 0;
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--color-surface-2);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-mute);
+  font-size: var(--font-size-xs);
+  text-align: center;
+}

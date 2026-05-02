@@ -1,1 +1,26 @@
-/* .cluster — populated in Phase 28d. */
+/**
+ * .cluster — horizontal flex layout, centred cross-axis, with
+ * gap and wrap. The bread-and-butter "row of inline things"
+ * (toolbar buttons, label + input, status pill + readout, …).
+ *
+ * Replaces the legacy global `.row` and per-panel `.toolbar`
+ * declarations. Default gap is small; data-gap overrides:
+ *   <div class="cluster" data-gap="md">
+ *
+ * HTML shape:
+ *   <div class="cluster">
+ *     <button>One</button>
+ *     <button>Two</button>
+ *   </div>
+ */
+
+.cluster {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-wrap: wrap;
+}
+
+.cluster[data-gap="sm"] { gap: var(--space-2xs); }
+.cluster[data-gap="md"] { gap: var(--space-sm); }
+.cluster[data-gap="lg"] { gap: var(--space-md); }

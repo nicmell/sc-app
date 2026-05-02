@@ -1,1 +1,101 @@
-/* .modal — populated in Phase 28d. */
+/**
+ * .modal-backdrop + .modal — centred overlay card for confirms
+ * / alerts / loaders. Renders via portal at document.body in
+ * the React host; plugins write the same HTML shape directly.
+ *
+ * HTML shape:
+ *   <div class="modal-backdrop">
+ *     <div class="modal" data-variant="danger">
+ *       <h2 class="modal-title">…</h2>
+ *       <p class="modal-body">…</p>
+ *       <div class="modal-actions cluster" data-gap="sm">
+ *         <button data-variant="secondary">Cancel</button>
+ *         <button data-variant="danger">Reinitialize</button>
+ *       </div>
+ *     </div>
+ *   </div>
+ *
+ * The action-button styling is intentionally NOT redefined
+ * here — it comes from base/elements.css's button rules with
+ * data-variant attributes. .modal[data-variant] only tints
+ * the card's accent (currently a no-op, reserved for future
+ * "danger card" framing if we want a red top stripe).
+ */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  min-width: 320px;
+  max-width: 480px;
+  padding: var(--space-md) var(--space-lg);
+  background: var(--color-surface-1);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-family: var(--font-sans);
+  box-shadow: var(--shadow-lg);
+}
+
+.modal-title {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text);
+}
+
+.modal-body {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-dim);
+  line-height: var(--line-height-normal);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-xs);
+}
+
+/* Indeterminate progress bar — used by LoadingModal. The
+   keyframe lives here (in a component CSS) because no other
+   primitive uses it; if a second consumer appears, lift it
+   to base/elements.css. */
+.modal-progress {
+  position: relative;
+  width: 100%;
+  height: 4px;
+  background: var(--color-surface-3);
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+}
+
+.modal-progress::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--color-primary) 50%,
+    transparent 100%
+  );
+  animation: modal-progress-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes modal-progress-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
+}

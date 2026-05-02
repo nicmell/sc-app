@@ -1,1 +1,19 @@
-/* .error-alert — populated in Phase 28d. */
+/**
+ * .error — inline error alert. Replaces the per-panel `.error`
+ * declarations in DirtPanel, SynthsPanel, RecordingPanel,
+ * ScopeList, ConnectScreen. Reads as a small bordered card
+ * with the error palette.
+ *
+ * HTML shape:
+ *   <p class="error">scsynth didn't reply to /status at …</p>
+ */
+
+.error {
+  margin: 0;
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--color-error-bg);
+  border: 1px solid var(--color-error-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-error-text);
+  font-size: var(--font-size-sm);
+}

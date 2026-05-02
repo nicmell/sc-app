@@ -1,1 +1,37 @@
-/* .badge — populated in Phase 28d. */
+/**
+ * .badge — uppercase pill, distinct from .status-pill in two
+ * ways: (1) no leading dot — body content is the whole badge;
+ * (2) tighter padding + uppercase tracking. The dashboard
+ * shell's "connected" indicator was the original instance.
+ *
+ * HTML shape:
+ *   <span class="badge">connected</span>
+ *   <span class="badge" data-variant="warn">degraded</span>
+ *
+ * Variants: ok (default) | warn | error.
+ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-2xs) var(--space-xs);
+  background: var(--color-ok-bg);
+  border: 1px solid var(--color-ok-strong);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-ok-text);
+}
+
+.badge[data-variant="warn"] {
+  background: var(--color-warn-bg);
+  border-color: var(--color-warn-border);
+  color: var(--color-warn-text);
+}
+
+.badge[data-variant="error"] {
+  background: var(--color-error-bg);
+  border-color: var(--color-error-border);
+  color: var(--color-error-text);
+}

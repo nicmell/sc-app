@@ -1,1 +1,36 @@
-/* .panel — populated in Phase 28d. */
+/**
+ * .panel — chrome wrapper for any feature surface (scopes,
+ * recordings, sequencer, dirt console, …). Renders as a
+ * surface-1 card with a subtle border, internal padding, and
+ * a gap-stack of children. The single direct-child <header> is
+ * rendered as a small uppercase title bar.
+ *
+ * HTML shape:
+ *   <section class="panel">
+ *     <header>Sequencer</header>
+ *     ... arbitrary content, gap-spaced via the panel's own
+ *         flex-column gap ...
+ *   </section>
+ *
+ * Plugins composing a card-style surface use this directly.
+ */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-md);
+  background: var(--color-surface-1);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-family: var(--font-sans);
+}
+
+.panel > header {
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.7;
+  color: var(--color-text-dim);
+}
