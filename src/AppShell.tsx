@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { ClockPanel } from '@/ui/ClockPanel';
-import { ConnectScreen } from '@/ui/ConnectScreen';
 import { DebugLog } from '@/ui/DebugLog';
 import { DirtPanel } from '@/ui/DirtPanel';
 import { Footer } from '@/ui/Footer';
-import { AlertModal, ConfirmModal, LoadingModal } from '@/ui/Modal';
+import { ConfirmModal, LoadingModal } from '@/ui/Modal';
 import { OscConsole } from '@/ui/OscConsole';
 import { RecordingPanel } from '@/ui/RecordingPanel';
 import { ScopeList } from '@/ui/ScopeList';
 import { SequencerPanel } from '@/ui/SequencerPanel';
 import { SynthsPanel } from '@/ui/SynthsPanel';
+import { ToastContainer, useToasts } from '@/ui/Toast';
 import {
   DEFAULT_PARAMS,
   practicalChunkSizes,
@@ -119,26 +119,136 @@ interface DashboardResources {
   version: ScsynthVersion | null;
 }
 
-/**
- * Dashboard — the live UI when connected. The header carries the
- * connected-state badge, the chunk-size selector (which drives a
- * full re-init when changed), and the Disconnect button. Below
- * that: clock panel, scope list, recording panel.
- */
+/** Phase 29d: connection status drives the header chrome and
+ *  whether panels render. The dashboard layout is always shown;
+ *  the panels block is empty when not connected. */
+type ConnectionStatus = 'connected' | 'connecting' | 'disconnected';
+
+const STATUS_LABELS: Record<ConnectionStatus, string> = {
+  connected: 'connected',
+  connecting: 'connecting…',
+  disconnected: 'disconnected',
+};
+
+const STATUS_BADGE_VARIANT: Record<ConnectionStatus, string | undefined> = {
+  // foundation .badge defaults to ok-themed; explicit data-variant
+  // overrides give us the connecting/disconnected chrome.
+  connected: undefined,
+  connecting: 'warn',
+  disconnected: 'error',
+};
+
+/** Dashboard chrome shown in every connection state. The header
+ *  always renders; the body (panels) is conditional on a live
+ *  `resources`. Phase 29d removed the always-mount-or-nothing
+ *  dichotomy with ConnectScreen; users now see the same shell
+ *  in both connected and disconnected states, with the action
+ *  button toggling Connect/Disconnect. */
 function Dashboard({
   resources,
+  status,
   chunkSize,
   reiniting,
   onChunkSizeChange,
+  onConnect,
   onDisconnect,
 }: {
-  resources: DashboardResources;
+  resources: DashboardResources | null;
+  status: ConnectionStatus;
   chunkSize: number;
   reiniting: boolean;
   onChunkSizeChange: (next: number) => void;
+  onConnect: () => void;
   onDisconnect: () => void;
 }) {
-  const options = practicalChunkSizes(resources.sampleRate);
+  return (
+    <main className="dashboard-shell">
+      <DashboardHeader
+        resources={resources}
+        status={status}
+        chunkSize={chunkSize}
+        reiniting={reiniting}
+        onChunkSizeChange={onChunkSizeChange}
+        onConnect={onConnect}
+        onDisconnect={onDisconnect}
+      />
+      {resources && <DashboardPanels resources={resources} />}
+    </main>
+  );
+}
+
+function DashboardHeader({
+  resources,
+  status,
+  chunkSize,
+  reiniting,
+  onChunkSizeChange,
+  onConnect,
+  onDisconnect,
+}: {
+  resources: DashboardResources | null;
+  status: ConnectionStatus;
+  chunkSize: number;
+  reiniting: boolean;
+  onChunkSizeChange: (next: number) => void;
+  onConnect: () => void;
+  onDisconnect: () => void;
+}) {
+  // chunk-size dropdown options need a sample rate. While
+  // disconnected we don't have one — fall back to the default
+  // 48 k so the picker renders something, but disable it.
+  const sampleRate = resources?.sampleRate ?? 48000;
+  const options = practicalChunkSizes(sampleRate);
+  const pickerDisabled = !resources || reiniting;
+  return (
+    <header className="cluster" data-gap="md">
+      <span
+        className="badge"
+        data-variant={STATUS_BADGE_VARIANT[status]}
+      >
+        {STATUS_LABELS[status]}
+      </span>
+      <label className="chunk-size-picker">
+        chunk size&nbsp;
+        <select
+          value={chunkSize}
+          disabled={pickerDisabled}
+          onChange={(e) => onChunkSizeChange(Number(e.target.value))}
+          title={
+            `Tick rate = sampleRate / chunkSize. Changing this ` +
+            `re-initialises the dashboard.`
+          }
+        >
+          {options.map((cs) => (
+            <option key={cs} value={cs}>
+              {cs} ({(sampleRate / cs).toFixed(2)} Hz tick)
+            </option>
+          ))}
+        </select>
+      </label>
+      {status === 'connected' ? (
+        <button
+          type="button"
+          data-variant="ghost"
+          onClick={onDisconnect}
+          disabled={reiniting}
+        >
+          Disconnect
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={onConnect}
+          disabled={status === 'connecting'}
+        >
+          Connect
+        </button>
+      )}
+    </header>
+  );
+}
+
+function DashboardPanels({ resources }: { resources: DashboardResources }) {
   // Sequencer's Play button needs the audio clock to be running
   // (`tick0Ms !== null`). `effectiveState` is reactive: 'stopped'
   // until the clock starts, 'running' once /tr packets are
@@ -148,36 +258,7 @@ function Dashboard({
     () => resources.clock.effectiveState.get(),
   );
   return (
-    <main className="dashboard-shell">
-      <header className="cluster" data-gap="md">
-        <span className="badge">connected</span>
-        <label className="chunk-size-picker">
-          chunk size&nbsp;
-          <select
-            value={chunkSize}
-            disabled={reiniting}
-            onChange={(e) => onChunkSizeChange(Number(e.target.value))}
-            title={
-              `Tick rate = sampleRate / chunkSize. Changing this ` +
-              `re-initialises the dashboard.`
-            }
-          >
-            {options.map((cs) => (
-              <option key={cs} value={cs}>
-                {cs} ({(resources.sampleRate / cs).toFixed(2)} Hz tick)
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          type="button"
-          data-variant="ghost"
-          onClick={onDisconnect}
-          disabled={reiniting}
-        >
-          Disconnect
-        </button>
-      </header>
+    <>
       <ClockPanel clock={resources.clock} />
       <SynthsPanel manager={resources.synthManager} />
       <ScopeList manager={resources.scopeManager} />
@@ -195,7 +276,7 @@ function Dashboard({
       />
       <OscConsole client={resources.client} />
       <Footer status={resources.status} version={resources.version} />
-    </main>
+    </>
   );
 }
 
@@ -484,14 +565,12 @@ export function AppShell() {
   const [bootstrapState, setBootstrapState] = useState<BootstrapState>({
     phase: 'pending',
   });
-  /** Modal-style error shown after a *runtime* failure — typically a
-   *  WebSocket close mid-session, or a re-init failure. The
-   *  dashboard tears down, the connect screen renders behind, and
-   *  this modal fronts it until the user dismisses. (Connect-time
-   *  failures, by contrast, surface inline on the connect screen
-   *  via `ConnectScreen`'s own `localError` — those are caught from
-   *  `handleConnect`'s thrown promise inside the form submit.) */
-  const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  /** Phase 29d: toast surface for transient errors, warnings,
+   *  and successes. Replaces both the AlertModal flow (for
+   *  runtime failures) and the ConnectScreen inline error (for
+   *  bootstrap failures). Toasts auto-dismiss except errors,
+   *  which stay until the user clicks ×. */
+  const { toasts, show: showToast, dismiss: dismissToast } = useToasts();
   /** Currently-applied chunk size. Updated atomically with
    *  `setResources` after a successful re-init. */
   const [chunkSize, setChunkSize] = useState(DEFAULT_PARAMS.chunkSize);
@@ -527,12 +606,13 @@ export function AppShell() {
         if (cancelled) return;
         const message = err instanceof Error ? err.message : String(err);
         console.error('[sc:app] session bootstrap failed', message);
-        setBootstrapState({ phase: 'error', error: message });
+        showToast(`Couldn't connect to bridge: ${message}`, 'error');
+        setBootstrapState({ phase: 'disconnected' });
       });
     return () => {
       cancelled = true;
     };
-  }, [bootstrapState]);
+  }, [bootstrapState, showToast]);
 
   /** Phase 29: handleConnect now consumes a `SessionInfo` from
    *  the bridge — the scsynth handshake (`/status` + `/notify 1`)
@@ -565,15 +645,16 @@ export function AppShell() {
     // it yet).
     const bank = new PatternBank();
 
-    // Wire disconnection handler *before* the async bring-up so a
-    // mid-bring-up WebSocket error still unwinds cleanly. Runtime
-    // errors (post-connect WS death) surface as a modal alert
-    // rather than an inline message on the connect screen — the
-    // user has been doing real work and deserves an explicit
-    // notification of why the dashboard just disappeared.
+    // Wire disconnection handler *before* the async bring-up so
+    // a mid-bring-up WebSocket error still unwinds cleanly.
+    // Runtime errors (post-connect WS death) surface as a toast;
+    // the dashboard's header drops to "disconnected" and the
+    // user can click Connect to retry. Don't DELETE the session
+    // — the bridge may still hold it; a fresh bootstrap can
+    // reuse on best-case or 404+POST on network blip.
     next.onError((message) => {
       if (clientRef.current === next) {
-        setRuntimeError(message);
+        showToast(`Connection lost: ${message}`, 'error');
         // Flush any pending pattern saves before the bank is
         // dropped — the user may have been editing right up
         // to the WS death.
@@ -585,14 +666,7 @@ export function AppShell() {
         next.dispose();
         clientRef.current = null;
         setResources(null);
-        // Phase 29c: surface as a recoverable error in the
-        // bootstrap state so dismissing the AlertModal lands the
-        // user on the ConnectScreen retry surface (which will
-        // re-bootstrap on click). Don't DELETE the session here
-        // — the bridge may still hold it, and a fresh bootstrap
-        // can either reuse it (best case) or get a 404 and POST
-        // a new one (network blip case).
-        setBootstrapState({ phase: 'error', error: message });
+        setBootstrapState({ phase: 'disconnected' });
       }
     });
 
@@ -632,15 +706,16 @@ export function AppShell() {
       if (cancelled) return;
       const message = err instanceof Error ? err.message : String(err);
       console.error('[sc:app] handleConnect failed', message);
+      showToast(`Failed to connect: ${message}`, 'error');
       void deleteSession(info.sessionId);
       clearStoredSession();
-      setBootstrapState({ phase: 'error', error: message });
+      setBootstrapState({ phase: 'disconnected' });
     });
 
     return () => {
       cancelled = true;
     };
-  }, [bootstrapState, resources, handleConnect]);
+  }, [bootstrapState, resources, handleConnect, showToast]);
 
   const handleDisconnect = useCallback(async () => {
     const current = resources;
@@ -702,11 +777,11 @@ export function AppShell() {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error('[sc:app] reinit failed', msg);
-        // A re-init failure is also a runtime error — the dashboard
-        // is gone and the user needs to know why before being sent
-        // back to the connect screen.
-        setRuntimeError(`Reinitialization failed: ${msg}`);
-        // Tear down completely — the previous resources are now stale.
+        // A re-init failure means the dashboard is gone. Surface
+        // the error as a toast and drop the session — its
+        // scsynth-side state is in an ambiguous half-applied
+        // state; cleanest to start fresh.
+        showToast(`Reinitialization failed: ${msg}`, 'error');
         try {
           current.bank.dispose();
         } catch {
@@ -719,14 +794,9 @@ export function AppShell() {
         }
         clientRef.current = null;
         setResources(null);
-        // Phase 29c: drive the bootstrap state machine into 'error'
-        // so dismissing the AlertModal lands on the recovery
-        // surface. DELETE the session because it's now in an
-        // ambiguous state (some setupDashboard side effects may
-        // have applied scsynth-side; cleanest to start fresh).
         void deleteSession(current.sessionId);
         clearStoredSession();
-        setBootstrapState({ phase: 'error', error: msg });
+        setBootstrapState({ phase: 'disconnected' });
       } finally {
         setReiniting(false);
         setPendingChunkSize(null);
@@ -825,8 +895,10 @@ export function AppShell() {
         if (clientRef.current !== client) return;
         const msg = err instanceof Error ? err.message : String(err);
         console.warn('[sc:app] heartbeat failed:', msg);
-        const display = `scsynth stopped responding to /status (${msg}). The dashboard has been torn down.`;
-        setRuntimeError(display);
+        showToast(
+          `scsynth stopped responding to /status: ${msg}`,
+          'error',
+        );
         try {
           bank.dispose();
         } catch {
@@ -835,11 +907,9 @@ export function AppShell() {
         client.dispose();
         clientRef.current = null;
         setResources(null);
-        // Phase 29c: surface as a recoverable bootstrap error so
-        // dismissing the AlertModal lands on the recovery surface.
         // Don't DELETE the session — bridge may still have it; a
         // fresh bootstrap can either reuse (best case) or 404+POST.
-        setBootstrapState({ phase: 'error', error: display });
+        setBootstrapState({ phase: 'disconnected' });
       }
     };
 
@@ -941,39 +1011,49 @@ export function AppShell() {
     };
   }, [resources]);
 
+  // Phase 29d: derive the dashboard's connection status from
+  // the bootstrap state machine + resources. Header chrome reads
+  // this to pick the badge variant, the action button label,
+  // and whether the chunk-size picker is interactive. Named
+  // `connectionStatus` (not just `status`) to avoid shadowing
+  // the imported `status` OSC command builder used by the
+  // heartbeat tick.
+  const connectionStatus: ConnectionStatus = resources
+    ? 'connected'
+    : bootstrapState.phase === 'pending' || bootstrapState.phase === 'ready'
+      ? 'connecting'
+      : 'disconnected';
+
+  // The "loading…" overlay gates the header + chunk-size picker
+  // from interaction during the initial bootstrap window. Re-init
+  // shares the overlay (different message) — they can't co-occur.
+  const showLoadingOverlay =
+    reiniting || (connectionStatus === 'connecting' && !resources);
+
+  const onConnect = useCallback(() => {
+    setBootstrapState({ phase: 'pending' });
+  }, []);
+
   return (
     <>
-      {resources ? (
-        <Dashboard
-          resources={resources}
-          chunkSize={chunkSize}
-          reiniting={reiniting}
-          onChunkSizeChange={onChunkSizeChange}
-          onDisconnect={handleDisconnect}
-        />
-      ) : (
-        <ConnectScreen
-          mode={
-            bootstrapState.phase === 'pending' ||
-            bootstrapState.phase === 'ready'
-              ? 'loading'
-              : bootstrapState.phase === 'disconnected'
-                ? 'disconnected'
-                : 'error'
-          }
-          error={
-            bootstrapState.phase === 'error' ? bootstrapState.error : null
-          }
-          onRetry={() => setBootstrapState({ phase: 'pending' })}
-        />
-      )}
-      {reiniting && (
+      <Dashboard
+        resources={resources}
+        status={connectionStatus}
+        chunkSize={chunkSize}
+        reiniting={reiniting}
+        onChunkSizeChange={onChunkSizeChange}
+        onConnect={onConnect}
+        onDisconnect={handleDisconnect}
+      />
+      {showLoadingOverlay && (
         <LoadingModal
-          title="Reinitializing dashboard…"
+          title={reiniting ? 'Reinitializing dashboard…' : 'Connecting…'}
           message={
-            `Applying chunk size = ${pendingChunkSize ?? chunkSize}. ` +
-            `Tearing down current scopes/recordings and rebuilding the ` +
-            `clock.`
+            reiniting
+              ? `Applying chunk size = ${pendingChunkSize ?? chunkSize}. ` +
+                `Tearing down current scopes/recordings and rebuilding the ` +
+                `clock.`
+              : 'Establishing the bridge session and connecting to scsynth.'
           }
         />
       )}
@@ -1000,24 +1080,7 @@ export function AppShell() {
           onCancel={onCancelReinit}
         />
       )}
-      {runtimeError !== null && (
-        <AlertModal
-          title="Connection lost"
-          body={
-            <>
-              <p>
-                The connection to scsynth was interrupted and the
-                dashboard has been torn down.
-              </p>
-              <p style={{ opacity: 0.8 }}>{runtimeError}</p>
-              <p>Press OK to return to the connect screen.</p>
-            </>
-          }
-          dismissLabel="OK"
-          variant="danger"
-          onDismiss={() => setRuntimeError(null)}
-        />
-      )}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       <DebugLog errorBus={resources?.errorBus ?? null} />
     </>
   );
