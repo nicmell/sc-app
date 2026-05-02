@@ -42,6 +42,24 @@ const STORAGE_KEY = 'sc.address';
 const STATUS_PROBE_TIMEOUT_MS = 1000;
 /** Fallback when scsynth returns clientId 0 (can't use root group 0). */
 const FALLBACK_PARENT_GROUP_ID = 100;
+/** Per-client offset for node + buffer ID allocators.
+ *
+ *  scsynth doesn't enforce per-client ID ranges — it just rejects
+ *  `/s_new` with a duplicate ID. Phase 26 makes this matter: when
+ *  sclang+SuperDirt is hosted on the same scsynth (Phase 26
+ *  deployment), sclang lives at clientId=0 and allocates synth IDs
+ *  starting at 1000+. If sc-app (clientId≥1) also starts at 1000,
+ *  the very first `/s_new` for the global clock collides → the
+ *  clock never starts, the dashboard sits dead.
+ *
+ *  Solution: scope sc-app's allocator base by clientId. 1M per
+ *  client is generous (scsynth's default `-n 32768` caps concurrent
+ *  nodes well below that, and SuperDirt allocates a few hundred at
+ *  init + a few per event). Final start = `clientId * 1_000_000 +
+ *  ID_ALLOCATOR_START`; clientId=0 falls back to the pre-Phase-26
+ *  base (1000) so single-client setups stay byte-identical. */
+const PER_CLIENT_ID_OFFSET = 1_000_000;
+const ID_ALLOCATOR_START = 1000;
 
 interface DashboardResources {
   client: WorkerClient;
@@ -62,6 +80,11 @@ interface DashboardResources {
    *  by the bridge's `/dirt` route. Fresh per `setupDashboard`;
    *  disposed by `teardownServerState`. */
   dirtClient: DirtClient;
+  /** scsynth-assigned clientId from the `/done /notify` reply.
+   *  Stashed for the re-init flow so the IdAllocators stay scoped
+   *  to the same per-client range. Non-zero when scsynth is shared
+   *  with sclang+SuperDirt at clientId=0. */
+  clientId: number;
   /** Stashed for in-place re-init: re-issuing `notify(1)` over the
    *  same WS would either be rejected by scsynth or hand back a
    *  different `clientId`, orphaning the existing parent group. The
@@ -186,13 +209,19 @@ function wsUrlFor(address: string): string {
  */
 async function setupDashboard(
   client: WorkerClient,
+  clientId: number,
   parentGroupId: number,
   sampleRate: number,
   chunkSize: number,
 ): Promise<DashboardResources> {
+  // Phase 26 — scope node/buffer IDs by clientId so we don't collide
+  // with sclang+SuperDirt at clientId=0. Bus allocator stays at 32
+  // (skips hardware-reserved); SuperDirt's bus usage doesn't overlap
+  // sc-app's allocations in practice.
+  const idBase = clientId * PER_CLIENT_ID_OFFSET + ID_ALLOCATOR_START;
   const ids = {
-    node: new IdAllocator(1000),
-    buffer: new IdAllocator(1000),
+    node: new IdAllocator(idBase),
+    buffer: new IdAllocator(idBase),
     bus: new IdAllocator(32),
   };
   const registry = new SynthDefRegistry(client);
@@ -283,6 +312,7 @@ async function setupDashboard(
     synthManager,
     scopeManager,
     recordingManager,
+    clientId,
     parentGroupId,
     sampleRate,
     status: createStore<ScsynthStatus | null>(null),
@@ -513,6 +543,7 @@ export function AppShell() {
     try {
       built = await setupDashboard(
         next,
+        clientId,
         parentGroupId,
         sampleRate,
         DEFAULT_PARAMS.chunkSize,
@@ -557,6 +588,7 @@ export function AppShell() {
         await teardownServerState(current);
         const rebuilt = await setupDashboard(
           current.client,
+          current.clientId,
           current.parentGroupId,
           current.sampleRate,
           next,
