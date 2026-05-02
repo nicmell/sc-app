@@ -7,7 +7,7 @@ import { BankSelector } from './BankSelector';
 import { ChainEditor } from './ChainEditor';
 import { TransportBar } from './TransportBar';
 import { TrackRow } from './TrackRow';
-import './SequencerPanel.scss';
+import './SequencerPanel.css';
 
 interface SequencerPanelProps {
   controller: SequencerController;

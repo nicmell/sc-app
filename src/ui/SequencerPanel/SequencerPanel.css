@@ -1,0 +1,584 @@
+/**
+ * SequencerPanel — bespoke layouts for the bank selector, chain
+ * editor, track rows, step grid, step popover, track-default
+ * expander. Most of these are unique enough that they don't fit
+ * a foundation primitive; they live here as panel-specific
+ * components but consume foundation tokens.
+ *
+ * Buttons with bespoke classes (.bank-slot, .step-cell,
+ * .track-remove, .track-defaults-toggle, .chain-entry-remove,
+ * .step-popover-clear*, .track-defaults-clear) keep their local
+ * styling and use :not(:disabled) on hover rules so they outrank
+ * foundation's button:hover:not(:disabled) on specificity.
+ */
+
+.sequencer-panel .step-readout {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Bank selector ──────────────────────────────────────────── */
+
+.sequencer-panel .bank-selector {
+  display: flex;
+  gap: var(--space-2xs);
+  flex-wrap: wrap;
+}
+
+.sequencer-panel .bank-slot {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 2.4rem;
+  padding: var(--space-2xs) var(--space-xs);
+  background: var(--color-surface-2);
+  color: var(--color-text-dim);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.sequencer-panel .bank-slot:hover:not(:disabled) {
+  border-color: var(--color-border-stronger);
+  color: var(--color-text);
+}
+
+.sequencer-panel .bank-slot.is-filled::after {
+  content: '';
+  position: absolute;
+  bottom: var(--space-2xs);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 50%;
+  background: var(--color-text-mute);
+}
+
+.sequencer-panel .bank-slot.is-active {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border-color: var(--color-primary);
+}
+
+.sequencer-panel .bank-slot.is-active::after {
+  background: var(--color-on-primary);
+}
+
+/* ── Chain editor (Phase 27d) ──────────────────────────────── */
+
+.sequencer-panel .chain-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  padding: var(--space-xs) var(--space-xs);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.sequencer-panel .chain-editor.is-enabled {
+  border-color: var(--color-border-stronger);
+}
+
+.sequencer-panel .chain-editor-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.sequencer-panel .chain-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-dim);
+  cursor: pointer;
+}
+
+.sequencer-panel .chain-toggle input:disabled + span {
+  opacity: 0.5;
+}
+
+.sequencer-panel .chain-append {
+  margin-left: auto;
+  padding: var(--space-2xs) var(--space-xs);
+  background: var(--color-surface-1);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-xs);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.sequencer-panel .chain-append:not(:disabled):hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-surface-1);
+}
+
+.sequencer-panel .chain-append:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sequencer-panel .chain-entries {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2xs);
+  min-height: 1.6rem;
+}
+
+.sequencer-panel .chain-empty {
+  font-size: 0.78rem;
+  color: var(--color-text-mute);
+  font-style: italic;
+}
+
+.sequencer-panel .chain-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: var(--space-3xs) var(--space-2xs);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-xs);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.sequencer-panel .chain-entry.is-playing {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary-hover);
+}
+
+.sequencer-panel .chain-entry select,
+.sequencer-panel .chain-entry input[type='number'] {
+  background: transparent;
+  color: var(--color-text);
+  border: none;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  padding: 0;
+}
+
+.sequencer-panel .chain-entry select:focus,
+.sequencer-panel .chain-entry input[type='number']:focus {
+  outline: 1px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.sequencer-panel .chain-entry-slot {
+  width: 2.2rem;
+  cursor: pointer;
+}
+
+.sequencer-panel .chain-entry-cycles {
+  width: 2.4rem;
+  text-align: right;
+}
+
+.sequencer-panel .chain-entry-x {
+  color: var(--color-text-mute);
+  font-size: 0.7rem;
+}
+
+.sequencer-panel .chain-entry-remove {
+  padding: 0;
+  width: 1.1rem;
+  height: 1.1rem;
+  background: transparent;
+  color: var(--color-text-mute);
+  border: 1px solid transparent;
+  border-radius: 2px;
+  font-size: 0.7rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sequencer-panel .chain-entry-remove:hover:not(:disabled) {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+  background: transparent;
+}
+
+/* ── Track grid ────────────────────────────────────────────── */
+
+.sequencer-panel .tracks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+}
+
+.sequencer-panel .track-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  padding: var(--space-2xs) var(--space-xs);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.sequencer-panel .track-row.is-expanded {
+  border-color: var(--color-border-stronger);
+}
+
+.sequencer-panel .track-row-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+}
+
+.sequencer-panel .track-defaults-toggle {
+  flex: 0 0 auto;
+  padding: var(--space-3xs) var(--space-2xs);
+  background: transparent;
+  color: var(--color-text-mute);
+  border: 1px solid transparent;
+  font-size: var(--font-size-sm);
+  line-height: 1;
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+}
+
+.sequencer-panel .track-defaults-toggle:hover:not(:disabled) {
+  color: var(--color-text);
+  background: transparent;
+}
+
+.sequencer-panel .track-defaults-toggle.has-defaults {
+  color: var(--color-primary);
+  border-color: var(--color-border-strong);
+}
+
+.sequencer-panel .track-sample {
+  flex: 0 0 6rem;
+}
+
+.sequencer-panel .track-gain {
+  flex: 0 0 5rem;
+}
+
+.sequencer-panel .track-gain-value {
+  flex: 0 0 2.4rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--color-text-mute);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.sequencer-panel .track-steps {
+  flex: 1 1 auto;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.sequencer-panel .track-remove {
+  flex: 0 0 auto;
+  padding: var(--space-3xs) var(--space-2xs);
+  background: transparent;
+  color: var(--color-text-mute);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-xs);
+  font-size: var(--font-size-md);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sequencer-panel .track-remove:hover:not(:disabled) {
+  background: var(--color-danger);
+  color: var(--color-on-primary);
+  border-color: var(--color-danger);
+}
+
+/* ── Step cells ────────────────────────────────────────────── */
+
+.sequencer-panel .step-cell {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  min-height: 1.6rem;
+  padding: 0;
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.sequencer-panel .step-cell:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  background: var(--color-surface-1);
+}
+
+.sequencer-panel .step-cell.is-beat {
+  border-color: var(--color-border-stronger);
+}
+
+.sequencer-panel .step-cell.is-active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.sequencer-panel .step-cell.is-playhead {
+  box-shadow: 0 0 0 2px var(--color-primary-hover);
+}
+
+.sequencer-panel .step-cell.is-active.is-playhead {
+  background: var(--color-primary-hover);
+}
+
+.sequencer-panel .step-cell .override-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-primary);
+}
+
+.sequencer-panel .step-cell.is-active .override-dot {
+  background: var(--color-on-primary);
+}
+
+/* ── Track defaults expander ───────────────────────────────── */
+
+.sequencer-panel .track-defaults {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  padding: var(--space-xs);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+}
+
+.sequencer-panel .track-defaults-title {
+  font-size: 0.75rem;
+  color: var(--color-text-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.sequencer-panel .track-defaults-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2xs) var(--space-sm);
+}
+
+.sequencer-panel .track-defaults-row {
+  display: grid;
+  grid-template-columns: 3.5rem 1fr 3.5rem auto;
+  align-items: center;
+  gap: var(--space-2xs);
+  font-size: var(--font-size-xs);
+}
+
+.sequencer-panel .track-defaults-row input[type='range'] {
+  min-width: 0;
+}
+
+.sequencer-panel .track-defaults-row.source-unset input[type='range'] {
+  opacity: 0.55;
+}
+
+.sequencer-panel .track-defaults-label {
+  font-family: var(--font-mono);
+  color: var(--color-text-dim);
+}
+
+.sequencer-panel .track-defaults-value {
+  font-family: var(--font-mono);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  font-size: 0.75rem;
+}
+
+.sequencer-panel .track-defaults-clear {
+  padding: 0;
+  width: 1.4rem;
+  height: 1.4rem;
+  background: transparent;
+  color: var(--color-text-mute);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-xs);
+  font-size: 0.75rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sequencer-panel .track-defaults-clear:hover:not(:disabled) {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+  background: transparent;
+}
+
+.sequencer-panel .track-defaults-clear:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Step popover (rendered via portal, OUTSIDE .sequencer-panel) ── */
+
+.step-popover {
+  position: fixed;
+  z-index: 1000;
+  min-width: 22rem;
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border-stronger);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.step-popover > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+}
+
+.step-popover-title {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+}
+
+.step-popover-clear-all {
+  padding: var(--space-3xs) var(--space-xs);
+  background: transparent;
+  color: var(--color-text-mute);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-xs);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.step-popover-clear-all:hover:not(:disabled) {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+  background: transparent;
+}
+
+.step-popover-clear-all:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.step-popover-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+}
+
+.step-popover-row {
+  display: grid;
+  grid-template-columns: 3.5rem 1fr 4rem auto;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: var(--font-size-sm);
+}
+
+.step-popover-row input[type='range'] {
+  min-width: 0;
+}
+
+.step-popover-row.source-track input[type='range'] {
+  opacity: 0.7;
+}
+
+.step-popover-row.source-unset input[type='range'] {
+  opacity: 0.45;
+}
+
+.step-popover-label {
+  font-family: var(--font-mono);
+  color: var(--color-text-dim);
+}
+
+.step-popover-value {
+  font-family: var(--font-mono);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  font-size: 0.78rem;
+}
+
+.step-popover-clear {
+  padding: 0;
+  width: 1.5rem;
+  height: 1.5rem;
+  background: transparent;
+  color: var(--color-text-mute);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-xs);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.step-popover-clear:hover:not(:disabled) {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+  background: transparent;
+}
+
+.step-popover-clear:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.step-popover-legend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding-top: var(--space-2xs);
+  border-top: 1px solid var(--color-border);
+  font-size: 0.7rem;
+  color: var(--color-text-mute);
+}
+
+.step-popover-legend .legend-swatch {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.3rem;
+  margin-right: 0.2rem;
+  border-radius: 2px;
+  background: var(--color-primary);
+  vertical-align: middle;
+}
+
+.step-popover-legend .legend-swatch.source-track {
+  opacity: 0.7;
+}
+
+.step-popover-legend .legend-swatch.source-unset {
+  opacity: 0.45;
+}

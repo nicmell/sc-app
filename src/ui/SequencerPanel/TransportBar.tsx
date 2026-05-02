@@ -50,10 +50,10 @@ export function TransportBar({
   }, [controller]);
 
   return (
-    <div className="row toolbar transport-bar">
+    <div className="cluster transport-bar">
       <button
         type="button"
-        className={transport.isPlaying ? 'transport-stop' : 'transport-play'}
+        data-variant={transport.isPlaying ? 'danger' : undefined}
         onClick={onTogglePlay}
         disabled={!transport.isPlaying && !clockReady}
         title={
