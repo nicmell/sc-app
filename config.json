@@ -2,5 +2,10 @@
   "port": 3000,
   "scsynth": "127.0.0.1:57110",
   "log_dir": "./logs",
-  "routes": []
+  "routes": [
+    {
+      "prefix": "/dirt",
+      "target": "127.0.0.1:57120"
+    }
+  ]
 }

@@ -12,7 +12,12 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "bridge": "cargo run --manifest-path src-tauri/Cargo.toml -- bridge"
+    "bridge": "cargo run --manifest-path src-tauri/Cargo.toml -- bridge",
+    "osc": "./scripts/start-osc.sh",
+    "scsynth-only": "./scripts/start-scsynth-only.sh",
+    "superdirt-only": "./scripts/start-superdirt-only.sh",
+    "superdirt-setup": "./scripts/setup-superdirt-deps.sh",
+    "cleanup": "./scripts/cleanup.sh"
   },
   "dependencies": {
     "@sc-app/server-commands": "workspace:*",

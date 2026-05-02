@@ -1,0 +1,3 @@
+[submodule "superdirt"]
+	path = superdirt
+	url = https://codeberg.org/musikinformatik/SuperDirt.git
