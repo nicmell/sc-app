@@ -24,13 +24,10 @@ use std::net::SocketAddr;
 
 use tauri::Manager;
 
-use crate::config::Config;
+use crate::config::{Config, DEFAULT_PORT, DEFAULT_SCSYNTH};
 use crate::logging;
 use crate::server::{self, RoutingTable};
 use crate::server::static_assets::DIST_SUBPATH;
-
-const DEFAULT_PORT: u16 = 3000;
-const DEFAULT_SCSYNTH: &str = "127.0.0.1:57110";
 
 pub fn run() {
     tauri::Builder::default()

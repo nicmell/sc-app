@@ -29,10 +29,7 @@ use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
 
-use crate::config::{self, Config};
-
-const DEFAULT_PORT: u16 = 3000;
-const DEFAULT_SCSYNTH: &str = "127.0.0.1:57110";
+use crate::config::{self, Config, DEFAULT_PORT, DEFAULT_SCSYNTH};
 
 #[derive(Parser)]
 #[command(name = "sc-app", version, about = "SCSynth Oscilloscope & Recorder")]
@@ -113,46 +110,49 @@ pub fn run() {
 }
 
 /// Bridge-mode config resolution. Explicit `--config` is required
-/// to exist; auto-discovery silently skips missing files.
+/// to exist; auto-discovery walks a small list of conventional
+/// paths and silently skips missing files.
+///
+/// Auto-discovery order:
+/// 1. `./config.json` (CWD-relative) — for `yarn bridge` /
+///    `yarn dev:full` runs from the repo root.
+/// 2. [`config::LINUX_SYSTEM_PATH`] (`/etc/sc-app/config.json`) —
+///    for systemd deployments.
 fn resolve_bridge_config(explicit: Option<&Path>) -> Config {
     if let Some(path) = explicit {
-        match Config::load(path) {
+        return match Config::load(path) {
             Ok(Some(c)) => {
                 eprintln!("[config] loaded {}", path.display());
                 c
             }
             Ok(None) => {
-                eprintln!(
-                    "error: --config {} does not exist",
-                    path.display()
-                );
+                eprintln!("error: --config {} does not exist", path.display());
                 std::process::exit(2);
             }
             Err(e) => {
-                eprintln!(
-                    "error: failed to load --config {}: {e}",
-                    path.display()
-                );
+                eprintln!("error: failed to load --config {}: {e}", path.display());
                 std::process::exit(2);
             }
-        }
-    } else {
-        let auto = Path::new(config::LINUX_SYSTEM_PATH);
-        match Config::load(auto) {
+        };
+    }
+
+    for candidate in &[Path::new("./config.json"), Path::new(config::LINUX_SYSTEM_PATH)] {
+        match Config::load(candidate) {
             Ok(Some(c)) => {
-                eprintln!("[config] loaded {}", auto.display());
-                c
+                eprintln!("[config] loaded {}", candidate.display());
+                return c;
             }
-            Ok(None) => Config::default(),
+            Ok(None) => continue,
             Err(e) => {
                 eprintln!(
                     "[config] failed to load auto-discovered {}: {e}",
-                    auto.display()
+                    candidate.display()
                 );
-                Config::default()
+                continue;
             }
         }
     }
+    Config::default()
 }
 
 fn parse_scsynth_or_die(raw: &str) -> SocketAddr {
