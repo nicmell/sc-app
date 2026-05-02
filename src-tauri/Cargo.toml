@@ -38,6 +38,11 @@ anyhow = "1"
 # and encode the cleanup bundle (/g_freeAll, /n_free, /notify 0).
 rosc = "0.10"
 
+# Phase 29 — bridge-managed sessions keyed by per-tab UUIDs from
+# `sessionStorage`. v4 for random IDs at session creation; serde
+# for the JSON shape on /api/session.
+uuid = { version = "1", features = ["v4", "serde"] }
+
 # Phase 23 — unified logging pipeline. eprintln! → tracing!,
 # daily-rotated file via tracing-appender, frontend log shipping
 # via POST /api/logs.

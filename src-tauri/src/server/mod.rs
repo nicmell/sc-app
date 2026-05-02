@@ -27,16 +27,20 @@ use axum::Router;
 use serde::Deserialize;
 use tokio::net::TcpListener;
 
+mod api;
 mod routing;
 mod session;
 pub mod static_assets;
 pub mod ws_bridge;
+mod ws_cleanup;
 
 pub use routing::RoutingTable;
+use session::SessionStore;
 
 #[derive(Clone)]
-struct AppState {
-    routes: Arc<RoutingTable>,
+pub(crate) struct AppState {
+    pub routes: Arc<RoutingTable>,
+    pub sessions: SessionStore,
 }
 
 #[derive(Deserialize)]
@@ -72,9 +76,16 @@ pub async fn serve_on(
 
     let state = AppState {
         routes: Arc::new(routes),
+        sessions: SessionStore::new(),
     };
 
-    let mut app = Router::new().route("/ws", get(ws_handler));
+    let mut app = Router::new()
+        .route("/ws", get(ws_handler))
+        .route("/api/session", axum::routing::post(api::post_session))
+        .route(
+            "/api/session/{id}",
+            get(api::get_session).delete(api::delete_session),
+        );
 
     if let Some(dist) = dist {
         tracing::info!("  static → {}", dist.display());

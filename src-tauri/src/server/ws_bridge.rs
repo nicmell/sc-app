@@ -17,7 +17,7 @@
 //! The bridge stays minimally OSC-aware: it peeks the address to
 //! pick a route (cheap; see [`super::routing::peek_osc_address`]),
 //! and delegates `/done /notify` snoop / `/notify 0` outbound snoop
-//! / WS-close cleanup to [`super::session::Session`]. Snoop logic
+//! / WS-close cleanup to [`super::ws_cleanup::WsCleanup`]. Snoop logic
 //! is scsynth-specific, so it runs only on the *default route's*
 //! socket; non-default targets (SuperDirt, future analyzer / MIDI
 //! bridge / etc.) are pure forwarders.
@@ -53,7 +53,7 @@ use tokio::sync::Mutex as TokioMutex;
 use tokio::task::JoinHandle;
 
 use super::routing::{peek_osc_address, RoutingTable};
-use super::session::Session;
+use super::ws_cleanup::WsCleanup;
 
 /// Bridge a single WebSocket session against a routing table.
 /// Opens one UDP socket per unique target; outbound packets are
@@ -79,7 +79,7 @@ pub async fn handle_ws(ws: WebSocket, routes: RoutingTable) -> Result<()> {
         sockets.insert(*target, Arc::new(sock));
     }
 
-    let session = Arc::new(Session::new());
+    let session = Arc::new(WsCleanup::new());
 
     // Wrap the WS sender in a Mutex so multiple recv tasks can share
     // it. Lock contention is negligible at our throughput
@@ -87,7 +87,7 @@ pub async fn handle_ws(ws: WebSocket, routes: RoutingTable) -> Result<()> {
     let tx = Arc::new(TokioMutex::new(tx));
 
     // Spawn one recv task per UDP socket. The default route's task
-    // also runs `Session::snoop` to capture `/done /notify`
+    // also runs `WsCleanup::snoop` to capture `/done /notify`
     // replies; non-default tasks are pure forwarders.
     let mut recv_tasks: Vec<JoinHandle<()>> = Vec::new();
     for (target, sock) in &sockets {
