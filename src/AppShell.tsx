@@ -10,6 +10,7 @@ import { ScopeList } from '@/ui/ScopeList';
 import { SequencerPanel } from '@/ui/SequencerPanel';
 import { SynthsPanel } from '@/ui/SynthsPanel';
 import { ToastContainer, useToasts } from '@/ui/Toast';
+import { SessionProvider, type ConnectionStatus } from '@/session/SessionContext';
 import {
   DEFAULT_PARAMS,
   practicalChunkSizes,
@@ -119,10 +120,9 @@ interface DashboardResources {
   version: ScsynthVersion | null;
 }
 
-/** Phase 29d: connection status drives the header chrome and
- *  whether panels render. The dashboard layout is always shown;
- *  the panels block is empty when not connected. */
-type ConnectionStatus = 'connected' | 'connecting' | 'disconnected';
+// ConnectionStatus is the shared app-wide enum, re-exported from
+// the SessionContext module so any component can read it without
+// importing AppShell internals.
 
 const STATUS_LABELS: Record<ConnectionStatus, string> = {
   connected: 'connected',
@@ -172,8 +172,39 @@ function Dashboard({
         onConnect={onConnect}
         onDisconnect={onDisconnect}
       />
-      {resources && <DashboardPanels resources={resources} />}
+      {resources ? <DashboardPanels resources={resources} /> : <DisabledPanels />}
     </main>
+  );
+}
+
+/** Disabled-panel placeholders rendered while the session is
+ *  bootstrapping or disconnected. Each card has the same
+ *  chrome as the live panel but with the foundation's
+ *  `aria-disabled="true"` styling (opacity dimming +
+ *  pointer-events: none). Keeps the dashboard layout stable
+ *  across connect/disconnect transitions instead of collapsing
+ *  to just-the-header. */
+function DisabledPanels() {
+  // Order mirrors DashboardPanels so panels don't reflow when
+  // we transition between live and disabled states.
+  const titles = [
+    'Clock',
+    'Synths',
+    'Scopes',
+    'Recordings',
+    'Dirt',
+    'Sequencer',
+    'OSC Console',
+  ];
+  return (
+    <>
+      {titles.map((title) => (
+        <section key={title} className="panel" aria-disabled="true">
+          <header>{title}</header>
+          <p className="empty">not connected</p>
+        </section>
+      ))}
+    </>
   );
 }
 
@@ -1035,7 +1066,12 @@ export function AppShell() {
   }, []);
 
   return (
-    <>
+    <SessionProvider
+      value={{
+        status: connectionStatus,
+        sessionId: resources?.sessionId ?? null,
+      }}
+    >
       <Dashboard
         resources={resources}
         status={connectionStatus}
@@ -1082,6 +1118,6 @@ export function AppShell() {
       )}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       <DebugLog errorBus={resources?.errorBus ?? null} />
-    </>
+    </SessionProvider>
   );
 }
