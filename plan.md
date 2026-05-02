@@ -39,24 +39,32 @@ arrangement timeline — those belong to a later phase if at all.
 
 ```
 Browser (React, main thread)
-  ├── SequencerController   pattern state + JS scheduler + reactive
-  │                          stores. Owns the setTimeout-based
-  │                          lookahead loop. Sends /dirt/play via
-  │                          DirtClient with `lookaheadMs` set so
-  │                          SuperDirt schedules each event at its
-  │                          step boundary.
+  ├── SequencerController   pattern state + scheduler + reactive
+  │                          stores. JS-side wake-up loop computes
+  │                          step times in TICKS against the
+  │                          ClockController's tick0Ms anchor;
+  │                          ships each /dirt/play in an OSC
+  │                          bundle stamped via tickToTimetag for
+  │                          sample-accurate playback.
+  ├── ClockController       (existing) provides tick0Ms +
+  │                          tickRate. Anchor for the sequencer's
+  │                          wall-clock math; doesn't drive step
+  │                          boundaries directly.
   └── SequencerPanel        TransportBar (BPM, play/stop, length,
                              current step) + TrackRow ×N (sample
                              name input, gain slider, step grid).
 
-DirtClient (Phase 26) ── unchanged. Sequencer just calls
-                          dirtClient.play({ s, gain, ... }, { lookaheadMs }).
+DirtClient (Phase 26) ── small extension. Existing
+  `play(event, { lookaheadMs })` stays for one-shot REPL use.
+  New `playAtTimetag(event, timetag)` accepts a precomputed OSC
+  timetag from `tickToTimetag(...)` — that's what the sequencer
+  uses.
 ```
 
-The sequencer doesn't touch scsynth or the bridge. All audio
-output happens via SuperDirt; the bridge's `/dirt → 57120` route
-carries every event. From the bridge's perspective this is just
-more `/dirt/play` traffic.
+The sequencer doesn't touch scsynth or the bridge directly. All
+audio output happens via SuperDirt; the bridge's `/dirt → 57120`
+route carries every event. From the bridge's perspective this is
+just more `/dirt/play` traffic with explicit timetags.
 
 ### Data model
 
@@ -78,71 +86,143 @@ interface Pattern {
 interface TransportState {
   isPlaying: boolean;
   currentStep: number;        // 0..length-1, advances during playback
-  patternStartTime: number;   // performance.now() when Play hit;
-                              //   used to compute step times so we
-                              //   don't accumulate setTimeout drift
+  patternStartTick: number;   // ClockController tickIndex when Play
+                              //   hit (plus a small lookahead so the
+                              //   first step has time to schedule).
+                              //   All step times derive from this +
+                              //   stepIntervalTicks to avoid drift.
 }
 ```
 
-`stepTimeMs(stepIndex) = patternStartTime + stepIndex * (60_000 / bpm / subdivision)`.
+`stepIntervalTicks(bpm, subdivision, tickRate) = (60 / bpm / subdivision) * tickRate`.
+At BPM=120, subdivision=4, tickRate=46.875 Hz (chunkSize 1024 / 48 k):
+`stepIntervalTicks = 0.125 s × 46.875 = 5.86 ticks per step`. Fractional
+ticks are fine — `tickToTimetag` accepts them.
 
-For a 120 BPM pattern at subdivision=4 (sixteenth notes):
-`stepIntervalMs = 60_000 / 120 / 4 = 125 ms`. So 16 steps over
-2000 ms = one bar. At 240 BPM: 62.5 ms/step, one bar in 1000 ms.
+For each step, the OSC bundle's timetag is computed against the
+audio engine's clock, not the JS wall clock. That gives sample-
+accurate playback regardless of JS scheduler jitter.
 
 ### Scheduler
 
-JS-side, setTimeout-based, lookahead pattern (the standard
-"browser-music scheduling" pattern from the Web Audio docs):
+JS-side wake-up loop, but the math is anchored to the audio
+engine's clock (`ClockController.tick0Ms` + `tickRate`) instead
+of `performance.now()`. The wake-up loop just decides *when to
+ship the next batch of OSC bundles*; the actual firing is on
+SuperDirt's side, controlled by the timetag we stamp into each
+bundle.
 
 ```typescript
-const WAKE_INTERVAL_MS = 25;   // scheduler runs at ~40 Hz
-const LOOKAHEAD_MS = 100;      // how far ahead we queue events
+const WAKE_INTERVAL_MS = 25;     // scheduler runs at ~40 Hz
+const LOOKAHEAD_TICKS = 5;       // ~100 ms at 47 Hz tickRate
+const LOOKAHEAD_HORIZON_TICKS = 5;  // queue events this far ahead
 
 function scheduler() {
   if (!isPlaying) return;
-  const now = performance.now();
-  const horizon = now + LOOKAHEAD_MS;
+  const tickRate = clock.derived.tickRate;
+  const stepIntervalTicks = (60 / pattern.bpm / pattern.subdivision) * tickRate;
+  const nowTick = clock.nowTick(performance.now());
+  const horizonTick = nowTick + LOOKAHEAD_HORIZON_TICKS;
 
-  // Walk forward from the last-scheduled step to the horizon.
-  while (nextStepTimeMs <= horizon) {
+  while (nextStepTick <= horizonTick) {
     const stepIndex = nextStepIndex % pattern.length;
+    const timetag = tickToTimetag(clock.tick0Ms!, nextStepTick, tickRate);
     for (const track of pattern.tracks) {
       if (track.steps[stepIndex]) {
-        dirtClient.play(
+        dirtClient.playAtTimetag(
           { s: track.sample, gain: track.gain },
-          { lookaheadMs: nextStepTimeMs - now },
+          timetag,
         );
       }
     }
-    // Update reactive currentStep just-in-time so the playhead
-    // lands close to the audible event (not 100ms early).
+    // Schedule the playhead update at the actual step time —
+    // converted back to ms from the tick anchor.
+    const stepTimeMs =
+      clock.tick0Ms! + (nextStepTick - 1) * (1000 / tickRate);
     setTimeout(
       () => currentStepStore.set(stepIndex),
-      Math.max(0, nextStepTimeMs - now),
+      Math.max(0, stepTimeMs - performance.now()),
     );
     nextStepIndex += 1;
-    nextStepTimeMs += stepIntervalMs;
+    nextStepTick += stepIntervalTicks;
   }
 }
 
-setInterval(scheduler, WAKE_INTERVAL_MS);  // or a self-rescheduling
+setInterval(scheduler, WAKE_INTERVAL_MS);  // or self-rescheduling
                                             //   setTimeout for
                                             //   tighter cleanup
 ```
 
 Key properties:
-- Step times are computed from `patternStartTime` (a fixed
-  reference), not accumulated, so JS timer drift doesn't compound.
-- Each `/dirt/play` ships with `lookaheadMs` ≥ 0. SuperDirt
-  schedules the event for `Date.now() + lookaheadMs` on its end —
-  sample-accurate playback as long as we ship events early enough.
-- 100 ms lookahead is generous: even with a system pause / GC
-  hiccup of ~50 ms, the scheduler catches up on the next wake-up
-  and SuperDirt still gets events in time.
-- `currentStepStore` updates fire from scheduled `setTimeout`
-  callbacks at each step boundary — the playhead matches the
-  audible beat, not the 100 ms-ahead schedule horizon.
+- Step times are computed in *ticks* against `tick0Ms`, not
+  accumulated from `performance.now()`, so JS timer drift can't
+  compound. The audio engine's clock is the truth (matches the
+  CLAUDE.md "server's audio clock is truth" invariant).
+- Each `/dirt/play` ships inside an `OSC.Bundle` whose timetag
+  comes from `tickToTimetag(...)` — sample-accurate on the
+  SuperDirt side. The JS lookahead just needs to keep events on
+  the wire ahead of their scheduled fire time.
+- ~100 ms lookahead is generous: even with a tab-background-
+  induced JS stall of ~500 ms, events for the next ~5 ticks are
+  already on SuperDirt's queue with proper timetags, so playback
+  stays correct until the JS scheduler resumes.
+- `currentStepStore` updates fire at the actual step time
+  (computed from the tick anchor) so the playhead aligns with
+  the audible beat, not the lookahead horizon.
+- Sequencer freezes cleanly when the parent group is paused
+  (`/n_run 0`): tick events stop, `clock.nowTick(...)` stops
+  advancing, and the wake-up loop's `while` condition fails on
+  every tick. Resume via the ClockPanel resumes the sequencer
+  on the next tick boundary too.
+
+### Sample enumeration via SuperDirt OSC
+
+To avoid making users memorise SuperDirt's 200+ sample-bank names
+(`bd`, `sn`, `hh`, `808bd`, `industrial`, …), the sclang startup
+script gains a small OSC responder that lists loaded banks on
+demand:
+
+```supercollider
+// In scripts/sc-app-superdirt-startup.scd, after ~dirt.start(...)
+OSCdef(\dirtListSamples, { |msg, time, addr|
+    var pairs = ~dirt.soundLibrary.buffers.keys.asArray.sort.collect { |k|
+        [k.asString, ~dirt.soundLibrary.buffers[k].size]
+    }.flatten;
+    addr.sendMsg(*(['/dirt/samples'] ++ pairs));
+}, '/dirt/listSamples');
+```
+
+The bridge already routes `/dirt/*` to sclang on UDP 57120, so
+no routing change is needed. The reply (`/dirt/samples bank1
+count1 bank2 count2 …`) flows back through the same socket and
+hits sc-app's `WorkerClient.onReply` — `DirtClient` filters
+`/dirt/*` and exposes the bank list as a reactive store.
+
+Frontend:
+
+```typescript
+// src/dirt/DirtClient.ts (extension)
+private readonly _sampleBanks = createStore<ReadonlyArray<{name: string, count: number}>>([]);
+readonly sampleBanks: ReadonlyStore<...> = this._sampleBanks;
+
+async listSamples(): Promise<void> {
+  // Send /dirt/listSamples; await /dirt/samples reply.
+  // Parse interleaved [name, count] pairs from args.
+  // Update _sampleBanks store.
+}
+```
+
+`SequencerController` (or `AppShell`) calls `dirtClient.listSamples()`
+once after the hello probe lands `'alive'`. The TrackRow's sample
+input uses an HTML `<datalist>` populated from `sampleBanks` so
+the user gets autocomplete for free. Bank counts can render as a
+muted suffix (`bd (24)`) so users see at a glance which banks
+have multiple variants for the `n` parameter.
+
+Total cost: ~10 lines of sclang in the startup script, ~30 lines
+of TS in DirtClient + the controller wiring. Worth it — removes
+the "what samples are loaded?" friction that otherwise sends
+users to sclang's post-window log every session.
 
 ### Sub-phases
 
@@ -179,10 +259,12 @@ once. ~½ day. Punt until someone asks for it.
 ```
 src/sequencer/
   types.ts                 NEW — Track, Pattern, TransportState
-  SequencerController.ts   NEW — pattern state + scheduler + stores
-  scheduler.ts             NEW — setTimeout lookahead loop
-                                 (extracted so it's testable in
-                                 isolation)
+  SequencerController.ts   NEW — pattern state + scheduler + stores;
+                                 takes `clock: ClockController` +
+                                 `dirtClient: DirtClient` in ctor
+  scheduler.ts             NEW — tick-anchored lookahead loop;
+                                 extracted so it's testable in
+                                 isolation against a fake Clock
 
 src/ui/SequencerPanel/
   SequencerPanel.tsx       NEW — top-level panel, composes the
@@ -190,27 +272,42 @@ src/ui/SequencerPanel/
   TransportBar.tsx         NEW — BPM input, Play/Stop button,
                                  length picker, current step
                                  indicator
-  TrackRow.tsx             NEW — sample input, gain slider, N
-                                 step cells, remove button
+  TrackRow.tsx             NEW — sample input (HTML <datalist>
+                                 backed by DirtClient.sampleBanks),
+                                 gain slider, N step cells,
+                                 remove button
   StepCell.tsx             NEW — toggle button, "current" highlight
   SequencerPanel.scss      NEW — styles
   index.ts                 NEW
 
+src/dirt/DirtClient.ts     EDIT — add `playAtTimetag(event, timetag)`
+                                  for sample-accurate scheduling
+                                  (alongside existing `play(event,
+                                  { lookaheadMs })` for one-shot use).
+                                  Add `listSamples()` + `sampleBanks`
+                                  reactive store backed by the new
+                                  `/dirt/samples` reply.
+
 src/AppShell.tsx           EDIT — add `sequencer: SequencerController`
                                   to DashboardResources, construct in
-                                  setupDashboard, dispose in
+                                  setupDashboard (passing `clock` +
+                                  `dirtClient`), dispose in
                                   teardownServerState. Render
                                   <SequencerPanel /> after <DirtPanel />.
+                                  After `dirtClient.probe()` resolves
+                                  `'alive'`, fire-and-forget
+                                  `dirtClient.listSamples()`.
 
-src/dirt/DirtClient.ts     EDIT (minor) — confirm `play(event,
-                                  { lookaheadMs })` honours the
-                                  override; the existing default
-                                  is 100 ms. Sequencer passes its
-                                  own per-event lookahead.
+scripts/sc-app-superdirt-startup.scd
+                           EDIT — add the `/dirt/listSamples`
+                                  OSCdef described in *Sample
+                                  enumeration via SuperDirt OSC*.
 
 CLAUDE.md                  EDIT — add sequencer to architecture
                                   diagram + a short "scheduling"
-                                  note in Code conventions.
+                                  note in Code conventions; mention
+                                  `dirtClient.sampleBanks` reactive
+                                  store.
 docs/history.md            APPEND — Phase 27 entry on completion.
 plan.md                    MOVE entry → docs/history.md on completion.
 ```
@@ -230,10 +327,20 @@ plan.md                    MOVE entry → docs/history.md on completion.
 - DirtPanel REPL still works alongside the sequencer (one-shot
   events fire over the same connection; the sequencer doesn't
   monopolise the DirtClient).
-- chunkSize re-init from the dashboard header preserves the
-  pattern (sequencer state lives outside `setupDashboard`'s
-  rebuild path; it's mounted on `DashboardResources` but the
-  `Pattern` value should survive the rebuild).
+- Sequencer freezes when the parent group is paused (via the
+  ClockPanel pause); resumes correctly when the group resumes,
+  with phase coherent against the audio engine's clock.
+- The sample-name input on each TrackRow shows an HTML datalist
+  populated from SuperDirt's loaded banks (`bd`, `sn`, `808bd`,
+  …) with `(N)` variant counts visible as autocomplete hints.
+- A 4-on-the-floor pattern recorded for 30 s through the
+  RecordingPanel (bus 0, channels 2) shows kick onsets aligned
+  to expected sample boundaries within ≤ 1 ms (sample-accurate
+  scheduling via timetag).
+- chunkSize re-init from the dashboard header **stops** the
+  sequencer (Q8 = ii) but preserves the pattern data on
+  DashboardResources for the rebuild. User re-hits Play after
+  the rebuild to resume.
 - Stop → Play resumes from step 0 (not from the paused
   position). For "resume from where I stopped," see 27d's chain
   mode or a future "pause" toggle.
@@ -282,17 +389,23 @@ lifecycle, but that's an extra plumbing layer.
 Recommendation: (ii) for 27a, revisit if it's a real friction.
 
 **Q9. Sample-name typing UX.** Plain text input, autocomplete
-from SuperDirt's loaded banks (sclang prints the list at
-startup; we'd need to expose it via OSC), or both?
+from SuperDirt's loaded banks (the *Sample enumeration via
+SuperDirt OSC* section above describes the responder), or both?
 - (i) Plain text input — user types `bd`, gets a kick. Sample
   not found = silence. Same UX as DirtPanel's REPL today.
-- (ii) Datalist-style autocomplete from a static list (we hard-
-  code the bank names from Dirt-Samples).
-- (iii) Live autocomplete via a `/dirt/listSamples` OSC command
-  (would need a SuperDirt-side responder).
+- (ii) Datalist-style autocomplete from a hardcoded bank list.
+  Stale if user adds custom banks to `superdirt-deps/Dirt-Samples`.
+- **(iii) Live autocomplete via the new `/dirt/listSamples`
+  responder.** ← updated recommendation. Cheap to add (responder
+  is ~10 lines of sclang), survives custom-sample-pack additions,
+  and naturally pairs with showing `(N)` variant counts in the
+  dropdown.
 
-Recommendation: (i) for 27a. (ii) is a follow-up if "what
-samples do I have" is a frequent question. (iii) is overkill.
+Recommendation: **(iii)** for 27a. The responder is cheap and the
+UX win (no "what samples are loaded?" trips to the post window)
+shows up the first time a user picks a sample. Plain text stays
+as the underlying mechanism — the datalist is purely an
+autocomplete helper.
 
 **Q10. Step-cell colour coding.** Pure on/off, or visualise
 gain / cutoff / etc. via per-cell shading?
