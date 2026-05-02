@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ServerErrorBus, ServerErrorEntry } from '@/server/ServerErrorBus';
 import { clearDebugLog, debugLog, type DebugEntry } from '@/util/debugLog';
 import { IS_TAURI } from '@/util/runtime';
-import './DebugLog.scss';
+import './DebugLog.css';
 
 function formatEntries(entries: ReadonlyArray<DebugEntry>): string {
   const lines = entries.map(
@@ -101,7 +101,12 @@ export function DebugLog({ errorBus }: DebugLogProps) {
   return (
     <section className={`debug-log ${open ? 'open' : 'closed'}`}>
       <header>
-        <button type="button" onClick={() => setOpen((o) => !o)}>
+        <button
+          type="button"
+          data-variant="ghost"
+          data-size="sm"
+          onClick={() => setOpen((o) => !o)}
+        >
           {open ? '▾' : '▸'} debug log · {entries.length}
           {errors.length > 0 && (
             <span className="error-badge" aria-label={`${errors.length} errors`}>
@@ -111,6 +116,8 @@ export function DebugLog({ errorBus }: DebugLogProps) {
         </button>
         <button
           type="button"
+          data-variant="ghost"
+          data-size="sm"
           onClick={() => {
             void downloadEntries(entries);
           }}
@@ -119,7 +126,12 @@ export function DebugLog({ errorBus }: DebugLogProps) {
         >
           download
         </button>
-        <button type="button" onClick={clearDebugLog}>
+        <button
+          type="button"
+          data-variant="ghost"
+          data-size="sm"
+          onClick={clearDebugLog}
+        >
           clear
         </button>
       </header>
@@ -154,7 +166,7 @@ function ErrorsSection({
     <div className="errors-section">
       <div className="errors-header">
         <span>scsynth /fail · {errors.length}</span>
-        <button type="button" onClick={onClear} className="small">
+        <button type="button" onClick={onClear} data-variant="ghost" data-size="sm">
           clear
         </button>
       </div>

@@ -1,0 +1,168 @@
+/**
+ * DebugLog — fixed-position overlay at the bottom of the viewport.
+ * Not a regular .panel; keeps its own chrome but consumes
+ * foundation tokens. Buttons in the header use foundation
+ * data-variant="ghost" data-size="sm".
+ *
+ * Log-level colours come from semantic tokens promoted in 28b:
+ * --color-log-info / --color-log-warn / --color-log-error.
+ * The error-badge in the header and the errors-section background
+ * use error-bg / error-border / error-text from the dark theme.
+ */
+
+.debug-log {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 50vh;
+  background: color-mix(in srgb, var(--color-bg) 96%, transparent);
+  border-top: 1px solid var(--color-border-strong);
+  backdrop-filter: blur(8px);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  z-index: 9999;
+}
+
+.debug-log header {
+  display: flex;
+  gap: var(--space-xs);
+  padding: var(--space-2xs) var(--space-xs);
+  border-bottom: 1px solid var(--color-border-strong);
+}
+
+.debug-log.closed {
+  max-height: none;
+}
+
+.debug-log.closed header {
+  border-bottom: none;
+}
+
+.debug-log .scroller {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-2xs) var(--space-xs);
+}
+
+.debug-log .entry {
+  display: grid;
+  grid-template-columns: 5em 3em 1fr;
+  gap: var(--space-xs);
+  padding: var(--space-3xs) 0;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.debug-log .entry .t {
+  opacity: 0.5;
+  font-variant-numeric: tabular-nums;
+}
+
+.debug-log .entry .l {
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  padding-top: 2px;
+}
+
+.debug-log .entry[data-level='log'] .l {
+  color: var(--color-log-info);
+}
+
+.debug-log .entry[data-level='info'] .l {
+  /* a slightly different green than --color-log-info; the
+     existing palette had #a0e7b7 which is closer to --color-ok-text. */
+  color: var(--color-ok-text);
+}
+
+.debug-log .entry[data-level='warn'],
+.debug-log .entry[data-level='warn'] .l {
+  color: var(--color-log-warn);
+}
+
+.debug-log .entry[data-level='error'],
+.debug-log .entry[data-level='error'] .l {
+  color: var(--color-log-error);
+}
+
+/* Header pill that mirrors errors count even when the panel is
+   closed. */
+.debug-log .error-badge {
+  margin-left: var(--space-2xs);
+  padding: 0 var(--space-2xs);
+  background: var(--color-error-bg);
+  border: 1px solid var(--color-error-border);
+  border-radius: var(--radius-pill);
+  color: var(--color-error-text);
+  font-size: 0.65rem;
+  font-weight: var(--font-weight-bold);
+  line-height: 1.5;
+}
+
+/* Errors section — body content above the regular log entries
+   when there's at least one /fail. */
+.debug-log .errors-section {
+  border-bottom: 1px solid var(--color-border-strong);
+  padding: var(--space-2xs) var(--space-xs) var(--space-xs);
+  background: color-mix(in srgb, var(--color-error-bg) 35%, transparent);
+}
+
+.debug-log .errors-section .errors-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-2xs);
+  color: var(--color-error-text);
+  font-weight: var(--font-weight-bold);
+}
+
+.debug-log .errors-section .errors-header > button {
+  margin-left: auto;
+}
+
+.debug-log .errors-section ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+}
+
+.debug-log .errors-section li {
+  display: grid;
+  grid-template-columns: 8em 1fr auto;
+  gap: var(--space-xs);
+  align-items: baseline;
+  padding: var(--space-3xs) 0;
+  line-height: 1.3;
+}
+
+.debug-log .errors-section li .cmd {
+  color: var(--color-text);
+  font-weight: var(--font-weight-medium);
+}
+
+.debug-log .errors-section li .msg {
+  color: var(--color-error-text);
+  overflow-wrap: anywhere;
+}
+
+.debug-log .errors-section li .extras {
+  grid-column: 2 / 3;
+  color: var(--color-text-dim);
+  font-size: 0.65rem;
+  overflow-wrap: anywhere;
+}
+
+.debug-log .errors-section li .age {
+  color: var(--color-text-mute);
+  font-size: 0.65rem;
+  font-variant-numeric: tabular-nums;
+}
