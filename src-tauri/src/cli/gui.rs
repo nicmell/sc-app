@@ -22,6 +22,7 @@
 
 use std::net::SocketAddr;
 
+use tauri::utils::config::BackgroundThrottlingPolicy;
 use tauri::Manager;
 
 use std::time::Duration;
@@ -147,6 +148,7 @@ pub fn run() {
             tauri::WebviewWindowBuilder::new(app, "main", url)
                 .title("sc-app")
                 .inner_size(800.0, 600.0)
+                .background_throttling(BackgroundThrottlingPolicy::Disabled)
                 .build()?;
 
             Ok(())
