@@ -336,11 +336,48 @@ impl SessionStore {
         self.inner.write().await.remove(id)
     }
 
-    /// Snapshot the current sessions. Used by the future TTL task
-    /// (29d) to scan + expire idle entries; not on the hot path.
-    #[allow(dead_code)] // 29d will use this
-    pub async fn snapshot(&self) -> Vec<Arc<Session>> {
-        self.inner.read().await.values().cloned().collect()
+    /// Phase 29d. Scan all sessions, drop the ones whose
+    /// `last_active` is older than `ttl`. Each evicted session
+    /// runs `cleanup()` (sends the /g_freeAll + /n_free +
+    /// /notify 0 bundle) before its `Arc` is dropped.
+    ///
+    /// Two-pass to keep lock contention minimal: pass 1 reads
+    /// last_active under the read lock, collecting stale ids;
+    /// pass 2 takes the write lock to remove and runs cleanup
+    /// on the removed entries (cleanup itself is async + holds
+    /// no locks).
+    pub async fn evict_idle(&self, ttl: Duration) {
+        let now = Instant::now();
+        let stale_ids: Vec<Uuid> = {
+            let map = self.inner.read().await;
+            let mut ids = Vec::new();
+            for (id, session) in map.iter() {
+                let last = *session.last_active.read().await;
+                if now.saturating_duration_since(last) > ttl {
+                    ids.push(*id);
+                }
+            }
+            ids
+        };
+        if stale_ids.is_empty() {
+            return;
+        }
+        let mut evicted: Vec<Arc<Session>> = Vec::with_capacity(stale_ids.len());
+        {
+            let mut map = self.inner.write().await;
+            for id in &stale_ids {
+                if let Some(s) = map.remove(id) {
+                    evicted.push(s);
+                }
+            }
+        }
+        for session in evicted {
+            tracing::info!(
+                session_id = %session.session_id,
+                "evicting idle session (TTL expired)"
+            );
+            session.cleanup().await;
+        }
     }
 }
 

@@ -20,6 +20,7 @@
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use crate::config::Route;
 use crate::logging;
@@ -32,6 +33,7 @@ pub fn run_blocking(
     routes: Vec<Route>,
     dist_override: Option<PathBuf>,
     log_dir: Option<PathBuf>,
+    session_ttl: Duration,
 ) {
     let _guard = logging::init_tracing(log_dir.as_deref());
 
@@ -56,7 +58,7 @@ pub fn run_blocking(
                 std::process::exit(1);
             }
         };
-        if let Err(e) = server::run_bridge(port, table, dist).await {
+        if let Err(e) = server::run_bridge(port, table, dist, session_ttl).await {
             tracing::error!(error = %e, "bridge error");
             std::process::exit(1);
         }
