@@ -36,8 +36,8 @@ Browser (React, main thread)
   │                             round-trips /clock/hello → /clock/info
   │                             (tickRate, chunkSize, sampleRate,
   │                             clockBus). tick0Ms anchored on the
-  │                             first /tr arrival. detach() is sync
-  │                             (no /n_free — we don't own the synth).
+  │                             first /clock/tick arrival. detach() is
+  │                             sync (no /n_free — don't own the synth).
   ├── GroupController           parent group lifecycle (/g_new /n_run).
   │                             Pause/resume on this group is what the
   │                             "Pause" button drives now (Phase 30).
@@ -83,7 +83,7 @@ OSC Worker (module worker)
   ├── workerBootstrap.ts        sync message buffer + osc-js window shim
   ├── transport.ts              raw binary WebSocket
   └── oscWorker.ts              decode inbound + forward outbound bytes
-                                + clock /tr mux + bufferId-keyed
+                                + /clock/tick mux + bufferId-keyed
                                 subscription table with offset-keyed
                                 pending + tick-ordered reorder buffer
       │
@@ -137,7 +137,7 @@ bus into the Scopes / Recordings panel.
 Every OSC command flows: main thread (encode) → worker (forward bytes)
 → WebSocket → bridge → **route table prefix-match** → UDP → scsynth
 or sclang+SuperDirt. Every reply flows the inverse: target → UDP →
-bridge → WS → worker (decode, mux clock `/tr`, intercept subscribed
+bridge → WS → worker (decode, mux `/clock/tick`, intercept subscribed
 `/b_setn`) → main thread (plain `{ address, args }` POJOs via
 structured clone, or `bufferChunk` events with zero-copy
 `Float32Array`). The bridge picks the route socket by peeking the
@@ -145,7 +145,7 @@ OSC address against `config.json -> routes` (`/dirt → 57120` is the
 SuperDirt route; everything else falls through to the default
 target = `scsynth` config field).
 
-The buffer-data path is special: on each clock `/tr` the worker
+The buffer-data path is special: on each `/clock/tick` the worker
 fires `/b_getn` for every subscribed bufferId (wrapped in an
 `OSC.Bundle` with `timetag = Date.now() + READ_DELAY_MS` so
 scsynth's scheduler holds the read past the kr-vs-ar slop
@@ -418,10 +418,11 @@ sclang-owned clock.** Three sub-phases moved clock ownership
 from per-session frontend synths to a single `\scAppClock`
 running at scsynth's root group, owned by sclang
 (`scripts/sc-app-superdirt-startup.scd`). All clients become
-passive observers of the same `/tr` stream + the same
+passive observers of the same `/clock/tick` stream + the same
 `clockBus`, enabling cross-client sync. 30a added the SynthDef
-+ `Synth.new` (nodeId 999, trigId 1000, `Bus.audio(s, 1)`) +
-`OSCdef(\scAppClockHello)` reply on `/clock/info`; new
++ `Synth.new` (nodeId 999, `Bus.audio(s, 1)`, SendReply on
+`/clock/tick`) + `OSCdef(\scAppClockHello)` reply on
+`/clock/info`; new
 `/clock` route in `config.json` + starter; `SC_APP_CLOCK_-
 CHUNK_SIZE` env var (default 1024) wired through
 `scripts/start-superdirt-only.sh`. 30b rewrote
@@ -499,10 +500,12 @@ sclang restart, which all attached sessions then re-attach to via
   control block's `clockBus` value — a constant ~1.3 ms lag that
   breaks alignment.
 - **Reserved IDs (Phase 30 — globally-owned by sclang's clock)**:
-  - `CLOCK_TRIG_ID = 1000` — shared clock's `SendTrig`. The worker
+  - `/clock/tick` — shared clock's `SendReply` address. The worker
     demuxes these into `clockTick` events, suppressing them from
-    the generic `onReply` channel. No other synth (any client) may
-    reuse this id.
+    the generic `onReply` channel. No other synth should emit on
+    this address (would produce double-ticks). The pre-cleanup
+    `CLOCK_TRIG_ID = 1000` reservation is gone — `SendTrig` is
+    now safe for any synth to use without colliding.
   - `clockNodeId = 999` — sclang's `\scAppClock` synth. Reserved
     by convention; clients' `IdAllocator(node)` start at
     `clientId * 1_000_000 + 1000`, well above 999.
@@ -582,18 +585,20 @@ sclang restart, which all attached sessions then re-attach to via
     well within TTL doesn't trigger eviction.
 - **Timing**: the server's audio clock is the truth.
   `ClockController` captures a `tick0Ms` anchor on the first
-  `/tr`, extrapolates forward. The main-thread clock is only used
-  for freshness watchdogs, never as the truth. For sample-accurate
-  scheduling, use `tickToTimetag(clock.tick0Ms!, targetTick,
+  `/clock/tick`, extrapolates forward. The main-thread clock is
+  only used for freshness watchdogs, never as the truth. For
+  sample-accurate scheduling, use
+  `tickToTimetag(clock.tick0Ms!, targetTick,
   clock.derived.tickRate)` in an `OSC.Bundle`.
 - **Shared clock (Phase 30)**: one `\scAppClock` synth runs at
   scsynth's root group, owned by sclang
   (`scripts/sc-app-superdirt-startup.scd`). Every sc-app session
   is a passive observer: `clock.attach()` round-trips
   `/clock/hello → /clock/info` to read `tickRate / chunkSize /
-  clockBus / sampleRate / clockNodeId / trigId` from the running
-  clock; the `/tr` stream fans to all `/notify`'d sessions for
-  free (no per-session synth `/s_new`). Pause/resume drives the
+  clockBus / sampleRate / clockNodeId` from the running clock;
+  the `/clock/tick` stream (emitted via `SendReply.kr`) fans to
+  all `/notify`'d sessions for free (no per-session synth
+  `/s_new`). Pause/resume drives the
   parent group; the shared clock keeps ticking unaffected by any
   client's pause. **chunkSize is server-side**: configured via
   `SC_APP_CLOCK_CHUNK_SIZE` env var (default 1024) at sclang

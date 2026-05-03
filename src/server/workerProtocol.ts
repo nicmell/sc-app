@@ -54,9 +54,11 @@ export interface OscError {
   receivedAt: number;
 }
 
-/** One decoded clock tick. Emitted by the worker when a `/tr` reply
- *  arrives whose `triggerId` matches the currently-registered clock
- *  trigId. The generic `reply` event is suppressed for those messages. */
+/** One decoded clock tick. Emitted by the worker when a
+ *  `/clock/tick` reply arrives (sclang's `\scAppClock` SynthDef
+ *  emits these via `SendReply.kr`). The generic `reply` event is
+ *  suppressed for those messages so they don't show up in the OSC
+ *  console at the tick rate. */
 export interface ClockTick {
   /** Monotonic pulse count from the synth. */
   tickIndex: number;
@@ -85,7 +87,7 @@ export interface BufferSubscription {
   chunkSize: number;
   /** Skip the first tick after subscribing. Default `true` — the
    *  buffer holds a partial half between /b_alloc (zero-fill) and
-   *  the first /tr boundary; reading it would emit one bogus chunk
+   *  the first tick boundary; reading it would emit one bogus chunk
    *  before steady state. */
   skipFirstTick?: boolean;
   /** Retry policy for missing /b_setn replies. Default
@@ -123,8 +125,6 @@ export type MainToWorker =
   | { type: 'connect'; url: string }
   | { type: 'disconnect' }
   | { type: 'send'; bytes: Uint8Array }
-  | { type: 'registerClock'; trigId: number }
-  | { type: 'unregisterClock' }
   | { type: 'subscribeBuffer'; subscription: BufferSubscription }
   | { type: 'unsubscribeBuffer'; bufferId: string };
 

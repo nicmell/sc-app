@@ -6,7 +6,7 @@
  * + `OSCdef(\scAppClockHello)`) at scsynth's root group, **outside**
  * any client's parent group. This controller no longer owns the
  * synth's lifecycle — it just attaches, fetches the running clock's
- * configuration via `/clock/hello`, and observes the `/tr` stream
+ * configuration via `/clock/hello`, and observes the `/clock/tick` stream
  * scsynth multicasts to every `/notify`'d session.
  *
  * Pause/resume is **local** to the parent group: clicking Pause in
@@ -16,7 +16,7 @@
  * see plan.md Phase 30 for the rationale.
  *
  * `effectiveState` derives from group state + tick freshness. While
- * the controller is detached (no `/tr` for > the watchdog window),
+ * the controller is detached (no `/clock/tick` for > the watchdog window),
  * we surface `stopped` so the UI doesn't lie about a silent server.
  *
  * **Group ordering invariant.** Tap synths in the parent group must
@@ -134,7 +134,7 @@ export class ClockController {
   /** `running` / `paused` / `stopped`, with stale-tick detection
    *  overriding a "running" group back to `paused`. Becomes
    *  `'stopped'` when the controller is detached or sclang stops
-   *  emitting `/tr`s. */
+   *  emitting `/clock/tick`s. */
   get effectiveState(): ReadonlyStore<ClockState> {
     return this.effectiveStateStore;
   }
@@ -148,7 +148,7 @@ export class ClockController {
   }
 
   /** Round-trip `/clock/hello`, parse `/clock/info`, register the
-   *  trig handler, and start watching for `/tr` freshness.
+   *  trig handler, and start watching for `/clock/tick` freshness.
    *  Idempotent — second call returns the cached info without a
    *  fresh round-trip. */
   async attach(timeoutMs: number = ATTACH_TIMEOUT_MS): Promise<ClockInfo> {
@@ -184,7 +184,6 @@ export class ClockController {
       { chunkSize: info.chunkSize },
     );
 
-    this.client.registerClock(info.trigId);
     this.offTick = this.client.onTick((tick) => this.handleTick(tick));
     this.offGroupState = this.group.state.subscribe((s) => this.recompute(s));
     this.startWatchdog();
@@ -204,9 +203,6 @@ export class ClockController {
     this.offTick = null;
     this.offGroupState?.();
     this.offGroupState = null;
-    if (this.attached) {
-      this.client.unregisterClock();
-    }
     this.attached = false;
     this.lastSignalAt = null;
     this._tick0Ms = null;

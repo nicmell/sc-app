@@ -31,6 +31,13 @@ export function clockHello(): OSC.Message {
 
 export const CLOCK_INFO_REPLY = '/clock/info';
 
+/** sclang's `\scAppClock` SynthDef emits this address via
+ *  `SendReply.kr(tick, '/clock/tick', count)` once per audio tick.
+ *  Wire shape: `nodeID replyID count` (replyID is SendReply's
+ *  default -1; we don't use it). The OSC worker decodes by address
+ *  match and emits a `clockTick` event to the main thread. */
+export const CLOCK_TICK_REPLY = '/clock/tick';
+
 // ── Reply parser ─────────────────────────────────────────────────────
 
 /** Decoded `/clock/info` payload. Every field is required — sclang's
@@ -51,9 +58,6 @@ export interface ClockInfo {
   /** scsynth nodeId of the running `\scAppClock` synth. Reserved
    *  by convention — clients must not `/n_free` it. */
   clockNodeId: number;
-  /** SendTrig id the clock emits `/tr` replies on. Reserved
-   *  app-wide as `CLOCK_TRIG_ID = 1000`. */
-  trigId: number;
 }
 
 /** Parse a `/clock/info` reply's `args` array. The wire shape is
@@ -84,6 +88,5 @@ export function parseClockInfo(args: readonly OscArg[]): ClockInfo {
     sampleRate: num('sampleRate'),
     clockBus: num('clockBus'),
     clockNodeId: num('clockNodeId'),
-    trigId: num('trigId'),
   };
 }

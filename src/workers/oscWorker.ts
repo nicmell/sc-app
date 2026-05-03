@@ -4,10 +4,12 @@
  * forward bytes either direction. Inbound bytes are decoded here so
  * the main thread receives plain `{ address, args }` POJOs.
  *
- * Tick-driven /b_getn loop: on each clock /tr the worker fires a
- * /b_getn for the just-completed half of every subscribed bufnum,
- * matches the resulting /b_setn replies by offset, drains them in
- * tick order, and posts `bufferChunk` events to main.
+ * Tick-driven /b_getn loop: on each `/clock/tick` (Phase 30: the
+ * shared clock's SendReply address; replaces the pre-cleanup
+ * `/tr` + trigID match) the worker fires a /b_getn for the
+ * just-completed half of every subscribed bufnum, matches the
+ * resulting /b_setn replies by offset, drains them in tick order,
+ * and posts `bufferChunk` events to main.
  *
  * Phase 17 unified the subscription model: one entry per `bufferId`,
  * regardless of whether it backs a scope, a recorder, or a future
@@ -76,7 +78,13 @@ self.addEventListener('unhandledrejection', (ev) => {
 console.log('[sc:worker] ready for messages');
 
 let transport: OscTransport | null = null;
-let clockTrigId: number | null = null;
+
+/** Address-match constant for the shared clock's tick replies.
+ *  Phase 30 post-shipping cleanup — the clock SynthDef emits via
+ *  `SendReply.kr(tick, '/clock/tick', count)` instead of the
+ *  pre-cleanup `SendTrig.kr(tick, 1000, count)`. Worker matches
+ *  the address; no registration step from main needed. */
+const CLOCK_TICK_ADDRESS = '/clock/tick';
 
 const DEFAULT_RETRY = { maxAttempts: 1, deadlineMs: 50 };
 
@@ -123,13 +131,13 @@ function clearEntryTimers(entry: BufferEntry): void {
 }
 
 /** Send `/b_getn` for every subscribed buffer, asking for the half
- *  that just completed at the given tick. Called from the `/tr`
- *  decode path so `tickIndex` is fresh.
+ *  that just completed at the given tick. Called from the
+ *  `/clock/tick` decode path so `tickIndex` is fresh.
  *
  *  Each /b_getn is wrapped in an `OSC.Bundle` with timetag
  *  `Date.now() + READ_DELAY_MS` so scsynth's scheduler holds the
  *  read past the kr-vs-ar drift between the `Impulse.kr`-driven
- *  `/tr` and the `Phasor.ar`-driven `writeIdx`. Without that delay,
+ *  tick and the `Phasor.ar`-driven `writeIdx`. Without that delay,
  *  some ticks land 1–32 ar samples short of the half-boundary and
  *  the read includes stale tail samples. */
 function fireReads(tickIndex: number): void {
@@ -292,13 +300,11 @@ function drainReorderBuffer(entry: BufferEntry): void {
 
 function emitReply(packet: OscPacket): void {
   if (isMessage(packet)) {
-    // Clock /tr intercept: suppress the generic reply, emit clockTick,
-    // and kick the read loop for every subscribed bufnum.
-    if (
-      clockTrigId !== null &&
-      packet.address === '/tr' &&
-      packet.args[1] === clockTrigId
-    ) {
+    // Clock tick intercept: suppress the generic reply, emit
+    // clockTick, and kick the read loop for every subscribed
+    // bufnum. SendReply args are `nodeID replyID value0 …`, so
+    // `args[2]` is the PulseCount value.
+    if (packet.address === CLOCK_TICK_ADDRESS) {
       const tickIndex = (packet.args[2] as number) | 0;
       post({
         type: 'clockTick',
@@ -453,7 +459,6 @@ setWorkerMessageHandler(async (msg: MainToWorker) => {
 
     case 'disconnect': {
       console.log('[sc:worker] disconnect');
-      clockTrigId = null;
       // Clear any pending timers so they don't fire after teardown
       // and try to re-send through a closed transport.
       for (const entry of subscriptions.values()) {
@@ -465,18 +470,6 @@ setWorkerMessageHandler(async (msg: MainToWorker) => {
         await transport.close();
         transport = null;
       }
-      return;
-    }
-
-    case 'registerClock': {
-      console.log('[sc:worker] registerClock', msg.trigId);
-      clockTrigId = msg.trigId;
-      return;
-    }
-
-    case 'unregisterClock': {
-      console.log('[sc:worker] unregisterClock');
-      clockTrigId = null;
       return;
     }
 

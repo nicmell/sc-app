@@ -17,13 +17,14 @@
 // script to superdirt-deps/Dirt-Samples/*).
 //
 // Phase 30: this script ALSO owns the shared global clock. One
-// `\scAppClock` synth at scsynth's root group emits `/tr` triggers
-// (trigId 1000) and writes a sample-rate phasor to a dedicated
-// audio bus. Every sc-app session reads the same `/tr` stream and
-// the same `clockBus`, replacing the per-session clocks each tab
-// previously owned. The clock lives outside any client's parent
-// group so /g_freeAll / /n_free from a client cannot touch it.
-// chunkSize comes from `SC_APP_CLOCK_CHUNK_SIZE` (default 1024).
+// `\scAppClock` synth at scsynth's root group emits `/clock/tick`
+// replies (via SendReply) and writes a sample-rate phasor to a
+// dedicated audio bus. Every sc-app session reads the same
+// `/clock/tick` stream and the same `clockBus`, replacing the
+// per-session clocks each tab previously owned. The clock lives
+// outside any client's parent group so /g_freeAll / /n_free from
+// a client cannot touch it. chunkSize comes from
+// `SC_APP_CLOCK_CHUNK_SIZE` (default 1024).
 //
 // Two things this file's structure reflects (read CLAUDE.md's
 // "SuperDirt launch gotchas" section for full context):
@@ -92,22 +93,33 @@ s.doWhenBooted({
     // ── Phase 30: shared global clock ────────────────────────────────
     // The SynthDef is structurally identical to the pre-30 frontend
     // version (see Phase 6 / 8 in docs/history.md). Owned by sclang
-    // here so all clients share the same /tr stream and the same
-    // clockBus. trigId 1000 is reserved app-wide; nodeId 999 is
-    // reserved by convention (off-limits to client IdAllocator
-    // ranges, which start at clientId * 1_000_000 + 1000).
+    // here so all clients share the same `/clock/tick` stream and
+    // the same clockBus. nodeId 999 is reserved by convention
+    // (off-limits to client IdAllocator ranges, which start at
+    // `clientId * 1_000_000 + 1000`).
     //
     // tickRate is baked into the SynthDef bytes as a literal Hz —
     // changing chunkSize requires re-running this script. clockBus
     // is a synth control so we can re-use the same SynthDef across
     // restarts that get a different bus allocation.
+    //
+    // Phase 30 (post-shipping cleanup): SendReply is used instead of
+    // SendTrig, with the custom OSC address `/clock/tick`. Reasons:
+    //   - Address-based namespacing matches the rest of the bridge's
+    //     OSC routing (`/dirt/*`, `/clock/*`).
+    //   - Removes the app-wide "no synth may use trigID 1000"
+    //     reservation — anyone can SendTrig now without colliding.
+    //   - Worker-side decoding collapses into the regular
+    //     address-match path; no special trigID demux.
+    // The wire payload shape is `/clock/tick nodeID replyID count`
+    // (SendReply's default replyID = -1; we don't use it).
     clockTickRate = s.sampleRate / clockChunkSize;
     SynthDef(\scAppClock, { |clockBus = 0|
         var tick = Impulse.kr(clockTickRate);
         var count = PulseCount.kr(tick);
         var wrap = SampleRate.ir * (2 / clockTickRate);
         var samplePhase = Phasor.ar(0, 1, 0, wrap);
-        SendTrig.kr(tick, 1000, count);
+        SendReply.kr(tick, '/clock/tick', count);
         Out.ar(clockBus, samplePhase);
     }).add;
     s.sync;
@@ -119,7 +131,6 @@ s.doWhenBooted({
     ~scAppClockNodeId = 999;
     ~scAppClockChunkSize = clockChunkSize;
     ~scAppClockTickRate = clockTickRate;
-    ~scAppClockTrigId = 1000;
 
     // /s_new sent as a raw OSC message so we can pin the nodeId
     // (Synth.new auto-allocates from sclang's node allocator).
@@ -129,9 +140,8 @@ s.doWhenBooted({
         'clockBus', ~scAppClockBus.index);
     s.sync;
 
-    "[sc-app] clock running on bus % (trigId %, nodeId %, tickRate %, chunkSize %)".format(
+    "[sc-app] clock running on bus % (nodeId %, tickRate %, chunkSize %)".format(
         ~scAppClockBus.index,
-        ~scAppClockTrigId,
         ~scAppClockNodeId,
         ~scAppClockTickRate.round(0.01),
         ~scAppClockChunkSize
@@ -177,8 +187,7 @@ s.doWhenBooted({
             "chunkSize", ~scAppClockChunkSize,
             "sampleRate", s.sampleRate,
             "clockBus", ~scAppClockBus.index,
-            "clockNodeId", ~scAppClockNodeId,
-            "trigId", ~scAppClockTrigId
+            "clockNodeId", ~scAppClockNodeId
         );
     }, '/clock/hello');
     "[sc-app] /clock/hello responder installed".postln;

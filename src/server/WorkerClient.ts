@@ -6,8 +6,8 @@
  * - `onReply(cb)`                 — subscribe to decoded OSC replies
  *   (plain `{ address, args }` POJOs; postMessage strips class methods).
  * - `onError(cb)`                 — worker/WS error stream.
- * - `onTick(cb)`                  — decoded clock ticks (gated by
- *   `registerClock(trigId)`).
+ * - `onTick(cb)`                  — decoded clock ticks (matched
+ *   by address `/clock/tick` in the worker).
  * - `subscribeBuffer(sub, cb)`    — register a tick-driven /b_getn
  *   loop on the worker; chunk replies fan out to one or more
  *   main-side listeners on the same `bufferId`.
@@ -136,9 +136,10 @@ export class WorkerClient {
         case 'reply':
           // Per-reply log was useful while bringing the WS up but
           // floods DebugLog at runtime (status heartbeats, /b_setn
-          // chunks, /tr ticks). Drop it; reply addresses still
-          // surface via specific listeners (footer status, scope
-          // stream, etc.) when relevant.
+          // chunks; clock ticks are intercepted in the worker).
+          // Drop it; reply addresses still surface via specific
+          // listeners (footer status, scope stream, etc.) when
+          // relevant.
           for (const cb of this.replyListeners) cb(msg.reply);
           break;
         case 'oscError':
@@ -236,21 +237,13 @@ export class WorkerClient {
     return () => this.oscErrorListeners.delete(cb) as unknown as void;
   }
 
-  /** Subscribe to decoded clock ticks. Only fires while a clock
-   *  trigId is registered via `registerClock`. */
+  /** Subscribe to decoded clock ticks. The worker matches the
+   *  shared clock's `/clock/tick` reply address (Phase 30 post-
+   *  shipping cleanup — was `/tr` + a registered trigID before).
+   *  No registration step needed; the address is fixed. */
   onTick(cb: TickListener): () => void {
     this.tickListeners.add(cb);
     return () => this.tickListeners.delete(cb) as unknown as void;
-  }
-
-  /** Tell the worker which `/tr` triggerId is the clock — matching
-   *  replies are suppressed from `onReply` and emitted via `onTick`. */
-  registerClock(trigId: number): void {
-    this.post({ type: 'registerClock', trigId });
-  }
-
-  unregisterClock(): void {
-    this.post({ type: 'unregisterClock' });
   }
 
   /** Register a tick-driven /b_getn loop on the worker for `sub.bufnum`

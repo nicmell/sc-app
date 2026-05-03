@@ -2324,11 +2324,13 @@ Three sub-phases (30d collapsed into 30c).
 - `scripts/sc-app-superdirt-startup.scd` — extends the
   `s.doWhenBooted` block:
   - `SynthDef(\scAppClock)` mirrors the pre-30 frontend
-    `compileClockSynthDef` shape: `Impulse.kr` →
-    `SendTrig 1000` + `PulseCount` count, `Phasor.ar` wraps
-    every `2 × chunkSize` samples writing to `clockBus`. Tick
-    rate is `s.sampleRate / clockChunkSize`, baked in as a
-    literal Hz at definition time.
+    `compileClockSynthDef` shape: `Impulse.kr` → `SendTrig
+    1000` + `PulseCount` count, `Phasor.ar` wraps every `2 ×
+    chunkSize` samples writing to `clockBus`. Tick rate is
+    `s.sampleRate / clockChunkSize`, baked in as a literal Hz
+    at definition time. (Post-shipping cleanup migrated this
+    to `SendReply.kr(tick, '/clock/tick', count)` — see the
+    bottom of this entry.)
   - `~scAppClockBus = Bus.audio(s, 1)` — sclang's allocator
     picks the index (typically 4 right after hw-reserved buses;
     way below the frontend's `IdAllocator(32)` start point).
@@ -2357,7 +2359,9 @@ Three sub-phases (30d collapsed into 30c).
 - `src/clock/clockClient.ts` (new) — typed `clockHello()`
   builder + `parseClockInfo(args)` that walks the interleaved
   reply into `{ tickRate, chunkSize, sampleRate, clockBus,
-  clockNodeId, trigId }`. Throws on missing keys so a sclang ↔
+  clockNodeId }` (the `trigId` field shipped initially and was
+  dropped in the SendTrig → SendReply post-cleanup at the
+  bottom of this entry). Throws on missing keys so a sclang ↔
   frontend protocol mismatch fails loudly.
 - `src/clock/ClockController.ts` — major rewrite from owner to
   observer. New `attach(timeoutMs = 3000)` round-trips
@@ -2455,18 +2459,38 @@ Three sub-phases (30d collapsed into 30c).
   ranges don't overlap in practice, but if you ever bump
   `numInputBusChannels` or `numOutputBusChannels` past 32 —
   or change `IdAllocator(32)` — re-verify.
-- **trigId 1000 is now globally owned by sclang's clock.**
-  Pre-30 it was per-session; reusing it from a frontend
-  `/s_new` would have only collided with the local clock.
-  Post-30 reusing it would interleave SendTrig messages into
-  the shared `/tr` stream every other client receives — chaos.
-  `IdAllocator` doesn't allocate trigIds (synths declare them
-  by literal); this is a "don't write `SendTrig.kr(_, 1000, _)`
-  in any new SynthDef, ever" convention.
 - **sclang as single point of failure.** Pre-30 a sclang crash
   killed SuperDirt but the per-session clocks survived.
   Post-30 it kills the clock too — every attached session's
   watchdog flips `effectiveState` to `'stopped'`. Restart
   sclang, refresh tabs, you're back. Bridge could surface a
-  "clock detached" toast if `/tr` silence exceeds a threshold;
-  punted to a Phase 30+ follow-up.
+  "clock detached" toast if `/clock/tick` silence exceeds a
+  threshold; punted to a Phase 30+ follow-up.
+
+### Post-shipping cleanup: SendTrig → SendReply
+
+Right after Phase 30c shipped, we noticed the `\scAppClock`
+SynthDef still used `SendTrig.kr(tick, 1000, count)` — leftover
+from the per-session clocks pre-30, where `CLOCK_TRIG_ID = 1000`
+was an app-wide reservation. Migrated to
+`SendReply.kr(tick, '/clock/tick', count)`:
+
+- The clock's wire address is now `/clock/tick` instead of `/tr`,
+  matching the rest of the bridge's address-prefix routing
+  conventions (`/dirt/*`, `/clock/*`).
+- The "no synth may use trigID 1000" reservation is GONE —
+  `SendTrig` is safe for any synth across any client to use
+  without colliding with the clock.
+- Worker-side decoding collapses into one path: address-match
+  `/clock/tick` and emit a `clockTick` event, identical in shape
+  to before. No more trigID demuxing or
+  `registerClock`/`unregisterClock` protocol messages.
+- `ClockInfo` drops the `trigId` field.
+- `WorkerClient` drops `registerClock(trigId)` and
+  `unregisterClock()`.
+
+Wire payload shape unchanged in practice: SendReply emits
+`/clock/tick nodeID replyID count`, same `args[2] === count`
+indexing as the pre-cleanup `/tr nodeID trigID count`. No audio,
+performance, or UX delta — purely a code cleanliness +
+namespacing improvement.
