@@ -465,7 +465,27 @@ When working on a phase:
    the "Current phase progress" line below.
 
 Current phase progress: **No phase currently in flight.** The
-last four landed (most recent first):
+last five landed (most recent first):
+
+**Phase 34 shipped — Loopback Identity Hardening.** Validates
+the `Host` header on every HTTP request and the `Origin` header
+on every WS upgrade against a loopback allowlist
+(`127.0.0.1` / `localhost` / `::1` / `tauri://localhost`).
+Closes two attack vectors the Phase 25 webview-on-HTTP shift
+exposed: DNS rebinding (a hostile site rebinds DNS to 127.0.0.1
+mid-session and uses the still-`attacker.com`-origin page to
+talk to the bridge — Host check now rejects with 421 Misdirected
+Request) and cross-origin WebSocket upgrades (any page could
+`new WebSocket('ws://127.0.0.1:3000/ws')` — Origin check now
+rejects with 403 Forbidden). All in
+`src-tauri/src/server/security.rs`; layered as an axum middleware
++ a per-handler helper for WS upgrades. Missing Origin is allowed
+(browsers always send it on WS, so missing means non-browser CLI
+clients which can talk TCP directly anyway). 9 Rust unit tests.
+TLS was considered as an alternative but rejected: cert-
+provisioning friction, dev-vs-prod composability problems,
+doesn't help against same-machine non-browser callers. See
+`docs/history.md` Phase 34.
 
 **Phase 33 shipped — Tab Throttling Resilience.** Plugged the
 two main-thread timers Phase 32 didn't catch. 33a gated
@@ -1016,3 +1036,30 @@ Observations:
   NTP-adjustment drift between measurements is irrelevant in
   practice. If you copy the pattern for another worker-side
   watchdog, do the same.
+- **Bridge enforces loopback `Host` and `Origin` headers
+  (Phase 34).** `src-tauri/src/server/security.rs` has the
+  validators + an axum `enforce_host` middleware layered before
+  `with_state` in `serve_on`. WS handlers (`ws_handler`,
+  `ws_scope_handler`) call `check_ws_origin` before upgrade.
+  Allowlist: hostname ∈ `{127.0.0.1, localhost, ::1}` for Host;
+  `http(s)://<loopback>` plus `tauri://localhost` for Origin.
+  Port is intentionally not validated — bridge is loopback-bound
+  so any port reaching us is a loopback port. Missing Origin
+  on WS is allowed (browsers always send it; missing means
+  non-browser CLI which bypasses any browser-side defense
+  anyway). 421 Misdirected Request for Host rejection (OWASP-
+  recommended for DNS-rebinding); 403 Forbidden for Origin.
+- **Vite dev forwards `Host: localhost:1420`, not the bridge's
+  port.** `server.proxy` defaults to `changeOrigin: false`, so
+  the original Host passes through. Both `localhost:1420`
+  (dev) and `127.0.0.1:<port>` (Tauri release / bridge mode)
+  pass the loopback check, so it Just Works. If a future
+  config change sets `changeOrigin: true`, the Host becomes
+  the target's address, which also passes — but be aware the
+  Host the bridge sees in dev is NOT necessarily its own port.
+- **Origin rejection happens BEFORE `ws.on_upgrade(...)`.** A
+  pre-upgrade 403 reads as a clean failure to the browser's
+  WebSocket API; an upgrade-then-close reads as a connection
+  drop and triggers reconnect logic. The handler signature
+  takes `headers: HeaderMap` so the check can run synchronously
+  before the WebSocket extractor's upgrade step.
