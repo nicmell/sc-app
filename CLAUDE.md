@@ -482,7 +482,30 @@ When working on a phase:
    the "Current phase progress" line below.
 
 Current phase progress: **No phase currently in flight.** The
-last six landed (most recent first):
+last seven landed (most recent first):
+
+**Phase 36 shipped — OSC Fallback for Scope Data.** Restored a
+`/b_getn`-based scope-data path as a fallback for when SHM
+isn't accessible (remote scsynth, exotic deployment, scsynth
+booted with SHM disabled, or `bridge --no-shm` test flag). Pre-
+Phase-31 lived in the TS worker; Phase 36 puts it in the Rust
+bridge so the worker's wire format stays uniform. Bridge
+probes SHM at `Session::create`, commits to `ScopeMode::Shm`
+or `ScopeMode::Osc` per-session. Frontend reads
+`/api/scope/probe`'s `mode` field and branches at the SynthDef
++ buffer-allocation step in `BufferController.start()`. The
+0x01/0x02/0x03 wire format on `/ws` and the worker stay
+unchanged — bridge interprets the 0x01 frame's `scope` field
+as either a scope-buffer index (SHM) or a bufnum (OSC) based
+on session mode. clockBus revival in sclang's clock SynthDef
+provides the sample-counting Phasor the OSC fallback's
+`bufferTapOscSynthDef` reads to derive a sample-aligned
+`writeIdx`. New `src-tauri/src/scope_osc.rs` (~330 lines, 11
+unit tests) hand-rolls OSC bundle encoding for `/b_getn`
+(big-endian, NTP timetag with `READ_DELAY_MS = 5 ms` shift),
+parses `/b_setn` replies, and dispatches by bufnum match.
+`bridge --no-shm` CLI flag forces OSC mode for testing without
+disabling SHM at the OS layer. See `docs/history.md` Phase 36.
 
 **Phase 35 shipped — In-Band Scope Chunks.** Retired the
 per-scope `/ws/scope` WebSocket adopted in Phase 31's
@@ -781,38 +804,50 @@ sclang restart, which all attached sessions then re-attach to via
 ### chunkSize × sampleRate practical reference
 
 `tickRate = sampleRate / chunkSize`. `Impulse.kr` accepts any
-positive Hz; the practical ceiling on tick rate is ~250 Hz before
-the worker's setTimeout retries crowd the next tick boundary
-(Phase 12 gap-bug pattern). Phase 30 moved chunkSize ownership to
-sclang (`SC_APP_CLOCK_CHUNK_SIZE` env var); pick a power-of-2
-value with a tickRate that stays well under 250 Hz at your
-sampleRate. The frontend's `practicalChunkSizes(sampleRate)`
-filter still exists for legacy reasons but is no longer wired to
-any UI.
+positive Hz; the practical tick-rate ceiling depends on which
+scope-data path the bridge is using (Phase 36):
 
 | chunkSize | 44.1 kHz       | 48 kHz         | 96 kHz         | 192 kHz        |
 |-----------|----------------|----------------|----------------|----------------|
 | 1024      | 43 Hz / 23 ms  | 47 Hz / 21 ms  | 94 Hz / 11 ms  | 188 Hz / 5 ms  |
-| 512       | 86 Hz / 12 ms  | 94 Hz / 11 ms  | 188 Hz / 5 ms  | 375 Hz ✗       |
-| 256       | 172 Hz / 6 ms  | 188 Hz / 5 ms  | 375 Hz ✗       | 750 Hz ✗       |
-| 128       | 345 Hz ✗       | 375 Hz ✗       | 750 Hz ✗       | 1500 Hz ✗      |
-| 64        | 689 Hz ✗       | 750 Hz ✗       | 1500 Hz ✗      | 3000 Hz ✗      |
+| 512       | 86 Hz / 12 ms  | 94 Hz / 11 ms  | 188 Hz / 5 ms  | 375 Hz ⚠OSC    |
+| 256       | 172 Hz / 6 ms  | 188 Hz / 5 ms  | 375 Hz ⚠OSC    | 750 Hz ⚠OSC    |
+| 128       | 345 Hz ⚠OSC    | 375 Hz ⚠OSC    | 750 Hz ⚠OSC    | 1500 Hz ⚠OSC   |
+| 64        | 689 Hz ⚠OSC    | 750 Hz ⚠OSC    | 1500 Hz ⚠OSC   | 3000 Hz ⚠OSC   |
+
+⚠OSC = the OSC `/b_getn` fallback (Phase 36) struggles at
+these tick rates because `READ_DELAY_MS = 5 ms` no longer fits
+inside `tickInterval = 1000/tickRate`. scsynth's console fills
+with `late 0.0XX` warnings; chunks may arrive after the writer
+has already overwritten their ring half. **In SHM mode (Phase
+31, the default) all cells are fine.**
+
+The bridge picks SHM mode automatically when SHM is reachable
+(local scsynth on the same host) and OSC mode otherwise (remote
+scsynth, exotic deployment, `--no-shm` test flag). The 250 Hz
+soft ceiling is inherent to OSC fallback; SHM has no practical
+ceiling until ~1–2 kHz where postMessage/main-thread cost
+becomes the bottleneck. See `docs/history.md` Phase 36 for the
+full mode comparison.
+
+Phase 30 moved chunkSize ownership to sclang
+(`SC_APP_CLOCK_CHUNK_SIZE` env var); pick a power-of-2 value
+that stays comfortable for your deployment. The frontend's
+`practicalChunkSizes(sampleRate)` filter still exists but is no
+longer wired to any UI.
 
 Observations:
 
-- ✗ means filtered out by `practicalChunkSizes()`. Above 250 Hz
-  the kr-quantisation slop and the bridge round-trip stop fitting
-  inside one tick.
 - The numbers shift inversely with sampleRate — at 192 kHz only
-  `chunkSize = 1024` survives the filter.
+  `chunkSize ≥ 512` keeps OSC fallback stable.
 - The buffer size (`2 × chunkSize × channels × 4 bytes`) is
   sampleRate-agnostic; only `chunkSize` determines memory.
-- Total scope-WS traffic is also sampleRate-agnostic per scope —
+- Total scope-data traffic per scope is also sampleRate-agnostic:
   `chunkSize × channels × 4 bytes` per tick at `sampleRate /
   chunkSize` ticks per second is `sampleRate × channels × 4`
-  bytes/sec regardless of which factor pair you pick. Pre-31
-  this same observation applied to `/b_setn` UDP traffic;
-  post-31 it's binary frames over the per-scope WebSocket.
+  bytes/sec regardless of which factor pair you pick. SHM mode
+  is in-process mmap reads; OSC mode is `/b_setn` UDP packets
+  (intercepted by the bridge, never reaching the worker).
 - Power-of-2 `chunkSize` keeps recording reads page-aligned
   (`1024 × 4 = 4096 bytes = 1 page`) and FFT-ready at any
   sampleRate (Future Improvement #1). The defaults (`64, 128,
@@ -1155,3 +1190,51 @@ Observations:
   on the OSC decode path BEFORE any chunk arrives. Reversing
   the order would invert the watchdog's freshness anchoring
   by ~one network hop's worth of latency.
+- **Scope path mode is per-session, frozen at create
+  (Phase 36).** `Session::scope_mode` (`ScopeMode::Shm |
+  ScopeMode::Osc`) is probed once in `Session::create` (or
+  forced via `--no-shm`) and never changes for that session's
+  lifetime. The frontend reads it from `/api/scope/probe`'s
+  `mode` field at session bootstrap and picks the matching
+  SynthDef + buffer-allocation in `BufferController.start()`.
+  Mid-session mode change is unsupported — if SHM availability
+  changes (rare), the user has to refresh, which mints a new
+  session.
+- **OSC fallback wire-format reuse (Phase 36).** The 0x01
+  subscribe frame's `scope:u32` field is interpreted as either
+  a scope-buffer index (SHM mode) or a bufnum (OSC mode) by
+  the bridge based on `Session::scope_mode`. Frontend picks
+  the right value at the controller layer; worker is
+  mode-blind. `OscScopeSubscription::bufnum` mirrors what
+  pre-31's worker tracked but lives on the bridge now.
+- **OSC fallback caps at ~250 Hz tick rate (Phase 36).**
+  `READ_DELAY_MS = 5 ms` (the `/b_getn` bundle timetag shift,
+  matches pre-31) needs to fit inside `tickInterval`. At tick
+  rates above 200 Hz the budget shrinks; above 250 Hz scsynth
+  starts logging `late 0.0XX` warnings and chunks may arrive
+  after the writer has overwritten their ring half. SHM mode
+  has no equivalent ceiling. See the chunkSize × sampleRate
+  table above for the practical cells (⚠OSC marker).
+- **clockBus is back (Phase 36) for the OSC tap synth.** We
+  retired it in a post-34 tidy because nothing read it
+  post-Phase-31. Phase 36's `bufferTapOscSynthDef` reads
+  `In.ar(clockBus, 1)` to derive a sample-aligned ring
+  writeIdx via `writeIdx = clockPhase % (2 × chunkSize)`. SHM
+  mode ignores `clockBus`; OSC mode requires it. sclang's
+  clock SynthDef publishes the Phasor + `Out.ar(clockBus, …)`
+  unconditionally; cost is one `Out.ar` per audio block,
+  ~zero. `ClockController.clockBus` getter is back for
+  consumers.
+- **`IdAllocator(buffer)` is back (Phase 36).** Base offset
+  `clientId * 1_000_000 + 5000` (room above for nodes; well
+  separated from SuperDirt's buffers in shared-server
+  deployments). Used only in OSC mode for `/b_alloc`, but
+  constructed unconditionally — cheap. SHM mode never touches
+  it.
+- **`bridge --no-shm` forces OSC mode (Phase 36).** Useful for
+  testing the OSC code path without disabling SHM at the OS
+  layer. Sets `AppState.force_osc_mode = true`; every new
+  session unconditionally picks `ScopeMode::Osc` regardless of
+  probe result. Boot log line names the flag when set. GUI
+  mode hardcodes `force_osc_mode = false` (same machine, SHM
+  always reachable).

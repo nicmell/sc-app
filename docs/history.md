@@ -3483,3 +3483,378 @@ Smoke-tested against a started bridge:
   mutex acquisition for the whole batch, not N separate
   acquisitions.
 
+## Phase 36 — OSC Fallback for Scope Data
+
+**Goal.** Restore a `/b_getn`-based fallback path for scope and
+recording data when SHM isn't accessible — remote scsynth on a
+different machine, scsynth booted with SHM disabled, exotic
+deployment. Pre-Phase-31 the OSC scope-data path lived in the
+TS worker; per the post-35 design discussion, the new fallback
+lives in the Rust bridge so the worker stays uniform across
+modes.
+
+The frontend can't be entirely mode-blind — the SC side has to
+write data somewhere the bridge can read it, and SHM-write
+(`ScopeOut2.ar`) vs OSC-fallback-write (`BufWr.ar`) are
+different UGens, hence different SynthDefs. The frontend
+branches at the SynthDef + buffer-allocation step in
+`BufferController.start()`. The wire format on `/ws`
+(0x01/0x02/0x03) and the worker stay uniform; the bridge picks
+SHM or OSC poll under the hood based on a per-session
+`ScopeMode`.
+
+### What shipped
+
+Four sub-phases (`fe6aa62`, `510088f`, `fffbacf`, plus this
+closer); plan + close commits bracket as usual.
+
+#### Architecture (dual-mode)
+
+```
+At session create:
+  Bridge probes /tmp/boost_interprocess/SuperColliderServer_<port>
+  → Session.scope_mode = ScopeMode::Shm | ScopeMode::Osc
+  /api/scope/probe response includes a `mode` field
+  --no-shm CLI flag forces ScopeMode::Osc regardless of probe
+
+At BufferManager.acquire():
+  Frontend reads probe.mode (cached at bootstrap)
+  if Shm:
+    /scope/allocate → /s_new bufferTap (ScopeOut2.ar) → 0x01 subscribe
+    bridge polls SHM on /clock/tick                    → 0x03 chunks
+  if Osc:
+    /b_alloc → /s_new bufferTapOsc (BufWr.ar)          → 0x01 subscribe
+    bridge polls /b_getn on /clock/tick (intercepts
+    /b_setn replies, parses, encodes)                   → 0x03 chunks
+```
+
+The 0x01 subscribe frame's `scope:u32` field is reused: it's a
+scope-buffer index in SHM mode and a bufnum in OSC mode. The
+bridge interprets it per `Session::scope_mode`. The worker
+never knows the difference.
+
+#### Bridge changes (36a + 36b)
+
+`src-tauri/src/server/session.rs`:
+  - New `ScopeMode` enum (`Shm | Osc`), `Serialize` via
+    `#[serde(rename_all = "lowercase")]`.
+  - `Session` struct gains `scope_mode: ScopeMode`. Frozen at
+    create time — never changes for the session's lifetime.
+  - `Session::create` takes `force_osc_mode: bool`. Probes
+    `scope_shm::probe(default_addr.port())` when not forced;
+    picks `Shm` if available, `Osc` otherwise. Logs the chosen
+    mode.
+  - `SessionInfo` gains `scope_mode` field (camelCase JSON:
+    `scopeMode`).
+
+`src-tauri/src/server/api.rs`:
+  - `post_session` passes `state.force_osc_mode` through.
+  - `/api/scope/probe` envelope extends with `mode: 'shm' |
+    'osc'`. Separate from `available` so frontend can
+    distinguish "SHM works but bridge was told to use OSC"
+    from "SHM doesn't work, fallback".
+
+`src-tauri/src/server/mod.rs` + `cli/{bridge,gui,mod}.rs`:
+  - `AppState` gains `force_osc_mode: bool`.
+  - `serve_on` / `run_bridge` propagate it.
+  - `bridge` subcommand learns `--no-shm` flag. Forces OSC mode
+    regardless of probe. Boot log line names the flag when set.
+  - GUI mode hardcodes `force_osc_mode = false` (same machine;
+    SHM always reachable).
+
+`src-tauri/src/scope_osc.rs` (new, ~530 lines, 11 unit tests) —
+the OSC poll engine:
+  - `OscScopeSubscription { sub_id, bufnum, channels,
+    chunk_size, tick_index, pending_offset, last_was_gap }`.
+    `pending_offset` enforces "one outstanding read per
+    subscription" — late `/b_setn` replies for stale offsets
+    drop silently; the next tick fires fresh.
+  - `compute_read_window(tick_index, chunk_size)`: derives
+    `(offset, count)` via the `((N-2) % 2)` parity formula.
+    "Impulse.kr fires at t=0; tick N corresponds to audio frame
+    `(N-1)*chunkSize`; the just-completed half is
+    `((N-2) % 2)`". First two ticks return `None` — no half
+    written yet.
+  - `encode_bgetn_bundle(bufnum, offset, count, now_ms)`:
+    hand-rolls an OSC bundle with `timetag = now +
+    READ_DELAY_MS (5 ms)`. Strict OSC 1.0 big-endian wire
+    layout: `"#bundle\0"` + `ntp_timetag:u64` + `inner_size:u32`
+    + bare `/b_getn` message (`"/b_getn\0"` + `",iii\0\0\0\0"` +
+    `bufnum:i32` + `offset:i32` + `count:i32`). NTP epoch
+    offset (1900 → 1970 = `2_208_988_800` sec) + 32-bit
+    fraction in the lower half of the timetag word.
+  - `parse_bsetn(bytes)`: validates address starts with
+    `"/b_setn\0"`, walks the `",iii"`-prefixed type tag,
+    extracts `bufnum + offset + count`, returns a slice over
+    the float payload. **Strict OSC alignment** — no
+    over-padding tolerance, since that breaks integer payloads
+    with leading zero bytes.
+  - `decode_bsetn_floats(bytes)`: chunks the raw float bytes
+    4-by-4, big-endian to f32.
+  - `encode_chunk(sub_id, tick, is_gap, channels, frames,
+    floats)`: produces 0x03 chunk frames identical byte-for-byte
+    to the SHM path's `encode_chunk` in `ws_bridge`. The worker
+    decoder doesn't distinguish.
+  - `parse_clock_tick_index(payload)`: extracts the
+    `PulseCount` value from a `/clock/tick` payload. Tolerates
+    either `",iii"` or `",iif"` type tag — `PulseCount` can
+    serialize as int OR float depending on the UGen graph
+    type.
+  - `OscPollState`: per-WS subscription map;
+    `find_by_bufnum_mut` for `/b_setn` dispatch.
+
+`src-tauri/src/server/ws_bridge.rs`:
+  - `ScopeContext` gains a dual-mode shape: `shm_subs:
+    HashMap<u32, ShmScopeSubscription>` (renamed from the
+    Phase-35 single-mode `ScopeSubscription`) +
+    `osc: OscPollState`. `total_subs()` sums both for the
+    WS-close cleanup log.
+  - `handle_scope_subscribe` / `handle_scope_unsubscribe`
+    branch on `session.scope_mode`. The 0x01 frame's `scope`
+    field is the scope_idx (SHM) or bufnum (OSC) — frontend
+    chooses.
+  - `forward_default_route` gains a `/b_setn` intercept arm
+    (`try_intercept_bsetn`): in OSC mode, a `/b_setn` whose
+    bufnum matches a subscribed bufnum is decoded into a 0x03
+    chunk frame and **suppressed** from the WS forward path.
+    Non-matching `/b_setn` forwards as a normal OSC reply
+    (worker discards).
+  - On `/clock/tick`, dispatches by mode: SHM →
+    `poll_scope_chunks` (existing); OSC →
+    `issue_bgetn_for_subs` (new) which fires `/b_getn` bundles
+    for each subscription whose previous read has settled.
+    In-flight reads at tick boundary are dropped + marked
+    `is_gap=true` on the next chunk.
+  - `issue_bgetn_for_subs` collects work under the lock then
+    sends UDP after release, so a slow socket doesn't block
+    the recv loop.
+
+`src-tauri/src/lib.rs` registers `pub mod scope_osc`.
+
+#### sclang startup script (36a)
+
+`scripts/lib/clock.scd`:
+  - Brings back `Bus.audio(s, 1)` allocation.
+  - SynthDef regains the `Phasor.ar` wrapping every
+    `2 × chunkSize` samples and the `Out.ar(clockBus,
+    samplePhase)`.
+  - `clockBus` is a SynthDef arg passed at `/s_new`.
+  - `/clock/info` reply carries the `clockBus` index again.
+  - Boot-log line includes the bus index.
+  - Cost on scsynth: one extra `Out.ar` per audio block —
+    negligible. SHM mode ignores it; OSC mode reads it.
+
+The post-34 tidy that retired `clockBus` was correct at the
+time (no consumer); Phase 36's OSC fallback brings the
+consumer back. Documented as a clean revival rather than a
+rewrite of the cleanup story.
+
+#### Frontend changes (36a + 36c)
+
+`src/clock/clockClient.ts` + `src/clock/ClockController.ts`:
+  - `ClockInfo` regains `clockBus: number`. Parser entry +
+    getter restored. `AppShell.tsx`'s clock-attach debug log
+    includes `clockBus` again.
+
+`src/scope/scopeClient.ts`:
+  - `ScopeMode` type alias.
+  - `ScopeShmProbe` gains `mode: ScopeMode`.
+  - `probeScopeShm()` back-compat default for older bridges
+    (mode missing → derive from `available`).
+
+`src/synthdefs/bufferTapOscSynthDef.ts` (new, ~100 lines):
+  - Sibling of `bufferTapSynthDef`. Same `(channels,
+    chunkSize)` cache key.
+  - Reads `In.ar(clockBus, 1)` to get the global
+    sample-counting Phasor; computes `writeIdx = clockPhase
+    % (2 × chunkSize)` via `g.mod(…)` (BinaryOpUGen `\mod`),
+    wrapping `clockPhase` into a 2-half ring index.
+  - `BufWr.ar(sigs, bufnum, writeIdx)` writes interleaved
+    channel frames into the half. The bridge polls the
+    *opposite* half (the just-completed one) via `/b_getn`.
+  - SynthDef controls: `inBus`, `bufnum`, `clockBus`.
+
+`src/buffer/BufferController.ts`:
+  - `BufferControllerOptions` gains `mode: ScopeMode`,
+    `clock: ClockController`, `ids.buffer: IdAllocator`. Both
+    modes are valid acquire targets now.
+  - `start()` splits into `startShm()` and `startOsc()`.
+    - `startShm`: existing path, no behavior change.
+    - `startOsc`: `/b_alloc bufnum (chunkSize × 2) channels`
+      → `compileBufferTapOscSynthDef` + `ensureLoaded` →
+      `/s_new bufferTapOsc { inBus, bufnum, clockBus }` →
+      `client.subscribeBuffer({ scopeNum: bufnum, … })` —
+      the wire 0x01 frame's `scope` field carries `bufnum` in
+      OSC mode.
+  - `dispose()` branches the buffer-free step: SHM →
+    `/scope/free` (fire-and-forget, no reply); OSC → `/b_free`
+    (fire-and-forget; `/done /b_free` unawaited since we're
+    tearing down).
+  - `scopeNumStore` comment notes its dual meaning
+    (`scope_idx` in SHM, `bufnum` in OSC) — same store,
+    `BufferManager.snapshot` reads it identically.
+
+`src/buffer/BufferManager.ts`:
+  - `BufferManagerOptions` gains `ids.buffer: IdAllocator` and
+    `clock: ClockController`.
+  - `acquire()` drops the "reject if SHM unavailable" gate.
+    Both modes are valid; the controller picks based on cached
+    `probe.mode`. The probe still runs at first acquire (HTTP
+    breakage surfaces here); the gate just no longer rejects.
+  - `spinUp` passes `mode = this.shmProbe?.mode ?? 'osc'` (the
+    back-compat default for missing-mode fields from
+    pre-Phase-36 bridges).
+
+`src/AppShell.tsx`:
+  - Resurrects `IdAllocator(buffer)`: one per session, base
+    `clientId * 1_000_000 + 5000`. Offset above the node
+    range to avoid intra-allocator confusion in the debug
+    log; scsynth doesn't enforce per-client bufnum ranges so
+    any base works, but per-clientId scoping prevents
+    collisions with SuperDirt's own buffer usage in
+    shared-server deployments.
+  - `DashboardResources.ids` gains `buffer: IdAllocator`.
+  - `BufferManager` construction passes `ids.buffer + clock`.
+
+#### Tests
+
+11 new Rust unit tests in `scope_osc::tests`:
+  - Read-window first-tick skip (returns None for tick<2).
+  - Parity formula correctness across multiple tick indices.
+  - `/b_getn` message + bundle layout round-trip (encode →
+    parse → equal bytes; locks in big-endian + NTP timetag).
+  - `/b_setn` parse round-trip.
+  - `/b_setn` rejects other addresses (strict prefix match).
+  - Clock tick index parses with both `",iii"` and `",iif"`
+    type tags.
+  - `osc_align(n)` — pads to next multiple of 4.
+  - `find_by_bufnum_mut` returns the right entry under
+    multi-subscription state.
+  - Chunk frame layout matches SHM path's `encode_chunk` byte
+    layout — catches drift between modes.
+
+Plus 2 existing `ws_bridge::tests` (chunk frame layout / gap
+flag / dispatch unambiguous) gain coverage for the renamed
+`ShmScopeSubscription`.
+
+`cargo test --lib`: 35 passed (was 22; +11 from `scope_osc`,
++2 from existing).
+
+Frontend: `yarn tsc --noEmit` clean; `yarn test` 17/17;
+`yarn build` clean.
+
+#### Live verification
+
+- `bridge --no-shm` boots, logs `--no-shm: forcing OSC
+  /b_getn fallback mode for all sessions`.
+- `/api/scope/probe` returns `{"available":true,"error":null,
+  "mode":"osc","path":"/tmp/..."}` with the flag set,
+  `mode:"shm"` without.
+- End-to-end OSC mode (scope a synth bus with `--no-shm`,
+  observe waveform) requires a running scsynth + frontend
+  smoke test; compile-time wiring is verified by the unit
+  tests + tsc + cargo build.
+
+### Decisions worth carrying forward
+
+- **Per-session mode, not per-WS or per-subscription.** Probed
+  once at `Session::create` and frozen for the session's
+  lifetime. Mid-session mode change is unsupported — if SHM
+  availability changes (rare), the user has to refresh, which
+  mints a new session. Simplifies the bridge state machine
+  enormously: no mode-transition logic, no in-flight migration
+  from one tap-synth shape to the other.
+- **Reuse the 0x01 wire frame's `scope:u32` field.** No new
+  frame variant. The bridge interprets it as scope_idx (SHM)
+  or bufnum (OSC) per session mode. The frontend chose the
+  right value at the controller layer; the worker is
+  mode-blind.
+- **`bridge --no-shm` CLI flag.** Forces OSC mode regardless
+  of probe. Useful for testing OSC fallback locally without
+  disabling SHM at the OS layer (or rebooting scsynth).
+  GUI mode hardcodes `force_osc_mode = false` (same machine,
+  SHM always reachable).
+- **clockBus revival is unconditional.** Sclang's clock
+  SynthDef publishes `Out.ar(clockBus, …)` whether anyone
+  reads it or not. SHM mode ignores it; OSC mode reads it.
+  Cost is one `Out.ar` per audio block — negligible. Avoids
+  a "two clock SynthDefs" or "feature-flag the clockBus
+  publish" branching mess.
+- **Hand-rolled OSC encoding in `scope_osc.rs`** rather than
+  pulling rosc into the hot path. The bundle shape is tiny
+  and fixed (`#bundle\0` + 8-byte timetag + 4-byte inner
+  size + ~32-byte `/b_getn` message); rosc encode would
+  allocate twice and we'd still need the strict-alignment
+  parser for `/b_setn`. Bytes-on-wire are easier to match
+  in tests anyway.
+- **Strict OSC alignment in `parse_bsetn`.** OSC 1.0 spec
+  requires every datum to be padded to a 4-byte boundary; my
+  initial implementation tried to be lenient by skipping
+  leading zeros, which broke integer payloads like `0` or
+  `256`. Reverted to strict alignment + the test data was
+  fixed (it had over-padding from a misreading of the spec).
+- **Sub-phasing.** 36a (probe + advertise mode, no behavior
+  change) sets up the surface area; 36b (OSC poll engine
+  in Rust) is dead code until 36c flips the frontend; 36c
+  flips the frontend; 36d closes. Each commit is testable
+  in isolation: 36a = probe returns `mode`; 36b = `cargo
+  test --lib` covers the protocol primitives; 36c = OSC
+  mode actually exercises end-to-end.
+
+### Gotchas
+
+- **Mode is frozen at session create.** No mid-session
+  transitions. If SHM probe failed (e.g. permission timing
+  glitch) the session is locked into OSC mode for its TTL
+  window. User-visible: refreshing the tab mints a new
+  session and probes fresh. TTL eviction (default 30 min)
+  catches abandoned wrong-mode sessions.
+- **OSC fallback caps at ~250 Hz tick rate.**
+  `READ_DELAY_MS = 5 ms` (the `/b_getn` bundle timetag shift,
+  matches pre-31) needs to fit inside `tickInterval`. At tick
+  rates above 200 Hz the budget shrinks; above 250 Hz scsynth
+  starts logging `late 0.0XX` warnings and chunks may arrive
+  after the writer has overwritten their ring half. SHM mode
+  has no equivalent ceiling. The chunkSize × sampleRate table
+  in `CLAUDE.md` marks the affected cells with ⚠OSC.
+- **The 0x01 subscribe frame's `scope:u32` field is
+  mode-overloaded.** Bridge interprets it as scope_idx (SHM)
+  or bufnum (OSC) based on `Session::scope_mode`. If a future
+  refactor adds a third mode, this field will need
+  disambiguation (e.g. via a per-mode subscribe frame variant)
+  rather than further overloading.
+- **`/b_setn` interception is per-WS, by bufnum.** The
+  `forward_default_route` task inspects each broadcast OSC
+  reply for `/b_setn`, decodes bufnum, and looks it up in the
+  WS's `OscPollState`. Match → suppress + emit chunk. No match
+  → forward as normal OSC reply. Cost is one address peek per
+  broadcast payload per WS — same shape as the `/clock/tick`
+  peek, so cheap.
+- **`pending_offset` is "at most one outstanding read per
+  subscription".** Late `/b_setn` replies for stale offsets
+  drop silently; the next tick fires fresh and marks
+  `is_gap=true` on the resulting chunk. If we ever needed
+  to recover the dropped data, we'd need a `HashMap<offset,
+  PendingRead>` shape like the pre-31 worker had — but
+  in-flight reads at tick boundary are rare (only happen
+  under load) and a single dropped chunk is acceptable.
+- **`PulseCount` type tag varies (`",iii"` vs `",iif"`).**
+  Depending on the UGen graph type at the SendReply boundary,
+  scsynth serializes the count as int OR float.
+  `parse_clock_tick_index` tolerates both. Tested.
+- **Hand-rolled NTP timetag.** `seconds = unix + 2_208_988_800`
+  (1900 → 1970 epoch shift); `fraction =
+  (millis_remainder / 1000) × 2^32`. Test
+  `bgetn_bundle_round_trip` locks in the byte layout against
+  regression.
+- **clockBus is back unconditionally.** `scripts/lib/clock.scd`
+  now allocates `Bus.audio(s, 1)`, runs `Phasor.ar` + `Out.ar`,
+  and publishes the bus index in `/clock/info`. SHM mode
+  ignores it; OSC mode requires it. The post-34 tidy that
+  retired it was correct at the time (no consumer); Phase 36
+  re-adds the consumer.
+- **`IdAllocator(buffer)` is back.** Base `clientId *
+  1_000_000 + 5000`. Used only in OSC mode for `/b_alloc`,
+  but constructed unconditionally — cheap. SHM mode never
+  touches it.
+

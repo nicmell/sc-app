@@ -458,17 +458,24 @@ src-tauri/src/
 ├── logging.rs                  tracing init (stderr + daily-rotated file)
 ├── scope_shm.rs                Phase 31: mmap RAII + scope_buffer
 │                                vector finder + read_scope_slot
+├── scope_osc.rs                Phase 36: OSC /b_getn fallback —
+│                                per-WS subscription map, bundle
+│                                encode (NTP timetag), /b_setn parse,
+│                                chunk encode (matches SHM byte layout)
 └── server/
-    ├── mod.rs                   axum router, bind/serve_on, /ws handler
+    ├── mod.rs                   axum router, bind/serve_on, /ws handler.
+    │                             AppState carries force_osc_mode (--no-shm)
     ├── api.rs                   POST/GET/DELETE /api/session[/:id] +
     │                             GET /api/scope/{probe,layout,headers,debug}
+    │                             Probe response includes mode: 'shm'|'osc'
     ├── ws_bridge.rs             main /ws bridge: per-target
     │                             forwarder tasks subscribe to
     │                             session broadcast. Phase 35 in-band
     │                             scope mux: per-WS ScopeContext +
-    │                             0x01/0x02/0x03 op-tag dispatch +
-    │                             SHM polling driven by /clock/tick
-    │                             on the default-route forwarder.
+    │                             0x01/0x02/0x03 op-tag dispatch.
+    │                             Phase 36: ScopeContext is dual-mode
+    │                             (shm_subs + osc); /clock/tick dispatches
+    │                             by Session::scope_mode.
     ├── routing.rs               RoutingTable + peek_osc_address
     ├── session.rs               Session + SessionStore + TTL eviction
     ├── security.rs              Phase 34 Host + WS Origin validators
@@ -510,6 +517,7 @@ struct Session {
     client_id: u32,                    // from /done /notify
     parent_group_id: u32,              // clientId × 100 (or 100 if 0)
     sample_rate: f64,                  // from /status.reply
+    scope_mode: ScopeMode,             // Phase 36: Shm | Osc, frozen at create
     last_active: Mutex<Instant>,
     scope_shm: tokio::sync::OnceCell<Arc<ScopeShm>>,  // lazy mmap
 }
@@ -524,9 +532,12 @@ struct Session {
    awaits `/done /notify <clientId>` with a 2 s timeout.
 3. Sends `/status` to scsynth; awaits `/status.reply` to capture
    `sampleRate`.
-4. Spawns one tokio task per socket that receives UDP bytes and
+4. Probes scsynth's SHM segment via `scope_shm::probe`; picks
+   `scope_mode = Shm` if reachable, `Osc` otherwise. The
+   `--no-shm` CLI flag forces `Osc` regardless of probe.
+5. Spawns one tokio task per socket that receives UDP bytes and
    broadcasts them via the per-target `broadcast::Sender`.
-5. Inserts into `SessionStore` (a global
+6. Inserts into `SessionStore` (a global
    `Arc<RwLock<HashMap<Uuid, Arc<Session>>>>`).
 
 `Session::cleanup` (run on DELETE or TTL eviction):
@@ -581,9 +592,44 @@ Default starter routes:
 | `/scope` | `127.0.0.1:57120` (sclang's `\scAppScope*` responders) |
 | (default) | `127.0.0.1:57110` (scsynth) |
 
-### 5.4. SHM transport (Phase 31)
+### 5.4. Scope-data transport (Phase 31 SHM, Phase 35 in-band, Phase 36 dual-mode)
 
-`scope_shm.rs` mmaps scsynth's POSIX shared memory segment
+The bridge picks one of two scope-data transport modes
+**per-session** at `Session::create`, frozen for the session's
+lifetime. The mode is exposed at `/api/scope/probe` →
+`{ available, path, error, mode: 'shm' | 'osc' }` and on
+`SessionInfo.scopeMode`.
+
+- **`ScopeMode::Shm`** — scsynth's POSIX shared memory segment.
+  Default when SHM is reachable. Phase 31's hot path; Phase 35
+  put it in-band on the main `/ws`.
+- **`ScopeMode::Osc`** — `/b_getn` polling fallback. Used when
+  SHM is unreachable (remote scsynth, exotic deployment) or
+  forced via `bridge --no-shm`. Phase 36 added it as a Rust
+  bridge module so the worker stays mode-blind.
+
+**Wire frame format on `/ws`** (subscribe / unsubscribe /
+chunk; identical in both modes; little-endian, packed):
+```
+0x01 subscribe    [op:u8 | sub_id:u32 | scope:u32 | channels:u32 | chunk:u32]
+0x02 unsubscribe  [op:u8 | sub_id:u32]
+0x03 chunk        [op:u8 | sub_id:u32 | tick:u32 | is_gap:u8 |
+                   channels:u8 | frames:u32 | float32 payload…]
+```
+
+The `scope:u32` field on 0x01 is interpreted as a scope-buffer
+index in SHM mode and as a bufnum in OSC mode. The frontend
+chooses the right value at the controller layer based on
+`SessionInfo.scopeMode`. The worker is mode-blind.
+
+`sub_id` is minted by the worker, never interpreted by the
+bridge — just echoed back on chunk frames. Worker maintains a
+`Map<sub_id, bufferId>` to dispatch chunks to main-thread
+listeners.
+
+#### SHM mode (`scope_shm.rs`)
+
+mmaps scsynth's POSIX shared memory segment
 (`/tmp/boost_interprocess/SuperColliderServer_<port>` on macOS;
 `/dev/shm/SuperColliderServer_<port>` on Linux). The segment
 holds 128 `scope_buffer` triple-buffer structs (one per
@@ -605,38 +651,70 @@ writer just completed), then the data slot at
 detects "writer advanced" by tracking the previous `_stage` per
 subscription.
 
-In-band on the main `/ws` (Phase 35; `server/ws_bridge.rs`):
-- Per-WS `ScopeContext` (subscription map keyed by `sub_id` +
-  lazy `Arc<ScopeShm>` from `Session::ensure_scope_shm`).
-- Recv loop peeks first byte of each binary frame:
-  - 0x01 → `handle_scope_subscribe`: decodes
-    `(sub_id, scope_idx, channels, chunk_size)`, ensures the
-    session-level mmap on first call, inserts into the per-WS
-    map.
-  - 0x02 → `handle_scope_unsubscribe`: removes from the map.
-  - Otherwise → existing OSC forward path.
-- The default-route forwarder is a specialization of
-  `forward_broadcast` that additionally peeks each broadcast
-  payload for `/clock/tick`. On hit, calls `read_scope_slot(idx)`
-  for every active subscription on this WS and sends a 0x03
-  chunk frame for those whose `_stage` advanced.
-- On WS close, `ScopeContext` drops with the function scope —
-  taking the per-WS subscription map with it. The session-level
-  mmap survives for other WSs.
+#### OSC mode (`scope_osc.rs`)
 
-Wire frame format (subscribe / unsubscribe / chunk; all
-little-endian, packed):
-```
-0x01 subscribe    [op:u8 | sub_id:u32 | scope:u32 | channels:u32 | chunk:u32]
-0x02 unsubscribe  [op:u8 | sub_id:u32]
-0x03 chunk        [op:u8 | sub_id:u32 | tick:u32 | is_gap:u8 |
-                   channels:u8 | frames:u32 | float32 payload…]
-```
+Hand-rolled OSC `/b_getn` poll engine. Triggered when
+`Session::scope_mode == Osc`. The frontend `/s_new`s a
+`bufferTapOsc` synth (BufWr.ar to a `/b_alloc`'d buffer; reads
+sclang's clockBus to derive a sample-aligned `writeIdx`). The
+bridge does the rest:
 
-`sub_id` is minted by the worker, never interpreted by the
-bridge — just echoed back on chunk frames. Worker maintains a
-`Map<sub_id, bufferId>` to dispatch chunks to main-thread
-listeners.
+- `OscScopeSubscription { sub_id, bufnum, channels, chunk_size,
+  tick_index, pending_offset, last_was_gap }` — per-WS map.
+- `compute_read_window(tick, chunk_size)` derives `(offset,
+  count)` via `((N-2) % 2)` parity formula. First two ticks
+  return None (no half written yet).
+- `encode_bgetn_bundle` hand-rolls an OSC bundle with `timetag
+  = now + READ_DELAY_MS (5 ms)` so scsynth's scheduler holds
+  the read past kr/ar slop. NTP timetag (1900 epoch + 32-bit
+  fraction).
+- On each `/clock/tick`, `issue_bgetn_for_subs` fires `/b_getn`
+  for each subscription whose previous read has settled.
+  In-flight reads at tick boundary drop + mark `is_gap=true`
+  on the next chunk.
+- Inbound `/b_setn` replies are intercepted in
+  `try_intercept_bsetn` (called from `forward_default_route`):
+  decoded by `parse_bsetn` + bufnum-matched against the WS's
+  `OscPollState`. Match → encoded as 0x03 chunk frame +
+  suppressed from WS forward. No match → forwarded as a normal
+  OSC reply (worker discards).
+- `encode_chunk` produces 0x03 chunk frames byte-for-byte
+  identical to the SHM path's `encode_chunk`.
+
+**Practical ceiling.** OSC mode caps at ~250 Hz tick rate
+because `READ_DELAY_MS = 5 ms` no longer fits inside
+`tickInterval = 1000/tickRate` above that. SHM mode has no
+equivalent ceiling. See `CLAUDE.md`'s chunkSize × sampleRate
+table for the affected cells (⚠OSC marker).
+
+#### Mode dispatch in `ws_bridge.rs` (Phase 36)
+
+Per-WS `ScopeContext` is now dual-shaped:
+- `shm_subs: HashMap<u32, ShmScopeSubscription>` (Phase 35
+  rename of the single-mode `ScopeSubscription`).
+- `osc: OscPollState` (Phase 36).
+
+Recv loop peeks first byte of each binary frame:
+- 0x01 → `handle_scope_subscribe`: branches on
+  `session.scope_mode`. SHM: ensures session-level mmap on
+  first call, inserts into `shm_subs`. OSC: inserts into
+  `osc`. The 0x01 frame's `scope:u32` field is interpreted
+  appropriately.
+- 0x02 → `handle_scope_unsubscribe`: removes from the
+  matching map.
+- Otherwise → existing OSC forward path.
+
+Default-route forwarder peeks each broadcast payload:
+- For `/clock/tick`: SHM mode → `poll_scope_chunks` (the
+  Phase 35 path); OSC mode → `issue_bgetn_for_subs`.
+- For `/b_setn` (OSC mode only): `try_intercept_bsetn` —
+  match → emit 0x03 chunk + drop; no match → forward.
+- Otherwise → forward as normal OSC reply.
+
+On WS close, `ScopeContext` drops with the function scope —
+taking both per-WS subscription maps with it. The
+session-level SHM mmap survives for other WSs (OSC mode has
+no per-session mmap; bufnums are per-WS).
 
 ### 5.5. Static assets
 
@@ -855,7 +933,13 @@ client.sendCommand(packet)
 client.onReply(cb) fires
 ```
 
-### 7.3. Scope / recording chunk delivery (Phase 31 SHM + Phase 35 in-band)
+### 7.3. Scope / recording chunk delivery (Phase 31 SHM + Phase 35 in-band + Phase 36 dual-mode)
+
+The frontend branches at `BufferController.start()` on the
+session's `scope_mode`. The wire format on `/ws` is identical
+in both modes.
+
+#### SHM mode (default; Phase 31 + 35)
 
 ```
 main thread             worker             bridge            scsynth
@@ -873,7 +957,7 @@ BufferManager.acquire(spec)
     postMessage{subscribeBuffer}  ▶
                                     assign sub_id; encode 0x01
                                     transport.send(0x01 frame)
-                                                  ──WS──▶  ScopeContext.subs
+                                                  ──WS──▶  ScopeContext.shm_subs
                                                             .insert(sub_id, …)
                                                           (ensure_scope_shm
                                                            on first subscribe)
@@ -893,6 +977,46 @@ RecordingController.onChunk:
 ScopeView (RAF loop):
   read latestChunkRef.current
   draw
+```
+
+#### OSC fallback mode (Phase 36)
+
+```
+main thread             worker             bridge            scsynth
+───────────             ──────             ──────            ───────
+BufferManager.acquire(spec)
+  /b_alloc <bufnum>
+    ──sendAndSync──▶                     ──UDP──▶  /done /b_alloc
+  /s_new bufferTapOsc …
+    bufnum=<bufnum>,
+    inBus=spec.inputBus,
+    clockBus
+    ──sendAndSync──▶                     ──UDP──▶  tap synth /s_new'd
+                                                    BufWr.ar writing
+                                                    ring-half indexed
+                                                    by clockBus phase
+  client.subscribeBuffer(spec)
+    postMessage{subscribeBuffer}  ▶
+                                    assign sub_id; encode 0x01
+                                    transport.send(0x01 frame)
+                                                  ──WS──▶  ScopeContext.osc
+                                                            .insert(sub_id,
+                                                              bufnum, …)
+  …running…
+                                                  on /clock/tick (broadcast):
+                                                    forward OSC reply to WS
+                                                    issue_bgetn_for_subs:
+                                                      compute_read_window
+                                                      encode_bgetn_bundle
+                                                      timetag = now+5ms
+                                                  ──UDP──▶  /b_getn …
+                                                  ◀─UDP──   /b_setn bufnum offs …
+                                                  try_intercept_bsetn:
+                                                    match by bufnum
+                                                    decode floats
+                                                    encode 0x03 frame
+                                                  ──WS──▶
+                                    (chunk delivery same as SHM mode)
 ```
 
 ### 7.4. Sequencer emission (Phase 32)
@@ -1007,10 +1131,16 @@ Discovery:
   `/etc/sc-app/config.json`. Silent if absent.
 
 Precedence for resolution (highest → lowest):
-1. CLI flag (bridge only — `--port`, `--scsynth`, `--log-dir`)
+1. CLI flag (bridge only — `--port`, `--scsynth`, `--log-dir`,
+   `--no-shm`)
 2. Env var (`SC_PORT`, `SC_SCSYNTH_ADDR`)
 3. `config.json` value
 4. Compiled-in default
+
+`--no-shm` (Phase 36) forces every new session to pick
+`ScopeMode::Osc` regardless of SHM-probe result. Useful for
+testing the OSC fallback path without disabling SHM at the OS
+layer. GUI mode hardcodes `force_osc_mode = false`.
 
 Caveats:
 
