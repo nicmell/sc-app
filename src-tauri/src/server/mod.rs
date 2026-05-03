@@ -27,7 +27,8 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use axum::extract::{Query, Request, State, WebSocketUpgrade};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
+use axum::middleware;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
@@ -37,6 +38,7 @@ use uuid::Uuid;
 
 mod api;
 mod routing;
+mod security;
 mod session;
 pub mod static_assets;
 pub mod ws_bridge;
@@ -130,7 +132,13 @@ pub async fn serve_on(
         app = app.fallback(no_static_fallback);
     }
 
-    let app = app.with_state(state);
+    // Phase 34: enforce loopback Host on every HTTP request to
+    // defend against DNS rebinding. Layered before `with_state`
+    // so it sees every route — `/ws`, `/api/*`, the static
+    // fallback, all of it.
+    let app = app
+        .layer(middleware::from_fn(security::enforce_host))
+        .with_state(state);
     axum::serve(listener, app).await.context("axum serve error")?;
     Ok(())
 }
@@ -152,7 +160,12 @@ async fn ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
     Query(query): Query<WsQuery>,
+    headers: HeaderMap,
 ) -> Result<Response, (StatusCode, String)> {
+    // Phase 34: WebSocket upgrades aren't subject to SOP the way
+    // `fetch` is. Reject any upgrade whose Origin (when present)
+    // doesn't name a loopback origin.
+    security::check_ws_origin(&headers)?;
     // Phase 29: only the `?session=<uuid>` path is supported.
     // The Session owns the UDP sockets, broadcast channels, and
     // scsynth /notify subscription; the WS is purely a forwarder.

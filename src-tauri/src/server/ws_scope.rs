@@ -30,6 +30,7 @@ use std::sync::Arc;
 use anyhow::{anyhow, Context, Result};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
+use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use futures_util::stream::StreamExt;
 use futures_util::SinkExt;
@@ -59,7 +60,15 @@ pub(crate) async fn ws_scope_handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
     Query(q): Query<ScopeWsQuery>,
+    headers: HeaderMap,
 ) -> Response {
+    // Phase 34: same loopback-Origin check as the main /ws
+    // upgrade — WS upgrades aren't subject to SOP the way `fetch`
+    // is, so a hostile site could otherwise open a /ws/scope
+    // connection directly.
+    if let Err((status, msg)) = super::security::check_ws_origin(&headers) {
+        return (status, msg).into_response();
+    }
     let session = match state.sessions.get_and_touch(&q.session).await {
         Some(s) => s,
         None => {
