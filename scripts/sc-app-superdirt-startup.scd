@@ -16,6 +16,15 @@
 // Sample path comes from SC_APP_DIRT_SAMPLES (set by the launch
 // script to superdirt-deps/Dirt-Samples/*).
 //
+// Phase 30: this script ALSO owns the shared global clock. One
+// `\scAppClock` synth at scsynth's root group emits `/tr` triggers
+// (trigId 1000) and writes a sample-rate phasor to a dedicated
+// audio bus. Every sc-app session reads the same `/tr` stream and
+// the same `clockBus`, replacing the per-session clocks each tab
+// previously owned. The clock lives outside any client's parent
+// group so /g_freeAll / /n_free from a client cannot touch it.
+// chunkSize comes from `SC_APP_CLOCK_CHUNK_SIZE` (default 1024).
+//
 // Two things this file's structure reflects (read CLAUDE.md's
 // "SuperDirt launch gotchas" section for full context):
 //
@@ -34,6 +43,8 @@
 //      newAllocators rebuilds them with the current option values.
 
 (
+var clockChunkSize, clockChunkSizeEnv;
+
 s.options.numBuffers = 1024 * 256;        // -b 262144
 s.options.memSize = 8192 * 32;             // -m 262144 KB
 s.options.numWireBufs = 2048;              // -w 2048
@@ -48,6 +59,21 @@ s.options.numOutputBusChannels = 2;        // -o 2
 // be explicit instead of relying on a side effect.
 s.newAllocators;
 
+// Phase 30 clock chunkSize. Read once here so the value is captured
+// before the doWhenBooted closure runs. Power of 2 recommended (FFT-
+// friendly, page-aligned recordings); see CLAUDE.md's chunkSize
+// reference table for the practical range.
+clockChunkSizeEnv = "SC_APP_CLOCK_CHUNK_SIZE".getenv;
+clockChunkSize = if(clockChunkSizeEnv.isNil or: { clockChunkSizeEnv.size == 0 }) {
+    1024
+} {
+    clockChunkSizeEnv.asInteger
+};
+if(clockChunkSize < 1) {
+    "[sc-app] SC_APP_CLOCK_CHUNK_SIZE = % invalid; falling back to 1024".format(clockChunkSizeEnv).warn;
+    clockChunkSize = 1024;
+};
+
 s.addr = NetAddr("127.0.0.1", 57110);
 s.startAliveThread;
 
@@ -56,10 +82,60 @@ s.startAliveThread;
 // positional: (onComplete, limit=100, onFailure). 100 = 20 s
 // default; 50 keeps the original script's 10 s window.
 s.doWhenBooted({
+    var clockTickRate;
+
     // Register for async notifications (/n_go, /n_end, /done, …)
     // and wait for /done /notify via a /sync round-trip.
     s.notify;
     s.sync;
+
+    // ── Phase 30: shared global clock ────────────────────────────────
+    // The SynthDef is structurally identical to the pre-30 frontend
+    // version (see Phase 6 / 8 in docs/history.md). Owned by sclang
+    // here so all clients share the same /tr stream and the same
+    // clockBus. trigId 1000 is reserved app-wide; nodeId 999 is
+    // reserved by convention (off-limits to client IdAllocator
+    // ranges, which start at clientId * 1_000_000 + 1000).
+    //
+    // tickRate is baked into the SynthDef bytes as a literal Hz —
+    // changing chunkSize requires re-running this script. clockBus
+    // is a synth control so we can re-use the same SynthDef across
+    // restarts that get a different bus allocation.
+    clockTickRate = s.sampleRate / clockChunkSize;
+    SynthDef(\scAppClock, { |clockBus = 0|
+        var tick = Impulse.kr(clockTickRate);
+        var count = PulseCount.kr(tick);
+        var wrap = SampleRate.ir * (2 / clockTickRate);
+        var samplePhase = Phasor.ar(0, 1, 0, wrap);
+        SendTrig.kr(tick, 1000, count);
+        Out.ar(clockBus, samplePhase);
+    }).add;
+    s.sync;
+
+    // Bus.audio lets sclang's allocator pick a free bus (avoids
+    // colliding with SuperDirt's later allocations). Frontend reads
+    // the chosen index from /clock/info — never assumes a number.
+    ~scAppClockBus = Bus.audio(s, 1);
+    ~scAppClockNodeId = 999;
+    ~scAppClockChunkSize = clockChunkSize;
+    ~scAppClockTickRate = clockTickRate;
+    ~scAppClockTrigId = 1000;
+
+    // /s_new sent as a raw OSC message so we can pin the nodeId
+    // (Synth.new auto-allocates from sclang's node allocator).
+    // addAction 0 = \addToHead, target 0 = root group.
+    s.sendMsg('/s_new', 'scAppClock',
+        ~scAppClockNodeId, 0, 0,
+        'clockBus', ~scAppClockBus.index);
+    s.sync;
+
+    "[sc-app] clock running on bus % (trigId %, nodeId %, tickRate %, chunkSize %)".format(
+        ~scAppClockBus.index,
+        ~scAppClockTrigId,
+        ~scAppClockNodeId,
+        ~scAppClockTickRate.round(0.01),
+        ~scAppClockChunkSize
+    ).postln;
 
     ~dirt = SuperDirt(2, s);   // stereo
     ~dirt.loadSoundFiles("SC_APP_DIRT_SAMPLES".getenv);
@@ -88,6 +164,24 @@ s.doWhenBooted({
         addr.sendMsg('/dirt/samples', *args);
     }, '/dirt/listSamples');
     "[sc-app] /dirt/listSamples responder installed".postln;
+
+    // Phase 30. Reply to /clock/hello with the current clock
+    // configuration as interleaved [key, value, key, value, …]
+    // pairs — same wire shape as /dirt/samples so the bridge's
+    // existing reply-routing fans it back to the requesting WS.
+    // Frontend (Phase 30b) parses the pairs into a typed
+    // ClockInfo object.
+    OSCdef(\scAppClockHello, { |msg, time, addr|
+        addr.sendMsg('/clock/info',
+            "tickRate", ~scAppClockTickRate,
+            "chunkSize", ~scAppClockChunkSize,
+            "sampleRate", s.sampleRate,
+            "clockBus", ~scAppClockBus.index,
+            "clockNodeId", ~scAppClockNodeId,
+            "trigId", ~scAppClockTrigId
+        );
+    }, '/clock/hello');
+    "[sc-app] /clock/hello responder installed".postln;
 }, 50, {
     "[sc-app] scsynth not reachable on 127.0.0.1:57110 after 10s.\n  Start it first: yarn scsynth-only (dev) or your systemd unit (prod).".error;
 });

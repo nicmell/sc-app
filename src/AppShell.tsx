@@ -230,7 +230,6 @@ function DashboardHeader({
   // 48 k so the picker renders something, but disable it.
   const sampleRate = resources?.sampleRate ?? 48000;
   const options = practicalChunkSizes(sampleRate);
-  const pickerDisabled = !resources || reiniting;
   return (
     <header className="cluster" data-gap="md">
       <span
@@ -243,11 +242,16 @@ function DashboardHeader({
         chunk size&nbsp;
         <select
           value={chunkSize}
-          disabled={pickerDisabled}
+          // Phase 30: the dropdown is now display-only when
+          // connected — chunkSize is owned by the shared sclang
+          // clock (`SC_APP_CLOCK_CHUNK_SIZE` env var). Disabled
+          // pre-connect too, since the user can't influence it
+          // from the dashboard either way.
+          disabled
           onChange={(e) => onChunkSizeChange(Number(e.target.value))}
           title={
-            `Tick rate = sampleRate / chunkSize. Changing this ` +
-            `re-initialises the dashboard.`
+            `Phase 30: chunk size is owned by sclang's shared clock. ` +
+            `Restart sclang with SC_APP_CLOCK_CHUNK_SIZE=N to change.`
           }
         >
           {options.map((cs) => (
@@ -290,7 +294,7 @@ function DashboardPanels({ resources }: { resources: DashboardResources }) {
   );
   return (
     <>
-      <ClockPanel clock={resources.clock} />
+      <ClockPanel clock={resources.clock} group={resources.group} />
       <SynthsPanel manager={resources.synthManager} />
       <ScopeList manager={resources.scopeManager} />
       <RecordingPanel
@@ -378,26 +382,31 @@ async function setupDashboard(
 
   const registry = new SynthDefRegistry(client);
   const group = new GroupController(client, parentGroupId);
-  const clock = new ClockController({
-    client,
-    group,
-    registry,
-    nodeIds: ids.node,
-    busIds: ids.bus,
-    env: { sampleRate },
-    params: { chunkSize },
-  });
+  const clock = new ClockController({ client, group });
 
-  console.log(
-    `[sc:app] starting global clock in group ${parentGroupId}, ` +
-      `clockBus=${clock.clockBus}, sampleRate=${sampleRate}, ` +
-      `chunkSize=${chunkSize}, tickRate=${clock.derived.tickRate.toFixed(3)} Hz`,
-  );
-  // The parent group is created paused inside `clock.start()` (via
+  // Phase 30: the parent group is created here (paused, via
   // `GroupController.ensureCreated`'s atomic /g_new + /n_run 0
-  // bundle), so the clock synth /s_new'd here lands in a paused
-  // group and never ticks until the user clicks Start.
-  await clock.start();
+  // bundle), separately from the shared clock — which lives in
+  // sclang at scsynth's root group, OUTSIDE this client's parent
+  // group. `clock.attach()` round-trips /clock/hello to read the
+  // running clock's config (tickRate / chunkSize / clockBus); the
+  // `chunkSize` parameter to this function is informational only
+  // post-30 (kept in the signature for Phase 30c removal).
+  await group.ensureCreated();
+  const clockInfo = await clock.attach();
+  if (clockInfo.chunkSize !== chunkSize) {
+    console.warn(
+      `[sc:app] requested chunkSize=${chunkSize} but the shared clock ` +
+        `is running at chunkSize=${clockInfo.chunkSize}. The dashboard ` +
+        `will use the clock's value. To change, restart sclang with ` +
+        `SC_APP_CLOCK_CHUNK_SIZE=${chunkSize}.`,
+    );
+  }
+  console.log(
+    `[sc:app] attached to shared clock — clockBus=${clock.clockBus}, ` +
+      `sampleRate=${clockInfo.sampleRate}, chunkSize=${clockInfo.chunkSize}, ` +
+      `tickRate=${clock.derived.tickRate.toFixed(3)} Hz`,
+  );
   const synthManager = new SynthManager({
     client,
     group,
@@ -453,6 +462,12 @@ async function setupDashboard(
     },
     dirtClient,
     bank,
+    // Phase 30: when the user pauses the parent group, the shared
+    // clock keeps ticking but we don't want the sequencer to emit
+    // `/dirt/play`. The callback is polled at every pump; on the
+    // first pump after un-pause, the controller re-anchors
+    // nextStepTick so we don't replay missed steps in a burst.
+    isGroupPaused: () => group.state.get() === 'paused',
   });
 
   // One-shot /version fetch. Informational only — fail open with
@@ -558,9 +573,12 @@ async function teardownServerState(resources: DashboardResources): Promise<void>
     console.warn('[sc:app] synthManager.clear failed', err);
   }
   try {
-    await resources.clock.dispose();
+    // Phase 30: detach is sync — there's no /n_free to await, the
+    // clock keeps running on sclang's side. Just drop the trig
+    // listener and the watchdog.
+    resources.clock.detach();
   } catch (err) {
-    console.warn('[sc:app] clock.dispose failed', err);
+    console.warn('[sc:app] clock.detach failed', err);
   }
   try {
     await resources.group.free();
@@ -719,6 +737,10 @@ export function AppShell() {
     }
 
     setResources(built);
+    // Phase 30: the displayed chunkSize follows the shared clock,
+    // not the user's selection. setupDashboard already validated /
+    // logged any mismatch.
+    setChunkSize(built.clock.info.chunkSize);
   }, []);
 
   // Phase 29c: auto-connect when bootstrap reports a ready
@@ -858,11 +880,12 @@ export function AppShell() {
         return false;
       });
       if (dirty) {
-        // Pause the clock so the recording's elapsed counter stops
-        // moving while the user decides. clock.stop() pauses the
-        // entire parent group via /n_run 0.
-        void current.clock.stop().catch((err) => {
-          console.warn('[sc:app] clock.stop while confirming reinit failed', err);
+        // Pause the parent group so this client's recording's
+        // elapsed counter stops moving while the user decides. The
+        // shared clock keeps ticking on sclang's side — other
+        // clients are unaffected (Phase 30).
+        void current.group.pause().catch((err: unknown) => {
+          console.warn('[sc:app] group.pause while confirming reinit failed', err);
         });
         setPendingChunkSize(next);
         return;
@@ -877,11 +900,13 @@ export function AppShell() {
   }, [pendingChunkSize, runReinit]);
 
   const onCancelReinit = useCallback(() => {
-    // Resume the clock we paused when we showed the modal — the
-    // recording continues, the dropdown effectively reverts to
-    // `chunkSize` (we never set it to `pendingChunkSize`).
-    void resources?.clock.resume().catch((err) => {
-      console.warn('[sc:app] clock.resume on cancel failed', err);
+    // Resume the parent group we paused when we showed the modal —
+    // the recording continues, the dropdown effectively reverts to
+    // `chunkSize` (we never set it to `pendingChunkSize`). Phase 30:
+    // the shared clock kept ticking the whole time; only this
+    // client's tap synths were frozen.
+    void resources?.group.resume().catch((err: unknown) => {
+      console.warn('[sc:app] group.resume on cancel failed', err);
     });
     setPendingChunkSize(null);
   }, [resources]);

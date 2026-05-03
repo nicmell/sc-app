@@ -1,224 +1,216 @@
 /**
- * Owns the global clock synth's lifecycle and the UI-facing tick stream.
+ * Phase 30: passive observer of the shared clock.
  *
- * Pause/resume is **group-level** — `clock.stop()` calls
- * `group.pause()` (`/n_run groupId 0`) and `clock.resume()` calls
- * `group.resume()`. This freezes everything in the parent group
- * (clock, scopes, recorders, any source synths) in lockstep, which
- * is the "global pause" semantic the dashboard expects.
+ * The clock synth lives in sclang (see
+ * `scripts/sc-app-superdirt-startup.scd` — `\scAppClock` SynthDef
+ * + `OSCdef(\scAppClockHello)`) at scsynth's root group, **outside**
+ * any client's parent group. This controller no longer owns the
+ * synth's lifecycle — it just attaches, fetches the running clock's
+ * configuration via `/clock/hello`, and observes the `/tr` stream
+ * scsynth multicasts to every `/notify`'d session.
  *
- * The dashboard comes up paused because `GroupController.ensureCreated`
- * bundles `/g_new + /n_run groupId 0` atomically — the group never
- * exists in a running state until the user clicks Start. The clock
- * synth /s_new'd by `start()` lands in a paused group and inherits
- * that state, so no /tr fires until `resume()`.
+ * Pause/resume is **local** to the parent group: clicking Pause in
+ * the UI calls `group.pause()` (`/n_run groupId 0`), which freezes
+ * THIS client's scopes, recorders, and tap synths. The shared clock
+ * keeps ticking — other clients are unaffected. This is by design;
+ * see plan.md Phase 30 for the rationale.
  *
- * `effectiveState` derives from `groupState + tickFresh`: while the
- * group state says `running` but no tick has arrived in
- * `2 × tickIntervalMs`, we surface `paused` so the UI doesn't lie
- * about a silent server. Resolves back to `running` as soon as a
- * tick lands.
+ * `effectiveState` derives from group state + tick freshness. While
+ * the controller is detached (no `/tr` for > the watchdog window),
+ * we surface `stopped` so the UI doesn't lie about a silent server.
  *
- * **Group ordering invariant.** The clock synth is added with
- * `AddToHead`; every other synth that reads the clock bus (scopes,
- * recorders) MUST be added with `AddToTail` so scsynth processes
- * them AFTER the clock on every control block — otherwise they'd
- * read the previous block's bus value, introducing ~1 ms lag.
+ * **Group ordering invariant.** Tap synths in the parent group must
+ * be `/s_new`'d with `AddToTail` so scsynth processes them after
+ * the shared clock at root group head — otherwise they'd read the
+ * previous control block's `clockBus` value, introducing ~1 ms lag.
+ * Pre-Phase-30 the clock lived at the parent group's head; the
+ * invariant moves up one level (now scsynth root) but its meaning
+ * is unchanged.
  */
 
 import type {
   AudioEnvironment,
   ClockDerived,
-  ClockParams,
 } from '@/config/clockConfig';
-import { CLOCK_TRIG_ID, deriveClock } from '@/config/clockConfig';
+import { deriveClock } from '@/config/clockConfig';
 import {
-  CLOCK_SYNTHDEF_NAME,
-  compileClockSynthDef,
-} from '@/synthdefs/clockSynthDef';
-import { AddToHead, nFree, sNew } from '@sc-app/server-commands';
+  CLOCK_INFO_REPLY,
+  clockHello,
+  parseClockInfo,
+  type ClockInfo,
+} from '@/clock/clockClient';
 import { GroupController, type GroupState } from '@/server/GroupController';
-import type { IdAllocator } from '@/server/IdAllocator';
 import type { ReadonlyStore } from '@/util/reactiveStore';
 import { createStore } from '@/util/reactiveStore';
-import type { SynthDefRegistry } from '@/server/SynthDefRegistry';
 import type { WorkerClient } from '@/server/WorkerClient';
 import type { ClockTick } from '@/server/workerProtocol';
 
 export type ClockState = 'stopped' | 'running' | 'paused';
 
 /** Grace window applied to the freshness check before any tick has
- *  been seen — covers scsynth scheduling latency right after `start`
- *  / `resume` / `reset`. Comfortably larger than the 2 × tickInterval
- *  watchdog that takes over once ticks are flowing. */
+ *  been seen — covers scsynth scheduling latency right after attach.
+ *  Comfortably larger than the 2 × tickInterval watchdog that takes
+ *  over once ticks are flowing. */
 const TICK_STARTUP_GRACE_MS = 500;
+
+/** /clock/hello round-trip default timeout. 3 s is generous —
+ *  sclang's responder is synchronous, so the actual round-trip is
+ *  one local UDP hop in each direction (sub-ms in practice). */
+const ATTACH_TIMEOUT_MS = 3000;
 
 interface ClockControllerOptions {
   client: WorkerClient;
+  /** Used for `effectiveState` derivation only — the controller does
+   *  not manipulate the group itself. UI components that want to
+   *  pause / resume should call `group.pause()` / `group.resume()`
+   *  directly. */
   group: GroupController;
-  registry: SynthDefRegistry;
-  nodeIds: IdAllocator;
-  busIds: IdAllocator;
-  env: AudioEnvironment;
-  params: ClockParams;
 }
 
 export class ClockController {
-  readonly env: AudioEnvironment;
-  readonly params: ClockParams;
-  readonly derived: ClockDerived;
-  /** Audio bus index on which the clock publishes its shared sample
-   *  phase. Scope / recorder synths read this via `In.ar(clockBus)`. */
-  readonly clockBus: number;
-
   private readonly client: WorkerClient;
   private readonly group: GroupController;
-  private readonly registry: SynthDefRegistry;
-  private readonly nodeIds: IdAllocator;
 
   private readonly lastTickStore = createStore<ClockTick | null>(null);
   private readonly effectiveStateStore = createStore<ClockState>('stopped');
 
-  private clockNodeId: number | null = null;
+  private _info: ClockInfo | null = null;
+  private _derived: ClockDerived | null = null;
   private offTick: (() => void) | null = null;
   private offGroupState: (() => void) | null = null;
   private watchdog: number | null = null;
-  private started = false;
+  private attached = false;
   /** Most recent "we expect ticks to be flowing" moment — the latest
-   *  of `start` / `resume` / `reset` or any incoming tick. Null while
-   *  the controller is stopped. */
+   *  of `attach()` or any incoming tick. Null while detached. */
   private lastSignalAt: number | null = null;
   /** Main-thread `Date.now()` anchored at the first tick's arrival,
    *  minus the tick's own index-in-time. Used by `tickToTimetag` to
-   *  convert server tick indices into NTP timetags for scheduled
-   *  OSC bundles. Null until the first tick arrives. */
+   *  convert server tick indices into NTP timetags. Null until the
+   *  first observed tick. */
   private _tick0Ms: number | null = null;
 
   constructor(opts: ClockControllerOptions) {
     this.client = opts.client;
     this.group = opts.group;
-    this.registry = opts.registry;
-    this.nodeIds = opts.nodeIds;
-    this.env = opts.env;
-    this.params = opts.params;
-    this.derived = deriveClock(opts.env, opts.params);
-    this.clockBus = opts.busIds.next();
   }
 
-  /** Monotonic pulse count from the most recent tick, or null if no
-   *  tick has arrived since the last `reset()`. */
+  /** ClockInfo from the most recent `attach()`. Throws if read
+   *  before `attach()` has resolved — callers should sequence their
+   *  setup against the awaited promise. */
+  get info(): ClockInfo {
+    if (this._info === null) {
+      throw new Error('ClockController.info read before attach() resolved');
+    }
+    return this._info;
+  }
+
+  get derived(): ClockDerived {
+    if (this._derived === null) {
+      throw new Error('ClockController.derived read before attach() resolved');
+    }
+    return this._derived;
+  }
+
+  /** Convenience: clock bus index sclang allocated. Tap synths
+   *  read this via `In.ar(clockBus)`. */
+  get clockBus(): number {
+    return this.info.clockBus;
+  }
+
+  /** Pre-Phase-30 callers (`RecordingManager`, `ScopeManager`)
+   *  reach for `clock.env.sampleRate` as the WAV-header / scope-rate
+   *  value. Synthesised from `info.sampleRate` here so those call
+   *  sites stay unchanged. */
+  get env(): AudioEnvironment {
+    return { sampleRate: this.info.sampleRate };
+  }
+
+  /** Monotonic pulse count from the most recent observed tick, or
+   *  null if no tick has arrived since `attach()`. */
   get lastTick(): ReadonlyStore<ClockTick | null> {
     return this.lastTickStore;
   }
 
   /** `running` / `paused` / `stopped`, with stale-tick detection
-   *  overriding a "running" group back to `paused`. */
+   *  overriding a "running" group back to `paused`. Becomes
+   *  `'stopped'` when the controller is detached or sclang stops
+   *  emitting `/tr`s. */
   get effectiveState(): ReadonlyStore<ClockState> {
     return this.effectiveStateStore;
   }
 
   /** JS ms timestamp corresponding to tick 0, anchored on the first
-   *  tick we see. Callers pair this with `derived.tickRate` (or
+   *  tick we observed. Pair with `derived.tickRate` (or
    *  `tickToTimetag`) to schedule OSC bundles at sample-accurate
    *  future tick boundaries. Null until the first tick lands. */
   get tick0Ms(): number | null {
     return this._tick0Ms;
   }
 
-  /** First-time bring-up: load synthdef, ensure the parent group
-   *  exists (paused — see `GroupController.ensureCreated`), register
-   *  the clock trigId, /s_new the clock synth at head. The synth
-   *  inherits the group's paused state, so no /tr fires until the
-   *  user calls `resume()`. Idempotent. */
-  async start(): Promise<void> {
-    if (this.started) return;
+  /** Round-trip `/clock/hello`, parse `/clock/info`, register the
+   *  trig handler, and start watching for `/tr` freshness.
+   *  Idempotent — second call returns the cached info without a
+   *  fresh round-trip. */
+  async attach(timeoutMs: number = ATTACH_TIMEOUT_MS): Promise<ClockInfo> {
+    if (this.attached && this._info !== null) return this._info;
 
-    await this.registry.ensureLoaded(
-      CLOCK_SYNTHDEF_NAME,
-      compileClockSynthDef(this.derived.tickRate),
+    let reply;
+    try {
+      reply = await this.client.sendAndAwaitReply(
+        clockHello(),
+        (r) => r.address === CLOCK_INFO_REPLY,
+        timeoutMs,
+      );
+    } catch (err) {
+      // Most common causes:
+      //   - sclang isn't running (start it via `yarn osc` /
+      //     `yarn superdirt-only`).
+      //   - The bridge config is missing the `/clock` route, so
+      //     /clock/hello falls through to the default scsynth
+      //     target and scsynth replies `/fail` instead of /clock/info.
+      // Wrap the underlying timeout/error with context so the toast
+      // points the user at the likely fix.
+      const cause = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Could not attach to the shared clock (/clock/hello): ${cause}. ` +
+          `Check that sclang+SuperDirt is running and that config.json ` +
+          `has a "/clock → 127.0.0.1:57120" route.`,
+      );
+    }
+    const info = parseClockInfo(reply.args);
+    this._info = info;
+    this._derived = deriveClock(
+      { sampleRate: info.sampleRate },
+      { chunkSize: info.chunkSize },
     );
-    await this.group.ensureCreated();
 
-    this.client.registerClock(CLOCK_TRIG_ID);
+    this.client.registerClock(info.trigId);
     this.offTick = this.client.onTick((tick) => this.handleTick(tick));
     this.offGroupState = this.group.state.subscribe((s) => this.recompute(s));
     this.startWatchdog();
-
-    this.clockNodeId = this.nodeIds.next();
     this.lastSignalAt = performance.now();
-    await this.client.sendAndSync(
-      sNew(
-        CLOCK_SYNTHDEF_NAME,
-        this.clockNodeId,
-        AddToHead,
-        this.group.groupId,
-        { clockBus: this.clockBus },
-      ),
-    );
-
-    this.started = true;
+    this.attached = true;
     this.recompute(this.group.state.get());
+
+    return info;
   }
 
-  /** Global pause — `/n_run 0` on the parent group freezes the
-   *  clock synth along with every scope / recorder child. */
-  async stop(): Promise<void> {
-    await this.group.pause();
-  }
-
-  async resume(): Promise<void> {
-    // Reset the freshness clock so the warmup grace kicks in again —
-    // the old `lastTick` predates the pause and would otherwise make
-    // the UI flicker `paused` for one watchdog period after resume.
-    this.lastSignalAt = performance.now();
-    await this.group.resume();
-    this.recompute(this.group.state.get());
-  }
-
-  /** Free the clock synth and re-add it, returning tickIndex to 0.
-   *  Group (and other children) untouched. */
-  async reset(): Promise<void> {
-    if (this.clockNodeId === null) return;
-    await this.client.sendAndSync(nFree(this.clockNodeId));
-
-    this.lastTickStore.set(null);
-    this._tick0Ms = null;
-    this.lastSignalAt = performance.now();
-    this.clockNodeId = this.nodeIds.next();
-    await this.client.sendAndSync(
-      sNew(
-        CLOCK_SYNTHDEF_NAME,
-        this.clockNodeId,
-        AddToHead,
-        this.group.groupId,
-        { clockBus: this.clockBus },
-      ),
-    );
-    this.recompute(this.group.state.get());
-  }
-
-  /** Full teardown — free the clock, unregister, stop the watchdog.
-   *  The parent group is left alone; `GroupController.free` is the
-   *  caller's job. */
-  async dispose(): Promise<void> {
+  /** Tear down listeners and the watchdog. The shared clock keeps
+   *  running on sclang's side — we just stop observing it.
+   *  Idempotent. */
+  detach(): void {
     this.stopWatchdog();
     this.offTick?.();
     this.offTick = null;
     this.offGroupState?.();
     this.offGroupState = null;
-    this.client.unregisterClock();
-
-    if (this.clockNodeId !== null) {
-      try {
-        await this.client.sendAndSync(nFree(this.clockNodeId));
-      } catch {
-        // Best-effort — the server may already be gone.
-      }
-      this.clockNodeId = null;
+    if (this.attached) {
+      this.client.unregisterClock();
     }
-    this.started = false;
+    this.attached = false;
     this.lastSignalAt = null;
     this._tick0Ms = null;
+    this.lastTickStore.set(null);
     this.effectiveStateStore.set('stopped');
   }
 
@@ -233,14 +225,14 @@ export class ClockController {
     // 100s of ms) that would pin `isTickFresh` to false forever.
     const nowMs = performance.now();
     this.lastSignalAt = nowMs;
-    // Anchor tick0 on the first tick we see. `Date.now()` is used
+    // Anchor tick0 on the first observed tick. `Date.now()` is used
     // (not `performance.now()`) because OSC NTP timetags are aligned
     // to wall-clock epoch; `tickToTimetag(tick0Ms, N, tickRate)`
     // must return something scsynth's scheduler accepts as a JS
     // timestamp-ms.
-    if (this._tick0Ms === null) {
+    if (this._tick0Ms === null && this._derived !== null) {
       this._tick0Ms =
-        Date.now() - (tick.tickIndex * 1000) / this.derived.tickRate;
+        Date.now() - (tick.tickIndex * 1000) / this._derived.tickRate;
     }
     // A fresh tick while we were showing 'paused'-due-to-silence
     // flips us back to 'running'. Group-state-driven `paused` (real
@@ -250,7 +242,9 @@ export class ClockController {
 
   private recompute(groupState: GroupState): void {
     let next: ClockState;
-    if (groupState === 'stopped') {
+    if (!this.attached) {
+      next = 'stopped';
+    } else if (groupState === 'stopped') {
       next = 'stopped';
     } else if (groupState === 'paused') {
       next = 'paused';
@@ -258,6 +252,9 @@ export class ClockController {
       next = 'running';
     } else {
       // Group says running but no recent tick — surface as paused.
+      // (Means sclang stopped emitting; could be a sclang restart
+      // mid-session. The status-pill turning amber is the user's
+      // signal to investigate.)
       next = 'paused';
     }
     this.effectiveStateStore.set(next);
@@ -265,20 +262,22 @@ export class ClockController {
 
   private isTickFresh(): boolean {
     if (this.lastSignalAt === null) return false;
+    if (this._derived === null) return false;
     const ageMs = performance.now() - this.lastSignalAt;
     // Before the first tick ever arrives, grant a startup grace so
     // the UI doesn't immediately claim 'paused' during scsynth's
     // scheduling latency window. Once a tick has been seen, the
     // normal 2 × tickIntervalMs watchdog takes over.
     const allowance = this.lastTickStore.get()
-      ? this.derived.tickIntervalMs * 2
+      ? this._derived.tickIntervalMs * 2
       : TICK_STARTUP_GRACE_MS;
     return ageMs < allowance;
   }
 
   private startWatchdog(): void {
     this.stopWatchdog();
-    const periodMs = Math.max(20, Math.floor(this.derived.tickIntervalMs / 2));
+    if (this._derived === null) return;
+    const periodMs = Math.max(20, Math.floor(this._derived.tickIntervalMs / 2));
     this.watchdog = window.setInterval(() => {
       this.recompute(this.group.state.get());
     }, periodMs);

@@ -99,4 +99,12 @@ echo "  Ctrl-C to stop sclang+SuperDirt (scsynth survives)."
 # is scsynth's concern — set when launching scsynth, not here.
 export SC_APP_DIRT_SAMPLES="$DEPS/Dirt-Samples/*"
 
+# Phase 30: shared global clock's chunkSize. Default 1024 mirrors
+# the pre-30 frontend default. Override at launch:
+#   SC_APP_CLOCK_CHUNK_SIZE=512 yarn osc
+# Power of 2 strongly recommended (FFT-friendly, page-aligned
+# recordings). The .scd validates and falls back to 1024 if unset
+# or invalid.
+export SC_APP_CLOCK_CHUNK_SIZE="${SC_APP_CLOCK_CHUNK_SIZE:-1024}"
+
 exec sclang -l "$CONF" "$STARTUP"

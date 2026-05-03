@@ -35,6 +35,7 @@ import { createStore, type ReadonlyStore } from '@/util/reactiveStore';
 import type { PatternBank } from './PatternBank';
 import {
   cancelPendingPlayheadTimers,
+  INITIAL_LOOKAHEAD_TICKS,
   makeInitialSchedulerState,
   pump,
   resetForPlay,
@@ -80,12 +81,20 @@ export interface SequencerControllerOptions {
   /** Source of truth for pattern state. The controller never
    *  mutates other slots — only the active one. */
   bank: PatternBank;
+  /** Phase 30: predicate the controller polls each pump to decide
+   *  whether to emit `/dirt/play`. Returns `true` when this client's
+   *  parent group is paused — the shared clock keeps ticking but
+   *  we skip emission so the user's Pause button visibly silences
+   *  sequencer output. Optional; if omitted, the sequencer never
+   *  self-pauses (legacy behaviour). */
+  isGroupPaused?: () => boolean;
 }
 
 export class SequencerController {
   private readonly clock: ClockLike;
   private readonly dirtClient: DirtClientLike;
   private readonly bank: PatternBank;
+  private readonly isGroupPaused: () => boolean;
 
   private readonly _transport;
   /** UI-facing index of the chain entry currently playing
@@ -100,11 +109,19 @@ export class SequencerController {
   };
   private wakeTimer: number | null = null;
   private disposed = false;
+  /** Phase 30: tracks whether the previous pump observed
+   *  `isGroupPaused()` true. On the first pump after a paused→
+   *  running transition we re-anchor `schedulerState.nextStepTick`
+   *  to (current tick + INITIAL_LOOKAHEAD_TICKS) so playback
+   *  continues from "now" rather than firing every step we
+   *  skipped during the pause in a catch-up burst. */
+  private wasPausedLastPump = false;
 
   constructor(opts: SequencerControllerOptions) {
     this.clock = opts.clock;
     this.dirtClient = opts.dirtClient;
     this.bank = opts.bank;
+    this.isGroupPaused = opts.isGroupPaused ?? (() => false);
     this._transport = createStore<TransportState>(STOPPED_TRANSPORT);
     this._chainPlaybackIndex = createStore<number | null>(null);
     this.schedulerState = makeInitialSchedulerState();
@@ -390,6 +407,28 @@ export class SequencerController {
   private pumpOnce(): void {
     if (this.disposed) return;
     if (!this._transport.get().isPlaying) return;
+    // Phase 30: parent group paused ⇒ no `/dirt/play` emission. The
+    // shared clock keeps advancing on sclang's side, but the user's
+    // Pause button silences audible output (option (b) from plan.md
+    // Phase 30).
+    if (this.isGroupPaused()) {
+      this.wasPausedLastPump = true;
+      return;
+    }
+    // Just un-paused — re-anchor nextStepTick to "now + lookahead"
+    // so resume doesn't fire every step we skipped during the pause
+    // in a catch-up burst. nextStepIndex is preserved (we want
+    // playback to continue from the same step in the pattern, not
+    // jump back to step 0).
+    if (this.wasPausedLastPump) {
+      const tick0 = this.clock.tick0Ms;
+      if (tick0 !== null) {
+        const nowTick = ((Date.now() - tick0) * this.clock.tickRate) / 1000;
+        this.schedulerState.nextStepTick = nowTick + INITIAL_LOOKAHEAD_TICKS;
+        cancelPendingPlayheadTimers(this.schedulerState);
+      }
+      this.wasPausedLastPump = false;
+    }
     // Phase 27d: check the chain BEFORE pumping. If the elapsed
     // step count for the current entry has reached its target
     // (cycles × current pattern length), advance — possibly

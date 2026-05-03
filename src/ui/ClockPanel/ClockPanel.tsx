@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import type { ClockController, ClockState } from '@/clock/ClockController';
+import type { GroupController } from '@/server/GroupController';
 import './ClockPanel.css';
 
 const PULSE_FLASH_MS = 90;
 
 interface ClockPanelProps {
   clock: ClockController;
+  /** Phase 30: the shared clock can't be paused (it lives in sclang
+   *  outside this client's parent group), so the panel's
+   *  Pause/Resume buttons drive the parent group instead. Visually
+   *  the user still sees "the clock" pause, because everything in
+   *  their parent group (scopes, recordings, tap synths) freezes —
+   *  only the trig stream from sclang continues. */
+  group: GroupController;
 }
 
 /** Map clock state to a foundation .status-pill variant + label.
@@ -44,7 +52,7 @@ function formatElapsed(tickIndex: number, tickRate: number): string {
   return `${mm}:${ss}.${mmm}`;
 }
 
-export function ClockPanel({ clock }: ClockPanelProps) {
+export function ClockPanel({ clock, group }: ClockPanelProps) {
   const state = useSyncExternalStore(
     (cb) => clock.effectiveState.subscribe(cb),
     () => clock.effectiveState.get(),
@@ -73,13 +81,20 @@ export function ClockPanel({ clock }: ClockPanelProps) {
     return () => window.clearTimeout(timer);
   }, [tick?.receivedAt, tick]);
 
+  // Phase 30: pause/resume drive the parent group, not the shared
+  // clock. Freezing the group via /n_run 0 stops this client's tap
+  // synths, scopes, recordings, and sequencer — everything that
+  // anchors on the user's session. The shared clock keeps emitting
+  // /tr triggers from sclang; nothing in this client reads them
+  // while paused (the sequencer is gated on group.state — see
+  // SequencerController).
   const onToggle = useCallback(async () => {
     setBusy(true);
     try {
       if (state === 'running') {
-        await clock.stop();
+        await group.pause();
       } else if (state === 'paused') {
-        await clock.resume();
+        await group.resume();
         setUserStartedOnce(true);
       }
     } catch (err) {
@@ -87,18 +102,7 @@ export function ClockPanel({ clock }: ClockPanelProps) {
     } finally {
       setBusy(false);
     }
-  }, [clock, state]);
-
-  const onReset = useCallback(async () => {
-    setBusy(true);
-    try {
-      await clock.reset();
-    } catch (err) {
-      console.error('[sc:clock] reset failed', err);
-    } finally {
-      setBusy(false);
-    }
-  }, [clock]);
+  }, [group, state]);
 
   const pill = pillFor(state);
   const tickIndex = tick?.tickIndex ?? 0;
@@ -127,14 +131,9 @@ export function ClockPanel({ clock }: ClockPanelProps) {
         >
           {toggleLabel}
         </button>
-        <button
-          type="button"
-          data-variant="secondary"
-          onClick={onReset}
-          disabled={busy || state === 'stopped'}
-        >
-          Reset
-        </button>
+        {/* Phase 30 dropped the Reset button — the shared clock
+            lives in sclang and can't be reset by an individual
+            client. To restart from tick 0 you'd restart sclang. */}
       </div>
     </section>
   );
