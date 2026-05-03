@@ -49,7 +49,8 @@ use tokio::sync::Mutex as TokioMutex;
 use tokio::task::JoinHandle;
 
 use super::routing::peek_osc_address;
-use super::session::Session;
+use super::session::{ScopeMode, Session};
+use crate::scope_osc::{self, OscPollState, OscScopeSubscription};
 use crate::scope_shm::{self, ScopeReadResult};
 
 const SCOPE_OP_SUBSCRIBE: u8 = 0x01;
@@ -61,7 +62,7 @@ const SCOPE_OP_CHUNK: u8 = 0x03;
 /// echoing it back on chunk frames; we use it as a HashMap key
 /// because it's small and unique-per-WS.
 #[derive(Debug)]
-struct ScopeSubscription {
+struct ShmScopeSubscription {
     sub_id: u32,
     scope_idx: u32,
     last_seen_stage: i32,
@@ -74,21 +75,38 @@ struct ScopeSubscription {
 /// Per-WS scope context. Owned by `handle_ws_session`'s scope;
 /// drops when the WS closes (and with it, every subscription —
 /// see module docs for the cleanup invariant).
+///
+/// Phase 36: dual-mode. The session's `ScopeMode` decides which
+/// branch is populated. Both arms are always allocated (zero-cost
+/// when unused — `HashMap::new()` doesn't allocate); only the
+/// active path's storage gets entries. A handoff between modes
+/// mid-session is unsupported (Session::scope_mode is frozen at
+/// create).
 struct ScopeContext {
-    /// Lazily populated on first 0x01 frame: the session-level
-    /// SHM mmap. Multiple WSs on the same session share one
-    /// mapping (lives on `Session::scope_shm`).
+    /// SHM mode: lazily-populated session-level mmap. Multiple
+    /// WSs on the same session share one mapping (lives on
+    /// `Session::scope_shm`).
     shm: Option<Arc<crate::server::session::ScopeShm>>,
-    /// Active subscriptions, keyed by `sub_id`.
-    subs: HashMap<u32, ScopeSubscription>,
+    /// SHM mode: active subscriptions, keyed by `sub_id`.
+    shm_subs: HashMap<u32, ShmScopeSubscription>,
+    /// OSC fallback mode: active subscriptions + ring-half
+    /// tracking. Empty in SHM mode.
+    osc: OscPollState,
 }
 
 impl ScopeContext {
     fn new() -> Self {
         Self {
             shm: None,
-            subs: HashMap::new(),
+            shm_subs: HashMap::new(),
+            osc: OscPollState::default(),
         }
+    }
+
+    /// Total subscription count across both modes — used for the
+    /// WS-close cleanup log line.
+    fn total_subs(&self) -> usize {
+        self.shm_subs.len() + self.osc.subs.len()
     }
 }
 
@@ -164,8 +182,12 @@ pub async fn handle_ws_session(ws: WebSocket, session: Arc<Session>) -> Result<(
                         }
                     }
                     SCOPE_OP_UNSUBSCRIBE => {
-                        if let Err(e) =
-                            handle_scope_unsubscribe(bytes_slice, &scope_ctx).await
+                        if let Err(e) = handle_scope_unsubscribe(
+                            bytes_slice,
+                            &scope_ctx,
+                            &session,
+                        )
+                        .await
                         {
                             tracing::warn!(
                                 error = %e,
@@ -221,7 +243,7 @@ pub async fn handle_ws_session(ws: WebSocket, session: Arc<Session>) -> Result<(
     // outlives this WS — only the per-WS subscription state goes.)
     let dropped_count = {
         let ctx = scope_ctx.lock().await;
-        ctx.subs.len()
+        ctx.total_subs()
     };
     if dropped_count > 0 {
         tracing::debug!(
@@ -244,79 +266,107 @@ async fn handle_scope_subscribe(
     session: &Arc<Session>,
 ) -> Result<()> {
     // Frame: [op:u8 | sub_id:u32 | scope:u32 | channels:u32 | chunk:u32]
+    // The `scope` field is interpreted as scope_idx in SHM mode
+    // and as bufnum in OSC mode (frontend picks accordingly).
     if bytes.len() < 17 {
         anyhow::bail!("subscribe frame too short ({} < 17)", bytes.len());
     }
     let sub_id = u32::from_le_bytes(bytes[1..5].try_into().unwrap());
-    let scope_idx = u32::from_le_bytes(bytes[5..9].try_into().unwrap());
-    // channels + chunk are not used by the bridge — the layout
-    // already knows them. Decoded here for log clarity / future
-    // sanity checks.
+    let scope_or_bufnum = u32::from_le_bytes(bytes[5..9].try_into().unwrap());
     let channels = u32::from_le_bytes(bytes[9..13].try_into().unwrap());
     let chunk_size = u32::from_le_bytes(bytes[13..17].try_into().unwrap());
 
-    let mut ctx = scope_ctx.lock().await;
-
-    // Lazily ensure the session-level SHM mmap on first subscribe.
-    if ctx.shm.is_none() {
-        let shm = session
-            .ensure_scope_shm()
-            .await
-            .map_err(|e| anyhow::anyhow!("ensure_scope_shm failed: {e}"))?;
-        ctx.shm = Some(shm);
+    match session.scope_mode {
+        ScopeMode::Shm => {
+            let mut ctx = scope_ctx.lock().await;
+            if ctx.shm.is_none() {
+                let shm = session
+                    .ensure_scope_shm()
+                    .await
+                    .map_err(|e| anyhow::anyhow!("ensure_scope_shm failed: {e}"))?;
+                ctx.shm = Some(shm);
+            }
+            let shm = ctx.shm.as_ref().expect("shm just set above");
+            if (scope_or_bufnum as usize) >= shm.layout.count {
+                anyhow::bail!(
+                    "scope index {} out of range (layout count {})",
+                    scope_or_bufnum,
+                    shm.layout.count
+                );
+            }
+            if let Some(prev) = ctx.shm_subs.insert(
+                sub_id,
+                ShmScopeSubscription {
+                    sub_id,
+                    scope_idx: scope_or_bufnum,
+                    last_seen_stage: -1,
+                    tick_index: 0,
+                },
+            ) {
+                tracing::warn!(
+                    session_id = %session.session_id,
+                    sub_id,
+                    prev_scope_idx = prev.scope_idx,
+                    new_scope_idx = scope_or_bufnum,
+                    "scope subscribe replaced existing SHM subscription with same sub_id"
+                );
+            }
+            tracing::debug!(
+                session_id = %session.session_id,
+                sub_id,
+                scope_idx = scope_or_bufnum,
+                channels,
+                chunk_size,
+                "shm scope subscription installed"
+            );
+        }
+        ScopeMode::Osc => {
+            let mut ctx = scope_ctx.lock().await;
+            if let Some(prev) = ctx.osc.subs.insert(
+                sub_id,
+                OscScopeSubscription::new(
+                    sub_id,
+                    scope_or_bufnum,
+                    channels,
+                    chunk_size,
+                ),
+            ) {
+                tracing::warn!(
+                    session_id = %session.session_id,
+                    sub_id,
+                    prev_bufnum = prev.bufnum,
+                    new_bufnum = scope_or_bufnum,
+                    "scope subscribe replaced existing OSC subscription with same sub_id"
+                );
+            }
+            tracing::debug!(
+                session_id = %session.session_id,
+                sub_id,
+                bufnum = scope_or_bufnum,
+                channels,
+                chunk_size,
+                "osc scope subscription installed"
+            );
+        }
     }
-    let shm = ctx.shm.as_ref().expect("shm just set above");
-
-    if (scope_idx as usize) >= shm.layout.count {
-        anyhow::bail!(
-            "scope index {} out of range (layout count {})",
-            scope_idx,
-            shm.layout.count
-        );
-    }
-
-    if let Some(prev) = ctx.subs.insert(
-        sub_id,
-        ScopeSubscription {
-            sub_id,
-            scope_idx,
-            last_seen_stage: -1,
-            tick_index: 0,
-        },
-    ) {
-        tracing::warn!(
-            session_id = %session.session_id,
-            sub_id,
-            prev_scope_idx = prev.scope_idx,
-            new_scope_idx = scope_idx,
-            "scope subscribe replaced existing subscription with same sub_id"
-        );
-    }
-
-    tracing::debug!(
-        session_id = %session.session_id,
-        sub_id,
-        scope_idx,
-        channels,
-        chunk_size,
-        "scope subscription installed"
-    );
     Ok(())
 }
 
 async fn handle_scope_unsubscribe(
     bytes: &[u8],
     scope_ctx: &Arc<TokioMutex<ScopeContext>>,
+    session: &Arc<Session>,
 ) -> Result<()> {
-    // Frame: [op:u8 | sub_id:u32]
     if bytes.len() < 5 {
         anyhow::bail!("unsubscribe frame too short ({} < 5)", bytes.len());
     }
     let sub_id = u32::from_le_bytes(bytes[1..5].try_into().unwrap());
     let mut ctx = scope_ctx.lock().await;
-    if ctx.subs.remove(&sub_id).is_none() {
-        // Worker either never subscribed this id or already
-        // unsubscribed. Idempotent; not worth more than a debug.
+    let removed = match session.scope_mode {
+        ScopeMode::Shm => ctx.shm_subs.remove(&sub_id).is_some(),
+        ScopeMode::Osc => ctx.osc.subs.remove(&sub_id).is_some(),
+    };
+    if !removed {
         tracing::debug!(sub_id, "scope unsubscribe for unknown sub_id");
     }
     Ok(())
@@ -361,10 +411,20 @@ async fn forward_broadcast(
     }
 }
 
-/// Default-route forwarder (Phase 35). Same as `forward_broadcast`
-/// but additionally peeks each payload for `/clock/tick`; on hit,
-/// polls SHM for every active scope subscription on this WS and
-/// emits 0x03 chunk frames for those whose `_stage` advanced.
+/// Default-route forwarder. Mode-aware (Phase 36):
+///
+/// - **SHM mode**: peek `/clock/tick`; on hit, poll SHM for every
+///   subscription on this WS and emit 0x03 frames for those whose
+///   `_stage` advanced. Other payloads forward as plain OSC.
+/// - **OSC mode**: peek `/b_setn` first — if its bufnum matches
+///   one of our active subscriptions, intercept (encode 0x03
+///   frame, don't forward to WS). Other payloads forward as
+///   plain OSC. Peek `/clock/tick`; on hit, issue `/b_getn` for
+///   each subscription whose previous read has settled (one
+///   outstanding read per sub).
+///
+/// Both modes forward the original OSC payload to the WS unless
+/// it's a chunk we intercepted.
 async fn forward_default_route(
     mut receiver: broadcast::Receiver<Vec<u8>>,
     tx: Arc<TokioMutex<SplitSink<WebSocket, Message>>>,
@@ -375,10 +435,31 @@ async fn forward_default_route(
     loop {
         match receiver.recv().await {
             Ok(payload) => {
-                let is_tick = peek_osc_address(&payload) == Some("/clock/tick");
-                // Send the OSC reply to the WS first; the scope poll
-                // is independent.
+                let address = peek_osc_address(&payload);
+                let is_tick = address == Some("/clock/tick");
+
+                // Phase 36: in OSC mode, /b_setn replies for our
+                // own /b_getn requests get intercepted as chunk
+                // frames; everything else (including /b_setn for
+                // bufnums we don't own) forwards normally.
+                let mut intercepted_chunks: Vec<Vec<u8>> = Vec::new();
+                let mut forward_payload = true;
+                if session.scope_mode == ScopeMode::Osc
+                    && address == Some("/b_setn")
                 {
+                    match try_intercept_bsetn(&payload, &scope_ctx).await {
+                        Some(frame) => {
+                            intercepted_chunks.push(frame);
+                            forward_payload = false;
+                        }
+                        None => {
+                            // /b_setn for some bufnum we don't own
+                            // (or a parse failure). Let it through.
+                        }
+                    }
+                }
+
+                if forward_payload {
                     let mut tx_guard = tx.lock().await;
                     if let Err(e) = tx_guard
                         .send(Message::Binary(payload.into()))
@@ -392,20 +473,58 @@ async fn forward_default_route(
                         break;
                     }
                 }
-                if !is_tick {
-                    continue;
-                }
-                // /clock/tick observed — poll SHM for every active
-                // subscription. The lock is held across the entire
-                // poll loop; subscribe/unsubscribe will queue
-                // briefly, which is fine (this poll is at most ~47 Hz
-                // and the per-sub work is O(1)).
-                let chunk_frames = poll_scope_chunks(&scope_ctx, &session).await;
-                if !chunk_frames.is_empty() {
+
+                // /clock/tick drives the scope poll regardless of
+                // mode — but the actual work is mode-dependent.
+                if is_tick {
+                    let mut chunk_frames = match session.scope_mode {
+                        ScopeMode::Shm => {
+                            poll_scope_chunks(&scope_ctx, &session).await
+                        }
+                        ScopeMode::Osc => {
+                            // OSC mode: parse the tick index from
+                            // the broadcast payload, issue
+                            // /b_getn for each subscription whose
+                            // previous read has settled. Chunks
+                            // arrive later as /b_setn replies and
+                            // are intercepted above.
+                            issue_bgetn_for_subs(
+                                &scope_ctx, &session,
+                            )
+                            .await;
+                            // OSC mode also gets to emit any
+                            // pending gap-marker chunks
+                            // accumulated since last tick (e.g.
+                            // for subs whose previous read timed
+                            // out). For now return empty — gap
+                            // emission is a follow-up.
+                            Vec::new()
+                        }
+                    };
+                    chunk_frames.append(&mut intercepted_chunks);
+                    if !chunk_frames.is_empty() {
+                        let mut tx_guard = tx.lock().await;
+                        for frame in chunk_frames {
+                            if let Err(e) = tx_guard
+                                .send(Message::Binary(frame.into()))
+                                .await
+                            {
+                                tracing::debug!(
+                                    error = %e,
+                                    "ws send error sending scope chunk (probably closed)"
+                                );
+                                return;
+                            }
+                        }
+                    }
+                } else if !intercepted_chunks.is_empty() {
+                    // Non-tick payload but we intercepted a /b_setn
+                    // chunk — flush it to the WS.
                     let mut tx_guard = tx.lock().await;
-                    for frame in chunk_frames {
-                        if let Err(e) =
-                            tx_guard.send(Message::Binary(frame.into())).await
+                    for frame in intercepted_chunks {
+                        if let Err(e) = tx_guard
+                            .send(Message::Binary(frame.into()))
+                            .await
                         {
                             tracing::debug!(
                                 error = %e,
@@ -428,6 +547,105 @@ async fn forward_default_route(
     }
 }
 
+/// OSC mode: try to intercept a `/b_setn` broadcast payload. If
+/// its bufnum matches one of this WS's active subscriptions,
+/// returns an encoded 0x03 chunk frame; the caller suppresses
+/// forwarding the original payload to the WS. If no subscription
+/// matches (different bufnum, or parse failure), returns `None`
+/// and the caller forwards the payload as a normal OSC reply.
+async fn try_intercept_bsetn(
+    payload: &[u8],
+    scope_ctx: &Arc<TokioMutex<ScopeContext>>,
+) -> Option<Vec<u8>> {
+    let parsed = scope_osc::parse_bsetn(payload)?;
+    let mut ctx = scope_ctx.lock().await;
+    let sub = ctx.osc.find_by_bufnum_mut(parsed.bufnum)?;
+    // Only emit if the offset matches the outstanding read.
+    // Stale replies (we issued a new /b_getn meanwhile) get
+    // discarded — they'd produce a half we already moved past.
+    let pending = sub.pending_offset?;
+    if pending != parsed.offset as u32 {
+        return None;
+    }
+    let floats = scope_osc::decode_bsetn_floats(parsed.raw_floats)?;
+    let frame_count = sub.chunk_size;
+    let channels = sub.channels.min(255) as u8;
+    let is_gap = sub.last_was_gap;
+    sub.pending_offset = None;
+    sub.last_was_gap = false;
+    sub.tick_index = sub.tick_index.wrapping_add(1);
+    Some(scope_osc::encode_chunk(
+        sub.sub_id,
+        sub.tick_index,
+        is_gap,
+        channels,
+        frame_count,
+        &floats,
+    ))
+}
+
+/// OSC mode: on each `/clock/tick`, issue a fresh `/b_getn` for
+/// every subscription whose previous read has settled. Subs with
+/// a still-pending read get a gap marker (their next emitted
+/// chunk will set `is_gap: true`); we drop the in-flight read so
+/// the next tick's read can proceed.
+async fn issue_bgetn_for_subs(
+    scope_ctx: &Arc<TokioMutex<ScopeContext>>,
+    session: &Arc<Session>,
+) {
+    // Collect the work under the lock, then issue UDP sends after
+    // releasing it (so a slow /b_getn doesn't block the recv loop
+    // serializing on this Mutex).
+    let mut to_send: Vec<Vec<u8>> = Vec::new();
+    {
+        let mut ctx = scope_ctx.lock().await;
+        // We don't have a server tick index in the per-WS state
+        // yet — bump a per-sub counter and use it as the tick
+        // proxy for `compute_read_window`. Each subscription
+        // tracks its own progression independently of the server
+        // tick (acceptable for this fallback path; the worker
+        // doesn't rely on tick alignment across subscriptions).
+        for sub in ctx.osc.subs.values_mut() {
+            if sub.pending_offset.is_some() {
+                // Previous read still in flight; mark a gap and
+                // start fresh this tick.
+                sub.last_was_gap = true;
+                sub.pending_offset = None;
+            }
+            // tick_index here is the chunk-counter; we use it as
+            // a stand-in for "ticks since this subscription
+            // started" to drive ring-half parity. The first call
+            // returns 0 → compute_read_window returns None (skip).
+            // Real-world this means the first OSC chunk per
+            // subscription is dropped — acceptable; the worker
+            // synthesises the leading zero as silence in any
+            // recording.
+            let server_tick_proxy = (sub.tick_index as i64) + 2;
+            let Some((offset, count)) =
+                scope_osc::compute_read_window(sub, server_tick_proxy)
+            else {
+                continue;
+            };
+            sub.pending_offset = Some(offset);
+            to_send.push(scope_osc::encode_bgetn_bundle(
+                sub.bufnum, offset, count,
+            ));
+        }
+    }
+    // Fire all the bundles. Order doesn't matter — they're
+    // independent.
+    for bundle in to_send {
+        if let Err(e) = session.scsynth_socket.send(&bundle).await {
+            tracing::warn!(
+                error = %e,
+                session_id = %session.session_id,
+                "udp send error issuing /b_getn for OSC fallback"
+            );
+            break;
+        }
+    }
+}
+
 /// Walk the per-WS subscription map; for each sub whose
 /// scope_buffer `_stage` has advanced since last poll, encode a
 /// 0x03 chunk frame. Returns the encoded frames.
@@ -440,7 +658,7 @@ async fn poll_scope_chunks(
     let Some(shm) = ctx.shm.clone() else {
         return out; // No subscribes yet on this WS.
     };
-    for sub in ctx.subs.values_mut() {
+    for sub in ctx.shm_subs.values_mut() {
         match scope_shm::read_scope_slot(&shm.region, &shm.layout, sub.scope_idx as usize) {
             Ok(ScopeReadResult::Data {
                 floats,

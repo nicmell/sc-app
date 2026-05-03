@@ -1,6 +1,7 @@
 mod cli;
 mod config;
 mod logging;
+pub mod scope_osc;
 pub mod scope_shm;
 pub mod server;
 
