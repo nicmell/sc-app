@@ -11,6 +11,8 @@
     "dev:full": "concurrently --names vite,bridge --prefix-colors auto --kill-others-on-fail \"yarn dev\" \"yarn bridge\"",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "tauri": "tauri",
     "bridge": "cargo run --manifest-path src-tauri/Cargo.toml -- bridge",
     "osc": "./scripts/start-osc.sh",
@@ -39,7 +41,8 @@
     "@vitejs/plugin-react": "^4.3.4",
     "concurrently": "^9.2.1",
     "typescript": "~5.6.2",
-    "vite": "^6.0.3"
+    "vite": "^6.0.3",
+    "vitest": "^2.1.9"
   },
   "packageManager": "yarn@4.14.1"
 }
