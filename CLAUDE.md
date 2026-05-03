@@ -31,9 +31,16 @@ Browser (React, main thread)
   │                              SessionProvider exposes ConnectionStatus
   │                              (connected/connecting/disconnected) +
   │                              sessionId via React context
-  ├── ClockController           global /tr-driven clock; tick0Ms anchor;
-  │                             clockBus phasor
-  ├── GroupController           parent group lifecycle (/g_new /n_run)
+  ├── ClockController           Phase 30: passive observer of the
+  │                             sclang-owned shared clock. attach()
+  │                             round-trips /clock/hello → /clock/info
+  │                             (tickRate, chunkSize, sampleRate,
+  │                             clockBus). tick0Ms anchored on the
+  │                             first /tr arrival. detach() is sync
+  │                             (no /n_free — we don't own the synth).
+  ├── GroupController           parent group lifecycle (/g_new /n_run).
+  │                             Pause/resume on this group is what the
+  │                             "Pause" button drives now (Phase 30).
   ├── SynthDefRegistry          idempotent /d_recv tracker
   ├── SynthManager + Synth-     producers: tone synths writing sines
   │   Controller                 onto auto-allocated bus blocks; live
@@ -272,16 +279,19 @@ fall through. Fields:
 Discovery:
 
 - **GUI mode** reads `app.path().app_config_dir()/config.json` and
-  writes a starter file (port + scsynth + `/dirt → 57120` route
-  defaults) on first launch via
+  writes a starter file (port + scsynth + `/dirt → 57120` and
+  `/clock → 57120` routes) on first launch via
   `Config::write_default_if_missing`. Subsequent launches never
   overwrite the user's edits — even when `Config` gains new
   fields, an old user-written file just keeps its existing
   shape and the bridge defaults the missing fields. (Caveat:
   if a user has a stale starter config from before the `/dirt`
   route was seeded, SuperDirt routing breaks silently with
-  `/fail /dirt/hello: Command not found`. Fix: delete the
-  config-dir file or hand-edit the route in.)
+  `/fail /dirt/hello: Command not found`. Same shape post-Phase-30
+  for `/clock`: a stale config without the `/clock` route makes
+  `clock.attach()` time out with the message "Could not attach to
+  the shared clock (/clock/hello)". Fix: delete the config-dir
+  file to regenerate or hand-edit the route in.)
 - **Bridge mode** uses `--config <path>` if explicitly passed (must
   exist; fails loudly otherwise), else auto-discovers
   `./config.json` (CWD-relative, for `yarn bridge` / `yarn
@@ -403,39 +413,39 @@ When working on a phase:
    `plan.md` of the moved content, and (if relevant) update
    the "Current phase progress" line below.
 
-Current phase progress: **Phase 29 shipped — Bridge-managed
-sessions + auto-connect.** Four sub-phases collapsed the
-pre-29 per-WS scsynth handshake onto the Rust bridge,
-materialised as a per-tab `Session` keyed by a UUID in
-`sessionStorage`. 29a added `server/session.rs` +
-`server/api.rs` (POST/GET/DELETE `/api/session[/:id]`) — the
-Session opens one UDP socket per unique route target, runs
-`/notify 1` + `/status` against scsynth at creation time, and
-captures `clientId` / `sampleRate` / `parentGroupId`. 29b
-cut WS over to attach to existing Sessions via
-`?session=<uuid>`; per-target `tokio::sync::broadcast`
-channels fan replies out to attached WS. Per-WS UDP sockets
-+ per-WS `/notify` are gone. 29c rewrote the frontend
-bootstrap: on mount, `bootstrapSession()` reads
-`sessionStorage["sc.session"]` and either
-`GET /api/session/:id` or `POST /api/session`. The
-returned `SessionInfo` flows into `setupDashboard` directly,
-skipping the pre-29 `/status` + `/notify(1)` handshake. 29d
-added the once-a-minute TTL eviction task (default 1800 s,
-configurable via `config.session_ttl_seconds`), dropped the
-legacy `?scsynth=` query parameter, deleted the
-ConnectScreen, and reworked the dashboard chrome: header
-shows a `connected/connecting/disconnected` badge +
-Connect/Disconnect button, panels stay rendered in a
-disabled-state placeholder while disconnected, and runtime
-errors surface via a bottom-right `ToastContainer` instead
-of blocking modals. F5 within TTL preserves scsynth-side
-state (clock, recordings, sequencer) — the bridge keeps the
-UDP socket + `/notify` subscription alive across WS
-reconnects. See `docs/history.md` Phase 29 for the full
-write-up.
+Current phase progress: **Phase 30 shipped — Shared
+sclang-owned clock.** Three sub-phases moved clock ownership
+from per-session frontend synths to a single `\scAppClock`
+running at scsynth's root group, owned by sclang
+(`scripts/sc-app-superdirt-startup.scd`). All clients become
+passive observers of the same `/tr` stream + the same
+`clockBus`, enabling cross-client sync. 30a added the SynthDef
++ `Synth.new` (nodeId 999, trigId 1000, `Bus.audio(s, 1)`) +
+`OSCdef(\scAppClockHello)` reply on `/clock/info`; new
+`/clock` route in `config.json` + starter; `SC_APP_CLOCK_-
+CHUNK_SIZE` env var (default 1024) wired through
+`scripts/start-superdirt-only.sh`. 30b rewrote
+`ClockController` from owner to passive observer (new
+`attach()` round-trips `/clock/hello → /clock/info`,
+`detach()` is sync, removed start/stop/resume/reset/dispose's
+`/n_free` path); `ClockPanel` Pause/Resume drives
+`GroupController` instead (Reset button removed); new
+`SequencerController.isGroupPaused` callback gates `/dirt/play`
+emission so the user's Pause button silences sequencer output
+even though the shared clock keeps ticking. 30c removed the
+header chunkSize dropdown + the entire in-place re-init flow
+(runReinit, ConfirmReinitModal, pendingChunkSize state) and
+deleted `src/synthdefs/clockSynthDef.ts`. The frontend has no
+chunkSize UI now — it's owned by sclang's env var, and a
+restart is the only way to change it. See `docs/history.md`
+Phase 30 for the full write-up.
 
 Earlier landings still in effect:
+- **Phase 29** — Bridge-managed sessions + auto-connect.
+  Per-tab `Session` UUID in `sessionStorage`; bridge owns the
+  `/notify 1` + `/status` handshake; WS attaches via
+  `?session=<uuid>`; TTL eviction at 30 min default.
+  ConnectScreen replaced by always-rendered dashboard chrome.
 - **Phase 28** — `@sc-app/ui-foundation` CSS package
   (Open Props primitives + semantic tokens + base element
   styles + component classes; `data-variant`/`data-size`
@@ -463,8 +473,11 @@ Earlier landings still in effect:
   daily-rotated tracing, `yarn dev:full` / `yarn bridge` /
   `yarn osc` script trio.
 
-`setupDashboard` / `teardownServerState` are shared between
-initial connect, disconnect, and the chunkSize-driven re-init.
+`setupDashboard` / `teardownServerState` run on initial connect /
+disconnect respectively. Phase 30c removed the in-place re-init
+path (chunkSize is sclang-owned now); changing it requires a
+sclang restart, which all attached sessions then re-attach to via
+`/clock/hello` on next page load.
 
 ## Where scsynth conventions matter
 
@@ -475,19 +488,28 @@ initial connect, disconnect, and the chunkSize-driven re-init.
   the literal `100` when scsynth returns `clientId = 0` (the
   default single-client case, where `0 × 100 = 0` would clash
   with the root group). The fallback path warns in the debug log.
-- **Group ordering invariant** (documented at the top of
-  `ClockController.ts`): the clock synth lives at the *head* of
-  the parent group; **everything else** (scopes, recorders, the
-  monitor, the dev probe) MUST be `/s_new`'d with `AddToTail` so
-  scsynth processes them after the clock on every control block.
-  Otherwise consumers read the *previous* control block's
-  `clockBus` value — a constant ~1.3 ms lag that breaks
-  alignment.
-- **Reserved trigIds**:
-  - `CLOCK_TRIG_ID = 1000` — global clock's `SendTrig`. The
-    worker demuxes these into `clockTick` events, suppressing
-    them from the generic `onReply` channel.
-  No other synth may reuse this id.
+- **Group ordering invariant** (Phase 30): the shared clock lives
+  at the **root group's head** (added by sclang at startup, see
+  `scripts/sc-app-superdirt-startup.scd`). Every sc-app session's
+  parent group sits at the root's tail (`AddToTail`, so it lands
+  AFTER sclang's defaultGroup); **inside** the parent group, every
+  tap synth (scopes, recorders, the dev probe) MUST be `/s_new`'d
+  with `AddToTail` so scsynth processes them after the clock on
+  every control block. Otherwise consumers read the *previous*
+  control block's `clockBus` value — a constant ~1.3 ms lag that
+  breaks alignment.
+- **Reserved IDs (Phase 30 — globally-owned by sclang's clock)**:
+  - `CLOCK_TRIG_ID = 1000` — shared clock's `SendTrig`. The worker
+    demuxes these into `clockTick` events, suppressing them from
+    the generic `onReply` channel. No other synth (any client) may
+    reuse this id.
+  - `clockNodeId = 999` — sclang's `\scAppClock` synth. Reserved
+    by convention; clients' `IdAllocator(node)` start at
+    `clientId * 1_000_000 + 1000`, well above 999.
+  - `clockBus` — sclang allocates via `Bus.audio(s, 1)`, returns
+    the index in `/clock/info`. Always < 32 in practice (allocator
+    starts at `numIns + numOuts = 4`); each session's
+    `IdAllocator(bus)` starts at 32, so no collision.
 - **Session bootstrap + connect handshake** (Phase 29):
   the scsynth handshake (`/status`, `/notify 1`) is owned by
   the bridge, run once at session creation. The frontend's
@@ -511,15 +533,17 @@ initial connect, disconnect, and the chunkSize-driven re-init.
      (route-prefix-demuxed); inbound replies fan out to all
      attached WS via `tokio::sync::broadcast`.
   3. `setupDashboard(client, sessionId, clientId, parentGroupId,
-     sampleRate, chunkSize, bank)` — constructs
-     `GroupController`, `ClockController` (allocates
-     `clockBus = ids.bus.next()`, derives `tickRate = sampleRate /
-     chunkSize`), calls `clock.start()`. Then constructs
-     `SynthManager` (producer side), `BufferManager` (shared tap
-     layer), `ScopeManager` + `RecordingManager` (consumers, both
-     pointed at `BufferManager` for handle acquisition). Reused
-     by the in-place re-init flow when the user changes chunkSize
-     from the header.
+     sampleRate, bank)` — constructs `GroupController`,
+     `ClockController`, calls `group.ensureCreated()` (atomic
+     `/g_new + /n_run 0`), then `clock.attach()` which round-trips
+     `/clock/hello → /clock/info` to read the shared clock's
+     `tickRate / chunkSize / clockBus / sampleRate` (Phase 30).
+     Then constructs `SynthManager` (producer side), `BufferManager`
+     (shared tap layer), `ScopeManager` + `RecordingManager`
+     (consumers, both pointed at `BufferManager` for handle
+     acquisition). Phase 30c removed the in-place chunkSize re-init
+     flow — chunkSize is sclang-owned now and changing it requires
+     restarting sclang.
 
   Disconnected/connecting/connected state lives on a
   React context (`SessionProvider`) so any component (panel
@@ -540,10 +564,9 @@ initial connect, disconnect, and the chunkSize-driven re-init.
     `BufferHandle`s; `bufferManager.clear()` then runs as a
     safety net — by that point its map should be empty, and a
     non-empty one logs a warning ("refcount leak suspected").
-    The `teardownServerState` helper is shared with the
-    in-place chunkSize re-init path, which runs the same
-    teardown but *without* the deleteSession + client.dispose
-    tail.
+    `clock.detach()` (Phase 30) is sync and just drops the trig
+    listener — the shared clock keeps running on sclang's side,
+    untouched.
   - **`pagehide` listener** (tab/window close): `fetch(DELETE
     /api/session/:id, { keepalive: true })`. Best-effort — the
     keepalive flag lets the request outlive the page begin
@@ -563,15 +586,32 @@ initial connect, disconnect, and the chunkSize-driven re-init.
   for freshness watchdogs, never as the truth. For sample-accurate
   scheduling, use `tickToTimetag(clock.tick0Ms!, targetTick,
   clock.derived.tickRate)` in an `OSC.Bundle`.
+- **Shared clock (Phase 30)**: one `\scAppClock` synth runs at
+  scsynth's root group, owned by sclang
+  (`scripts/sc-app-superdirt-startup.scd`). Every sc-app session
+  is a passive observer: `clock.attach()` round-trips
+  `/clock/hello → /clock/info` to read `tickRate / chunkSize /
+  clockBus / sampleRate / clockNodeId / trigId` from the running
+  clock; the `/tr` stream fans to all `/notify`'d sessions for
+  free (no per-session synth `/s_new`). Pause/resume drives the
+  parent group; the shared clock keeps ticking unaffected by any
+  client's pause. **chunkSize is server-side**: configured via
+  `SC_APP_CLOCK_CHUNK_SIZE` env var (default 1024) at sclang
+  startup. Changing it requires restarting sclang. The frontend
+  has no UI for it — every connected session re-attaches via
+  `/clock/hello` after the restart.
 
 ### chunkSize × sampleRate practical reference
 
 `tickRate = sampleRate / chunkSize`. `Impulse.kr` accepts any
 positive Hz; the practical ceiling on tick rate is ~250 Hz before
 the worker's setTimeout retries crowd the next tick boundary
-(Phase 12 gap-bug pattern). The header dropdown filters options
-whose tick rate would exceed `MAX_PRACTICAL_TICK_RATE = 250`, via
-`practicalChunkSizes(sampleRate)`.
+(Phase 12 gap-bug pattern). Phase 30 moved chunkSize ownership to
+sclang (`SC_APP_CLOCK_CHUNK_SIZE` env var); pick a power-of-2
+value with a tickRate that stays well under 250 Hz at your
+sampleRate. The frontend's `practicalChunkSizes(sampleRate)`
+filter still exists for legacy reasons but is no longer wired to
+any UI.
 
 | chunkSize | 44.1 kHz       | 48 kHz         | 96 kHz         | 192 kHz        |
 |-----------|----------------|----------------|----------------|----------------|
@@ -669,25 +709,21 @@ Observations:
   delivery stays linear regardless of arrival order. Applies
   uniformly to every `BufferSubscription` after Phase 17 — scopes
   and recordings, plus any future analyzers.
-- **`chunkSize` is mutable at runtime; SynthDef cache keys must
-  include it.** The header dropdown lets the user change
-  `chunkSize` mid-session. Re-init compiles a fresh clock SynthDef
-  with the new derived `tickRate` (`sampleRate / chunkSize`), and
-  any new tap synths use the new `chunkSize` for their ring +
-  name. `compileBufferTapSynthDef`'s cache key is
-  `(channels, chunkSize)` — never `(channels)` alone, or you get
-  stale bytes after a re-init. Old SynthDefs sit on scsynth until
-  the parent group is freed; harmless, just wasted slots.
-- **In-place re-init runs over the same WS + same Session —
-  the frontend never issues `/notify`.** Phase 29 moved the
-  `/notify 1` round-trip to `Session::create` on the bridge;
-  `setupDashboard` consumes the supplied `clientId` /
-  `parentGroupId` / `sampleRate` from `SessionInfo` and never
-  touches `/notify` itself. The reinit path calls
-  `teardownServerState` and then `setupDashboard` with the
-  same values stashed on `DashboardResources` — the parent
-  group, the notify subscription, and the bridge-side UDP
-  socket all persist.
+- **`chunkSize` is fixed for the session (Phase 30) but tap-synth
+  SynthDef cache keys still must include it.** Pre-Phase-30 the
+  user could change chunkSize via a header dropdown, which
+  triggered an in-place re-init. Phase 30 removed that path —
+  chunkSize comes from sclang's `SC_APP_CLOCK_CHUNK_SIZE` env var
+  and is constant for the session. But `compileBufferTapSynthDef`'s
+  cache key still must be `(channels, chunkSize)` — sclang restarts
+  with a different chunkSize would otherwise reuse stale bytes from
+  a previous browser session if HMR keeps the module live. Old
+  SynthDefs sit on scsynth until the parent group is freed;
+  harmless, just wasted slots.
+- **The frontend never issues `/notify` (Phase 29).** Moved to
+  `Session::create` on the bridge. `setupDashboard` consumes the
+  supplied `clientId` / `parentGroupId` / `sampleRate` from
+  `SessionInfo` and never touches `/notify` itself.
 - **Producers must be `/s_new`'d before consumers that read their
   buses — same control-block ordering rule as the clock.** Tone
   synths (producers), scope/recording tap synths (consumers via
@@ -745,13 +781,15 @@ Observations:
   clientId=N (sharing scsynth with sclang+SuperDirt) starts at
   N×1M+1000, well beyond any practical SuperDirt synth count.
 - **`ServerErrorBus` must be constructed BEFORE the first
-  `/s_new`.** The first `/s_new` from `setupDashboard` is the
-  clock — and the clock is exactly the synth that fails when
-  ID-collision-with-SuperDirt strikes. If `ServerErrorBus`
-  subscribes after `clock.start()` resolves, the `/fail` reply
-  arrives in the listener-less window and is silently dropped —
-  no UI surface, no debug-log entry. The bus is now the FIRST
-  thing constructed in `setupDashboard`. Don't reorder.
+  `/s_new`.** Phase 30 moved the clock out of `setupDashboard`'s
+  `/s_new` path, but the principle still holds: the FIRST `/s_new`
+  the frontend issues post-attach is a tap synth or tone synth in
+  the parent group, and either could `/fail` on an ID collision.
+  If `ServerErrorBus` subscribes after the first `/s_new`, the
+  `/fail` reply lands in the listener-less window and is silently
+  dropped — no UI surface, no debug-log entry. The bus stays the
+  FIRST thing constructed in `setupDashboard` (before
+  `GroupController` and `ClockController`). Don't reorder.
 - **OSC routing in the bridge happens BY OSC ADDRESS PREFIX.**
   `config.json -> routes: [{prefix, target}]` is walked
   top-to-bottom, first `starts_with` match wins. A bundle is

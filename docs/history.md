@@ -2284,3 +2284,189 @@ e68efbd, c963c2a, 6b21358, 6655508).*
   the per-WS query parameter does not. Don't add it
   back without first re-introducing the per-WS UDP
   socket model — they were one feature.
+
+
+## Phase 30 — Shared Audio Clock (sclang-Owned)
+
+**Goal.** Move the clock from per-session frontend synths to a
+single sclang-owned `\scAppClock` running at scsynth's root group.
+All sc-app sessions become passive observers of the same `/tr`
+stream and read the same `clockBus`, enabling sample-accurate
+cross-client sync. The clock cannot be killed by any client's
+`/g_freeAll` or `/n_free` because it lives outside their parent
+groups. `chunkSize` becomes a server-side config knob
+(`SC_APP_CLOCK_CHUNK_SIZE` env var); the frontend has no UI
+for it anymore — every connected session re-attaches via
+`/clock/hello` after a sclang restart.
+
+The new wins:
+- **Cross-client sync.** Two tabs running sequencers can land
+  steps on the same audio frame, modulo delivery jitter (~1 ms
+  intra-machine). Pre-30 each tab anchored its own `tick0Ms`
+  from its own `/tr` arrival and drifted independently.
+- **Clock survives session churn.** A client's reload doesn't
+  blink the clock; F5 inside a tab while another tab is open
+  has zero observable effect on the second tab.
+- **Removes the "any client can break everyone" footgun.** The
+  shared `\scAppClock` is at scsynth root, off-limits to any
+  client's `/g_freeAll` (which only reaches their own parent
+  group's children).
+- **chunkSize source-of-truth consolidates.** Was a per-session
+  dropdown that triggered a full in-place re-init; now a single
+  env var read by sclang at startup.
+
+### What shipped
+
+Three sub-phases (30d collapsed into 30c).
+
+*30a — sclang clock + `/clock/hello` responder
+(part of commit ab32ee4).*
+- `scripts/sc-app-superdirt-startup.scd` — extends the
+  `s.doWhenBooted` block:
+  - `SynthDef(\scAppClock)` mirrors the pre-30 frontend
+    `compileClockSynthDef` shape: `Impulse.kr` →
+    `SendTrig 1000` + `PulseCount` count, `Phasor.ar` wraps
+    every `2 × chunkSize` samples writing to `clockBus`. Tick
+    rate is `s.sampleRate / clockChunkSize`, baked in as a
+    literal Hz at definition time.
+  - `~scAppClockBus = Bus.audio(s, 1)` — sclang's allocator
+    picks the index (typically 4 right after hw-reserved buses;
+    way below the frontend's `IdAllocator(32)` start point).
+  - `s.sendMsg('/s_new', 'scAppClock', 999, 0, 0, 'clockBus',
+    ~scAppClockBus.index)` — pinned `nodeId = 999` (one below
+    any frontend `IdAllocator(node)` range), `addAction = 0`
+    (\addToHead), `target = 0` (root group).
+  - `OSCdef(\scAppClockHello)` on `/clock/hello` replies on
+    `/clock/info` with `[tickRate, value, chunkSize, value, …]`
+    — same interleaved key/value wire shape as
+    `/dirt/samples`.
+  - chunkSize from `SC_APP_CLOCK_CHUNK_SIZE` env var (default
+    1024). Validation falls back to 1024 with a `.warn` if the
+    value is non-integer or < 1.
+- `scripts/start-superdirt-only.sh` — exports
+  `SC_APP_CLOCK_CHUNK_SIZE` defaulting to `1024`. Inherited
+  by `start-osc.sh` which spawns `start-superdirt-only.sh`.
+- `config.json` (project) + `Config::starter()` — add
+  `{ "prefix": "/clock", "target": "127.0.0.1:57120" }`
+  alongside the Phase-26 `/dirt` route. Bridge's existing
+  prefix-match demux handles new prefixes — zero Rust code
+  change.
+
+*30b — Frontend ClockController as observer
+(part of commit ab32ee4).*
+- `src/clock/clockClient.ts` (new) — typed `clockHello()`
+  builder + `parseClockInfo(args)` that walks the interleaved
+  reply into `{ tickRate, chunkSize, sampleRate, clockBus,
+  clockNodeId, trigId }`. Throws on missing keys so a sclang ↔
+  frontend protocol mismatch fails loudly.
+- `src/clock/ClockController.ts` — major rewrite from owner to
+  observer. New `attach(timeoutMs = 3000)` round-trips
+  `/clock/hello` via `WorkerClient.sendAndAwaitReply`, parses
+  the reply, derives `ClockDerived`, registers the trig
+  listener, starts the freshness watchdog. New `detach()` is
+  sync (no `/n_free` to await — we don't own the synth).
+  Removed `start/stop/resume/reset/dispose`'s synth-owning
+  paths. `effectiveState` semantics preserved (`'stopped'` /
+  `'paused'` / `'running'`) by combining attached-state with
+  `GroupController.state`. Back-compat `env: AudioEnvironment`
+  getter so `RecordingManager` / `ScopeManager` call sites
+  stayed unchanged. Better error message when `/clock/hello`
+  times out — points the user at sclang + the `/clock` route.
+- `src/AppShell.tsx` — `setupDashboard` calls
+  `group.ensureCreated()` + `clock.attach()` instead of the
+  pre-30 `clock.start()`. Re-init confirmation modal drove
+  `clock.stop/resume`; now drives `group.pause/resume`. The
+  `chunkSize` state followed `clock.info.chunkSize` post-attach
+  in 30b (removed entirely in 30c).
+- `src/ui/ClockPanel/ClockPanel.tsx` — Pause/Resume buttons
+  drive the parent `GroupController` via a new `group` prop.
+  Reset button removed (the shared clock can't be reset by a
+  client). Status pill semantics unchanged.
+- `src/sequencer/SequencerController.ts` — new `isGroupPaused`
+  callback option. When the parent group is paused, `pumpOnce`
+  early-returns without emitting `/dirt/play` (option (b) from
+  the plan; the user's Pause silences sequencer output even
+  though the shared clock keeps ticking). On the first
+  un-paused pump, `nextStepTick` is re-anchored to
+  `nowTick + INITIAL_LOOKAHEAD_TICKS` so resume doesn't fire
+  every step the pause window contained in a catch-up burst.
+
+*30c — chunkSize dropdown removal + cleanup.*
+- `src/AppShell.tsx` — removed:
+  - The `<select>` chunk-size-picker from `DashboardHeader`.
+  - The `chunkSize`, `reiniting`, `pendingChunkSize` `useState`
+    declarations.
+  - `runReinit` / `onChunkSizeChange` / `onConfirmReinit` /
+    `onCancelReinit` callbacks.
+  - The `<ConfirmModal>` reinit confirmation render.
+  - The `<LoadingModal>`'s reinit message branch (still
+    renders during initial bootstrap with a single
+    "Connecting…" message).
+  - The `chunkSize` parameter from `setupDashboard`'s
+    signature.
+  - Imports: `ConfirmModal`, `practicalChunkSizes`,
+    `DEFAULT_PARAMS`.
+- `src/synthdefs/clockSynthDef.ts` — **deleted**. The SynthDef
+  lives in sclang now.
+- `packages/server-commands/src/index.ts` — sample doc-comment
+  example updated from `'globalClock'` to `'myDef'`.
+- `CLAUDE.md` — architecture diagram, group-ordering invariant,
+  reserved IDs, connect handshake description, disconnect
+  cleanup, gotchas, and the chunkSize × sampleRate table all
+  reflect the Phase 30 reality. New "Shared clock (Phase 30)"
+  bullet under "Where scsynth conventions matter".
+
+### Decisions worth carrying forward
+
+- **chunkSize is now sclang-side, full stop.** No
+  `/clock/setChunkSize` route — discussed, rejected for 30c.
+  Restarting sclang is the only way to change it. The plan
+  flags this as a possible Future Improvement if the UX
+  regression bites.
+- **Permission filtering via convention, not a Rust filter.**
+  A misbehaving client could `/n_free 999` and kill the shared
+  clock. Documented as off-limits; relied on by everyone.
+  Bridge-side filtering is a one-line addition in
+  `routing.rs` if it ever becomes a real problem.
+- **Pause = local to the parent group.** The shared clock keeps
+  ticking; only this client's tap synths + sequencer freeze.
+  Other clients are unaffected, by design — pause is a
+  per-client UX concern, not a global one.
+- **Sequencer pause re-anchors `nextStepTick`** instead of
+  freezing it. On resume, playback continues from "now" rather
+  than firing every step it would have fired during the pause
+  in a catch-up burst.
+
+### Gotchas
+
+- **Stale `config.json` from before Phase 30** doesn't have the
+  `/clock` route. `clock.attach()` times out with the message
+  "Could not attach to the shared clock (/clock/hello)…". Fix:
+  delete the file (regenerates from `Config::starter()`) or
+  hand-edit the route in. Same shape as the pre-Phase-26
+  `/dirt` route migration caveat.
+- **`SC_APP_CLOCK_CHUNK_SIZE` is sclang-side, not bridge-side.**
+  The bridge has no awareness of the value; it's read only by
+  the .scd. To change: edit the env var, restart sclang. Every
+  attached session sees the new value on next `/clock/hello`
+  round-trip (which happens on reconnect / page reload).
+- **The frontend's `IdAllocator(bus)` starts at 32, sclang's
+  `Bus.audio` allocator starts at `numIns + numOuts = 4`.** The
+  ranges don't overlap in practice, but if you ever bump
+  `numInputBusChannels` or `numOutputBusChannels` past 32 —
+  or change `IdAllocator(32)` — re-verify.
+- **trigId 1000 is now globally owned by sclang's clock.**
+  Pre-30 it was per-session; reusing it from a frontend
+  `/s_new` would have only collided with the local clock.
+  Post-30 reusing it would interleave SendTrig messages into
+  the shared `/tr` stream every other client receives — chaos.
+  `IdAllocator` doesn't allocate trigIds (synths declare them
+  by literal); this is a "don't write `SendTrig.kr(_, 1000, _)`
+  in any new SynthDef, ever" convention.
+- **sclang as single point of failure.** Pre-30 a sclang crash
+  killed SuperDirt but the per-session clocks survived.
+  Post-30 it kills the clock too — every attached session's
+  watchdog flips `effectiveState` to `'stopped'`. Restart
+  sclang, refresh tabs, you're back. Bridge could surface a
+  "clock detached" toast if `/tr` silence exceeds a threshold;
+  punted to a Phase 30+ follow-up.

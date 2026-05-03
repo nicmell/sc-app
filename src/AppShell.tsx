@@ -3,7 +3,7 @@ import { ClockPanel } from '@/ui/ClockPanel';
 import { DebugLog } from '@/ui/DebugLog';
 import { DirtPanel } from '@/ui/DirtPanel';
 import { Footer } from '@/ui/Footer';
-import { ConfirmModal, LoadingModal } from '@/ui/Modal';
+import { LoadingModal } from '@/ui/Modal';
 import { OscConsole } from '@/ui/OscConsole';
 import { RecordingPanel } from '@/ui/RecordingPanel';
 import { ScopeList } from '@/ui/ScopeList';
@@ -11,10 +11,6 @@ import { SequencerPanel } from '@/ui/SequencerPanel';
 import { SynthsPanel } from '@/ui/SynthsPanel';
 import { ToastContainer, useToasts } from '@/ui/Toast';
 import { SessionProvider, type ConnectionStatus } from '@/session/SessionContext';
-import {
-  DEFAULT_PARAMS,
-  practicalChunkSizes,
-} from '@/config/clockConfig';
 import { BufferManager } from '@/buffer/BufferManager';
 import { DirtClient } from '@/dirt/DirtClient';
 import { RecordingManager } from '@/recording/RecordingManager';
@@ -88,10 +84,10 @@ interface DashboardResources {
   sequencer: SequencerController;
   /** Phase 27c — 8-slot pattern bank with localStorage
    *  persistence. Long-lived: created at initial connect (loads
-   *  from localStorage), reused across chunkSize re-init,
-   *  disposed by `handleDisconnect` (which flushes a final save).
-   *  The controller reads `bank.activePattern` and forwards
-   *  mutations through `bank.updateActivePattern(...)`. */
+   *  from localStorage), disposed by `handleDisconnect` (which
+   *  flushes a final save). The controller reads
+   *  `bank.activePattern` and forwards mutations through
+   *  `bank.updateActivePattern(...)`. */
   bank: PatternBank;
   /** Phase 29 — bridge-managed session id (uuid stored per-tab
    *  in `sessionStorage`). Used by handleDisconnect to fire
@@ -104,8 +100,7 @@ interface DashboardResources {
    *  shared with sclang+SuperDirt at clientId=0. */
   clientId: number;
   /** Phase 29: derived bridge-side from `clientId` (× 100, with
-   *  the 0 → 100 fallback). The frontend reuses it across
-   *  chunkSize re-init so the parent group doesn't change. */
+   *  the 0 → 100 fallback). */
   parentGroupId: number;
   /** Phase 29: bridge-supplied via `SessionInfo` (read from
    *  scsynth's `/status.reply` at session creation). Round to
@@ -147,28 +142,18 @@ const STATUS_BADGE_VARIANT: Record<ConnectionStatus, string | undefined> = {
 function Dashboard({
   resources,
   status,
-  chunkSize,
-  reiniting,
-  onChunkSizeChange,
   onConnect,
   onDisconnect,
 }: {
   resources: DashboardResources | null;
   status: ConnectionStatus;
-  chunkSize: number;
-  reiniting: boolean;
-  onChunkSizeChange: (next: number) => void;
   onConnect: () => void;
   onDisconnect: () => void;
 }) {
   return (
     <main className="dashboard-shell">
       <DashboardHeader
-        resources={resources}
         status={status}
-        chunkSize={chunkSize}
-        reiniting={reiniting}
-        onChunkSizeChange={onChunkSizeChange}
         onConnect={onConnect}
         onDisconnect={onDisconnect}
       />
@@ -209,27 +194,14 @@ function DisabledPanels() {
 }
 
 function DashboardHeader({
-  resources,
   status,
-  chunkSize,
-  reiniting,
-  onChunkSizeChange,
   onConnect,
   onDisconnect,
 }: {
-  resources: DashboardResources | null;
   status: ConnectionStatus;
-  chunkSize: number;
-  reiniting: boolean;
-  onChunkSizeChange: (next: number) => void;
   onConnect: () => void;
   onDisconnect: () => void;
 }) {
-  // chunk-size dropdown options need a sample rate. While
-  // disconnected we don't have one — fall back to the default
-  // 48 k so the picker renders something, but disable it.
-  const sampleRate = resources?.sampleRate ?? 48000;
-  const options = practicalChunkSizes(sampleRate);
   return (
     <header className="cluster" data-gap="md">
       <span
@@ -238,35 +210,11 @@ function DashboardHeader({
       >
         {STATUS_LABELS[status]}
       </span>
-      <label className="chunk-size-picker">
-        chunk size&nbsp;
-        <select
-          value={chunkSize}
-          // Phase 30: the dropdown is now display-only when
-          // connected — chunkSize is owned by the shared sclang
-          // clock (`SC_APP_CLOCK_CHUNK_SIZE` env var). Disabled
-          // pre-connect too, since the user can't influence it
-          // from the dashboard either way.
-          disabled
-          onChange={(e) => onChunkSizeChange(Number(e.target.value))}
-          title={
-            `Phase 30: chunk size is owned by sclang's shared clock. ` +
-            `Restart sclang with SC_APP_CLOCK_CHUNK_SIZE=N to change.`
-          }
-        >
-          {options.map((cs) => (
-            <option key={cs} value={cs}>
-              {cs} ({(sampleRate / cs).toFixed(2)} Hz tick)
-            </option>
-          ))}
-        </select>
-      </label>
       {status === 'connected' ? (
         <button
           type="button"
           data-variant="ghost"
           onClick={onDisconnect}
-          disabled={reiniting}
         >
           Disconnect
         </button>
@@ -330,23 +278,22 @@ function wsUrlFor(sessionId: string): string {
 }
 
 /**
- * Build (or rebuild, after a chunkSize change) all the per-session
- * server-side state plus the controllers that wrap it. Used by both
- * the initial `handleConnect` and the in-place re-init flow.
+ * Build all the per-session server-side state plus the controllers
+ * that wrap it. Called once per WS connect — there is no in-place
+ * re-init flow post-Phase-30 (chunkSize is owned by sclang's shared
+ * clock, not the dashboard).
  *
- * Inputs are deliberately minimal: the same `client` (WS stays
- * open), the same `parentGroupId` (notify(1) handshake already done
- * at initial connect), the runtime `sampleRate` (from /status), and
- * the chunkSize the dashboard wants this round.
+ * Inputs are deliberately minimal: the `client` (WS stays open),
+ * the `parentGroupId` (notify(1) handshake already done bridge-side
+ * at session create), and the runtime `sampleRate` (from /status,
+ * informational only — the authoritative value comes from
+ * `/clock/info`).
  *
- * Note: the registry is a fresh instance per call. SynthDefs
- * uploaded to scsynth in a previous round persist server-side; the
- * new registry just re-uploads what it doesn't remember on first
- * `ensureLoaded`. Cost: one extra `/d_recv` per (channels,
- * chunkSize) tuple per re-init. Harmless. The IdAllocators reset to
- * 1000/1000/32 — safe because `teardownServerState` runs
- * `group.free()` which `/g_freeAll`s every node and buffer in the
- * parent group, leaving the id space clean.
+ * The registry is a fresh instance per call. SynthDefs uploaded to
+ * scsynth in a previous round persist server-side; the new registry
+ * re-uploads what it doesn't remember on first `ensureLoaded`. Cost:
+ * one extra `/d_recv` per `(channels, chunkSize)` tuple per
+ * reconnect. Harmless.
  */
 async function setupDashboard(
   client: WorkerClient,
@@ -354,13 +301,15 @@ async function setupDashboard(
   clientId: number,
   parentGroupId: number,
   sampleRate: number,
-  chunkSize: number,
   bank: PatternBank,
 ): Promise<DashboardResources> {
   // Phase 26 — scope node/buffer IDs by clientId so we don't collide
   // with sclang+SuperDirt at clientId=0. Bus allocator stays at 32
   // (skips hardware-reserved); SuperDirt's bus usage doesn't overlap
-  // sc-app's allocations in practice.
+  // sc-app's allocations in practice. Phase 30: bus allocator is
+  // synth-only now (clockBus comes from `/clock/info` and lives at
+  // a sclang-allocated index < 32, well below this allocator's
+  // start point — no collision).
   const idBase = clientId * PER_CLIENT_ID_OFFSET + ID_ALLOCATOR_START;
   const ids = {
     node: new IdAllocator(idBase),
@@ -389,19 +338,9 @@ async function setupDashboard(
   // bundle), separately from the shared clock — which lives in
   // sclang at scsynth's root group, OUTSIDE this client's parent
   // group. `clock.attach()` round-trips /clock/hello to read the
-  // running clock's config (tickRate / chunkSize / clockBus); the
-  // `chunkSize` parameter to this function is informational only
-  // post-30 (kept in the signature for Phase 30c removal).
+  // running clock's config (tickRate / chunkSize / clockBus).
   await group.ensureCreated();
   const clockInfo = await clock.attach();
-  if (clockInfo.chunkSize !== chunkSize) {
-    console.warn(
-      `[sc:app] requested chunkSize=${chunkSize} but the shared clock ` +
-        `is running at chunkSize=${clockInfo.chunkSize}. The dashboard ` +
-        `will use the clock's value. To change, restart sclang with ` +
-        `SC_APP_CLOCK_CHUNK_SIZE=${chunkSize}.`,
-    );
-  }
   console.log(
     `[sc:app] attached to shared clock — clockBus=${clock.clockBus}, ` +
       `sampleRate=${clockInfo.sampleRate}, chunkSize=${clockInfo.chunkSize}, ` +
@@ -518,9 +457,8 @@ async function setupDashboard(
 
 /**
  * Tear down everything `setupDashboard` builds — but NOT the
- * `WorkerClient` or the `notify(1)` subscription. Re-used by
- * `handleDisconnect` (full shutdown) and the re-init flow
- * (rebuild against the same WS). Each step is best-effort.
+ * `WorkerClient` or the `notify(1)` subscription. Used by
+ * `handleDisconnect` for full shutdown. Each step is best-effort.
  */
 async function teardownServerState(resources: DashboardResources): Promise<void> {
   // Bus disposal is cheap and non-server-touching — drop subscription,
@@ -620,17 +558,6 @@ export function AppShell() {
    *  bootstrap failures). Toasts auto-dismiss except errors,
    *  which stay until the user clicks ×. */
   const { toasts, show: showToast, dismiss: dismissToast } = useToasts();
-  /** Currently-applied chunk size. Updated atomically with
-   *  `setResources` after a successful re-init. */
-  const [chunkSize, setChunkSize] = useState(DEFAULT_PARAMS.chunkSize);
-  /** True while a re-init is in progress — drives the
-   *  indeterminate `LoadingModal` overlay. Also disables the
-   *  header dropdown and Disconnect button. */
-  const [reiniting, setReiniting] = useState(false);
-  /** Non-null while the confirm modal is visible. Captures the
-   *  pending chunkSize the user picked but hasn't yet committed
-   *  (because there's a "dirty" recording — see `onChunkSizeChange`). */
-  const [pendingChunkSize, setPendingChunkSize] = useState<number | null>(null);
 
   // Keep the latest client in a ref so the error-handler effect can
   // tear it down on a stale event without re-subscribing every render.
@@ -727,7 +654,6 @@ export function AppShell() {
         info.clientId,
         info.parentGroupId,
         info.sampleRate,
-        DEFAULT_PARAMS.chunkSize,
         bank,
       );
     } catch (err) {
@@ -737,10 +663,6 @@ export function AppShell() {
     }
 
     setResources(built);
-    // Phase 30: the displayed chunkSize follows the shared clock,
-    // not the user's selection. setupDashboard already validated /
-    // logged any mismatch.
-    setChunkSize(built.clock.info.chunkSize);
   }, []);
 
   // Phase 29c: auto-connect when bootstrap reports a ready
@@ -776,9 +698,8 @@ export function AppShell() {
       // Server-side state goes first (recordings → scopes → clock →
       // group). Each step is best-effort.
       await teardownServerState(current);
-      // Bank only goes away on full disconnect (not on
-      // chunkSize re-init). dispose() flushes a final save —
-      // important if a mutation happened in the last 500 ms.
+      // dispose() flushes a final save — important if a mutation
+      // happened in the last 500 ms.
       try {
         current.bank.dispose();
       } catch (err) {
@@ -798,118 +719,13 @@ export function AppShell() {
     setBootstrapState({ phase: 'disconnected' });
   }, [resources]);
 
-  /** Run a full in-place re-init with `next` as the new chunkSize.
-   *  The WS, parentGroupId, and sampleRate stay the same; only
-   *  server-side state (clock synth, group, scopes, recordings) is
-   *  rebuilt. Loading modal stays up for the duration. */
-  const runReinit = useCallback(
-    async (next: number) => {
-      const current = resources;
-      if (!current) return;
-      setReiniting(true);
-      try {
-        // Phase 27c: bank is long-lived across re-init (its
-        // reactive stores are still subscribed by anyone holding
-        // the prior `pattern`/`activeIndex` references — they
-        // just won't fire while the controller's torn down).
-        // Pass the same instance through so the user's pattern
-        // bank survives intact; playback restarts at step 0.
-        const bank = current.bank;
-        await teardownServerState(current);
-        const rebuilt = await setupDashboard(
-          current.client,
-          current.sessionId,
-          current.clientId,
-          current.parentGroupId,
-          current.sampleRate,
-          next,
-          bank,
-        );
-        setResources(rebuilt);
-        setChunkSize(next);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error('[sc:app] reinit failed', msg);
-        // A re-init failure means the dashboard is gone. Surface
-        // the error as a toast and drop the session — its
-        // scsynth-side state is in an ambiguous half-applied
-        // state; cleanest to start fresh.
-        showToast(`Reinitialization failed: ${msg}`, 'error');
-        try {
-          current.bank.dispose();
-        } catch {
-          /* best effort */
-        }
-        try {
-          current.client.dispose();
-        } catch {
-          /* best effort */
-        }
-        clientRef.current = null;
-        setResources(null);
-        void deleteSession(current.sessionId);
-        clearStoredSession();
-        setBootstrapState({ phase: 'disconnected' });
-      } finally {
-        setReiniting(false);
-        setPendingChunkSize(null);
-      }
-    },
-    [resources],
-  );
-
-  /** Header `<select>` change handler. If any recording is active
-   *  or has an un-downloaded `done` Blob, pause the clock and pop
-   *  the confirmation modal — otherwise proceed straight to
-   *  re-init. */
-  const onChunkSizeChange = useCallback(
-    (next: number) => {
-      if (next === chunkSize) return;
-      const current = resources;
-      if (!current) {
-        setChunkSize(next);
-        return;
-      }
-      const list = current.recordingManager.recordings.get();
-      const dirty = list.some((r) => {
-        const s = r.state.get();
-        if (s === 'recording' || s === 'preparing' || s === 'finalizing') {
-          return true;
-        }
-        if (s === 'done' && r.result.get() !== null) return true;
-        return false;
-      });
-      if (dirty) {
-        // Pause the parent group so this client's recording's
-        // elapsed counter stops moving while the user decides. The
-        // shared clock keeps ticking on sclang's side — other
-        // clients are unaffected (Phase 30).
-        void current.group.pause().catch((err: unknown) => {
-          console.warn('[sc:app] group.pause while confirming reinit failed', err);
-        });
-        setPendingChunkSize(next);
-        return;
-      }
-      void runReinit(next);
-    },
-    [chunkSize, resources, runReinit],
-  );
-
-  const onConfirmReinit = useCallback(() => {
-    if (pendingChunkSize !== null) void runReinit(pendingChunkSize);
-  }, [pendingChunkSize, runReinit]);
-
-  const onCancelReinit = useCallback(() => {
-    // Resume the parent group we paused when we showed the modal —
-    // the recording continues, the dropdown effectively reverts to
-    // `chunkSize` (we never set it to `pendingChunkSize`). Phase 30:
-    // the shared clock kept ticking the whole time; only this
-    // client's tap synths were frozen.
-    void resources?.group.resume().catch((err: unknown) => {
-      console.warn('[sc:app] group.resume on cancel failed', err);
-    });
-    setPendingChunkSize(null);
-  }, [resources]);
+  // Phase 30c: the chunkSize re-init flow is gone. chunkSize is
+  // owned by sclang's shared clock (`SC_APP_CLOCK_CHUNK_SIZE` env
+  // var); a different value requires restarting sclang, which all
+  // attached sessions then re-attach to via the auto-reconnect on
+  // next page load. The header dropdown, runReinit / onChunkSize-
+  // Change / onConfirmReinit / onCancelReinit callbacks, and the
+  // ConfirmReinitModal all moved out with this phase.
 
   // scsynth liveness heartbeat + status snapshot. The bridge's
   // WebSocket stays open even when scsynth is killed (UDP doesn't
@@ -1080,11 +896,10 @@ export function AppShell() {
       ? 'connecting'
       : 'disconnected';
 
-  // The "loading…" overlay gates the header + chunk-size picker
-  // from interaction during the initial bootstrap window. Re-init
-  // shares the overlay (different message) — they can't co-occur.
-  const showLoadingOverlay =
-    reiniting || (connectionStatus === 'connecting' && !resources);
+  // Loading overlay is up while the bridge session is being
+  // bootstrapped. Phase 30c: the re-init flow is gone, so this is
+  // now a one-shot at initial connect.
+  const showLoadingOverlay = connectionStatus === 'connecting' && !resources;
 
   const onConnect = useCallback(() => {
     setBootstrapState({ phase: 'pending' });
@@ -1100,45 +915,13 @@ export function AppShell() {
       <Dashboard
         resources={resources}
         status={connectionStatus}
-        chunkSize={chunkSize}
-        reiniting={reiniting}
-        onChunkSizeChange={onChunkSizeChange}
         onConnect={onConnect}
         onDisconnect={handleDisconnect}
       />
       {showLoadingOverlay && (
         <LoadingModal
-          title={reiniting ? 'Reinitializing dashboard…' : 'Connecting…'}
-          message={
-            reiniting
-              ? `Applying chunk size = ${pendingChunkSize ?? chunkSize}. ` +
-                `Tearing down current scopes/recordings and rebuilding the ` +
-                `clock.`
-              : 'Establishing the bridge session and connecting to scsynth.'
-          }
-        />
-      )}
-      {pendingChunkSize !== null && !reiniting && (
-        <ConfirmModal
-          title="Reinitialize dashboard?"
-          body={
-            <>
-              <p>
-                Active recordings will be stopped, and any recordings in
-                this session — including ones already finalised — will
-                be lost when the dashboard reinitializes.
-              </p>
-              <p>
-                Cancel and download or dismiss them first if you want
-                to keep their WAV files.
-              </p>
-            </>
-          }
-          confirmLabel="Reinitialize"
-          cancelLabel="Cancel"
-          variant="danger"
-          onConfirm={onConfirmReinit}
-          onCancel={onCancelReinit}
+          title="Connecting…"
+          message="Establishing the bridge session and connecting to scsynth."
         />
       )}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />

@@ -10,7 +10,7 @@
  * import OSC from 'osc-js';
  * import { sNew, AddToHead, encode, inFuture } from '@sc-app/server-commands';
  *
- * const msg = sNew('globalClock', 1001, AddToHead, 100);
+ * const msg = sNew('myDef', 1001, AddToHead, 100);
  * const bundle = new OSC.Bundle([msg], inFuture(200));  // fire in 200 ms
  * const bytes = encode(bundle);
  * ```
