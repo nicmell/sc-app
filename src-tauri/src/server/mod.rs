@@ -40,6 +40,7 @@ mod routing;
 mod session;
 pub mod static_assets;
 pub mod ws_bridge;
+pub mod ws_scope;
 
 pub use routing::RoutingTable;
 use session::SessionStore;
@@ -107,6 +108,7 @@ pub async fn serve_on(
 
     let mut app = Router::new()
         .route("/ws", get(ws_handler))
+        .route("/ws/scope", get(ws_scope::ws_scope_handler))
         .route("/api/session", axum::routing::post(api::post_session))
         .route(
             "/api/session/{id}",

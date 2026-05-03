@@ -4,23 +4,13 @@
  * forward bytes either direction. Inbound bytes are decoded here so
  * the main thread receives plain `{ address, args }` POJOs.
  *
- * Phase 31c rewrite. Pre-31 the worker owned a tick-driven `/b_getn`
- * loop with offset-keyed pending tracking, a tick-ordered reorder
- * buffer, retry policy, and gap synthesis — all to compensate for
- * the OSC-over-UDP transport's quirks. Post-31 the bridge owns
- * SHM-based scope-buffer ingestion entirely; the worker just:
- *
- *   - Forwards OSC bytes both directions (unchanged).
- *   - Translates `subscribeBuffer` / `unsubscribeBuffer` from main
- *     into `0x01` / `0x02` op-tagged binary frames sent to the
- *     bridge over the same WS.
- *   - Decodes inbound `0x03` chunk frames from the bridge into
- *     `bufferChunk` events for the main thread (same shape as
- *     pre-31; consumers don't see the transport change).
- *
- * `pendingByOffset`, `reorderBuffer`, retry logic, gap synthesis,
- * `fireReads`, `/b_setn` dispatch, `skipFirstTick` — all retired.
- * Bridge handles whatever gap/timing logic ends up being necessary.
+ * Phase 31 post-shipping refactor: scope buffer chunk delivery now
+ * uses a SEPARATE WebSocket per subscription (`/ws/scope?...`); the
+ * main WS is back to pure OSC. The worker still owns lifecycle —
+ * `subscribeBuffer` opens a scope WS, `unsubscribeBuffer` closes
+ * it, scope-WS messages decode into `bufferChunk` events posted to
+ * main with the data ArrayBuffer transferred. Consumer-facing API
+ * (`subscribeBuffer` / `bufferChunk`) is unchanged.
  *
  * Decode failures surface as `error` events; the stream keeps flowing.
  */
@@ -41,17 +31,13 @@ import {
   type OscPacket,
 } from '@sc-app/server-commands';
 import type {
+  BufferSubscription,
   MainToWorker,
   OscReply,
   WorkerToMain,
 } from '../server/workerProtocol';
 import { createOscTransport, type OscTransport } from './transport';
-import {
-  decodeChunk,
-  encodeSubscribe,
-  encodeUnsubscribe,
-  SCOPE_OP_CHUNK,
-} from './scopeWire';
+import { decodeScopeFrame } from './scopeWire';
 
 interface WorkerPost {
   postMessage(msg: WorkerToMain, transfer?: Transferable[]): void;
@@ -81,59 +67,102 @@ self.addEventListener('unhandledrejection', (ev) => {
 console.log('[sc:worker] ready for messages');
 
 let transport: OscTransport | null = null;
+/** Main WS URL captured at connect time. Used to derive scope-WS
+ *  URLs with the same origin + session UUID. Cleared on disconnect. */
+let mainWsUrl: string | null = null;
 
-/** Address-match constant for the shared clock's tick replies.
- *  Phase 30 post-shipping cleanup — the clock SynthDef emits via
- *  `SendReply.kr(tick, '/clock/tick', count)` instead of the
- *  pre-cleanup `SendTrig.kr(tick, 1000, count)`. Worker matches
- *  the address; no registration step from main needed. */
+/** Active per-scope WSs keyed by `bufferId`. Closed on
+ *  `unsubscribeBuffer` or `disconnect`. */
+const scopeWebSockets = new Map<string, WebSocket>();
+
 const CLOCK_TICK_ADDRESS = '/clock/tick';
 
-/** Top-level dispatch for an inbound binary WS frame. Phase 31c:
- *  the bridge multiplexes OSC replies and `0x03` scope chunks on
- *  the same socket; we peek the first byte and route. */
-function handleInboundBytes(bytes: Uint8Array): void {
-  if (bytes.length === 0) return;
-  if (bytes[0] === SCOPE_OP_CHUNK) {
+/** Build a `/ws/scope` URL from the session-attached main WS URL +
+ *  the subscription params. Same origin, same session, just a
+ *  different path with the scope-specific query parameters. */
+function buildScopeWsUrl(mainUrl: string, sub: BufferSubscription): string {
+  const url = new URL(mainUrl);
+  url.pathname = '/ws/scope';
+  const session = url.searchParams.get('session') ?? '';
+  url.search = '';
+  url.searchParams.set('session', session);
+  url.searchParams.set('scope', String(sub.scopeNum));
+  url.searchParams.set('channels', String(sub.channels));
+  url.searchParams.set('chunkSize', String(sub.chunkSize));
+  url.searchParams.set('bufferId', sub.bufferId);
+  return url.toString();
+}
+
+function openScopeWs(sub: BufferSubscription): void {
+  if (!mainWsUrl) {
+    post({ type: 'error', message: 'subscribeBuffer before connect' });
+    return;
+  }
+  // Replace any existing WS for the same bufferId — duplicate
+  // subscribe usually means the consumer restarted.
+  const stale = scopeWebSockets.get(sub.bufferId);
+  if (stale) {
     try {
-      const chunk = decodeChunk(bytes);
+      stale.close();
+    } catch {
+      /* best effort */
+    }
+  }
+  const url = buildScopeWsUrl(mainWsUrl, sub);
+  const ws = new WebSocket(url);
+  ws.binaryType = 'arraybuffer';
+  ws.onmessage = (ev) => {
+    if (!(ev.data instanceof ArrayBuffer)) return;
+    try {
+      const frame = decodeScopeFrame(new Uint8Array(ev.data));
       post(
         {
           type: 'bufferChunk',
           chunk: {
-            bufferId: chunk.bufferId,
-            data: chunk.data,
-            channels: chunk.channels,
-            tickIndex: chunk.tickIndex,
-            isGap: chunk.isGap,
+            bufferId: sub.bufferId,
+            data: frame.data,
+            channels: frame.channels,
+            tickIndex: frame.tickIndex,
+            isGap: frame.isGap,
           },
         },
-        [chunk.data.buffer],
+        [frame.data.buffer],
       );
     } catch (err) {
-      console.error('[sc:worker] scope chunk decode failed', err);
-      post({
-        type: 'error',
-        message: `scope chunk decode failed: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      });
+      console.error('[sc:worker] scope frame decode failed', err);
     }
-    return;
-  }
-  // Anything else: assume OSC bytes.
+  };
+  ws.onerror = (ev) => {
+    console.warn(`[sc:worker] scope ws ${sub.bufferId} error`, ev);
+  };
+  ws.onclose = () => {
+    if (scopeWebSockets.get(sub.bufferId) === ws) {
+      scopeWebSockets.delete(sub.bufferId);
+    }
+  };
+  scopeWebSockets.set(sub.bufferId, ws);
+}
+
+function closeScopeWs(bufferId: string): void {
+  const ws = scopeWebSockets.get(bufferId);
+  if (!ws) return;
+  scopeWebSockets.delete(bufferId);
   try {
-    const packet = decode(bytes);
-    emitReply(packet);
-  } catch (err) {
-    console.error('[sc:worker] decode failed', err, bytes);
-    post({
-      type: 'error',
-      message: `decode failed: ${
-        err instanceof Error ? err.message : String(err)
-      }`,
-    });
+    ws.close();
+  } catch {
+    /* best effort */
   }
+}
+
+function closeAllScopeWs(): void {
+  for (const ws of scopeWebSockets.values()) {
+    try {
+      ws.close();
+    } catch {
+      /* best effort */
+    }
+  }
+  scopeWebSockets.clear();
 }
 
 function emitReply(packet: OscPacket): void {
@@ -195,8 +224,22 @@ setWorkerMessageHandler(async (msg: MainToWorker) => {
       }
       try {
         console.log('[sc:worker] creating transport', msg.url);
+        mainWsUrl = msg.url;
         transport = createOscTransport(msg.url);
-        transport.onMessage(handleInboundBytes);
+        transport.onMessage((bytes) => {
+          try {
+            const packet = decode(bytes);
+            emitReply(packet);
+          } catch (err) {
+            console.error('[sc:worker] decode failed', err, bytes);
+            post({
+              type: 'error',
+              message: `decode failed: ${
+                err instanceof Error ? err.message : String(err)
+              }`,
+            });
+          }
+        });
         transport.onError(() => {
           post({ type: 'error', message: 'websocket error' });
         });
@@ -215,6 +258,7 @@ setWorkerMessageHandler(async (msg: MainToWorker) => {
       } catch (err) {
         console.error('[sc:worker] connect failed', err);
         transport = null;
+        mainWsUrl = null;
         post({
           type: 'error',
           message: err instanceof Error ? err.message : String(err),
@@ -234,6 +278,8 @@ setWorkerMessageHandler(async (msg: MainToWorker) => {
 
     case 'disconnect': {
       console.log('[sc:worker] disconnect');
+      closeAllScopeWs();
+      mainWsUrl = null;
       if (transport) {
         await transport.close();
         transport = null;
@@ -242,25 +288,18 @@ setWorkerMessageHandler(async (msg: MainToWorker) => {
     }
 
     case 'subscribeBuffer': {
-      if (!transport) {
-        post({ type: 'error', message: 'subscribeBuffer before connect' });
-        return;
-      }
       const sub = msg.subscription;
       console.log(
         `[sc:worker] subscribeBuffer id=${sub.bufferId} scopeNum=${sub.scopeNum} ` +
           `chunkSize=${sub.chunkSize} channels=${sub.channels}`,
       );
-      transport.send(
-        encodeSubscribe(sub.bufferId, sub.scopeNum, sub.channels, sub.chunkSize),
-      );
+      openScopeWs(sub);
       return;
     }
 
     case 'unsubscribeBuffer': {
-      if (!transport) return;
       console.log(`[sc:worker] unsubscribeBuffer id=${msg.bufferId}`);
-      transport.send(encodeUnsubscribe(msg.bufferId));
+      closeScopeWs(msg.bufferId);
       return;
     }
   }

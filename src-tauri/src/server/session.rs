@@ -116,6 +116,21 @@ pub struct Session {
     /// /fail replies it provokes don't get fanned out to
     /// (now-detached) WS connections.
     recv_tasks: Vec<JoinHandle<()>>,
+    /// Phase 31 (per-scope WS variant): lazily-opened SHM mmap +
+    /// scope_buffer layout, shared across every `/ws/scope` task
+    /// on this Session. Initialized on the first scope WS attach;
+    /// reused for every subsequent one. `OnceCell` because we
+    /// only need to populate it once and can race losers wait on
+    /// the winner.
+    pub scope_shm: tokio::sync::OnceCell<Arc<ScopeShm>>,
+}
+
+/// SHM mmap + resolved scope_buffer layout. Held in
+/// `Session.scope_shm` so multiple `/ws/scope` connections on the
+/// same session share one mapping.
+pub struct ScopeShm {
+    pub region: crate::scope_shm::MmapRegion,
+    pub layout: crate::scope_shm::ScopeBufferLayout,
 }
 
 impl Session {
@@ -228,7 +243,36 @@ impl Session {
             created_at: now,
             last_active: RwLock::new(now),
             recv_tasks,
+            scope_shm: tokio::sync::OnceCell::new(),
         })
+    }
+
+    /// Lazily open the SHM scope-buffer pool for this session.
+    /// First caller pays the mmap + `find_scope_buffer_array` scan;
+    /// subsequent callers wait on the `OnceCell` and get the
+    /// already-resolved layout. Used by `/ws/scope` handlers
+    /// before they start polling — each scope WS shares the same
+    /// underlying mapping.
+    pub async fn ensure_scope_shm(&self) -> Result<Arc<ScopeShm>> {
+        let port = self.scsynth_addr.port();
+        self.scope_shm
+            .get_or_try_init(|| async move {
+                let path = crate::scope_shm::shm_path(port);
+                let path_str = path.to_string_lossy().into_owned();
+                let region = crate::scope_shm::MmapRegion::open(&path_str)
+                    .map_err(|e| anyhow!("scope SHM mmap: {e}"))?;
+                let layout = crate::scope_shm::find_scope_buffer_array(&region)
+                    .map_err(|e| anyhow!("scope_buffer layout scan: {e}"))?;
+                tracing::info!(
+                    scsynth_port = port,
+                    scope_count = layout.count,
+                    path = %path_str,
+                    "opened SHM scope-buffer pool for session"
+                );
+                Ok(Arc::new(ScopeShm { region, layout }))
+            })
+            .await
+            .cloned()
     }
 
     /// Bump `last_active`. Called from `GET /api/session/:id` and
