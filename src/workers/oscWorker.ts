@@ -46,7 +46,7 @@ import {
   handleSequencerStart,
   handleSequencerStop,
   setSequencerSender,
-} from './sequencerWorker';
+} from './sequencerPump';
 import {
   disconnectClockWatchdog,
   recordClockTick,

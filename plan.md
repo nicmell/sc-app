@@ -77,7 +77,7 @@ keep "bring your own scsynth" semantics.
 ### 5. Test coverage for `src/`
 
 Phase 32d bootstrapped vitest at root and added 8 unit tests for
-the worker-side sequencer pump (`src/workers/sequencerWorker.test.ts`).
+the worker-side sequencer pump (`src/workers/sequencerPump.test.ts`).
 The remaining pieces that absorbed real debugging cycles and are
 worth pinning:
 

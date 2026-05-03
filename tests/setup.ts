@@ -1,7 +1,7 @@
 /**
  * Vitest setup — runs once per test file before any test.
  *
- * The worker module under test (`src/workers/sequencerWorker.ts`)
+ * The worker module under test (`src/workers/sequencerPump.ts`)
  * uses `self.postMessage` (the WorkerGlobalScope alias). In a
  * `node` environment there's no `self`, so we polyfill it to
  * `globalThis`. Individual tests overwrite `globalThis.postMessage`

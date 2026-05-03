@@ -137,7 +137,7 @@ export function handleSequencerStart(args: {
     // so this should never happen — but if it does, we'd anchor
     // nextStepTick to NaN. Bail visibly.
     console.warn(
-      '[sc:sequencer-worker] start with null tick0Ms — refusing to pump',
+      '[sc:sequencer-pump] start with null tick0Ms — refusing to pump',
     );
     state.running = false;
     return;

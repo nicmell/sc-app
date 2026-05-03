@@ -182,7 +182,7 @@ src/
 │   ├── transport.ts             raw binary WebSocket
 │   ├── oscWorker.ts             worker entry: encode/decode + dispatch
 │   ├── scopeWire.ts             /ws/scope binary frame decoder
-│   ├── sequencerWorker.ts       Phase 32 worker-side pump
+│   ├── sequencerPump.ts       Phase 32 worker-side pump
 │   ├── clockWatchdog.ts         Phase 33b worker-side freshness check
 │   └── *.test.ts                vitest unit tests
 │
@@ -333,6 +333,15 @@ the browser when the tab is backgrounded — this is why the
 sequencer pump (Phase 32) and clock watchdog (Phase 33b) live
 here.
 
+> **There is exactly ONE Web Worker per session.** `oscWorker.ts`
+> is the only `new Worker()` target in the codebase
+> (`WorkerClient.ts`); every other file under `src/workers/` is
+> a **module** that runs inside that one worker context. They
+> share the thread, the transport, and `self.postMessage`. This
+> matters because the file naming (`sequencerPump.ts`,
+> `clockWatchdog.ts`, `scopeWire.ts`) can read as "one worker
+> each" — it isn't.
+
 ### 4.1. Module layout
 
 ```
@@ -345,7 +354,7 @@ oscWorker.ts (entry)
 │                        bytes to oscWorker's onMessage.
 ├── scopeWire           decoder for the 10-byte-header binary
 │                        frames coming from /ws/scope.
-├── sequencerWorker     Phase 32 pump: setInterval(25ms),
+├── sequencerPump       Phase 32 pump: setInterval(25ms),
 │                        encodes /dirt/play bundles with
 │                        tickToTimetag, ships via transport.send,
 │                        posts stepFired back to main.
@@ -848,7 +857,7 @@ ScopeView (RAF loop):
 ### 7.4. Sequencer emission (Phase 32)
 
 ```
-main thread          worker (sequencerWorker)        bridge → sclang+SuperDirt
+main thread          worker (sequencerPump)        bridge → sclang+SuperDirt
 ───────────          ────────────────────────        ─────────────────────────
 SequencerController.play()
   snapshot bank + clock

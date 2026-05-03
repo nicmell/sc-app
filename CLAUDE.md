@@ -91,7 +91,10 @@ OSC Worker (module worker)
   ├── scopeWire.ts              decoder for the 10-byte-header
   │                              scope-chunk frames coming over
   │                              per-subscription /ws/scope WSs
-  ├── sequencerWorker.ts        Phase 32 worker-side pump:
+  ├── sequencerPump.ts          Phase 32 worker-side pump
+  │                              (renamed post-32 from
+  │                              sequencerWorker.ts — module, not
+  │                              a separate Worker):
   │                              setInterval(25ms) (unthrottled when
   │                              tab backgrounded), ports pump() +
   │                              tickToTimetag math + /dirt/play
@@ -99,14 +102,15 @@ OSC Worker (module worker)
   │                              src/sequencer/scheduler.ts; emits
   │                              OSC bytes via transport.send,
   │                              posts stepFired back to main
-  └── oscWorker.ts              decode inbound + forward outbound
+  └── oscWorker.ts              the actual Worker entry point.
+                                decode inbound + forward outbound
                                 bytes + /clock/tick mux; owns one
                                 /ws/scope WebSocket per active
                                 BufferSubscription (opened on
                                 subscribeBuffer, closed on
                                 unsubscribeBuffer); registers a
                                 transport.send sender into
-                                sequencerWorker on connect
+                                sequencerPump on connect
       │
       ▼
 src-tauri backend (Rust)
@@ -511,8 +515,10 @@ sequencer's `setInterval(25 ms)` pump off the main thread
 (where Chromium clamps it to ~1 Hz on backgrounded tabs) into
 the existing OSC worker. `SequencerController` keeps its full
 public API and reactive stores; the timing-critical work hops
-behind `postMessage` into a new `src/workers/sequencerWorker.ts`
-module folded into the existing worker context, so it can call
+behind `postMessage` into a new `src/workers/sequencerPump.ts`
+module (originally `sequencerWorker.ts` — renamed post-32
+since it's a module that runs IN the worker, not a separate
+Worker) folded into the existing worker context, so it can call
 `transport.send()` directly without a second postMessage hop.
 32a added the protocol surface (`sequencerStart`/`Stop`/
 `BankUpdate`/`ClockUpdate`/`PauseUpdate` MainToWorker;
@@ -999,7 +1005,7 @@ Observations:
   pump function, `tickToTimetag` math, lookahead constants
   (`INITIAL_LOOKAHEAD_TICKS`, `LOOKAHEAD_HORIZON_TICKS`,
   `SUPERDIRT_SAFETY_LOOKAHEAD_MS = 200`) all live in
-  `src/workers/sequencerWorker.ts` now. If you need to read
+  `src/workers/sequencerPump.ts` now. If you need to read
   the canonical pump implementation, look there. The 200 ms
   SuperDirt safety shift is the load-bearing piece — it keeps
   `bundle_timetag - sclang_now` positive so SuperDirt's

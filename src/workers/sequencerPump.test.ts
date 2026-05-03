@@ -21,7 +21,7 @@ import {
   handleSequencerStart,
   handleSequencerStop,
   setSequencerSender,
-} from './sequencerWorker';
+} from './sequencerPump';
 import {
   makeEmptyChain,
   makeEmptyPattern,
@@ -72,7 +72,7 @@ function densePattern(sample = 'bd'): Pattern {
   return { ...pattern, bpm: 120, tracks: [track] };
 }
 
-describe('sequencerWorker', () => {
+describe('sequencerPump', () => {
   let sentBytes: Uint8Array[];
   let postedToMain: unknown[];
 
