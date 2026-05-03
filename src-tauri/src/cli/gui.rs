@@ -123,7 +123,18 @@ pub fn run() {
             tracing::info!(addr = %addr, "sc-app listening on http://{addr}");
 
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = server::serve_on(listener, table, dist, session_ttl).await {
+                // GUI mode never forces OSC fallback — the user is on
+                // the same machine as the bridge by definition; SHM is
+                // always available. The `--no-shm` flag is bridge-only.
+                if let Err(e) = server::serve_on(
+                    listener,
+                    table,
+                    dist,
+                    session_ttl,
+                    /* force_osc_mode = */ false,
+                )
+                .await
+                {
                     tracing::error!(error = %e, "bridge error");
                 }
             });

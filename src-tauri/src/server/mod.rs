@@ -56,6 +56,11 @@ const TTL_SCAN_INTERVAL: Duration = Duration::from_secs(60);
 pub(crate) struct AppState {
     pub routes: Arc<RoutingTable>,
     pub sessions: SessionStore,
+    /// Phase 36: when true, every new session unconditionally uses
+    /// `ScopeMode::Osc` even if SHM is reachable. Set via the
+    /// `bridge --no-shm` CLI flag for testing the OSC fallback path
+    /// without disabling SHM at the OS layer.
+    pub force_osc_mode: bool,
 }
 
 #[derive(Deserialize)]
@@ -93,6 +98,7 @@ pub async fn serve_on(
     routes: RoutingTable,
     dist: Option<PathBuf>,
     session_ttl: Duration,
+    force_osc_mode: bool,
 ) -> Result<()> {
     tracing::info!("  /ws routing table:\n{}", routes.describe());
     tracing::info!(
@@ -103,6 +109,7 @@ pub async fn serve_on(
     let state = AppState {
         routes: Arc::new(routes),
         sessions: SessionStore::new(),
+        force_osc_mode,
     };
 
     spawn_ttl_task(state.sessions.clone(), session_ttl);
@@ -148,10 +155,11 @@ pub async fn run_bridge(
     routes: RoutingTable,
     dist: Option<PathBuf>,
     session_ttl: Duration,
+    force_osc_mode: bool,
 ) -> Result<()> {
     let (listener, addr) = bind(port).await?;
     tracing::info!(addr = %addr, "sc-app listening on http://{addr}");
-    serve_on(listener, routes, dist, session_ttl).await
+    serve_on(listener, routes, dist, session_ttl, force_osc_mode).await
 }
 
 async fn ws_handler(

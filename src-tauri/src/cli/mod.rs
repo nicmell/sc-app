@@ -81,6 +81,15 @@ enum Command {
         /// — silently skipped if absent.
         #[arg(long)]
         config: Option<PathBuf>,
+
+        /// Phase 36: force OSC `/b_getn` fallback mode regardless of
+        /// SHM availability. Useful for testing the OSC code path
+        /// without disabling SHM at the OS layer (e.g. on a local
+        /// dev box where /tmp/boost_interprocess/... is perfectly
+        /// readable). Production deployments leave this off and let
+        /// the bridge auto-detect.
+        #[arg(long)]
+        no_shm: bool,
     },
 }
 
@@ -93,6 +102,7 @@ pub fn run() {
             dist,
             log_dir,
             config,
+            no_shm,
         }) => {
             let cfg = resolve_bridge_config(config.as_deref());
 
@@ -111,7 +121,9 @@ pub fn run() {
                 cfg.session_ttl_seconds.unwrap_or(DEFAULT_SESSION_TTL_SECONDS),
             );
 
-            bridge::run_blocking(port, scsynth, routes, dist, log_dir, session_ttl);
+            bridge::run_blocking(
+                port, scsynth, routes, dist, log_dir, session_ttl, no_shm,
+            );
         }
     }
 }

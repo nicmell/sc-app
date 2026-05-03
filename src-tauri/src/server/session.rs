@@ -117,12 +117,37 @@ pub struct Session {
     /// (now-detached) WS connections.
     recv_tasks: Vec<JoinHandle<()>>,
     /// Phase 31 (per-scope WS variant): lazily-opened SHM mmap +
-    /// scope_buffer layout, shared across every `/ws/scope` task
-    /// on this Session. Initialized on the first scope WS attach;
-    /// reused for every subsequent one. `OnceCell` because we
-    /// only need to populate it once and can race losers wait on
-    /// the winner.
+    /// scope_buffer layout, shared across every WS on this
+    /// Session. Initialized on the first scope subscribe in SHM
+    /// mode; reused for every subsequent one. `OnceCell` because
+    /// we only need to populate it once and can race losers wait
+    /// on the winner. Stays empty in OSC mode.
     pub scope_shm: tokio::sync::OnceCell<Arc<ScopeShm>>,
+    /// Phase 36: which scope-data path this session uses. Probed
+    /// once at `Session::create` (or forced via `--no-shm`) and
+    /// frozen for the session's lifetime. Drives the
+    /// `ScopeContext` mode in `ws_bridge`. Frontend reads it from
+    /// `/api/scope/probe` and picks the matching SynthDef +
+    /// allocation strategy.
+    pub scope_mode: ScopeMode,
+}
+
+/// Phase 36: which scope-data ingestion path is in use for a
+/// session. Frozen at `Session::create` time. Frontend mirrors
+/// this choice when picking SynthDef + buffer allocation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ScopeMode {
+    /// Bridge mmaps scsynth's SHM scope_buffer pool, reads slots
+    /// non-mutating on each observed `/clock/tick`. Tap synth
+    /// uses `ScopeOut2.ar`; frontend allocates via `/scope/allocate`.
+    Shm,
+    /// Bridge polls scsynth via OSC `/b_getn` on each observed
+    /// `/clock/tick`, intercepts the matching `/b_setn` replies
+    /// from the broadcast stream. Tap synth uses `BufWr.ar` with
+    /// a `clockBus`-driven writeIdx; frontend allocates via
+    /// `/b_alloc`.
+    Osc,
 }
 
 /// SHM mmap + resolved scope_buffer layout. Held in
@@ -146,7 +171,10 @@ impl Session {
     /// EXCLUSIVELY (no broadcast tasks running yet). Once both
     /// handshakes complete, the broadcast tasks take over and
     /// own all subsequent reads.
-    pub async fn create(routes: Arc<RoutingTable>) -> Result<Self> {
+    pub async fn create(
+        routes: Arc<RoutingTable>,
+        force_osc_mode: bool,
+    ) -> Result<Self> {
         let default_addr = routes.default_target();
         let unique_targets = routes.unique_targets();
 
@@ -220,6 +248,28 @@ impl Session {
             recv_tasks.push(task);
         }
 
+        // Phase 36: probe SHM availability before declaring the
+        // scope-data mode. The probe is cheap (`MmapRegion::open`
+        // + immediate drop) and runs once per session lifetime.
+        // `--no-shm` skips the probe outright and forces OSC mode
+        // — useful for testing without disabling SHM at the OS
+        // layer.
+        let scope_mode = if force_osc_mode {
+            ScopeMode::Osc
+        } else {
+            let probe = crate::scope_shm::probe(default_addr.port());
+            if probe.available {
+                ScopeMode::Shm
+            } else {
+                tracing::info!(
+                    path = ?probe.path,
+                    error = ?probe.error,
+                    "SHM scope path unavailable; falling back to OSC /b_getn mode"
+                );
+                ScopeMode::Osc
+            }
+        };
+
         let session_id = Uuid::new_v4();
         let now = Instant::now();
         tracing::info!(
@@ -228,6 +278,7 @@ impl Session {
             parent_group_id,
             sample_rate,
             scsynth = %default_addr,
+            scope_mode = ?scope_mode,
             "session created"
         );
         Ok(Self {
@@ -244,6 +295,7 @@ impl Session {
             last_active: RwLock::new(now),
             recv_tasks,
             scope_shm: tokio::sync::OnceCell::new(),
+            scope_mode,
         })
     }
 
@@ -326,6 +378,10 @@ pub struct SessionInfo {
     pub scsynth: String,
     pub sample_rate: u32,
     pub parent_group_id: i32,
+    /// Phase 36: which scope-data ingestion path this session
+    /// uses. Frontend reads this and picks the matching SynthDef
+    /// + buffer-allocation strategy in `BufferController`.
+    pub scope_mode: ScopeMode,
 }
 
 impl Session {
@@ -337,6 +393,7 @@ impl Session {
             scsynth: self.scsynth_addr.to_string(),
             sample_rate: self.sample_rate,
             parent_group_id: self.parent_group_id,
+            scope_mode: self.scope_mode,
         }
     }
 }

@@ -125,6 +125,14 @@ export class ClockController {
     return { sampleRate: this.info.sampleRate };
   }
 
+  /** Phase 36: audio bus index sclang allocated for the clock's
+   *  sample-counting Phasor. Read by the OSC-fallback tap SynthDef
+   *  via `In.ar(clockBus)` to derive a sample-aligned ring-buffer
+   *  `writeIdx`. SHM mode doesn't use this. */
+  get clockBus(): number {
+    return this.info.clockBus;
+  }
+
   /** Monotonic pulse count from the most recent observed tick, or
    *  null if no tick has arrived since `attach()`. */
   get lastTick(): ReadonlyStore<ClockTick | null> {

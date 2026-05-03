@@ -51,6 +51,11 @@ export interface ClockInfo {
   /** scsynth's nominal sample rate, captured at sclang's
    *  `s.doWhenBooted` time. Integer Hz. */
   sampleRate: number;
+  /** Phase 36: audio bus index the `\scAppClock` synth writes a
+   *  sample-counting `Phasor.ar` to. Read by the OSC-fallback tap
+   *  SynthDef (`bufferTapOscSynthDef`) to derive a sample-aligned
+   *  ring-buffer `writeIdx`. SHM mode ignores this. */
+  clockBus: number;
   /** scsynth nodeId of the running `\scAppClock` synth. Reserved
    *  by convention — clients must not `/n_free` it. */
   clockNodeId: number;
@@ -82,6 +87,7 @@ export function parseClockInfo(args: readonly OscArg[]): ClockInfo {
     tickRate: num('tickRate'),
     chunkSize: num('chunkSize'),
     sampleRate: num('sampleRate'),
+    clockBus: num('clockBus'),
     clockNodeId: num('clockNodeId'),
   };
 }

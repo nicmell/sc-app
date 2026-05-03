@@ -34,6 +34,7 @@ pub fn run_blocking(
     dist_override: Option<PathBuf>,
     log_dir: Option<PathBuf>,
     session_ttl: Duration,
+    force_osc_mode: bool,
 ) {
     let _guard = logging::init_tracing(log_dir.as_deref());
 
@@ -49,6 +50,12 @@ pub fn run_blocking(
         }
     });
 
+    if force_osc_mode {
+        tracing::info!(
+            "  --no-shm: forcing OSC /b_getn fallback mode for all sessions"
+        );
+    }
+
     let rt = tokio::runtime::Runtime::new().expect("failed to start tokio runtime");
     rt.block_on(async move {
         let table = match RoutingTable::build(scsynth, &routes).await {
@@ -58,7 +65,9 @@ pub fn run_blocking(
                 std::process::exit(1);
             }
         };
-        if let Err(e) = server::run_bridge(port, table, dist, session_ttl).await {
+        if let Err(e) =
+            server::run_bridge(port, table, dist, session_ttl, force_osc_mode).await
+        {
             tracing::error!(error = %e, "bridge error");
             std::process::exit(1);
         }

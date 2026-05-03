@@ -50,7 +50,9 @@ fn error_response(status: StatusCode, message: impl Into<String>) -> Response {
 /// info. Body is ignored (reserved for future fields like a
 /// returning client_id hint).
 pub async fn post_session(State(state): State<AppState>) -> Response {
-    let session = match Session::create(state.routes.clone()).await {
+    let session = match Session::create(state.routes.clone(), state.force_osc_mode)
+        .await
+    {
         Ok(s) => Arc::new(s),
         Err(e) => {
             tracing::warn!(error = ?e, "POST /api/session failed");
@@ -107,19 +109,34 @@ pub async fn delete_session(
 }
 
 /// `GET /api/scope/probe` — Phase 31: report whether scsynth's SHM
-/// scope-buffer pool is reachable from the bridge. Frontend uses
-/// this once at session attach to decide whether the SHM-based
-/// scope/recording path is usable on this deployment.
+/// scope-buffer pool is reachable from the bridge. Phase 36
+/// extends with a `mode` field that tells the frontend which
+/// scope-data path to use. Frontend reads this once at session
+/// attach and picks the matching SynthDef + buffer-allocation
+/// strategy in `BufferController`.
 ///
-/// "Available" means the SHM file exists at the expected path
+/// `available` means the SHM file exists at the expected path
 /// (platform-derived from the scsynth port) and we successfully
-/// mmap'd it. Doesn't yet verify the scope_buffer array is
+/// mmap'd it. `mode` is `"shm"` if available AND `--no-shm` is
+/// not set; otherwise `"osc"` (the bridge will use OSC `/b_getn`
+/// fallback). Doesn't yet verify the scope_buffer array is
 /// findable inside the segment — that probe happens lazily on
 /// first scope acquire (see `scope_shm::find_scope_buffer_array`).
 pub async fn get_scope_probe(State(state): State<AppState>) -> Response {
     let port = state.routes.default_target().port();
-    let result = scope_shm::probe(port);
-    Json(result).into_response()
+    let probe = scope_shm::probe(port);
+    let mode = if state.force_osc_mode || !probe.available {
+        "osc"
+    } else {
+        "shm"
+    };
+    Json(serde_json::json!({
+        "available": probe.available,
+        "path": probe.path,
+        "error": probe.error,
+        "mode": mode,
+    }))
+    .into_response()
 }
 
 /// `GET /api/scope/layout` — Phase 31b verification: open the SHM

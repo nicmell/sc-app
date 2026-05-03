@@ -342,11 +342,11 @@ async function setupDashboard(
   // bundle), separately from the shared clock — which lives in
   // sclang at scsynth's root group, OUTSIDE this client's parent
   // group. `clock.attach()` round-trips /clock/hello to read the
-  // running clock's config (tickRate / chunkSize / sampleRate).
+  // running clock's config (tickRate / chunkSize / sampleRate / clockBus).
   await group.ensureCreated();
   const clockInfo = await clock.attach();
   console.log(
-    `[sc:app] attached to shared clock — ` +
+    `[sc:app] attached to shared clock — clockBus=${clockInfo.clockBus}, ` +
       `sampleRate=${clockInfo.sampleRate}, chunkSize=${clockInfo.chunkSize}, ` +
       `tickRate=${clock.derived.tickRate.toFixed(3)} Hz`,
   );

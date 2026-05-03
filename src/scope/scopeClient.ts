@@ -113,19 +113,33 @@ export function parseScopeAllocateFailed(
 
 // ── HTTP probe ───────────────────────────────────────────────────────
 
+/** Phase 36: which scope-data path the bridge will use. Frozen
+ *  per session at the bridge side; mirrored in the frontend's
+ *  `BufferController` SynthDef + buffer-allocation choice.
+ *  - `'shm'`: bridge mmaps scsynth's SHM scope_buffer pool. Tap
+ *    synth uses `ScopeOut2.ar`; frontend allocates via
+ *    `/scope/allocate`.
+ *  - `'osc'`: bridge polls scsynth via OSC `/b_getn`. Tap synth
+ *    uses `BufWr.ar` against a `clockBus`-driven writeIdx;
+ *    frontend allocates via `/b_alloc`. */
+export type ScopeMode = 'shm' | 'osc';
+
 /** Bridge-side probe result for whether the SHM segment is reachable
  *  on this host. Returned by `GET /api/scope/probe`; cached once at
- *  session attach. */
+ *  session attach. Phase 36: extended with `mode` so the frontend
+ *  knows which scope-data path to use without re-deriving it from
+ *  `available`. */
 export interface ScopeShmProbe {
   available: boolean;
   path: string | null;
   error: string | null;
+  mode: ScopeMode;
 }
 
 /** One-shot HTTP fetch for the bridge's `/api/scope/probe` endpoint.
- *  Returns `{ available: false, ... }` on any failure (not just on a
- *  bridge-reported unavailable response); callers should treat
- *  unavailable as a recoverable "no SHM, fall back" condition. */
+ *  Returns `{ available: false, mode: 'osc', ... }` on any failure
+ *  (not just on a bridge-reported unavailable response); callers
+ *  should pick the SynthDef + alloc path based on `mode`. */
 export async function probeScopeShm(): Promise<ScopeShmProbe> {
   try {
     const res = await fetch('/api/scope/probe');
@@ -134,15 +148,26 @@ export async function probeScopeShm(): Promise<ScopeShmProbe> {
         available: false,
         path: null,
         error: `HTTP ${res.status}`,
+        mode: 'osc',
       };
     }
-    const json = (await res.json()) as ScopeShmProbe;
-    return json;
+    const json = (await res.json()) as Partial<ScopeShmProbe>;
+    return {
+      available: json.available ?? false,
+      path: json.path ?? null,
+      error: json.error ?? null,
+      // Older bridges (pre-36) don't return `mode`; treat as 'shm'
+      // when available, else 'osc'. New bridges always include it.
+      mode:
+        json.mode ??
+        (json.available ? 'shm' : 'osc'),
+    };
   } catch (err) {
     return {
       available: false,
       path: null,
       error: err instanceof Error ? err.message : String(err),
+      mode: 'osc',
     };
   }
 }
