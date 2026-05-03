@@ -413,33 +413,50 @@ When working on a phase:
    `plan.md` of the moved content, and (if relevant) update
    the "Current phase progress" line below.
 
-Current phase progress: **Phase 30 shipped — Shared
-sclang-owned clock.** Three sub-phases moved clock ownership
-from per-session frontend synths to a single `\scAppClock`
-running at scsynth's root group, owned by sclang
-(`scripts/sc-app-superdirt-startup.scd`). All clients become
-passive observers of the same `/clock/tick` stream + the same
-`clockBus`, enabling cross-client sync. 30a added the SynthDef
-+ `Synth.new` (nodeId 999, `Bus.audio(s, 1)`, SendReply on
-`/clock/tick`) + `OSCdef(\scAppClockHello)` reply on
-`/clock/info`; new
-`/clock` route in `config.json` + starter; `SC_APP_CLOCK_-
-CHUNK_SIZE` env var (default 1024) wired through
-`scripts/start-superdirt-only.sh`. 30b rewrote
-`ClockController` from owner to passive observer (new
-`attach()` round-trips `/clock/hello → /clock/info`,
-`detach()` is sync, removed start/stop/resume/reset/dispose's
-`/n_free` path); `ClockPanel` Pause/Resume drives
-`GroupController` instead (Reset button removed); new
-`SequencerController.isGroupPaused` callback gates `/dirt/play`
-emission so the user's Pause button silences sequencer output
-even though the shared clock keeps ticking. 30c removed the
-header chunkSize dropdown + the entire in-place re-init flow
-(runReinit, ConfirmReinitModal, pendingChunkSize state) and
-deleted `src/synthdefs/clockSynthDef.ts`. The frontend has no
-chunkSize UI now — it's owned by sclang's env var, and a
-restart is the only way to change it. See `docs/history.md`
-Phase 30 for the full write-up.
+Current phase progress: **Phase 32 — Worker-Side Sequencer
+Pump** is in flight (see `plan.md`). Goal: move the sequencer's
+`setInterval(25 ms)` pump off the main thread (where browser
+tab throttling clamps it to ~1 Hz when backgrounded) into the
+existing OSC worker. `SequencerController` keeps its public
+API and reactive stores; the timing-critical work hops behind
+`postMessage` into a new `sequencerWorker.ts` module folded
+into the existing worker context (so it can call
+`transport.send()` directly without a second postMessage hop).
+Sub-phases 32a–d. No backend changes.
+
+**Phase 31 shipped — SHM Buffer Ingestion (scopes +
+recordings).** Replaced the OSC `/b_getn` data path with a
+shared-memory transport. Tap SynthDefs write via
+`ScopeOut2.ar(sigs, scopeNum, chunkSize, chunkSize)` into
+scsynth's SHM scope-buffer pool; the Rust bridge mmaps the
+segment and reads slots non-mutating; frames stream to the
+frontend over a per-scope WebSocket (`/ws/scope?session=…&
+scope=…&channels=…&chunkSize=…&bufferId=…`). 31a added the
+sclang `/scope/{hello,allocate,free}` responders backed by
+`s.scopeBufferAllocator` (StackNumberAllocator(0, 127), 128
+slots). 31b added `src-tauri/src/scope_shm.rs` — mmap RAII +
+`find_scope_buffer_array` heuristic that walks the segment for
+a contiguous run of 128 offset_ptrs resolving to scope_buffer-
+shaped structures, plus `read_scope_slot` doing non-mutating
+slot reads with `_stage`-advanced detection. 31c/d cut the
+frontend over: `BufferController` does
+`/scope/allocate → /s_new tap with scopeNum →
+subscribeBuffer → /n_free → /scope/free` instead of the old
+`/b_alloc → /s_new tap → tick-driven /b_getn → /b_free`.
+Worker dropped ~300 lines of OSC retry/reorder/gap-synthesis
+machinery. Same-day post-shipping refactor moved scope chunk
+delivery from in-band 0x01/0x02/0x03 op-tag mux on the main WS
+to per-subscription `/ws/scope` connections — main OSC WS is
+back to pure OSC; subscription lifecycle = WS lifecycle. See
+`docs/history.md` Phase 31 for the full write-up.
+
+**Phase 30 shipped — Shared sclang-owned clock.** Three
+sub-phases moved clock ownership from per-session frontend
+synths to a single `\scAppClock` running at scsynth's root
+group, owned by sclang. All clients become passive observers
+of `/clock/tick` + a shared `clockBus`. chunkSize is now a
+server-side env var (`SC_APP_CLOCK_CHUNK_SIZE`); the frontend
+has no UI for it. See `docs/history.md` Phase 30.
 
 Earlier landings still in effect:
 - **Phase 29** — Bridge-managed sessions + auto-connect.

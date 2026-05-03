@@ -2494,3 +2494,264 @@ Wire payload shape unchanged in practice: SendReply emits
 indexing as the pre-cleanup `/tr nodeID trigID count`. No audio,
 performance, or UX delta — purely a code cleanliness +
 namespacing improvement.
+
+---
+
+## Phase 31 — SHM Buffer Ingestion (scopes + recordings)
+
+**Goal.** Replace the OSC `/b_getn` data path entirely with a
+shared-memory transport. Tap SynthDefs write audio via `ScopeOut2`
+into scsynth's SHM scope-buffer pool; the Rust bridge mmaps that
+segment and reads slots non-mutating; frames stream to the frontend
+over a per-scope WebSocket. Scopes and recordings unify onto one
+transport (SHM); the consumer-facing API (`BufferHandle.subscribe`
+/ `latestChunk` / `release`) is bit-identical, so neither
+`ScopeView` nor `RecordingController` had to change.
+
+The new wins:
+- **Zero `late 0.0XX` warnings on scsynth's console.** The
+  `/b_getn` request + `/b_setn` reply OSC traffic for buffer
+  ingestion is gone. Recording's drift-induced lateness goes
+  away alongside the scope's, since they share the SHM transport.
+- **Buffer-overwrite gap concern is gone.** No ring buffer to
+  outpace; ScopeOut2 manages its own triple-buffer slot timing.
+- **Code reduction.** Worker dropped ~300 lines of OSC
+  retry/reorder/gap-synthesis machinery. Net Phase-31 worker
+  diff: −500 LoC vs +200 LoC across all sub-phases.
+- **Per-scope WS.** Each `BufferController.start()` opens a
+  dedicated `/ws/scope` connection; main OSC WS goes back to
+  pure OSC. Subscription lifecycle = WS lifecycle (auto-cleanup
+  when WS closes); each subscription shows up as a separate
+  connection in browser DevTools.
+
+### What shipped
+
+Four sub-phases, plus a post-shipping refactor.
+
+*31a — sclang `/scope` OSC handler (commit `acd8a8f`).*
+- `scripts/sc-app-superdirt-startup.scd` — extends the
+  `s.doWhenBooted` block with three responders:
+  - `OSCdef(\scAppScopeHello)` on `/scope/hello` → `/scope/info
+    [numScopeBuffers, 128]`. Wire shape mirrors `/clock/info`'s
+    interleaved key/value tuples.
+  - `OSCdef(\scAppScopeAllocate)` on `/scope/allocate` →
+    `/scope/allocated <idx>` from `s.scopeBufferAllocator`. On
+    exhaustion replies `/scope/allocateFailed <reason>`.
+  - `OSCdef(\scAppScopeFree)` on `/scope/free <idx>` — returns
+    the index to the allocator; no reply (fire-and-forget).
+  - Posts `[sc-app] /scope/* responders installed` on startup.
+- `config.json` (project) + `Config::starter()` — adds
+  `{ "prefix": "/scope", "target": "127.0.0.1:57120" }`,
+  routing alongside the existing `/dirt` and `/clock` prefixes.
+
+*31b — Rust SHM reader (commit `acd8a8f`).*
+- `src-tauri/src/scope_shm.rs` (new, ~1000 lines):
+  - `MmapRegion` RAII wrapper + cross-platform path discovery:
+    macOS uses `/tmp/boost_interprocess/SuperColliderServer_<port>`;
+    Linux uses `/dev/shm/SuperColliderServer_<port>` (best-guess
+    pending real Pi verification — flagged in the gotchas below).
+  - Layout reference for `scope_buffer` and
+    `server_shared_memory` cross-referenced against SC source
+    (`common/scope_buffer.hpp`, `common/server_shm.hpp`); inline
+    docstrings document the triple-buffer pull semantics so
+    future-us doesn't have to re-derive.
+  - `find_scope_buffer_array`: locates the 128 `scope_buffer`
+    instances by:
+    1. Scanning the segment for scope_buffer-shaped structures
+       (status field ∈ {0,1}; stage/in/out a permutation of
+       {0,1,2}).
+    2. Walking the segment 8 bytes at a time looking for a
+       contiguous run of 128 `offset_ptr`s that each resolve
+       to a known scope_buffer offset — that run *is* the
+       `bi::vector<offset_ptr<scope_buffer>>` payload.
+  - `read_scope_slot(idx)` reads a slot non-mutating (does NOT
+    advance `_in/_out`; only the writer does). Reports
+    `_stage` to the caller for frame-completed detection.
+  - `GET /api/scope/{probe,layout,headers,debug}` endpoints
+    for one-shot diagnostics (used during 31b
+    reverse-engineering; useful even post-shipping for
+    inspecting an arbitrary running scsynth's segment).
+
+*31c — Bridge SHM polling (commit `b23f3bf`, later refactored).*
+- Originally: bridge multiplexed scope chunks onto the main OSC
+  WebSocket via 0x01/0x02/0x03 op tags (subscribe / unsubscribe
+  / chunk). OSC frames start with `/` or `#` so the op tags
+  were unambiguous against OSC.
+- Per-WS `ScopeContext` held subscriptions + lazily-opened SHM
+  mmap; `forward_broadcast` peeked each broadcast OSC reply
+  for `/clock/tick`, then on hit polled `read_scope_slot` for
+  every active subscription and pushed 0x03 chunk frames for
+  any whose `_stage` advanced.
+- **This was reworked the same day** — see "Per-scope WS
+  refactor" below.
+
+*31d — Frontend ScopeOut2 path (commit `b23f3bf`).*
+- `src/scope/scopeClient.ts` (new) — typed builders for
+  `/scope/{hello, allocate, free}`, reply parsers,
+  `probeScopeShm()` HTTP wrapper (calls `GET /api/scope/probe`
+  on first `BufferManager.acquire()` to validate SHM is
+  reachable). Mirrors `clockClient.ts` shape.
+- `src/synthdefs/bufferTapSynthDef.ts` — substantial
+  simplification:
+  - Drop `bufnum` and `clockBus` synth controls.
+  - Drop `BufWr.ar` and the `clockBus`-driven `writeIdx` math.
+  - Add `scopeNum` control + a single `ScopeOut2.ar(sigs,
+    scopeNum, chunkSize, chunkSize)` UGen.
+  - Cache key drops the `(channels, chunkSize, ringHalves)`
+    tuple to just `(channels, chunkSize)` since the SynthDef
+    is structurally identical regardless of `scopeNum` (it's
+    a /s_new control, not a SynthDef constant).
+  - **`ScopeOut2.ar`, not `.kr` — load-bearing.** kr-rate
+    writes one sample per control block, filling a
+    1024-frame slot in ~1.4 s (push rate ~0.7 Hz) → scopes
+    appear "very unresponsive". `.ar` matches the tick
+    cadence (~47 Hz at default chunkSize/sampleRate).
+- `src/buffer/BufferController.ts` — Phase 31 lifecycle:
+  1. `/scope/allocate` round-trip → `scopeNum`.
+  2. `/s_new bufferTap … scopeNum`.
+  3. Worker `subscribeBuffer` (which opens the per-scope WS
+     post-refactor; pre-refactor sent the 0x01 op tag on the
+     main WS).
+  4. On dispose: worker `unsubscribeBuffer` → `/n_free` tap →
+     fire-and-forget `/scope/free <idx>`.
+  - Drops `/b_alloc` / `/b_free` and the buffer-id
+    IdAllocator entirely.
+- `src/buffer/BufferManager.ts` — drops the `bufferIds`
+  IdAllocator dependency; drops `clock` from constructor
+  options (no more clockBus reading in the tap). Lazy SHM
+  probe on first `acquire()` rejects with a clear error if
+  `probeScopeShm()` says the segment isn't reachable
+  ("scsynth must be running locally").
+  Snapshot reports `scopeNum` instead of `bufnum`.
+- `src/server/workerProtocol.ts` — `BufferSubscription.bufnum`
+  → `scopeNum`; dropped `skipFirstTick` and `retry` fields
+  (gone with the worker's retry/reorder machinery).
+  `BufferChunk` shape unchanged so `ScopeView` and
+  `RecordingController` need zero edits.
+- `src/AppShell.tsx` — buffer ID allocator removed.
+  `setupDashboard`'s resource type narrowed.
+- `src/workers/oscWorker.ts` — `/b_getn`-tick-driven loop
+  (`pendingByOffset`, `reorderBuffer`, retry policy, gap
+  synthesis, `fireReads`, `/b_setn` intercept,
+  `skipFirstTick` handling) all deleted. Replaced by a
+  one-byte peek-and-route on inbound WS frames (0x03 → decode
+  chunk → post `bufferChunk` to main; otherwise OSC).
+
+### Per-scope WS refactor (commit `dfeb924`)
+
+Same day as 31c/d: replaced the in-band op-tag mux with one
+WebSocket per scope subscription.
+
+- `src-tauri/src/server/ws_scope.rs` (new) — `GET /ws/scope?
+  session=<uuid>&scope=<idx>&channels=<n>&chunkSize=<m>&bufferId=<id>`.
+  Handler validates the session, ensures the per-Session SHM
+  mmap is open, subscribes to the session's default-route
+  broadcast, polls SHM on every observed `/clock/tick`, and
+  sends a 10-byte-header binary frame:
+  `[tickIndex u32_le | isGap u8 | channels u8 | frameCount u32_le |
+   float32_le payload]`. `bufferId` is implicit in the connection
+  (URL-borne, both ends already know it) — no need to repeat in
+  every chunk header.
+- `src-tauri/src/server/session.rs` — Session gains
+  `scope_shm: tokio::sync::OnceCell<Arc<ScopeShm>>` so multiple
+  scope WSs on the same session share one mmap. New
+  `Session::ensure_scope_shm()` does the lazy init (mmap +
+  layout scan once per session lifetime).
+- `src-tauri/src/server/ws_bridge.rs` — main WS handler reverts
+  to pure OSC. Dropped: `ScopeContext`,
+  `handle_scope_subscribe`, `handle_scope_unsubscribe`,
+  `poll_scope_subs`, `/clock/tick` peek in `forward_broadcast`.
+  ~250 lines deleted.
+- `src-tauri/src/scope_shm.rs` — dropped the `encode_chunk` /
+  `decode_subscribe` / `decode_unsubscribe` / `SCOPE_OP_*`
+  helpers (the in-band wire format, no longer used). The
+  mmap reader + `find_scope_buffer_array` + `read_scope_slot`
+  remain.
+- `src/workers/oscWorker.ts` — captures the main WS URL on
+  connect; `subscribeBuffer` opens a dedicated WebSocket to
+  `/ws/scope` with the same query params; `unsubscribeBuffer`
+  closes the matching WS; disconnect closes all of them.
+  Main WS recv path is back to pure OSC (no first-byte
+  op-tag peek).
+- `src/workers/scopeWire.ts` — rewritten as a single
+  `decodeScopeFrame` for the per-scope-WS header.
+
+Net diff for the refactor: −585 / +213. Naturally
+self-cleaning (subscription lifecycle = WS lifecycle); each
+subscription is a separate visible connection in DevTools;
+main OSC WS stays protocol-pure.
+
+### Decisions worth carrying forward
+
+- **No `/b_getn` fallback.** Recommendation (a) from Open
+  Question 4 in the plan won out: SHM-only. If scsynth isn't
+  local, `BufferManager.acquire` rejects with a clear error
+  ("scsynth must be running locally"). All current sc-app
+  deployments colocate scsynth (Tauri, Pi systemd, `yarn
+  dev:full`); a remote-scsynth use case can revisit later.
+- **Heuristic vector finder over Boost segment-manager parser.**
+  31b uses a "find a contiguous run of 128 offset_ptrs that
+  resolve to scope_buffer-shaped structures" scan rather than
+  parsing Boost.Interprocess' segment-manager metadata
+  directly. Works because Boost's TLSF allocator places
+  sequential `segment.allocate()` calls contiguously in
+  practice and 128 unused scope_buffers all share the
+  default-ctor signature. The "proper" parser is **FI #12** in
+  `plan.md` — promote when the heuristic fails (e.g., Boost
+  upgrade reorders the allocator).
+- **`ScopeOut2.ar`, not `.kr`.** Documented in the gotchas;
+  cost a debug session before shipping.
+- **`scopeFrames = chunkSize`** (slot size = chunk size)
+  preserves the chunk-per-tick cadence bit-for-bit. Each
+  completed slot maps to exactly one `bufferChunk` event;
+  consumers don't see any change in shape.
+- **Per-scope WS over op-tag mux.** Cleaner lifecycle (close
+  the WS = unsubscribe; no orphan subscriptions if the worker
+  forgets to send 0x02), better DevTools visibility, main OSC
+  WS stays pure. Cost: N WebSockets per session instead of 1
+  — well under any practical browser/server limit (~6 per
+  origin in pre-HTTP/2 browsers, effectively unlimited under
+  HTTP/2).
+
+### Gotchas
+
+- **Linux SHM path is best-guess.** `/dev/shm/SuperColliderServer_<port>`
+  was inferred from POSIX `shm_open` semantics; not
+  empirically verified on a Pi target as of phase shipping.
+  If the path differs, `MmapRegion::open_for_port` returns
+  `NotFound` — the error message names what was probed.
+  Verify once a Pi deployment exists; document and patch
+  the constant.
+- **`ScopeOut2.ar` vs `.kr`.** `.kr` writes one sample per
+  control block (~0.7 Hz push rate at default config →
+  scopes appear frozen / very laggy). `.ar` writes one
+  sample per audio frame, completing a slot per tick. The
+  fix is one character; the symptom looks like "the bridge
+  is broken". Documented in the SynthDef source.
+- **`scopeBufferAllocator` exhaustion (128 slots).**
+  `s.scopeBufferAllocator` is a `StackNumberAllocator(0,
+  127)`. With dedup-per-spec via `BufferManager`, 128 slots
+  is plenty for typical use. On exhaustion sclang replies
+  `/scope/allocateFailed <reason>` and the frontend rejects
+  the acquire — surface via `ServerErrorBus` toast. No
+  current consumer guard against pathological N-distinct-
+  spec churn; if it ever becomes real, add a soft cap in
+  `BufferManager`.
+- **scope_buffer triple-buffer is non-mutating from the
+  reader's perspective.** `read_scope_slot` reads `_stage` +
+  the data slot at `_state[_stage]._data`; it does NOT
+  advance `_in`/`_out`. Doing so would race the writer.
+  Phase-completed detection is "stage advanced since last
+  poll"; this is what the per-scope WS handler tracks
+  per subscription.
+- **scsynth must be local.** No fallback to OSC `/b_getn`
+  shipped. If a remote-scsynth use case ever appears it'd
+  bring back most of the worker's deleted machinery — punted
+  to "decide if it actually shows up".
+- **Fan-out per shared spec preserved.** `BufferManager`
+  ref-counts by `(inputBus, channels, chunkSize)` so two
+  consumers on the same spec share one tap synth + one
+  scope_buffer index + one per-scope WS. Each consumer's
+  `subscribe(cb)` callback is invoked locally on the same
+  bufferChunk. Pre-31 fan-out semantics intact.
+

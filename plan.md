@@ -9,560 +9,212 @@ audio config schema, file layout, workspace packages, and the
 chunkSize × sampleRate practical table all live in
 [`CLAUDE.md`](./CLAUDE.md) — don't duplicate them here.
 
-**Phase 31 — SHM Scope Ingestion** is in flight; spec below.
-Phases 0–30 are in [`docs/history.md`](./docs/history.md).
-After 31 the next planned piece of work picks from the
-[Future Improvements](#future-improvements) list below.
+**Phase 32 — Worker-Side Sequencer Pump** is in flight; spec below.
+Phases 0–31 are in [`docs/history.md`](./docs/history.md). After 32
+the next planned piece of work picks from the
+[Future Improvements](#future-improvements) list.
 
 ---
 
-## Phase 31 — SHM Buffer Ingestion (scopes + recordings)
+## Phase 32 — Worker-Side Sequencer Pump
 
-**Goal.** Replace the OSC `/b_getn` data path entirely with a
-shared-memory transport. The tap SynthDef writes audio via
-`ScopeOut2` into scsynth's SHM scope-buffer pool; the Rust
-bridge mmaps that segment and reads slots using the
-triple-buffer protocol with **counter-based gap detection** —
-producing recording-grade gap-free output, not just
-visualization-grade snapshots. Frames are streamed to the
-frontend over the existing WebSocket as a new binary message
-type. The bridge polls SHM on every observed `/clock/tick`, so
-the chunk-per-tick cadence is preserved bit-for-bit; scopes
-and recordings see exactly the same data shape they do today.
+**Goal.** Move the sequencer's pump loop off the main thread's
+`setInterval(25 ms)` and into the existing OSC worker, where browser
+tab throttling does not apply. `SequencerController` keeps its current
+public API and reactive stores; the timing-critical work hops behind
+`postMessage` into a new `sequencerWorker.ts` module folded into the
+existing worker context (so it can call `transport.send()` directly
+without a second postMessage hop).
 
-The big simplification compared to the previous draft: scopes
-and recordings unify onto a **single transport** (SHM). The
-tap SynthDef's `BufWr` writer goes away — `ScopeOut2` is the
-sole writer, with `scopeFrames = chunkSize` so each completed
-slot maps 1:1 to one chunk. Phase 16's "shared tap layer"
-stays intact, just simpler: one writer UGen, one transport,
-one consumer model.
+No new "scheduler" primitive, no registry of pump tasks. The sequencer
+is the only consumer today that needs sample-accurate emission
+through a wall-clock timer; if a second consumer ever appears, we
+extract a shared abstraction from two real cases rather than guessing
+its shape now.
 
-The user-visible payoffs:
-- **No more `/b_setn` `late 0.0XX` warnings** on scsynth's
-  console — the entire OSC data path for buffer reads is
-  retired (`/b_getn` requests, `/b_setn` replies, all of it).
-  Recording's drift-induced lateness goes away alongside the
-  scope's, since they share the same transport now.
-- **No more buffer-overwrite gap concern** that constrained
-  Phase 30's `READ_DELAY_MS = 5`. The triple-buffer protocol
-  gives the reader 2 slots of headroom (one being written, two
-  completed); reader cadence has to keep up, but doesn't have
-  to stay within a single tick interval.
-- **Code reduction.** The worker's `pendingByOffset` /
-  `reorderBuffer` / retry / timeout machinery for `/b_getn`
-  goes away — the bridge's SHM reader replaces it. ~200 lines
-  of TS deleted in `oscWorker.ts` alone.
-- **Future-proofing.** SHM polling rate is independent of
-  `/clock/tick`. Once 31 ships, smoother scope animation (60+
-  Hz polling) is a one-line bridge config change.
+### User-visible payoffs
 
-### Why this is feasible now
-
-- **Phase 30 moved infrastructure ownership to sclang.** The
-  same template applies to scope-buffer-index allocation: sclang
-  owns `s.scopeBufferAllocator`, and a new `/scope` OSC handler
-  in the SuperDirt startup script can mint indices on request
-  (mirroring how `/clock/hello` works).
-- **Reference implementation exists.** Commit `b4139ea` from a
-  sibling project (`src-tauri/src/scope_shm.rs`) ships a
-  working SHM reader for scsynth on macOS — but only at the
-  naive scan-and-cache level (visualization-grade). For Phase
-  31 we need to extend that with the triple-buffer counter
-  protocol; the mmap + offset-resolution scaffolding is reusable
-  as-is.
-- **`ScopeOut2` UGen spec is already correct.** This repo's
-  `packages/synthdef-compiler/src/specs/buf_io.ts` has
-  `ScopeOut2.numOutputs = 1` (the bug fix from `b4139ea`'s
-  parent codebase landed in our UGen DB regeneration). No
-  UGen DB work in this phase.
-
-### Why "perfect data" is achievable (not just visualization)
-
-The SC IDE's scope window uses ScopeOut2 + SHM and doesn't
-drop samples in normal operation — proven mechanism. The
-"naive scope" pattern that produces visualization-grade
-tearing is a *reader* limitation, not a *transport*
-limitation. With the proper protocol:
-
-1. **Slot sizing.** `ScopeOut2(sigs, scopeNum, maxFrames =
-   chunkSize, scopeFrames = chunkSize)`. Each completed slot
-   = exactly one chunk's worth of audio.
-2. **Triple-buffer protocol.** Three slots per scope buffer
-   (writing, just-completed, previous). Writer atomically
-   advances a "last completed" pointer + bumps a generation
-   counter every time a slot fills. Reader observes the
-   counter, reads the slot, observes the counter again — if
-   unchanged, slot was read cleanly.
-3. **Gap detection via the counter.** Reader tracks "last
-   seen counter" per scope buffer. On each tick poll:
-   - `delta = current_counter - last_seen_counter`.
-   - `delta == 0`: no new slot yet (writer hasn't completed
-     one since last poll — rare but possible if scsynth's
-     audio thread stalled). Skip; don't emit a chunk.
-   - `delta == 1`: normal case. Read the just-completed slot,
-     emit one `scopeChunk`.
-   - `delta > 1`: reader fell behind by `delta - 1` slots.
-     Emit `delta - 1` synthetic zero-fill chunks with
-     `isGap: true`, then read and emit the most-recent slot.
-     Mirrors the existing OSC retry-exhaustion behaviour
-     consumed by `RecordingController`'s gap log.
-4. **Reader cadence.** Bridge polls on every `/clock/tick`
-   it observes (already `/notify`'d for those). At default
-   chunkSize/sampleRate the writer completes one slot per
-   tick → reader consumes one slot per tick → no backlog.
-   For pathological case where bridge is slow, the
-   triple-buffer gives a 2-slot grace window before data is
-   actually lost.
-
-So "perfect" here means: **same correctness guarantees as the
-current `/b_getn` path** (gap-free in normal operation; gaps
-detected, surfaced via `isGap: true`, accumulated in the
-recording's gap log on data-loss). The transport changes;
-the consumer-facing API doesn't.
+- **No audio dropouts when the tab is backgrounded.** Chromium
+  clamps main-thread `setTimeout` / `setInterval` to ~1 Hz on
+  hidden tabs; web workers are not throttled. Today the sequencer's
+  bundles fall behind their target ticks once the tab loses focus
+  and scsynth either logs `late` or drops them. After 32 the
+  pump runs in the worker and keeps feeding scsynth bundles ahead
+  of time.
+- **Same UI surface.** `SequencerPanel` reads the same reactive
+  stores (`activeIndex`, playhead). Backgrounded-tab playhead
+  lag is accepted — the audio stays correct; the UI catches up
+  on refocus.
+- **Module boundary cleanup.** A future "high-level music
+  construct" can either follow the same controller + worker-
+  counterpart pattern (precedent set by `ClockController` for
+  `/clock/tick`, by `WorkerClient` for OSC, and now by
+  `SequencerController`), or motivate extracting a generic
+  scheduler when a second case shows up.
 
 ### Architecture
 
-**Server side (sclang + scsynth):**
+```
+SequencerController (main)               sequencerWorker.ts (new, folded into oscWorker)
+─────────────────────                    ─────────────────────
+PatternBank live ref                     State: bank snapshot, clock snapshot,
+.start() ───sequencerStart───▶                  isGroupPaused flag,
+.stop()  ───sequencerStop────▶                  pump setInterval (25ms),
+.setGroupPaused(b) ──────────▶                  playhead, lookahead heap
+on bank change ──snapshot────▶
+on clock change ──snapshot───▶           Pump tick (in worker):
+                                          - read clock snapshot, compute nowTick
+playhead store ◀──stepFired──             - drain events with fireAtTick ≤ nowTick+horizon
+cycle boundary ◀─cycleBoundary            - encode /dirt/play OSC + bundle with timetag
+  (advances bank.activeIndex)             - transport.send() (direct call, same worker
+                                            context — no postMessage hop for OSC bytes)
+                                          - postMessage stepFired { stepIndex, tick }
+```
 
-- The shared global clock at scsynth's root group is unchanged.
-- A new sclang OSC route `/scope` (added to `config.json` →
-  `127.0.0.1:57120`, same target as `/clock` and `/dirt`) hosts
-  three responders:
-  - `/scope/hello` → `/scope/info` reply: SHM segment path
-    (platform-specific), max scope buffer count, slot size
-    convention (`scopeFrames = chunkSize`).
-  - `/scope/allocate` → `/scope/allocated <index>` reply: pulls
-    the next free index from `s.scopeBufferAllocator`.
-  - `/scope/free <index>`: returns the index to the allocator
-    (fire-and-forget; no reply).
-- The tap SynthDef (`bufferTapSynthDef.ts`) gets simplified
-  to a single writer:
-  ```
-  In.ar(inBus, channels)
-    → ScopeOut2(sigs, scopeNum, maxFrames=chunkSize,
-                scopeFrames=chunkSize)
-  ```
-  No more `BufWr.ar`, no more `clockBus` reading (ScopeOut2
-  manages its own slot timing internally). The `bufnum` synth
-  control goes away too. Cache key drops the `(channels,
-  chunkSize, ringHalves)` tuple to just `(channels, chunkSize)`
-  since the SynthDef is structurally identical regardless of
-  scopeNum (which is a /s_new control).
-- `BufferController` no longer issues `/b_alloc` — there's no
-  Buffer to allocate. The `bufnum` IdAllocator usage in this
-  path goes away.
+Same shape as `WorkerClient` (main proxy) ↔ `oscWorker` (bytes layer),
+or `ClockController` (main observer) ↔ the worker's `/clock/tick`
+mux. We're adding another responsibility behind its own message
+namespace; not a new worker.
 
-**Bridge side (Rust):**
+### What moves where
 
-- New module `src-tauri/src/scope_shm.rs`. Borrow the mmap
-  scaffolding from `b4139ea` (file path discovery, mmap RAII
-  wrapper) but the read path is new — implements the
-  triple-buffer protocol with counter-based gap detection
-  (see "Why 'perfect data' is achievable" above for the
-  algorithm; reference SC's `ScopeBufferReader` C++ source if
-  the Boost.Interprocess descriptor layout needs reverse
-  engineering).
-  - mmap the platform-appropriate SHM segment:
-    - macOS: `/tmp/boost_interprocess/SuperColliderServer_<port>`
-    - Linux: `/dev/shm/SuperColliderServer_<port>` (verify in
-      31b — Boost.Interprocess uses POSIX `shm_open` on Linux,
-      which surfaces in `/dev/shm`).
-  - Per-scope-index reader state:
-    - mmap region (shared across all subscriptions on the
-      session).
-    - Cached descriptor offset (resolved on first read by
-      walking the Boost.Interprocess named-segment table for
-      `scope_buffer_<idx>` or equivalent — TBD in 31b based
-      on actual segment layout).
-    - Last-seen generation counter.
-  - On each poll: read counter; compute delta vs last-seen;
-    emit zero-fill chunks for missed slots; read the
-    most-recent-completed slot; update last-seen.
-- New WS messages (worker ↔ bridge):
-  - `subscribeShm { bufferId, scopeNum, channels, chunkSize }`
-    — bridge starts polling SHM for that scope buffer index
-    on every `/clock/tick` it observes; fans `bufferChunk`
-    frames back over the WS.
-  - `unsubscribeShm { bufferId }` — bridge stops polling,
-    drops state.
-- The bridge's per-tick poll triggers off observed
-  `/clock/tick` replies (already `/notify`'d). No new timer.
-
-**Worker + frontend:**
-
-- `oscWorker.ts` simplifies dramatically. The
-  `subscribeBuffer` / `unsubscribeBuffer` machinery goes away
-  — replaced by `subscribeShm` / `unsubscribeShm` shaped the
-  same way at the main-thread API level (`subscribeBuffer`
-  exposed on `WorkerClient` keeps its signature, internally
-  posts `subscribeShm` to the worker which forwards to the
-  bridge).
-- The worker's `pendingByOffset` map, retry/timeout logic,
-  reorder buffer, skipFirstTick handling — all deleted.
-  Bridge owns timing now; worker is just a fan-out shim
-  (worker ↔ main fan-out by `bufferId` for `bufferChunk`
-  events stays).
-- `BufferManager.acquire(spec)` flow:
-  - Allocate scope buffer index via `/scope/allocate`.
-  - `/s_new` the tap synth with `scopeNum = <idx>`.
-  - `WorkerClient.subscribeBuffer(spec)` posts `subscribeShm`
-    to the worker (which forwards to the bridge).
-  - On release: `unsubscribeShm`, `/n_free` the tap, send
-    `/scope/free <idx>`.
-- Main-thread consumers (`ScopeView`, `RecordingController`)
-  see the same `bufferChunk` events they do today, with
-  `data: Float32Array`, `tickIndex`, `isGap`. **Zero
-  consumer-side code change** — the API is preserved
-  bit-identically.
-
-**Recordings:** consume the same `bufferChunk` stream as
-scopes. The `RecordingController`'s WAV writer + envelope
-buffer + gap log work exactly as today; only the data source
-changed (SHM via bridge, not `/b_setn` via worker). Gap
-detection semantics preserved: counter-skip → `isGap: true`
-chunks → recording's gap log captures it.
-
-**Fallback path** (open question — see below): if SHM is
-unavailable (remote scsynth, exotic deployment), the simplest
-option is to refuse acquires with a clear error message
-("scsynth must be local for scopes/recordings"). Keeping the
-old OSC `/b_getn` path as fallback would mean keeping all the
-worker machinery we're trying to delete; the simplification
-benefit collapses. **Recommendation: ship SHM-only; document
-the local-scsynth requirement.**
+- **From `src/sequencer/scheduler.ts pump()` → `src/workers/sequencerWorker.ts`:**
+  - `LOOKAHEAD_HORIZON_TICKS`, `SUPERDIRT_SAFETY_LOOKAHEAD_MS`,
+    `INITIAL_LOOKAHEAD_TICKS`
+  - `tickToTimetag` math (osc-js works in worker via the existing
+    `workerBootstrap` `window` shim)
+  - `/dirt/play` message construction + bundle wrapping
+  - The `setInterval(25)` itself
+- **From `SequencerController` (deletion):**
+  - `setInterval(this.pumpOnce, 25)` setup in `start()`
+  - The pump implementation
+- **`SequencerController` keeps:**
+  - Public API: `start()`, `stop()`, `setGroupPaused()`, observable stores
+  - PatternBank live reference (UI binding)
+  - On bank / clock / pause changes: snapshot and post to worker
+  - On `stepFired` from worker: update playhead store
+  - On `cycleBoundary` from worker: advance `bank.activeIndex`
+    (chain mode), then post the new snapshot back
 
 ### Files
 
-**Backend / sclang:**
+- `src/workers/sequencerWorker.ts` (new) — pump loop, OSC bundle
+  encoding, posts `stepFired` and `cycleBoundary`. Imports
+  `transport` from the host `oscWorker.ts` module to send bytes
+  without the `send` postMessage hop.
+- `src/workers/oscWorker.ts` — wires new message handlers
+  (`sequencerStart`, `sequencerStop`, `sequencerBankUpdate`,
+  `sequencerClockUpdate`, `sequencerPauseUpdate`) into the existing
+  switch.
+- `src/sequencer/SequencerController.ts` — rip out
+  `setInterval`/`pumpOnce`. Replace with `client.startSequencer(snapshot)`
+  / `stopSequencer()`. Subscribe to `client.onStepFired()` and
+  `client.onCycleBoundary()`. Bank- and clock-store subscriptions
+  post snapshot updates.
+- `src/sequencer/scheduler.ts` — likely deletable after fold-in.
+  Keep only if a UI-side preview surface ends up reusing
+  `computeNextEvents`.
+- `src/server/workerProtocol.ts`:
+  - `MainToWorker`: `sequencerStart`, `sequencerStop`,
+    `sequencerBankUpdate`, `sequencerClockUpdate`,
+    `sequencerPauseUpdate`
+  - `WorkerToMain`: `stepFired { stepIndex, tick, firedAtMs }`,
+    `cycleBoundary { fromIndex, toIndex }`
+- `src/server/WorkerClient.ts` — typed wrappers + `onStepFired` /
+  `onCycleBoundary` listeners.
 
-- `scripts/sc-app-superdirt-startup.scd`:
-  - Add `OSCdef(\scAppScopeHello)`, `\scAppScopeAllocate`,
-    `\scAppScopeFree` on `/scope/*` addresses.
-  - Wrap `s.scopeBufferAllocator` (or whatever the actual
-    sclang API is — verify in 31a; might be
-    `Server.scopeBufferAllocator` class-side, or a
-    per-server instance allocator).
-  - Post `[sc-app] /scope/* responders installed` on
-    startup.
-
-**Bridge (Rust):**
-
-- `src-tauri/src/scope_shm.rs` (new):
-  - mmap RAII + path discovery from `b4139ea` (reusable).
-  - **NEW**: triple-buffer-aware reader. Walks
-    Boost.Interprocess managed-segment metadata to find
-    scope-buffer descriptor by index. Reads generation
-    counter, slot pointer, then slot data, then re-reads
-    counter for tear detection. Returns
-    `Option<(Vec<f32>, missed_slot_count)>` per poll.
-  - Per-session subscription map: `HashMap<bufferId,
-    SubscriptionState>` where SubscriptionState tracks
-    last-seen counter + cached descriptor offset.
-- `src-tauri/src/server/ws_bridge.rs` — handle
-  `subscribeShm` / `unsubscribeShm` messages from the
-  worker; tie subscription state to the WS lifecycle (drop
-  on disconnect). On every observed `/clock/tick` (already
-  in the inbound stream from scsynth), poll SHM for every
-  active subscription on this WS, emit `bufferChunk`
-  binary frames over the WS.
-- `src-tauri/src/server/api.rs` — `GET /api/scope/probe`
-  returns `{ available: bool, path: string | null }`. Used
-  once at session attach for the SHM-availability check.
-- `config.json` (project) + `Config::starter()` — add
-  `{ "prefix": "/scope", "target": "127.0.0.1:57120" }`.
-
-**Frontend:**
-
-- `src/scope/scopeClient.ts` (new) — typed builders for
-  `/scope/hello`, `/scope/allocate`, `/scope/free`; reply
-  parsers; `probeScopeShm()` HTTP wrapper. Mirrors
-  `clockClient.ts` shape. (Despite the name, recordings use
-  this too — the prefix is `/scope/*` because that's the SC
-  vocabulary; the consumer kind is irrelevant.)
-- `src/synthdefs/bufferTapSynthDef.ts` — **substantial
-  simplification.** Drop `bufnum` and `clockBus` controls;
-  drop `BufWr.ar` and the `clockBus`-driven writeIdx math.
-  Add `scopeNum` control + single `ScopeOut2(sigs,
-  scopeNum, chunkSize, chunkSize)` UGen. Cache key:
-  `(channels, chunkSize)`.
-- `src/buffer/BufferController.ts` — drop `/b_alloc` and
-  `bufnum` allocation. Drop `subscribeBuffer` /
-  `unsubscribeBuffer` calls (replaced by
-  `subscribeShm` / `unsubscribeShm` via the WorkerClient).
-  Adds `/scope/allocate` round-trip on start, `/scope/free`
-  on stop. Tap synth /s_new'd with `scopeNum = <allocated>`.
-- `src/buffer/BufferManager.ts` — drop `bufferIds`
-  IdAllocator (no more bufnums to allocate). Probe SHM
-  availability at construction; refuse acquires with a
-  clear error if SHM is unavailable (see open question 4).
-- `src/server/WorkerClient.ts` —
-  - `subscribeBuffer(spec, cb)` becomes a thin wrapper
-    around `subscribeShm` (the public API stays the same;
-    consumers don't care about transport).
-  - The `BufferSubscription` type drops `bufnum` (no
-    Buffer involved); adds `scopeNum`.
-- `src/server/workerProtocol.ts` —
-  - Replace `subscribeBuffer` / `unsubscribeBuffer`
-    MainToWorker messages with `subscribeShm` /
-    `unsubscribeShm` (which the worker forwards to the
-    bridge as binary WS frames carrying the same
-    information; the worker doesn't poll OSC anymore for
-    buffer data).
-  - `bufferChunk` WorkerToMain stays — same shape
-    (`bufferId, data, tickIndex, isGap`).
-- `src/workers/oscWorker.ts` — **biggest deletion.**
-  - Drop `pendingByOffset`, `reorderBuffer`,
-    `nextDeliverableTick`, retry policy, gap synthesis,
-    skipFirstTick — all moved to bridge.
-  - Drop `fireReads()` and the entire tick-driven
-    `/b_getn` loop.
-  - Drop `/b_setn` interception in `emitReply`.
-  - New: receive bridge-emitted `bufferChunk` binary
-    frames, dispatch to listeners by `bufferId`. ~50 lines
-    of new code replacing ~300 lines of OSC
-    machinery deleted.
-- `src/recording/RecordingController.ts` — **no changes.**
-  Consumes `bufferChunk` events the same way; gap log,
-  WAV writer, envelope buffer all work as-is. (This is the
-  payoff of the unified-transport design — the consumer
-  layer is completely insulated from the transport
-  rewrite.)
-- `src/scope/ScopeController.ts` + `ScopeView.tsx` — no
-  changes either, for the same reason.
+No backend changes. The bridge sees the same OSC traffic.
 
 ### Open questions
 
-1. **Linux SHM path.** macOS uses
-   `/tmp/boost_interprocess/SuperColliderServer_<port>` (per
-   `b4139ea`). Linux's Boost.Interprocess implementation uses
-   POSIX `shm_open`, which typically surfaces under
-   `/dev/shm/<name>`. Need to confirm scsynth's name format
-   exactly. Worst case: probe both with `cfg!(target_os)`.
-   **Verify in 31b on the Pi target before committing the
-   path constant.**
-
-2. **Boost.Interprocess descriptor traversal.** The mmap'd
-   region isn't a flat array of scope buffers — it's a
-   Boost.Interprocess `managed_shared_memory` segment with an
-   internal allocator + named-segment table. To find scope
-   buffer index N's descriptor, we need to walk that table.
-   `b4139ea`'s naive offset-scan worked for visualization (it
-   landed on whatever audio was there), but recording-grade
-   reads must address the right buffer specifically.
-   **Either**: (a) reverse-engineer the segment layout from
-   SC's `SC_Scope.cpp` source — straightforward, the layout
-   is small. (b) write a tiny C++ shim that uses
-   Boost.Interprocess properly and FFI-call from Rust.
-   **Recommendation: (a)** — keeps the bridge in pure Rust;
-   the segment layout is stable. Budget half a day for it
-   in 31b.
-
-3. **Counter location.** ScopeOut2's triple-buffer state
-   includes a write counter (or sequence number) — somewhere
-   in the descriptor. Need to identify the exact field. SC's
-   server code in `SC_Scope.cpp` has `mGenerationCount`
-   (or similarly named) — read once during 31b's
-   reverse-engineering. **No decision needed up front; falls
-   out of #2.**
-
-4. **SHM unavailable — fail or fallback?** Cases where SHM
-   doesn't work:
-   - scsynth running on a different machine from the bridge
-     (no shared filesystem).
-   - SHM segment permission issue.
-   - scsynth boot config disabling SHM (rare; possible).
-   The previous draft of this plan kept the OSC `/b_getn`
-   path as fallback. The unified-transport design relies on
-   deleting that path's machinery. Three options:
-   - **(a) SHM-only.** Refuse acquires with a clear error
-     when SHM is unavailable; document the local-scsynth
-     requirement.
-   - **(b) Keep the old worker code as a fallback path.**
-     Significantly less code reduction; both paths exist.
-     The benefit shrinks (the goal was simplification).
-   - **(c) Bridge-side OSC fallback.** Bridge does the
-     `/b_getn` loop instead of the worker; emits the same
-     `bufferChunk` frames. Worker doesn't change shape. But
-     this is most of FI #10's work, dragged into 31.
-   **Recommendation: (a)** — sc-app deployments all have
-   local scsynth (Tauri colocation, Pi systemd colocation,
-   `yarn dev:full` colocation). Document the constraint.
-   If a remote-scsynth use case ever appears, revisit.
-
-5. **Per-scope index vs shared-per-spec.** Current Phase 16+
-   layer shares one tap per `(inputBus, channels, chunkSize)`.
-   Two consumers on the same bus → one tap, frames fanned out
-   client-side. With SHM, do they share one scope buffer index
-   or get one each? **Recommendation: share — same
-   `(inputBus, channels, chunkSize)` key produces one scope
-   buffer index, fanned out to N listeners client-side via
-   the existing fan-out shim in `WorkerClient`.** Matches
-   pre-31 semantics; minimizes scopeBufferAllocator
-   pressure.
-
-6. **scopeBufferAllocator capacity.** sclang's allocator has
-   a finite capacity (typically 128 or 256, depending on
-   scsynth's boot config). With a small number of unique
-   `(inputBus, channels, chunkSize)` tuples, this is plenty.
-   But pathological cases (many sessions × many distinct
-   bus configs) could exhaust. **Recommendation: surface OSC
-   `/fail` from `/scope/allocate` cleanly via
-   `ServerErrorBus`; toast to the user "no more scope
-   buffers available — close some scopes/recordings". Not a
-   showstopper for typical use.**
-
-7. **Update cadence.** Initial implementation: bridge polls
-   SHM on every `/clock/tick` it observes (already
-   `/notify`'d for those). At default chunkSize/sampleRate
-   that's ~47 Hz — same as the pre-31 `/b_setn` cadence.
-   Future: add an optional `pollHz` field to `subscribeShm`
-   so individual scope consumers can request 60–120 Hz for
-   smoother visualization. **Recommendation: ship with
-   tick-rate-only in 31; expose configurable rate as Future
-   Improvement once 31's plumbing is in.**
-
-8. **Tap synth ordering invariant.** Pre-31 the tap synth had
-   to be in the parent group at-or-after the producer synth
-   (control-block order). With ScopeOut2, the same holds —
-   ScopeOut2 just reads the input bus on each control block
-   and writes to SHM. Producer-before-consumer ordering is
-   preserved. **No change to existing CLAUDE.md "Group
-   ordering invariant" language; the `clockBus` part
-   becomes irrelevant since the tap doesn't read it
-   anymore.**
-
-9. **What happens to the worker's purpose?** Pre-31 the
-   worker owned (a) the WebSocket, (b) OSC encode/decode,
-   (c) the buffer subscription state machine, (d) the fan-out
-   to main-thread listeners. After 31: (a) and (b) stay (we
-   still send `/dirt/play`, receive `/clock/tick` for
-   freshness watchdogs, etc.); (c) moves to the bridge; (d)
-   stays. The worker becomes thinner but is still load-
-   bearing. **No worker deletion in 31; just simplification.**
+1. **Bundle encoding location.** (a) main encodes pre-bundle messages
+   to bytes, worker stamps timetag and sends; or (b) worker encodes
+   everything from snapshot data. Recommendation: **(b)** — keeps the
+   snapshot semantically clean (already the bank's serializable
+   shape, no opaque bytes) and pure encoding works fine in worker.
+2. **Snapshot diff vs full re-send on bank edits.** Recommendation:
+   full snapshot. Bank is small (~few KB), postMessage is cheap.
+3. **Cycle boundary advance.** Worker detects (it's the natural
+   pump tick where one cycle's events have been consumed) and
+   posts `cycleBoundary` → main advances `bank.activeIndex` → main
+   posts new snapshot back. One postMessage round-trip; not
+   audio-critical because next cycle's events are already buffered
+   in the lookahead.
+4. **Tab-refocus event burst.** Worker may have posted many
+   `stepFired` events while throttled; they all flush on refocus.
+   Cheap mitigation: in `SequencerController`, drop intermediate
+   `stepFired`s and apply only the latest per render frame.
+5. **`scheduler.ts` keep-or-delete.** Today only the worker needs
+   the pump function. Recommendation: **fold** into
+   `sequencerWorker.ts`. If a UI consumer surfaces (preview
+   "what plays in the next bar"), promote back to a shared module.
 
 ### Acceptance criteria
 
-- **Zero `late 0.0XX` warnings on scsynth's console** during
-  steady-state operation with one or more scopes/recordings
-  active. The OSC `/b_getn` path is gone; the only OSC
-  buffer-control traffic remaining is one-shot `/scope/*`
-  allocate/free round-trips at acquire/release.
-- **Recording quality bit-identical to pre-31.** Run a
-  test-tone synth (known signal — sine, sweep, white noise),
-  record for N minutes via the SHM path, compare WAV against
-  a reference from the pre-31 OSC path. Sample-level
-  identical (modulo gap-fill behaviour, which should be
-  zero gaps in normal operation).
-- **Gap detection works correctly under induced load.** Run
-  scsynth on a busy machine (high CPU saturation), verify
-  that when the writer outpaces the reader, gaps surface as
-  `isGap: true` chunks in the recording's gap log — same
-  behaviour as the pre-31 retry-exhaustion path.
-- **Two tabs scoping/recording the same bus.** One tap, one
-  scope buffer index, one SHM poll loop; frames fanned to
-  both tabs. (Worker-side fan-out preserves Phase 16+
-  shared-tap semantics.)
-- **Session reconnect after sclang restart.** Probe re-runs;
-  new scope buffer indices allocated; behaviour resumes
-  cleanly (consumers re-acquire their handles transparently).
-- **Disconnect.** Scope buffer indices all freed via
-  `/scope/free`; no leak in sclang's allocator (verify by
-  asking sclang to dump its allocator state, or by repeated
-  reconnect cycles confirming no exhaustion).
-- **Pi (Linux) + macOS dev: both work end-to-end** with no
-  platform-conditional behaviour the user can perceive.
-- **Code reduction visible.** `oscWorker.ts` shrinks by
-  ~200+ lines (the `/b_getn` machinery deleted). Net diff
-  for the phase should be deletion-heavy in TS, even after
-  accounting for the Rust additions.
+- **Foreground audio parity with pre-32.** Same pattern, listen
+  with the tab focused — audibly indistinguishable. Bonus: capture
+  scsynth output, sample-diff vs baseline.
+- **No audio gaps with the tab backgrounded.** Start a 4-bar loop,
+  switch tabs, leave 60 s, refocus. Recorded scsynth output is
+  uninterrupted. Today this fails.
+- **Playhead catches up on refocus.** Within one render frame,
+  the playhead snaps to the current step (latest `stepFired`
+  applied; intermediate ones dropped per Q4).
+- **Pause/resume works.** Toggle pause while running; OSC emission
+  stops mid-cycle; resume continues from the next cycle. Existing
+  `isGroupPaused` semantics preserved.
+- **Bank edit during play.** Toggle a step while running; change
+  takes effect within one cycle (lookahead-horizon delay, same
+  as today).
+- **At least one new test.** Per FI #5, sequencer was already on
+  the test-coverage list. Add a `feed fake clock + bank → assert
+  bundle sequence` test as part of 32 — easier before the worker
+  hop than to retrofit after.
 
 ### Cross-cutting risks
 
-- **Boost.Interprocess descriptor reverse-engineering.** Most
-  load-bearing piece. If the segment layout is harder to
-  parse than expected (e.g., uses templated allocators that
-  vary by compiler), 31b stalls. Mitigation: have a fallback
-  plan to use a small C++ shim that links Boost.Interprocess
-  properly and exposes a C ABI for the bridge to FFI. Keeps
-  the rest of 31's design intact; just the read primitive
-  comes from C++ instead of pure Rust. Adds a build-time
-  dependency we'd rather avoid but acceptable.
-- **Linux SHM path discovery.** Real risk if scsynth's
-  filename convention on Linux differs from macOS. Mitigate
-  by probing under both `/dev/shm/` and `/tmp/boost_interprocess/`
-  with clear log messages naming what's missing.
-- **Counter monotonicity assumption.** Phase 31's gap
-  detection relies on the writer's generation counter
-  advancing monotonically. If scsynth's audio thread is
-  killed and respawned (rare; happens on `s.reboot`), the
-  counter could reset to zero. Reader would interpret as
-  "writer skipped 2^32 slots" → flood of fake gaps. Mitigate:
-  detect counter resets (large negative jumps) and treat as
-  "writer restarted, re-anchor"; surface a one-time toast
-  rather than a gap flood.
-- **scopeBufferAllocator exhaustion.** sclang's allocator
-  capacity (default ~128). Many sessions × distinct bus
-  configs could exhaust. Surface `/fail` cleanly; offer
-  graceful "no more scope buffers available" toast. Doesn't
-  affect typical solo-dev workflow.
-- **Recording fidelity vs pre-31.** Major change; needs
-  thorough validation. The "bit-identical WAV against pre-31
-  reference" criterion catches most regressions. Plan a
-  proper test pass in 31e before merging.
-- **Worker shrinkage breaking unrelated paths.** Deleting
-  ~300 lines from `oscWorker.ts` could inadvertently break
-  things that used `/b_setn` for one-shot reads (e.g., dev
-  probes, debug commands). Audit `oscWorker.ts` for any
-  non-tick-driven `/b_getn` consumers before committing
-  the deletion. Likely none, but worth checking.
+- **PatternBank serialisation shape.** If the bank's reactive
+  store value is not already plain-clonable (e.g. contains class
+  instances), `postMessage` strips prototypes and the worker
+  receives broken state. Audit in 32a; almost certainly already
+  plain `{ activeIndex, patterns: Pattern[] }` POJOs, but verify.
+- **Clock snapshot freshness.** Worker caches `tick0Ms`,
+  `tickRate`, etc. from `ClockController.derived`. After an
+  sclang restart + clock re-attach, the snapshot must be re-posted.
+  `ClockController.derived` already fires on attach, so subscribing
+  to it from `SequencerController` should be enough — verify.
+- **postMessage ordering on burst flush.** Worker may flush many
+  events at once on tab refocus. Fine for the playhead (visual);
+  if a future consumer wants real-time main-thread firing of
+  events, they'd need to design for re-ordering.
+- **Test coverage debt.** Phase 32 reorganises the most timing-
+  sensitive path in the app with no existing test net. The "add
+  at least one unit test" criterion is not optional polish.
+- **Worker lifecycle.** The worker dies when the WS dies (today's
+  disconnect path tears down `WorkerClient`). Confirm the
+  sequencer's `setInterval` is cleaned up in the same path —
+  no leaked timer if the user disconnects mid-play.
 
 ### Sub-phases
 
-- **31a — sclang `/scope` OSC handler.** Add the three
-  responders + `s.scopeBufferAllocator` integration. Test
-  via `oscdump` or a hand-rolled OSC client. Backend-only,
-  no Rust or frontend changes.
-
-- **31b — Rust SHM reader (the load-bearing one).** Port
-  `b4139ea`'s mmap scaffolding; **add the triple-buffer
-  protocol with counter-based gap detection** (the new
-  work). Reverse-engineer Boost.Interprocess descriptor
-  layout from SC source (`SC_Scope.cpp`); document layout
-  in code comments for future-us. Verify Linux path on the
-  Pi target. Add `GET /api/scope/probe`. Output of this
-  phase: a Rust function `read_scope_slot(idx) -> Option<(Vec<f32>, missed_count)>`
-  that's correct under the gap-detection criterion. Tested
-  by running ScopeOut2 with a known signal and confirming
-  the Rust side reads it back sample-accurately.
-
-- **31c — Bridge `subscribeShm` protocol + tick-driven
-  poll loop.** New WS message types, per-WS subscription
-  state, poll triggered by observed `/clock/tick`. Frames
-  emit as binary WS messages with a small header
-  (`bufferId, tickIndex, isGap, channels, frameCount`)
-  followed by the float32 payload. Tested via a CLI client
-  (or a dedicated test fixture) that subscribes, decodes,
-  and verifies payload shape.
-
-- **31d — Tap SynthDef rewrite + frontend acquire path.**
-  Drop `bufnum` / `clockBus` / `BufWr`; add `scopeNum` /
-  `ScopeOut2`. `BufferController` now does
-  `/scope/allocate` instead of `/b_alloc`; tap /s_new'd
-  with `scopeNum`; `subscribeShm` posted to worker which
-  forwards to bridge. End-to-end smoke test with one scope
-  on one bus.
-
-- **31e — Worker simplification + recording validation.**
-  Delete the OSC `/b_getn` machinery from `oscWorker.ts`
-  (`pendingByOffset`, `reorderBuffer`, retry, gap synthesis,
-  fireReads). Run a thorough recording validation pass —
-  test-tone in, WAV out, sample-level diff against pre-31
-  reference. Confirm gap detection works under induced
-  load. Final cleanup: delete `bufferTapSynthDef.ts`'s old
-  `BufWr`-based logic, IdAllocator usage for bufnums, etc.
-
----
+- **32a — Protocol + stub worker handler.** Add `sequencerStart/Stop/...`
+  message types + `stepFired` / `cycleBoundary` reverse messages.
+  Wire `oscWorker.ts` to dispatch to a stub `sequencerWorker.ts`
+  that just logs received messages. `SequencerController` not yet
+  touched. Verify message flow end-to-end.
+- **32b — Move pump logic into worker.** Port `pump()` +
+  `tickToTimetag` + bundle encoding into `sequencerWorker.ts`.
+  Worker emits OSC bundles via `transport.send()`.
+  `SequencerController.start()` switches to posting `sequencerStart`
+  instead of starting `setInterval`. Foreground-only audio parity
+  pass.
+- **32c — Wire `stepFired` / `cycleBoundary` back to UI.** Playhead
+  ReadonlyStore driven by worker events; refocus-burst debouncing.
+  Delete dead code (`pumpOnce`, main-thread `setInterval`,
+  `scheduler.ts` if fully consumed).
+- **32d — Backgrounded-tab validation + test.** Run the 60-second
+  backgrounded-tab test. Add the unit test (FI #5 carryover).
+  Confirm disconnect cleanup tears down the worker timer.
 
 ## Open Points
 
