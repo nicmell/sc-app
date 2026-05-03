@@ -24,6 +24,8 @@
 
 import type { OscArg } from '@sc-app/server-commands';
 
+import type { ChainState, Pattern } from '../sequencer/types';
+
 /** Plain representation of an inbound OSC message as seen on the
  *  main thread after postMessage. Matches `OSC.Message`'s field
  *  shape (minus methods). */
@@ -120,12 +122,69 @@ export interface BufferChunk {
   isGap: boolean;
 }
 
+/** Phase 32 — what the worker-side sequencer pump needs to know
+ *  about the active bank state. Replaces the bank wholesale on
+ *  every change (bank is small; diffing is premature optimization). */
+export interface SequencerBankSnapshot {
+  slots: ReadonlyArray<Pattern>;
+  activeIndex: number;
+  chain: ChainState;
+}
+
+/** Phase 32 — what the worker-side sequencer pump needs to know
+ *  about the audio clock. Re-posted whenever `ClockController`'s
+ *  `derived` store fires (typically once per attach; again after
+ *  a sclang restart triggers re-attach). */
+export interface SequencerClockSnapshot {
+  /** JS ms timestamp at which "tick 0" notionally happened. `null`
+   *  until the first `/clock/tick` arrives (worker should not pump
+   *  until this is set). */
+  tick0Ms: number | null;
+  /** Ticks per second (`sampleRate / chunkSize`). */
+  tickRate: number;
+  /** Audio frames per tick (sclang's `SC_APP_CLOCK_CHUNK_SIZE`). */
+  chunkSize: number;
+  /** scsynth's nominal sample rate from `/clock/info`. */
+  sampleRate: number;
+}
+
+/** Phase 32 — emitted by the worker pump each time a step is
+ *  actually scheduled to fire (one per step, not per pump
+ *  iteration). Drives the playhead UI on main. */
+export interface StepFired {
+  /** 0..pattern.length-1 within the currently-playing pattern. */
+  stepIndex: number;
+  /** Tick at which the step's bundle is timetagged to fire. */
+  tick: number;
+  /** Worker-side `performance.now()` at emission time. */
+  firedAtMs: number;
+}
+
+/** Phase 32 — emitted by the worker pump when chain mode crosses
+ *  a chain-entry boundary. Main thread responds by advancing
+ *  `bank.activeIndex` to `toIndex` and posting back a fresh
+ *  `sequencerBankUpdate` with the new active slot. */
+export interface CycleBoundary {
+  fromIndex: number;
+  toIndex: number;
+}
+
 export type MainToWorker =
   | { type: 'connect'; url: string }
   | { type: 'disconnect' }
   | { type: 'send'; bytes: Uint8Array }
   | { type: 'subscribeBuffer'; subscription: BufferSubscription }
-  | { type: 'unsubscribeBuffer'; bufferId: string };
+  | { type: 'unsubscribeBuffer'; bufferId: string }
+  | {
+      type: 'sequencerStart';
+      bank: SequencerBankSnapshot;
+      clock: SequencerClockSnapshot;
+      isGroupPaused: boolean;
+    }
+  | { type: 'sequencerStop' }
+  | { type: 'sequencerBankUpdate'; bank: SequencerBankSnapshot }
+  | { type: 'sequencerClockUpdate'; clock: SequencerClockSnapshot }
+  | { type: 'sequencerPauseUpdate'; isGroupPaused: boolean };
 
 export type WorkerToMain =
   | { type: 'ready' }
@@ -134,4 +193,6 @@ export type WorkerToMain =
   | { type: 'oscError'; error: OscError }
   | { type: 'clockTick'; tick: ClockTick }
   | { type: 'bufferChunk'; chunk: BufferChunk }
+  | { type: 'stepFired'; step: StepFired }
+  | { type: 'cycleBoundary'; boundary: CycleBoundary }
   | { type: 'log'; level: 'log' | 'info' | 'warn' | 'error'; message: string };

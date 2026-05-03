@@ -32,9 +32,13 @@ import type {
   BufferChunk,
   BufferSubscription,
   ClockTick,
+  CycleBoundary,
   MainToWorker,
   OscError,
   OscReply,
+  SequencerBankSnapshot,
+  SequencerClockSnapshot,
+  StepFired,
   WorkerToMain,
 } from './workerProtocol';
 
@@ -46,6 +50,8 @@ export type ErrorListener = (message: string) => void;
 export type OscErrorListener = (error: OscError) => void;
 export type TickListener = (tick: ClockTick) => void;
 export type BufferChunkListener = (chunk: BufferChunk) => void;
+export type StepFiredListener = (step: StepFired) => void;
+export type CycleBoundaryListener = (boundary: CycleBoundary) => void;
 export type ReplyMatcher = (reply: OscReply) => boolean;
 
 /** Returned from `subscribeBuffer`. Call `unsubscribe()` when done —
@@ -66,6 +72,8 @@ export class WorkerClient {
     string,
     Set<BufferChunkListener>
   >();
+  private readonly stepFiredListeners = new Set<StepFiredListener>();
+  private readonly cycleBoundaryListeners = new Set<CycleBoundaryListener>();
   private nextSyncId = 1;
   readonly ready: Promise<void>;
 
@@ -161,6 +169,12 @@ export class WorkerClient {
           // orphan chunk would just leak the Float32Array.
           break;
         }
+        case 'stepFired':
+          for (const cb of this.stepFiredListeners) cb(msg.step);
+          break;
+        case 'cycleBoundary':
+          for (const cb of this.cycleBoundaryListeners) cb(msg.boundary);
+          break;
         case 'error':
           console.warn('[sc:client] error', msg.message);
           for (const cb of this.errorListeners) cb(msg.message);
@@ -291,6 +305,62 @@ export class WorkerClient {
     };
   }
 
+  // ── Phase 32 — worker-side sequencer pump ─────────────────────────
+  // These wrappers are the main-thread API that
+  // `SequencerController` will adopt in 32b/c. In 32a the worker
+  // side is a stub that just logs received messages.
+
+  /** Start the worker-side sequencer pump. The worker holds the
+   *  bank + clock snapshot until `stopSequencer()` or `disconnect`. */
+  startSequencer(
+    bank: SequencerBankSnapshot,
+    clock: SequencerClockSnapshot,
+    isGroupPaused: boolean,
+  ): void {
+    this.post({ type: 'sequencerStart', bank, clock, isGroupPaused });
+  }
+
+  /** Stop the worker-side pump. Idempotent on the worker. */
+  stopSequencer(): void {
+    this.post({ type: 'sequencerStop' });
+  }
+
+  /** Replace the worker's bank snapshot. Called whenever the
+   *  PatternBank's reactive store fires (full-snapshot replace —
+   *  bank is small enough that diffing is premature). */
+  updateSequencerBank(bank: SequencerBankSnapshot): void {
+    this.post({ type: 'sequencerBankUpdate', bank });
+  }
+
+  /** Replace the worker's clock snapshot. Called whenever
+   *  `ClockController.derived` fires (typically once per attach). */
+  updateSequencerClock(clock: SequencerClockSnapshot): void {
+    this.post({ type: 'sequencerClockUpdate', clock });
+  }
+
+  /** Update the worker's cached `isGroupPaused` flag. The worker
+   *  pump checks this each tick and skips emission while paused. */
+  setSequencerPaused(isGroupPaused: boolean): void {
+    this.post({ type: 'sequencerPauseUpdate', isGroupPaused });
+  }
+
+  /** Subscribe to per-step fire notifications. One callback per
+   *  step actually scheduled (not per pump iteration). Drives the
+   *  playhead UI on main. */
+  onStepFired(cb: StepFiredListener): () => void {
+    this.stepFiredListeners.add(cb);
+    return () => this.stepFiredListeners.delete(cb) as unknown as void;
+  }
+
+  /** Subscribe to chain-mode cycle boundaries. The worker emits
+   *  these when the current chain entry's cycle count is reached;
+   *  main responds by advancing `bank.activeIndex` and posting a
+   *  fresh `updateSequencerBank()`. */
+  onCycleBoundary(cb: CycleBoundaryListener): () => void {
+    this.cycleBoundaryListeners.add(cb);
+    return () => this.cycleBoundaryListeners.delete(cb) as unknown as void;
+  }
+
   /** Send `msg` and resolve on the first reply satisfying `match`. */
   sendAndAwaitReply(
     msg: OscPacket,
@@ -393,6 +463,8 @@ export class WorkerClient {
     this.oscErrorListeners.clear();
     this.tickListeners.clear();
     this.bufferChunkListeners.clear();
+    this.stepFiredListeners.clear();
+    this.cycleBoundaryListeners.clear();
   }
 
   private post(msg: MainToWorker): void {

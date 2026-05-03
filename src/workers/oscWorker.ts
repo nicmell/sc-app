@@ -38,6 +38,14 @@ import type {
 } from '../server/workerProtocol';
 import { createOscTransport, type OscTransport } from './transport';
 import { decodeScopeFrame } from './scopeWire';
+import {
+  handleSequencerBankUpdate,
+  handleSequencerClockUpdate,
+  handleSequencerDisconnect,
+  handleSequencerPauseUpdate,
+  handleSequencerStart,
+  handleSequencerStop,
+} from './sequencerWorker';
 
 interface WorkerPost {
   postMessage(msg: WorkerToMain, transfer?: Transferable[]): void;
@@ -279,6 +287,7 @@ setWorkerMessageHandler(async (msg: MainToWorker) => {
     case 'disconnect': {
       console.log('[sc:worker] disconnect');
       closeAllScopeWs();
+      handleSequencerDisconnect();
       mainWsUrl = null;
       if (transport) {
         await transport.close();
@@ -300,6 +309,35 @@ setWorkerMessageHandler(async (msg: MainToWorker) => {
     case 'unsubscribeBuffer': {
       console.log(`[sc:worker] unsubscribeBuffer id=${msg.bufferId}`);
       closeScopeWs(msg.bufferId);
+      return;
+    }
+
+    case 'sequencerStart': {
+      handleSequencerStart({
+        bank: msg.bank,
+        clock: msg.clock,
+        isGroupPaused: msg.isGroupPaused,
+      });
+      return;
+    }
+
+    case 'sequencerStop': {
+      handleSequencerStop();
+      return;
+    }
+
+    case 'sequencerBankUpdate': {
+      handleSequencerBankUpdate(msg.bank);
+      return;
+    }
+
+    case 'sequencerClockUpdate': {
+      handleSequencerClockUpdate(msg.clock);
+      return;
+    }
+
+    case 'sequencerPauseUpdate': {
+      handleSequencerPauseUpdate(msg.isGroupPaused);
       return;
     }
   }
