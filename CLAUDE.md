@@ -945,6 +945,18 @@ Observations:
   + the systemd unit + `start-scsynth-only.sh` all set it to
   8; bumping requires editing all three together. 8
   simultaneous sc-app tabs is well above realistic use.
+- **The sclang startup is split across `scripts/lib/`.** The main
+  `sc-app-superdirt-startup.scd` is a thin orchestrator (~110
+  lines): it sets `s.options.*`, runs `s.newAllocators`, kicks
+  off the alive thread, and inside `s.doWhenBooted` calls
+  `~scAppInstallClock.()`, `~scAppInstallSuperDirt.()`,
+  `~scAppInstallDirtListSamples.()`, `~scAppInstallScopeResponders.()`
+  in order. Each function lives in its own file under
+  `scripts/lib/` (clock.scd, superdirt.scd, dirt-list-samples.scd,
+  scope.scd), loaded at pre-boot via `.load`. When adding a new
+  responder family, drop a new `lib/<name>.scd` defining
+  `~scAppInstallX = { ... }`, then add the filename to the
+  orchestrator's load array AND a call inside doWhenBooted.
 - **`tauri dev` reads `app_config_dir/config.json`, NOT the
   project's `./config.json`.** On macOS that's
   `~/Library/Application Support/com.sc-app.dev/`. A stale

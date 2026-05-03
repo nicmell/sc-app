@@ -699,8 +699,28 @@ sclang acts as the long-running coordinator process:
 - Forwards `/dirt/play` etc. to SuperDirt.
 
 `scripts/sc-app-superdirt-startup.scd` is the canonical sclang
-startup script. `yarn osc` / the Pi systemd unit boot sclang via
-this script.
+entry point. `yarn osc` / the Pi systemd unit boot sclang via
+this script. The script is a thin orchestrator: it parses
+options, kicks off the alive thread, and inside `s.doWhenBooted`
+calls a sequence of `~scAppInstallX` functions sourced from
+`scripts/lib/`:
+
+```
+scripts/
+├── sc-app-superdirt-startup.scd        orchestrator (~110 lines)
+└── lib/
+    ├── chunk-size.scd                   ~scAppParseChunkSize
+    ├── clock.scd                        ~scAppInstallClock + /clock/hello
+    ├── superdirt.scd                    ~scAppInstallSuperDirt
+    ├── dirt-list-samples.scd            ~scAppInstallDirtListSamples
+    └── scope.scd                        ~scAppInstallScopeResponders
+```
+
+Each sub-file defines exactly one `~scAppInstallX` function via
+`.load` at pre-boot; the orchestrator calls them in order inside
+`s.doWhenBooted`. Path resolution uses
+`PathName(thisProcess.nowExecutingPath).pathOnly +/+ "lib"` so
+the script works regardless of cwd.
 
 ### 6.3. The shared clock (Phase 30)
 
