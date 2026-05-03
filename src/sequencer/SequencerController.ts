@@ -1,52 +1,64 @@
 /**
- * Step-sequencer controller (Phase 27).
+ * Step-sequencer controller (Phase 27 + Phase 32).
  *
- * Owns the transport + JS wake-up loop and exposes a thin
- * mutation API over the active pattern. Drives SuperDirt via the
- * existing `DirtClient`. Anchors all timing to
- * `ClockController.tick0Ms` + `tickRate` so playback stays
- * sample-accurate against the audio engine's clock; the JS
- * scheduler just keeps OSC bundles on the wire ahead of their
- * fire time.
+ * Owns transport state and pattern mutation API; delegates the
+ * timing-critical pump loop to the OSC worker via
+ * `WorkerClient.startSequencer`. The worker holds the full bank
+ * + clock snapshot, runs an unthrottled `setInterval`, encodes
+ * `/dirt/play` bundles with sample-accurate timetags, and ships
+ * them via the WebSocket transport.
  *
- * Phase 27c reshape: the controller no longer owns its own
- * `Pattern` store. Pattern state lives on the `PatternBank`
- * (8-slot reactive store with localStorage persistence); the
- * controller reads `bank.activePattern` and forwards mutations
- * back through `bank.updateActivePattern(...)`. Switching slots
- * (1..8 keys, or the panel's bank selector) takes effect at the
- * next pump — playback is intentionally NOT stopped on switch
- * so the user can A/B between patterns mid-loop.
+ * Why the worker. Chromium clamps main-thread `setTimeout` /
+ * `setInterval` to ~1 Hz on backgrounded tabs; web workers are
+ * not throttled. Pre-32 the pump ran on main and produced audio
+ * gaps every time the user switched to a different tab. Phase 32
+ * moves the pump behind a `postMessage` boundary into the
+ * existing OSC worker context.
  *
- * Lifecycle:
- * - Created in `setupDashboard`, given the live `clock`,
- *   `dirtClient`, and `bank`.
- * - `dispose()` stops playback + cancels pending playhead
- *   timeouts; safe to call multiple times. The bank itself is
- *   long-lived across re-init — disposed at the AppShell level.
+ * What stays on main: the public API (`play()`, `stop()`,
+ * pattern mutations, reactive stores), bank-snapshot dispatch,
+ * group-pause forwarding, chain-mode UI display state. What
+ * moves to worker: the wake loop, `tickToTimetag` math, OSC
+ * bundle encoding, `transport.send`, per-step playhead
+ * timeouts.
  *
  * Pattern mutations are immutable: every method that touches the
- * pattern produces a new object reference, so `Object.is`-based
- * change detection (the reactive store) fires correctly.
+ * pattern produces a new object reference, so the bank's
+ * reactive store fires correctly. The store subscription this
+ * controller registers in `play()` posts the new bank snapshot
+ * to the worker, so an in-flight pattern adopts edits within one
+ * pump cycle (~25 ms).
+ *
+ * Lifecycle:
+ * - Created in `setupDashboard`, given the live `client`,
+ *   `clock`, `bank`, and `group.state` store.
+ * - `dispose()` stops playback (= posts `sequencerStop` to
+ *   worker) and detaches the bank/group subscriptions; safe to
+ *   call multiple times. The bank itself is long-lived across
+ *   re-init — disposed at the AppShell level.
+ *
+ * Chain-mode auto-advance (`bank.chain` cycles → next slot at
+ * cycle boundary) is temporarily inert in 32b: the
+ * `nextStepIndex` counter that drove it lives in the worker
+ * now, and stepFired callback wiring lands in 32c. The
+ * `chainPlaybackIndex` reactive store still reflects the entry
+ * the user manually selected via Play.
  */
 
+import type { GroupState } from '@/server/GroupController';
+import type { WorkerClient } from '@/server/WorkerClient';
+import type {
+  SequencerBankSnapshot,
+  SequencerClockSnapshot,
+} from '@/server/workerProtocol';
 import { createStore, type ReadonlyStore } from '@/util/reactiveStore';
 
 import type { PatternBank } from './PatternBank';
-import {
-  cancelPendingPlayheadTimers,
-  INITIAL_LOOKAHEAD_TICKS,
-  makeInitialSchedulerState,
-  pump,
-  resetForPlay,
-  type SchedulerState,
-} from './scheduler';
 import {
   makeEmptyStep,
   makeEmptyTrack,
   PARAM_NAMES,
   type ClockLike,
-  type DirtClientLike,
   type ParamMap,
   type ParamName,
   type Pattern,
@@ -55,46 +67,35 @@ import {
   type TransportState,
 } from './types';
 
-/** How often the scheduler wakes up to schedule events. 25 ms ⇒
- *  40 Hz. Combined with `LOOKAHEAD_HORIZON_TICKS` this gives a
- *  generous safety margin against JS event-loop stalls. */
-const WAKE_INTERVAL_MS = 25;
-
 const STOPPED_TRANSPORT: TransportState = {
   isPlaying: false,
   currentStep: -1,
 };
 
-/** Mutable chain-playback state, owned by the controller. Only
- *  meaningful while chain mode + playing — `currentEntryIndex`
- *  is set to -1 outside that window. */
-interface ChainPlaybackInternal {
-  currentEntryIndex: number;
-  /** `schedulerState.nextStepIndex` value at the moment the
-   *  current chain entry began. Used to count elapsed steps. */
-  startedAtSchedulerStep: number;
-}
-
 export interface SequencerControllerOptions {
+  /** Worker proxy. The controller delegates pump scheduling +
+   *  OSC emission to the worker via this client. */
+  client: WorkerClient;
+  /** Read-only clock surface — the controller snapshots this
+   *  into a `SequencerClockSnapshot` at start time and on clock
+   *  changes. */
   clock: ClockLike;
-  dirtClient: DirtClientLike;
-  /** Source of truth for pattern state. The controller never
-   *  mutates other slots — only the active one. */
+  /** Source of truth for pattern state. Subscriptions to
+   *  `slots` / `activeIndex` / `chain` keep the worker's
+   *  snapshot fresh. */
   bank: PatternBank;
-  /** Phase 30: predicate the controller polls each pump to decide
-   *  whether to emit `/dirt/play`. Returns `true` when this client's
-   *  parent group is paused — the shared clock keeps ticking but
-   *  we skip emission so the user's Pause button visibly silences
-   *  sequencer output. Optional; if omitted, the sequencer never
-   *  self-pauses (legacy behaviour). */
-  isGroupPaused?: () => boolean;
+  /** Phase 30: parent-group pause flag. The worker pump skips
+   *  `/dirt/play` emission while paused (shared clock keeps
+   *  ticking; pause is local to this client). The controller
+   *  subscribes and forwards changes to the worker. */
+  groupState: ReadonlyStore<GroupState>;
 }
 
 export class SequencerController {
+  private readonly client: WorkerClient;
   private readonly clock: ClockLike;
-  private readonly dirtClient: DirtClientLike;
   private readonly bank: PatternBank;
-  private readonly isGroupPaused: () => boolean;
+  private readonly groupState: ReadonlyStore<GroupState>;
 
   private readonly _transport;
   /** UI-facing index of the chain entry currently playing
@@ -102,29 +103,23 @@ export class SequencerController {
    *  empty, or playback is stopped. The bank-selector pane
    *  reads this to highlight the playing entry. */
   private readonly _chainPlaybackIndex;
-  private readonly schedulerState: SchedulerState;
-  private chainPlayback: ChainPlaybackInternal = {
-    currentEntryIndex: -1,
-    startedAtSchedulerStep: 0,
-  };
-  private wakeTimer: number | null = null;
+
+  /** Active subscriptions while playing — set up in `play()`,
+   *  torn down in `stop()` / `dispose()`. */
+  private offSlots: (() => void) | null = null;
+  private offIndex: (() => void) | null = null;
+  private offChain: (() => void) | null = null;
+  private offGroupState: (() => void) | null = null;
+
   private disposed = false;
-  /** Phase 30: tracks whether the previous pump observed
-   *  `isGroupPaused()` true. On the first pump after a paused→
-   *  running transition we re-anchor `schedulerState.nextStepTick`
-   *  to (current tick + INITIAL_LOOKAHEAD_TICKS) so playback
-   *  continues from "now" rather than firing every step we
-   *  skipped during the pause in a catch-up burst. */
-  private wasPausedLastPump = false;
 
   constructor(opts: SequencerControllerOptions) {
+    this.client = opts.client;
     this.clock = opts.clock;
-    this.dirtClient = opts.dirtClient;
     this.bank = opts.bank;
-    this.isGroupPaused = opts.isGroupPaused ?? (() => false);
+    this.groupState = opts.groupState;
     this._transport = createStore<TransportState>(STOPPED_TRANSPORT);
     this._chainPlaybackIndex = createStore<number | null>(null);
-    this.schedulerState = makeInitialSchedulerState();
   }
 
   /** Active pattern, sourced from the bank. The reactive store
@@ -298,9 +293,9 @@ export class SequencerController {
     if (this.disposed) return;
     const clamped = Math.max(30, Math.min(300, Math.round(bpm)));
     this.bank.updateActivePattern((p) => ({ ...p, bpm: clamped }));
-    // Note: stepIntervalTicks is recomputed on every wake-up, so
-    // an in-flight pattern adopts the new BPM at the next
-    // unscheduled step. No manual reset.
+    // The worker's `stepIntervalTicks` reads pattern.bpm fresh
+    // every pump, so an in-flight pattern adopts the new BPM
+    // at the next unscheduled step. No manual reset.
   }
 
   setLength(length: PatternLength): void {
@@ -320,14 +315,15 @@ export class SequencerController {
 
   // ── Transport ──────────────────────────────────────────────────────
 
-  /** Start playback. Pattern starts at step 0, scheduled
-   *  `INITIAL_LOOKAHEAD_TICKS` ahead of "now" so the first event
-   *  has time to traverse the wire. No-op if already playing.
+  /** Start playback. Worker pump anchors the first step
+   *  `INITIAL_LOOKAHEAD_TICKS` ahead of "now" so the bundle has
+   *  time to traverse the wire. No-op if already playing.
    *
-   *  Phase 27d: if `bank.chain.enabled` and the chain has at least
-   *  one entry, we engage chain mode — selecting `chain[0]`'s slot
-   *  in the bank and tracking cycle progression so the controller
-   *  can advance through the chain at cycle boundaries. */
+   *  Phase 27d: if `bank.chain.enabled` and the chain has at
+   *  least one entry, we engage chain mode — selecting
+   *  `chain[0]`'s slot in the bank. (Phase 32b: auto-advance
+   *  through chain entries is temporarily inert until 32c
+   *  wires `stepFired` into a step counter on main.) */
   play(): void {
     if (this.disposed) return;
     if (this._transport.get().isPlaying) return;
@@ -338,42 +334,42 @@ export class SequencerController {
       return;
     }
 
-    const nowTick = ((Date.now() - this.clock.tick0Ms) * this.clock.tickRate) / 1000;
-    resetForPlay(this.schedulerState, nowTick);
-
     // If chain mode is engaged at play time, snap activeIndex to
-    // the first chain entry. This guarantees pump's first call
-    // sees the chain's starting pattern. Subsequent transitions
-    // happen inside pumpOnce.
+    // the first chain entry. (Auto-advance through chain entries
+    // is gated on Phase 32c's stepFired wiring.)
     const chain = this.bank.chain.get();
     if (chain.enabled && chain.steps.length > 0) {
-      this.chainPlayback = {
-        currentEntryIndex: 0,
-        startedAtSchedulerStep: 0,
-      };
       this._chainPlaybackIndex.set(0);
       this.bank.selectIndex(chain.steps[0].slotIndex);
     } else {
-      this.chainPlayback = {
-        currentEntryIndex: -1,
-        startedAtSchedulerStep: 0,
-      };
       this._chainPlaybackIndex.set(null);
     }
 
     this._transport.set({ isPlaying: true, currentStep: -1 });
-    this.startWakeLoop();
+
+    this.client.startSequencer(
+      this.snapshotBank(),
+      this.snapshotClock(),
+      this.groupState.get() === 'paused',
+    );
+
+    // Subscribe AFTER startSequencer so the initial snapshot is
+    // the one that wins; subsequent fires dispatch updates.
+    this.offSlots = this.bank.slots.subscribe(() => this.postBankSnapshot());
+    this.offIndex = this.bank.activeIndex.subscribe(() =>
+      this.postBankSnapshot(),
+    );
+    this.offChain = this.bank.chain.subscribe(() => this.postBankSnapshot());
+    this.offGroupState = this.groupState.subscribe((s) => {
+      this.client.setSequencerPaused(s === 'paused');
+    });
   }
 
   stop(): void {
     if (this.disposed) return;
     if (!this._transport.get().isPlaying) return;
-    this.stopWakeLoop();
-    cancelPendingPlayheadTimers(this.schedulerState);
-    this.chainPlayback = {
-      currentEntryIndex: -1,
-      startedAtSchedulerStep: 0,
-    };
+    this.client.stopSequencer();
+    this.unsubscribeFromBankAndGroup();
     this._chainPlaybackIndex.set(null);
     this._transport.set(STOPPED_TRANSPORT);
   }
@@ -383,118 +379,47 @@ export class SequencerController {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    this.stopWakeLoop();
-    cancelPendingPlayheadTimers(this.schedulerState);
+    if (this._transport.get().isPlaying) {
+      this.client.stopSequencer();
+    }
+    this.unsubscribeFromBankAndGroup();
     this._transport.set(STOPPED_TRANSPORT);
   }
 
   // ── private ────────────────────────────────────────────────────────
 
-  private startWakeLoop(): void {
-    if (this.wakeTimer !== null) return;
-    // Pump once immediately so the first step lands as soon as
-    // possible, then settle into the periodic cadence.
-    this.pumpOnce();
-    this.wakeTimer = window.setInterval(() => this.pumpOnce(), WAKE_INTERVAL_MS);
+  private snapshotBank(): SequencerBankSnapshot {
+    return {
+      slots: this.bank.slots.get(),
+      activeIndex: this.bank.activeIndex.get(),
+      chain: this.bank.chain.get(),
+    };
   }
 
-  private stopWakeLoop(): void {
-    if (this.wakeTimer === null) return;
-    window.clearInterval(this.wakeTimer);
-    this.wakeTimer = null;
+  private snapshotClock(): SequencerClockSnapshot {
+    return {
+      tick0Ms: this.clock.tick0Ms,
+      tickRate: this.clock.tickRate,
+      chunkSize: this.clock.chunkSize,
+      sampleRate: this.clock.sampleRate,
+    };
   }
 
-  private pumpOnce(): void {
+  private postBankSnapshot(): void {
     if (this.disposed) return;
     if (!this._transport.get().isPlaying) return;
-    // Phase 30: parent group paused ⇒ no `/dirt/play` emission. The
-    // shared clock keeps advancing on sclang's side, but the user's
-    // Pause button silences audible output (option (b) from plan.md
-    // Phase 30).
-    if (this.isGroupPaused()) {
-      this.wasPausedLastPump = true;
-      return;
-    }
-    // Just un-paused — re-anchor nextStepTick to "now + lookahead"
-    // so resume doesn't fire every step we skipped during the pause
-    // in a catch-up burst. nextStepIndex is preserved (we want
-    // playback to continue from the same step in the pattern, not
-    // jump back to step 0).
-    if (this.wasPausedLastPump) {
-      const tick0 = this.clock.tick0Ms;
-      if (tick0 !== null) {
-        const nowTick = ((Date.now() - tick0) * this.clock.tickRate) / 1000;
-        this.schedulerState.nextStepTick = nowTick + INITIAL_LOOKAHEAD_TICKS;
-        cancelPendingPlayheadTimers(this.schedulerState);
-      }
-      this.wasPausedLastPump = false;
-    }
-    // Phase 27d: check the chain BEFORE pumping. If the elapsed
-    // step count for the current entry has reached its target
-    // (cycles × current pattern length), advance — possibly
-    // looping back to entry 0 or stopping at end-of-chain. The
-    // bank's `selectIndex` swaps `activePattern`, which the
-    // pump call below picks up immediately.
-    if (this.chainPlayback.currentEntryIndex >= 0) {
-      this.maybeAdvanceChain();
-      // maybeAdvanceChain may have called stop() (end-of-chain
-      // with loop=false), in which case we shouldn't pump.
-      if (!this._transport.get().isPlaying) return;
-    }
-
-    pump(
-      this.bank.activePattern.get(),
-      this.clock,
-      this.dirtClient,
-      this.schedulerState,
-      {
-        onStep: (stepIndex) => {
-          if (this.disposed) return;
-          this._transport.update((s) => ({ ...s, currentStep: stepIndex }));
-        },
-      },
-    );
+    this.client.updateSequencerBank(this.snapshotBank());
   }
 
-  /** Phase 27d. If the current chain entry has played its
-   *  target number of cycles, advance to the next entry —
-   *  looping if `chain.loop` is set, stopping otherwise. The
-   *  cycle target is `cycles × pattern.length`; pattern length
-   *  can change between entries (different slots), so we count
-   *  steps relative to `nextStepIndex` at the entry's start.
-   *
-   *  Granularity is "next pump" — we only check at the start of
-   *  pumpOnce, so a transition can lag by up to LOOKAHEAD ticks
-   *  (< 1 step at sane BPMs). Acceptable for the chain-mode UX. */
-  private maybeAdvanceChain(): void {
-    const chain = this.bank.chain.get();
-    const idx = this.chainPlayback.currentEntryIndex;
-    if (idx < 0 || idx >= chain.steps.length) return;
-    const entry = chain.steps[idx];
-    const elapsed =
-      this.schedulerState.nextStepIndex -
-      this.chainPlayback.startedAtSchedulerStep;
-    const length = this.bank.activePattern.get().length;
-    const target = entry.cycles * length;
-    if (elapsed < target) return;
-
-    let nextIdx = idx + 1;
-    if (nextIdx >= chain.steps.length) {
-      if (chain.loop) {
-        nextIdx = 0;
-      } else {
-        // End of chain, no loop — stop. stop() resets
-        // chainPlayback + clears _chainPlaybackIndex.
-        this.stop();
-        return;
-      }
-    }
-    this.chainPlayback = {
-      currentEntryIndex: nextIdx,
-      startedAtSchedulerStep: this.schedulerState.nextStepIndex,
-    };
-    this._chainPlaybackIndex.set(nextIdx);
-    this.bank.selectIndex(chain.steps[nextIdx].slotIndex);
+  private unsubscribeFromBankAndGroup(): void {
+    this.offSlots?.();
+    this.offSlots = null;
+    this.offIndex?.();
+    this.offIndex = null;
+    this.offChain?.();
+    this.offChain = null;
+    this.offGroupState?.();
+    this.offGroupState = null;
   }
 }
 

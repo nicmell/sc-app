@@ -146,7 +146,9 @@ export function makeEmptyChain(): ChainState {
 
 /** What the scheduler needs from a `ClockController`. Defined as
  *  an interface so the scheduler is testable without a real clock
- *  / scsynth round-trip. */
+ *  / scsynth round-trip. Extended in Phase 32 with `chunkSize` /
+ *  `sampleRate` so the controller can build the
+ *  `SequencerClockSnapshot` it ships to the worker pump. */
 export interface ClockLike {
   /** JS ms timestamp at which "tick 0" notionally happened (the
    *  audio engine's clock anchor). `null` until the first tick
@@ -154,6 +156,10 @@ export interface ClockLike {
   readonly tick0Ms: number | null;
   /** Ticks per second (`sampleRate / chunkSize`). */
   readonly tickRate: number;
+  /** Audio frames per tick (sclang's `SC_APP_CLOCK_CHUNK_SIZE`). */
+  readonly chunkSize: number;
+  /** scsynth's nominal sample rate from `/clock/info`. */
+  readonly sampleRate: number;
 }
 
 /** What the scheduler needs from a `DirtClient`. */

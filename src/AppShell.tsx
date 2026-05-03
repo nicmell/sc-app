@@ -394,6 +394,7 @@ async function setupDashboard(
   // the sequencer's `ClockLike` interface keeps the surface flat
   // for testability.
   const sequencer = new SequencerController({
+    client,
     clock: {
       get tick0Ms() {
         return clock.tick0Ms;
@@ -401,15 +402,20 @@ async function setupDashboard(
       get tickRate() {
         return clock.derived.tickRate;
       },
+      get chunkSize() {
+        return clock.info.chunkSize;
+      },
+      get sampleRate() {
+        return clock.info.sampleRate;
+      },
     },
-    dirtClient,
     bank,
     // Phase 30: when the user pauses the parent group, the shared
     // clock keeps ticking but we don't want the sequencer to emit
-    // `/dirt/play`. The callback is polled at every pump; on the
-    // first pump after un-pause, the controller re-anchors
-    // nextStepTick so we don't replay missed steps in a burst.
-    isGroupPaused: () => group.state.get() === 'paused',
+    // `/dirt/play`. Phase 32 pushed the pump into the worker;
+    // SequencerController subscribes to this store and forwards
+    // changes via `client.setSequencerPaused()`.
+    groupState: group.state,
   });
 
   // One-shot /version fetch. Informational only — fail open with

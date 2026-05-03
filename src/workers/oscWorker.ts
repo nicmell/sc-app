@@ -45,6 +45,7 @@ import {
   handleSequencerPauseUpdate,
   handleSequencerStart,
   handleSequencerStop,
+  setSequencerSender,
 } from './sequencerWorker';
 
 interface WorkerPost {
@@ -261,6 +262,10 @@ setWorkerMessageHandler(async (msg: MainToWorker) => {
         });
         console.log('[sc:worker] awaiting ws open …');
         await transport.ready;
+        // Phase 32: hand the sequencer worker a direct sender into
+        // this transport so its pump can ship OSC bytes without a
+        // postMessage hop.
+        setSequencerSender((bytes) => transport!.send(bytes));
         console.log('[sc:worker] posting ready');
         post({ type: 'ready' });
       } catch (err) {
@@ -288,6 +293,7 @@ setWorkerMessageHandler(async (msg: MainToWorker) => {
       console.log('[sc:worker] disconnect');
       closeAllScopeWs();
       handleSequencerDisconnect();
+      setSequencerSender(null);
       mainWsUrl = null;
       if (transport) {
         await transport.close();
