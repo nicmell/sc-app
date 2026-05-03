@@ -63,7 +63,7 @@ interface DashboardResources {
   registry: SynthDefRegistry;
   group: GroupController;
   clock: ClockController;
-  ids: { node: IdAllocator; bus: IdAllocator };
+  ids: { node: IdAllocator; bus: IdAllocator; buffer: IdAllocator };
   bufferManager: BufferManager;
   synthManager: SynthManager;
   scopeManager: ScopeManager;
@@ -311,14 +311,21 @@ async function setupDashboard(
   // frontend side post-Phase-31 (the clock previously published a
   // `clockBus`; that was retired in a post-34 tidy).
   const idBase = clientId * PER_CLIENT_ID_OFFSET + ID_ALLOCATOR_START;
-  // Phase 31: the `buffer` IdAllocator is gone — scope buffers
-  // are sclang-allocated (0..127, via `s.scopeBufferAllocator`),
-  // and `BufferController` no longer issues `/b_alloc`. Only
-  // tone synths still use `node` (taps share it but don't
-  // allocate from it themselves) and the bus allocator stays.
+  // Phase 36: the `buffer` IdAllocator is back. SHM mode
+  // (Phase 31) still uses sclang's `s.scopeBufferAllocator`
+  // (0..127) — `BufferController.startShm()` does
+  // `/scope/allocate`, no client-side bufnum needed. OSC
+  // fallback mode (Phase 36) revives `/b_alloc` for the
+  // BufWr-based tap synth, which needs a client-side bufnum
+  // allocator. Base offset +5000 leaves room below for nodes;
+  // scsynth doesn't enforce per-client bufnum ranges (unlike
+  // node IDs that error on duplicate) but keeping them in our
+  // own per-clientId range avoids collisions with SuperDirt's
+  // own buffer usage.
   const ids = {
     node: new IdAllocator(idBase),
     bus: new IdAllocator(32),
+    buffer: new IdAllocator(idBase + 5000),
   };
 
   console.log(
@@ -360,7 +367,8 @@ async function setupDashboard(
     client,
     group,
     registry,
-    ids: { node: ids.node },
+    ids: { node: ids.node, buffer: ids.buffer },
+    clock,
   });
   const scopeManager = new ScopeManager({
     bufferManager,

@@ -25,6 +25,7 @@ import {
   type BufferSpec,
 } from './BufferController';
 import { probeScopeShm, type ScopeShmProbe } from '@/scope/scopeClient';
+import type { ClockController } from '@/clock/ClockController';
 import type { GroupController } from '@/server/GroupController';
 import type { IdAllocator } from '@/server/IdAllocator';
 import type { SynthDefRegistry } from '@/server/SynthDefRegistry';
@@ -34,7 +35,13 @@ export interface BufferManagerOptions {
   client: WorkerClient;
   group: GroupController;
   registry: SynthDefRegistry;
-  ids: { node: IdAllocator };
+  /** Phase 36: SHM mode uses only `node`; OSC mode also uses
+   *  `buffer` for `/b_alloc`. Both passed unconditionally. */
+  ids: { node: IdAllocator; buffer: IdAllocator };
+  /** Phase 36: clock controller. SHM mode unused (kept null-safe);
+   *  OSC mode reads `clockBus` from `info` to wire into the
+   *  BufWr-based tap synth. */
+  clock: ClockController;
 }
 
 /** One row in the debug snapshot store. `scopeNum` / `nodeId` are
@@ -135,17 +142,15 @@ export class BufferManager {
   async acquire(spec: BufferSpec): Promise<BufferHandle> {
     validateSpec(spec);
 
-    // Phase 31: SHM probe gate. Lazy + cached per-manager.
+    // Phase 36: probe + cache the bridge's scope mode. Both 'shm'
+    // and 'osc' are valid acquire targets now; the controller
+    // branches on `mode` at start() time. The probe still runs at
+    // first-acquire to surface any HTTP-level breakage; failure
+    // defaults to 'osc' (probeScopeShm()'s back-compat default)
+    // which the bridge will honour if it was started with --no-shm
+    // OR if SHM truly isn't reachable.
     if (this.shmProbe === null) {
       this.shmProbe = await probeScopeShm();
-    }
-    if (!this.shmProbe.available) {
-      const detail = this.shmProbe.error ?? 'unknown reason';
-      throw new Error(
-        `BufferManager.acquire: SHM scope-buffer pool not available ` +
-          `(${detail}). scsynth must be running on the same machine as ` +
-          `the bridge for scopes/recordings to work.`,
-      );
     }
 
     const key = keyOf(spec);
@@ -260,11 +265,18 @@ export class BufferManager {
 
   private async spinUp(spec: BufferSpec, key: string): Promise<BufferHandle> {
     const bufferId = freshBufferId();
+    // Mode comes from the cached probe (set in `acquire`'s probe
+    // gate above). probeScopeShm()'s back-compat default is 'osc'
+    // when the bridge doesn't return a `mode` field — older
+    // bridges silently fall back, never crashing.
+    const mode = this.shmProbe?.mode ?? 'osc';
     const ctrlOpts: BufferControllerOptions = {
       client: this.opts.client,
       group: this.opts.group,
       registry: this.opts.registry,
       ids: this.opts.ids,
+      clock: this.opts.clock,
+      mode,
       spec,
       bufferId,
     };
