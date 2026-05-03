@@ -117,17 +117,28 @@ export const CLOCK_WRAP_TICKS = 2;
  *  receiving a `/tr`, expressed as a JS-ms offset added to
  *  `Date.now()`.
  *
- *  The `/tr` fires from `Impulse.kr` which is kr-quantised to a
- *  control-block boundary (≤ 64 ar samples ≈ 1.3 ms of jitter at
- *  sr 48 k), but the scope's `writeIdx` advances at ar rate against
- *  an exactly-aligned `Phasor.ar` wrap. If `/b_getn` arrives at
- *  scsynth before the targeted half has fully been written, the
- *  read includes a few "stale" samples from the previous cycle and
- *  the chunk shows a step at the boundary.
+ *  This value clears the **kr-vs-ar drift (~1.3 ms)** between the
+ *  `Impulse.kr`-driven `/tr` (kr-quantised, ≤ 64 ar samples late)
+ *  and the `Phasor.ar`-driven `writeIdx` (exact half-boundary). If
+ *  `/b_getn` arrives at scsynth before the half has fully been
+ *  written, the read includes stale tail samples. 5 ms of cushion
+ *  is comfortable.
  *
- *  Wrapping `/b_getn` in an `OSC.Bundle` with timetag
- *  `Date.now() + READ_DELAY_MS` lets scsynth's scheduler hold the
- *  read until well past the worst-case kr-vs-ar drift (~1.3 ms),
- *  guaranteeing a clean read. 5 ms is comfortable; tune up if you
- *  ever see remaining artefacts, down if the added latency matters. */
+ *  Why not bump higher to silence scsynth's `late 0.0XX` warnings?
+ *  Two constraints conflict at default chunkSize:
+ *
+ *  - **No `late` warnings**: requires `READ_DELAY >= scsynth's
+ *    audio-clock-vs-wall-clock drift` (~14–24 ms in practice).
+ *  - **No buffer-overwrite gaps**: requires `READ_DELAY <= one
+ *    tick interval`, since the ring is 2 halves wide
+ *    (`ringFrames = 2 × chunkSize`). At chunkSize=1024 / sr=48 k
+ *    that's only 21.3 ms.
+ *
+ *  No value satisfies both. We pick correctness — accept the
+ *  cosmetic `late` warnings on `/b_getn`; scsynth still runs the
+ *  read at the right audio frame, just logs a "ran late" notice
+ *  because our wall-clock-derived timetag is in its audio past.
+ *  Bumping the chunkSize from the dashboard widens the tick
+ *  interval and would allow a higher value here, but the constant
+ *  is global so we tune for the smallest practical chunkSize. */
 export const READ_DELAY_MS = 5;

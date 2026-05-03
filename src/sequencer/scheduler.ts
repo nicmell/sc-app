@@ -41,6 +41,27 @@ export const INITIAL_LOOKAHEAD_TICKS = 5;
  */
 export const LOOKAHEAD_HORIZON_TICKS = 5;
 
+/**
+ * Wall-clock ms added to every `/dirt/play` timetag (and to the
+ * matching playhead callback so UI stays aligned with audio).
+ *
+ * SuperDirt computes its scsynth scheduling latency as
+ * `bundle_timetag - sclang_now` (see SuperDirt.sc `playFunc`,
+ * line 305). If that goes ≤ 0, scsynth sees the resulting `/s_new`
+ * bundles in its audio-clock past and logs `late 0.0XX` (which
+ * is just the drift between scsynth's audio clock and wall clock,
+ * ~10–24 ms in practice). Without this shift our `tickToTimetag`
+ * outputs cluster around wall-clock-now and routinely go negative
+ * under JS stalls, producing the late warnings.
+ *
+ * 200 ms matches sclang's stock `Server.default.latency` and gives
+ * SuperDirt a comfortable scheduling budget. The whole sequencer's
+ * audible output shifts forward by this constant relative to
+ * "tick 0"; the playhead delay is shifted by the same amount so
+ * UI stays aligned with audio.
+ */
+export const SUPERDIRT_SAFETY_LOOKAHEAD_MS = 200;
+
 export interface SchedulerCallbacks {
   /** Called when the playhead lands on a step boundary, with the
    *  step index in `[0, pattern.length)`. Fires from a delayed
@@ -127,7 +148,12 @@ export function pump(
   while (state.nextStepTick <= horizon) {
     const stepIndex = state.nextStepIndex % pattern.length;
     const targetTick = state.nextStepTick;
-    const timetag = tickToTimetag(tick0Ms, targetTick, clock.tickRate);
+    // Shift forward by SUPERDIRT_SAFETY_LOOKAHEAD_MS so SuperDirt
+    // sees a positive `latency = timetag - sclang_now` and schedules
+    // its /s_new bundles in scsynth's audio future, clear of drift.
+    const timetag =
+      tickToTimetag(tick0Ms, targetTick, clock.tickRate) +
+      SUPERDIRT_SAFETY_LOOKAHEAD_MS;
 
     for (const track of pattern.tracks) {
       if (!track.sample) continue; // empty sample name ⇒ silent
@@ -136,9 +162,13 @@ export function pump(
       dirtClient.playAtTimetag(eventForTrack(track, step), timetag);
     }
 
-    // Playhead update: fire at the audible step time so the UI
-    // matches the kick, not the lookahead horizon.
-    const stepTimeMs = tick0Ms + (targetTick * 1000) / clock.tickRate;
+    // Playhead update: fire at the (shifted) audible step time so
+    // the UI matches the kick, not the lookahead horizon. Same
+    // shift as the OSC timetag keeps UI ↔ audio in lockstep.
+    const stepTimeMs =
+      tick0Ms +
+      (targetTick * 1000) / clock.tickRate +
+      SUPERDIRT_SAFETY_LOOKAHEAD_MS;
     const delayMs = Math.max(0, stepTimeMs - nowMs);
     const timerId = window.setTimeout(() => {
       callbacks.onStep(stepIndex);

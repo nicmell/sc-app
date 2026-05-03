@@ -19,6 +19,7 @@
  *   `completionMsg`).
  */
 
+import OSC from 'osc-js';
 import type OSCClass from 'osc-js';
 import {
   encode,
@@ -179,8 +180,39 @@ export class WorkerClient {
     this.post({ type: 'connect', url });
   }
 
-  /** Encode and ship one message or bundle. */
+  /** Encode and ship one message or bundle. Set
+   *  `window.__SC_LOG_TIMETAGS = true` in the DevTools console to
+   *  log every outgoing bundle's timetag offset (ms ahead of
+   *  `Date.now()`) — useful when chasing scsynth `late 0.0XX`
+   *  warnings or verifying scheduler lookahead. */
   sendCommand(packet: OscPacket): void {
+    if (
+      typeof window !== 'undefined' &&
+      (window as unknown as { __SC_LOG_TIMETAGS?: boolean }).__SC_LOG_TIMETAGS &&
+      packet instanceof OSC.Bundle
+    ) {
+      const tt = packet.timetag?.value;
+      // osc-js's Timetag.timestamp() is buggy — line 449 in osc.js
+      // does Math.round(fractions / TWO_POWER_32), which always
+      // collapses the fractional NTP part to 0 or 1 *whole second*.
+      // The on-the-wire pack() uses the raw seconds + fractions
+      // directly, so the timetag is fine; only the JS-side getter
+      // is broken. Read the NTP fields manually here.
+      const SECONDS_70_YEARS = 2208988800;
+      const TWO_POWER_32 = 4294967296;
+      const ttMs = tt
+        ? (tt.seconds - SECONDS_70_YEARS) * 1000 +
+          (tt.fractions / TWO_POWER_32) * 1000
+        : NaN;
+      const offsetMs = ttMs - Date.now();
+      const addrs = packet.bundleElements
+        .map((el) => (el instanceof OSC.Message ? el.address : '<bundle>'))
+        .join(',');
+      console.log(
+        `[sc:tt] offset=${offsetMs.toFixed(1)}ms ` +
+          `tt=${ttMs.toFixed(1)} now=${Date.now()} addrs=[${addrs}]`,
+      );
+    }
     const bytes = encode(packet);
     this.post({ type: 'send', bytes });
   }

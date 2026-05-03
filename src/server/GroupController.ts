@@ -25,8 +25,10 @@ import {
   OSC,
   gFreeAll,
   gNewOne,
+  inFuture,
   nFree,
   nRunOne,
+  sync,
 } from '@sc-app/server-commands';
 import type { ReadonlyStore } from '@/util/reactiveStore';
 import { createStore } from '@/util/reactiveStore';
@@ -63,14 +65,31 @@ export class GroupController {
    *  `/g_new` and `/n_run 0` are sent in a single OSC.Bundle so
    *  scsynth never sees a control block where the group is
    *  running. Children added later (the clock synth, scopes,
-   *  recorders) inherit the paused state until `resume()`. */
+   *  recorders) inherit the paused state until `resume()`.
+   *
+   *  Timetag is `Date.now() + 50 ms`, not implicit-now: scsynth's OSC
+   *  scheduler runs ~10–20 ms ahead of wall clock (audio-callback
+   *  calibrated), so a "now" timetag lands in scsynth's past after
+   *  delivery and logs `late 0.0XX`. 50 ms clears the drift with
+   *  margin while staying short enough to be invisible at connect
+   *  time.
+   *
+   *  `/sync` is embedded INSIDE the bundle (not sent separately) so
+   *  the matching `/synced` only fires once the bundle's timetag has
+   *  elapsed and the group really exists. A standalone `/sync` would
+   *  race-complete immediately and let the next `/s_new` (the clock)
+   *  hit a not-yet-created group. */
   async ensureCreated(): Promise<void> {
     if (this.created) return;
-    await this.client.sendAndSync(
-      new OSC.Bundle([
-        gNewOne(this.groupId, this.addAction, this.targetId),
-        nRunOne(this.groupId, 0),
-      ]),
+    await this.client.sendCommandAndAwaitSync((syncId) =>
+      new OSC.Bundle(
+        [
+          gNewOne(this.groupId, this.addAction, this.targetId),
+          nRunOne(this.groupId, 0),
+          sync(syncId),
+        ],
+        inFuture(50),
+      ),
     );
     this.created = true;
     this.stateStore.set('paused');
