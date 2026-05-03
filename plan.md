@@ -9,10 +9,108 @@ audio config schema, file layout, workspace packages, and the
 chunkSize × sampleRate practical table all live in
 [`CLAUDE.md`](./CLAUDE.md) — don't duplicate them here.
 
-No phase currently in flight. Phases 0–33 are in
-[`docs/history.md`](./docs/history.md). The next planned piece of
-work picks from the [Future Improvements](#future-improvements)
-list below.
+**Phase 34 — Loopback Identity Hardening** is in flight; spec
+below. Phases 0–33 are in [`docs/history.md`](./docs/history.md).
+After 34 the next planned piece of work picks from the
+[Future Improvements](#future-improvements) list.
+
+---
+
+## Phase 34 — Loopback Identity Hardening
+
+**Goal.** Plug two attack vectors that the Phase 25 webview-on-
+HTTP shift opened up. The bridge binds to 127.0.0.1, but
+loopback-binding alone doesn't defend against:
+
+1. **DNS rebinding** — a hostile site could rebind its DNS to
+   127.0.0.1 mid-session and use the still-`attacker.com`-origin
+   page to interact with the bridge.
+2. **Cross-origin WebSocket connections** — WebSocket upgrade
+   requests are not bound by the Same-Origin Policy in the way
+   `fetch` is; a hostile page can `new WebSocket('ws://127.0.0.1:3000/ws')`
+   directly.
+
+The fix in both cases is identity validation: the bridge checks
+that the request's `Host` header (HTTP) and `Origin` header (WS
+upgrades) name a loopback address. The webview, Vite dev
+proxying from `:1420`, and any future Tauri-served origin all
+satisfy this; rebound `attacker.com` and external-site WS
+attempts don't.
+
+TLS would also fix #1 but at higher cost (cert provisioning per
+install, dev-vs-prod friction, doesn't help against same-machine
+non-browser callers anyway). Header validation is cheaper and
+more effective.
+
+### Architecture
+
+New module `src-tauri/src/server/security.rs`:
+
+```
+host_is_allowed(host: &str) -> bool
+  - Strips the port; allows hostname ∈ {127.0.0.1, localhost, ::1}.
+
+origin_is_allowed(origin: &str) -> bool
+  - Strips scheme + path; allows http(s):// loopback origins
+    plus the legacy `tauri://localhost`.
+
+enforce_host (axum middleware)
+  - Reads `Host`; rejects 421 Misdirected Request on mismatch.
+
+check_ws_origin (helper called from ws/ws_scope handlers)
+  - Reads `Origin`; rejects 403 Forbidden on mismatch.
+  - Missing Origin is allowed (browsers always send it on WS;
+    omission means a non-browser client like curl, which can
+    already bypass any browser-side defense by talking TCP
+    directly).
+```
+
+The Host check applies to every HTTP request via a
+`from_fn` middleware layered before `with_state`. The Origin
+check is per-handler since the rejection path differs (WS
+handlers return `Response`, not the middleware's
+`Result<Response, …>` shape).
+
+### Files
+
+- `src-tauri/src/server/security.rs` (new) — pure validators,
+  middleware, WS Origin helper, inline `#[cfg(test)]` unit
+  tests.
+- `src-tauri/src/server/mod.rs` — register the middleware in
+  `serve_on`; add `pub mod security;` and the dispatch.
+- `src-tauri/src/server/ws_bridge.rs` (or wherever `ws_handler`
+  lives — actually `mod.rs`) — early Origin check before
+  upgrade.
+- `src-tauri/src/server/ws_scope.rs` — same.
+
+### Open questions
+
+1. **Tauri release-build webview Origin.** Verify the value the
+   Tauri webview sends as `Origin` when navigated to
+   `http://127.0.0.1:<port>`. Should be `http://127.0.0.1:<port>`,
+   which the loopback check accepts. (Risk: some Tauri configs
+   strip Origin or send `null`. If observed, allow `null` too —
+   it's no weaker than allowing missing Origin.)
+2. **Allow IPv6 `[::1]`?** Yes — axum's `bind()` is
+   `[127, 0, 0, 1]` (IPv4 only), but a future deployment could
+   add v6. Cheap to allow; matches the standard "loopback is
+   loopback" intent.
+3. **Host-header `null` / missing.** Reject with 400 Bad
+   Request (Host is mandatory in HTTP/1.1 anyway).
+
+### Acceptance criteria
+
+- Unit tests for `host_is_allowed` / `origin_is_allowed` cover
+  loopback-accepted, external-rejected, IPv6 loopback,
+  port-agnostic.
+- Tauri release build still loads (Host = 127.0.0.1:<port>).
+- `yarn dev:full` still works (Vite proxies preserve
+  `Host: localhost:1420`, accepted).
+- `yarn test` (frontend), `cargo test` in `src-tauri/`, and
+  `cargo build` all pass.
+- Manual smoke test: from a different origin (e.g. an external
+  site or `curl -H 'Host: attacker.com'`) the bridge replies
+  421/400/403. Same call without the rebind succeeds.
 
 ## Open Points
 
