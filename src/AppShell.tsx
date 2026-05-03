@@ -759,6 +759,21 @@ export function AppShell() {
     let cancelled = false;
 
     const tick = async () => {
+      // Phase 33a: skip the heartbeat while the tab is hidden.
+      // Chromium's intensive throttling clamps both `setInterval`
+      // and the `sendAndAwaitReply` reject-timer to once-per-minute
+      // after ~5 min hidden, while `/status.reply` postMessages
+      // still queue from the worker. On the next main-thread flush
+      // the timer can fire before the reply lands, and the heartbeat
+      // falsely tears down a healthy session. Bridge TTL (default
+      // 30 min, scans every minute) is the ground-truth aliveness
+      // check — we don't need a per-tab heartbeat in the background.
+      if (
+        typeof document !== 'undefined' &&
+        document.visibilityState !== 'visible'
+      ) {
+        return;
+      }
       try {
         const reply = await client.sendAndAwaitReply(
           status(),
@@ -798,9 +813,19 @@ export function AppShell() {
     const intervalId = window.setInterval(() => {
       void tick();
     }, HEARTBEAT_INTERVAL_MS);
+    // Refresh the footer status immediately when the tab returns;
+    // otherwise it would sit stale until the next 3 s interval
+    // boundary.
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void tick();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [resources]);
 
