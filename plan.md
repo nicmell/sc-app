@@ -9,10 +9,124 @@ audio config schema, file layout, workspace packages, and the
 chunkSize × sampleRate practical table all live in
 [`CLAUDE.md`](./CLAUDE.md) — don't duplicate them here.
 
-No phase currently in flight. Phases 0–32 are in
-[`docs/history.md`](./docs/history.md). The next planned piece of
-work picks from the [Future Improvements](#future-improvements)
-list below.
+**Phase 33 — Tab Throttling Resilience** is in flight; spec below.
+Phases 0–32 are in [`docs/history.md`](./docs/history.md). After 33
+the next planned piece of work picks from the
+[Future Improvements](#future-improvements) list.
+
+---
+
+## Phase 33 — Tab Throttling Resilience
+
+**Goal.** Plug the two main-thread holes that survived Phase 32's
+worker-pump migration. Both involve timers that Chromium clamps on
+backgrounded tabs (~1 Hz initially, dropping to once-per-minute
+after ~5 min of "intensive throttling"); the consequences are real
+in one case and cosmetic in the other.
+
+The two fixes are independent — separate sub-phases, separate
+commits.
+
+### 33a — Heartbeat visibility gating
+
+**Problem.** `AppShell.tsx`'s `/status` heartbeat
+(`setInterval(3000)` + per-tick `sendAndAwaitReply` with
+`timeoutMs = 2000`) lives entirely on main. Under intensive
+throttling both timers fire at most once per minute, while
+`/status.reply` postMessages pile up in the worker→main queue.
+On the next main-thread tick they all flush in some order; if
+the reject-timer fires before the matching reply lands, the
+heartbeat falsely concludes "scsynth stopped responding" and
+runs the full session teardown (`bank.dispose()` +
+`client.dispose()` → `'disconnected'`).
+
+Failure mode: leave a healthy session open in a backgrounded
+tab for ~5+ min, refocus, find yourself disconnected with a
+toast claiming scsynth died.
+
+**Fix.** Skip the heartbeat tick while `document.visibilityState
+!== 'visible'`. Add a `visibilitychange` listener so the footer
+gets a fresh `/status` immediately on tab return — otherwise it
+sits stale until the next 3 s interval. The bridge's TTL job
+(default 30 min, scans every minute) is the ground-truth
+aliveness check during background; we don't need a per-tab
+heartbeat for that.
+
+**Files.**
+- `src/AppShell.tsx` — early-return in `tick()` when hidden; add
+  + clean up the `visibilitychange` listener alongside the
+  existing `setInterval` cleanup.
+
+**Acceptance.**
+- Session stays connected through a 5+ minute backgrounded
+  interval. (Can't unit-test this; manual verification.)
+- Status footer refreshes within ~one frame of refocus.
+- Type-check + tests + production build all pass.
+
+### 33b — Clock watchdog into the worker
+
+**Problem.** `ClockController.startWatchdog` runs
+`setInterval(periodMs)` where `periodMs ≈ tickInterval / 2`
+(~10 ms at default config). When the tab is throttled the
+watchdog fires at most every second/minute. The freshness check
+reads `lastSignalAt`, which only updates when a `clockTick`
+event drains from the postMessage queue. Net effect: brief
+"amber clock" flicker during refocus while the watchdog catches
+up to queued ticks.
+
+Cosmetic only — audio is correct, the UI just flashes 'paused'
+for a beat. But the symptom is wrong (sclang never stopped),
+the watchdog has the truth in the wrong thread, and the fix is
+small.
+
+**Fix.** Move freshness detection into the worker, where the
+ticks actually arrive without queueing. Worker tracks
+`lastTickAt` and runs an unthrottled `setInterval` to compare
+it against `tickInterval × 2`. On freshness transitions, posts
+a `clockFreshness` event to main. `ClockController` consumes
+those events as the new source of truth for its
+`isTickFresh()` analogue.
+
+**Files.**
+- `src/server/workerProtocol.ts` — new `clockWatchdogStart`
+  (`{ tickIntervalMs }`) / `clockWatchdogStop` MainToWorker;
+  new `clockFreshness` (`{ fresh: boolean }`) WorkerToMain.
+- `src/workers/clockWatchdog.ts` (new) — `startClockWatchdog`,
+  `stopClockWatchdog`, `recordClockTick` (called from
+  `oscWorker.ts` whenever `/clock/tick` is decoded),
+  `disconnectClockWatchdog`. Deduplicated freshness events
+  (only emit on transition).
+- `src/workers/oscWorker.ts` — wire dispatch for the new
+  messages; call `recordClockTick()` in the existing
+  `/clock/tick` branch of `emitReply`; `disconnectClockWatchdog`
+  on disconnect.
+- `src/server/WorkerClient.ts` — typed wrappers
+  `startClockWatchdog`, `stopClockWatchdog`, `onClockFreshness`.
+- `src/clock/ClockController.ts` — drop main-thread
+  `startWatchdog` / `stopWatchdog` / `isTickFresh` /
+  `TICK_STARTUP_GRACE_MS` / `lastSignalAt` / `watchdog` fields.
+  Replace with a private `_freshTickObserved: boolean`
+  consumed by `recompute()`. `attach()` calls
+  `client.startClockWatchdog(this.derived.tickIntervalMs)` and
+  subscribes to `client.onClockFreshness`. `detach()` reverses.
+- `src/workers/clockWatchdog.test.ts` (new) — smoke test:
+  start, no ticks → eventually emits stale; recordClockTick
+  → emits fresh; stop → no further events.
+
+**Open question.** The startup grace
+(`TICK_STARTUP_GRACE_MS = 500`) handles the small window after
+attach where /clock/tick hasn't arrived yet but the clock IS
+running. Worker can replicate this by treating the
+`startClockWatchdog` call as a synthetic "tick" anchor and
+using a 500 ms allowance until the first real tick lands.
+Equivalent semantics; preserved.
+
+**Acceptance.**
+- No "amber clock" flicker on tab refocus (manual verification).
+- Watchdog still flags real sclang outages within ~one
+  tickInterval × 2 of cessation (~40 ms at default config).
+- Sequencer test suite + the new `clockWatchdog` smoke test
+  pass. Type-check + production build clean.
 
 ## Open Points
 
