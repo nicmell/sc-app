@@ -35,7 +35,7 @@ Browser (React, main thread)
   │                             sclang-owned shared clock. attach()
   │                             round-trips /clock/hello → /clock/info
   │                             (tickRate, chunkSize, sampleRate,
-  │                             clockBus). tick0Ms anchored on the
+  │                             clockNodeId). tick0Ms anchored on the
   │                             first /clock/tick arrival. detach() is
   │                             sync (no /n_free — don't own the synth).
   ├── GroupController           parent group lifecycle (/g_new /n_run).
@@ -568,9 +568,13 @@ back to pure OSC; subscription lifecycle = WS lifecycle. See
 sub-phases moved clock ownership from per-session frontend
 synths to a single `\scAppClock` running at scsynth's root
 group, owned by sclang. All clients become passive observers
-of `/clock/tick` + a shared `clockBus`. chunkSize is now a
+of the same `/clock/tick` stream. chunkSize is now a
 server-side env var (`SC_APP_CLOCK_CHUNK_SIZE`); the frontend
-has no UI for it. See `docs/history.md` Phase 30.
+has no UI for it. (Originally Phase 30 also published a
+`clockBus` carrying a sample-counting Phasor — read by tap
+synths' ring-buffer math. Phase 31 retired the ring math, and
+the bus was removed in a post-34 tidy commit; see Phase 30 in
+`docs/history.md` for the full clock-ownership write-up.)
 
 Earlier landings still in effect:
 - **Phase 29** — Bridge-managed sessions + auto-connect.
@@ -626,10 +630,12 @@ sclang restart, which all attached sessions then re-attach to via
   parent group sits at the root's tail (`AddToTail`, so it lands
   AFTER sclang's defaultGroup); **inside** the parent group, every
   tap synth (scopes, recorders, the dev probe) MUST be `/s_new`'d
-  with `AddToTail` so scsynth processes them after the clock on
-  every control block. Otherwise consumers read the *previous*
-  control block's `clockBus` value — a constant ~1.3 ms lag that
-  breaks alignment.
+  with `AddToTail`. The historical reason was that pre-Phase-31
+  taps read the clock-driven `clockBus` and would otherwise see
+  the previous control block's value (~1.3 ms lag). Post-Phase-31
+  taps don't read clockBus, but the AddToTail invariant still
+  matters for any future producer→consumer chain inside the
+  parent group.
 - **Reserved IDs (Phase 30 — globally-owned by sclang's clock)**:
   - `/clock/tick` — shared clock's `SendReply` address. The worker
     demuxes these into `clockTick` events, suppressing them from
@@ -640,10 +646,10 @@ sclang restart, which all attached sessions then re-attach to via
   - `clockNodeId = 999` — sclang's `\scAppClock` synth. Reserved
     by convention; clients' `IdAllocator(node)` start at
     `clientId * 1_000_000 + 1000`, well above 999.
-  - `clockBus` — sclang allocates via `Bus.audio(s, 1)`, returns
-    the index in `/clock/info`. Always < 32 in practice (allocator
-    starts at `numIns + numOuts = 4`); each session's
-    `IdAllocator(bus)` starts at 32, so no collision.
+  - (Pre-cleanup the clock also published a `clockBus` carrying
+    a sample-counter Phasor for tap-synth ring-buffer math.
+    Phase 31 retired the ring math; the bus was a no-op
+    producer→nobody from then on, removed in a post-34 tidy.)
 - **Session bootstrap + connect handshake** (Phase 29):
   the scsynth handshake (`/status`, `/notify 1`) is owned by
   the bridge, run once at session creation. The frontend's
@@ -671,7 +677,7 @@ sclang restart, which all attached sessions then re-attach to via
      `ClockController`, calls `group.ensureCreated()` (atomic
      `/g_new + /n_run 0`), then `clock.attach()` which round-trips
      `/clock/hello → /clock/info` to read the shared clock's
-     `tickRate / chunkSize / clockBus / sampleRate` (Phase 30).
+     `tickRate / chunkSize / sampleRate / clockNodeId` (Phase 30).
      Then constructs `SynthManager` (producer side), `BufferManager`
      (shared tap layer), `ScopeManager` + `RecordingManager`
      (consumers, both pointed at `BufferManager` for handle
@@ -726,7 +732,7 @@ sclang restart, which all attached sessions then re-attach to via
   (`scripts/sc-app-superdirt-startup.scd`). Every sc-app session
   is a passive observer: `clock.attach()` round-trips
   `/clock/hello → /clock/info` to read `tickRate / chunkSize /
-  clockBus / sampleRate / clockNodeId` from the running clock;
+  sampleRate / clockNodeId` from the running clock;
   the `/clock/tick` stream (emitted via `SendReply.kr`) fans to
   all `/notify`'d sessions for free (no per-session synth
   `/s_new`). Pause/resume drives the

@@ -32,11 +32,11 @@
  *
  * **Group ordering invariant.** Tap synths in the parent group must
  * be `/s_new`'d with `AddToTail` so scsynth processes them after
- * the shared clock at root group head — otherwise they'd read the
- * previous control block's `clockBus` value, introducing ~1 ms lag.
- * Pre-Phase-30 the clock lived at the parent group's head; the
- * invariant moves up one level (now scsynth root) but its meaning
- * is unchanged.
+ * any producer they depend on. Historically the load-bearing case
+ * was tap synths reading the clock's `clockBus` (~1.3 ms lag if
+ * out of order); post-Phase-31 taps don't read clockBus, but the
+ * invariant still applies to any future producer→consumer chain
+ * inside the parent group.
  */
 
 import type {
@@ -115,12 +115,6 @@ export class ClockController {
       throw new Error('ClockController.derived read before attach() resolved');
     }
     return this._derived;
-  }
-
-  /** Convenience: clock bus index sclang allocated. Tap synths
-   *  read this via `In.ar(clockBus)`. */
-  get clockBus(): number {
-    return this.info.clockBus;
   }
 
   /** Pre-Phase-30 callers (`RecordingManager`, `ScopeManager`)

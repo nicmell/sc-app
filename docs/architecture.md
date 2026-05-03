@@ -669,8 +669,6 @@ this on every observed `/clock/tick`.
 Reserved IDs (sclang owns these — frontend allocators avoid
 them):
 - `clockNodeId = 999` (the `\scAppClock` synth)
-- `clockBus` (allocated by `Bus.audio(s, 1)`, returned in
-  `/clock/info` — typically index 4)
 - `/clock/tick` reply address (any other synth using it would
   produce double-ticks)
 
@@ -694,7 +692,7 @@ sclang acts as the long-running coordinator process:
   `SC_APP_CLOCK_CHUNK_SIZE` env var (default 1024).
 - Hosts the `/clock/hello` responder that replies on
   `/clock/info` with `[tickRate, value, chunkSize, value,
-  sampleRate, value, clockBus, value, clockNodeId, value]`.
+  sampleRate, value, clockNodeId, value]`.
 - Hosts the `/scope/{hello,allocate,free}` responders backed by
   `s.scopeBufferAllocator` (a `StackNumberAllocator(0, 127)` —
   128 slots).
@@ -710,7 +708,6 @@ this script.
 sclang process          scsynth root group         every sc-app session
 ─────────────────       ──────────────────────     ────────────────────────
 Boot:
-  Bus.audio(s, 1)     ▶ allocates clockBus
   Synth(\scAppClock)  ▶ /s_new at root, head
                             │
                             │ SendReply.kr →
@@ -725,8 +722,7 @@ Boot:
 OSCdef(\scAppClockHello)
   on /clock/hello:    ▶ reply /clock/info ─────────▶ ClockController.attach:
                           [tickRate, chunkSize,            - stores info
-                           sampleRate, clockBus,           - starts worker watchdog
-                           clockNodeId]
+                           sampleRate, clockNodeId]        - starts worker watchdog
 ```
 
 The clock is "shared" in two senses:

@@ -307,9 +307,9 @@ async function setupDashboard(
   // with sclang+SuperDirt at clientId=0. Bus allocator stays at 32
   // (skips hardware-reserved); SuperDirt's bus usage doesn't overlap
   // sc-app's allocations in practice. Phase 30: bus allocator is
-  // synth-only now (clockBus comes from `/clock/info` and lives at
-  // a sclang-allocated index < 32, well below this allocator's
-  // start point — no collision).
+  // synth-only — no other component allocates buses on the
+  // frontend side post-Phase-31 (the clock previously published a
+  // `clockBus`; that was retired in a post-34 tidy).
   const idBase = clientId * PER_CLIENT_ID_OFFSET + ID_ALLOCATOR_START;
   // Phase 31: the `buffer` IdAllocator is gone — scope buffers
   // are sclang-allocated (0..127, via `s.scopeBufferAllocator`),
@@ -342,11 +342,11 @@ async function setupDashboard(
   // bundle), separately from the shared clock — which lives in
   // sclang at scsynth's root group, OUTSIDE this client's parent
   // group. `clock.attach()` round-trips /clock/hello to read the
-  // running clock's config (tickRate / chunkSize / clockBus).
+  // running clock's config (tickRate / chunkSize / sampleRate).
   await group.ensureCreated();
   const clockInfo = await clock.attach();
   console.log(
-    `[sc:app] attached to shared clock — clockBus=${clock.clockBus}, ` +
+    `[sc:app] attached to shared clock — ` +
       `sampleRate=${clockInfo.sampleRate}, chunkSize=${clockInfo.chunkSize}, ` +
       `tickRate=${clock.derived.tickRate.toFixed(3)} Hz`,
   );
