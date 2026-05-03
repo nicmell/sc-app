@@ -465,7 +465,26 @@ When working on a phase:
    the "Current phase progress" line below.
 
 Current phase progress: **No phase currently in flight.** The
-last three landed (most recent first):
+last four landed (most recent first):
+
+**Phase 33 shipped — Tab Throttling Resilience.** Plugged the
+two main-thread timers Phase 32 didn't catch. 33a gated
+`AppShell`'s `/status` heartbeat on `document.visibilityState` —
+under intensive throttling the 2 s reject-timer could race
+against the queued `/status.reply` postMessage and falsely tear
+down a healthy session after ~5 min hidden; the visibility
+gate skips ticks while hidden, with a `visibilitychange` listener
+firing one immediate refresh on tab return. 33b moved the clock
+freshness watchdog from a main-thread `setInterval` into a new
+`src/workers/clockWatchdog.ts`. Pre-33 the watchdog read a stale
+`lastSignalAt` while throttled and falsely flipped
+`effectiveState` to `'paused'` on refocus; post-33 the worker
+runs the freshness check against unqueued ticks and emits
+`clockFreshness` events to main only on transitions, so the
+"amber clock" flicker is gone. `ClockController` no longer owns
+a watchdog timer or `lastSignalAt` field. 9 new unit tests cover
+the watchdog state machine. See `docs/history.md` Phase 33 for
+the full write-up.
 
 **Phase 32 shipped — Worker-Side Sequencer Pump.** Moved the
 sequencer's `setInterval(25 ms)` pump off the main thread
@@ -966,3 +985,34 @@ Observations:
   `bundle_timetag - sclang_now` positive so SuperDirt's
   `playFunc` schedules `/s_new` bundles in scsynth's audio
   future, clear of audio-clock drift.
+- **`/status` heartbeat is gated on `document.visibilityState`
+  (Phase 33a).** Pre-33 the 3 s heartbeat ran unconditionally;
+  Chromium's intensive throttling (after ~5 min hidden) clamps
+  both `setInterval` and the 2 s reject-timer to 1/min, racing
+  against queued `/status.reply` postMessages. The race could
+  fire the timer first and falsely tear down a healthy session.
+  Now `tick()` early-returns when hidden, with a
+  `visibilitychange → visible` listener firing one immediate
+  tick on return. Bridge TTL (default 30 min) is the
+  ground-truth aliveness check during background.
+- **Clock freshness watchdog lives in the worker (Phase 33b).**
+  `src/workers/clockWatchdog.ts` runs the freshness check on
+  an unthrottled worker `setInterval`, since `clockTick`
+  postMessages from the worker queue under main-thread
+  throttling and a main-thread watchdog would read stale
+  `lastSignalAt`. Worker only emits `clockFreshness` events on
+  fresh ↔ stale transitions (the dedup is in
+  `emitFreshness`); `ClockController` consumes them as the
+  source of truth for the freshness component of
+  `effectiveState`. Subscribe BEFORE calling
+  `client.startClockWatchdog` — the worker emits the initial
+  `fresh: true` synchronously inside that call, so a listener
+  registered after misses it.
+- **`clockWatchdog` uses `Date.now()`, not `performance.now()`.**
+  Vitest's fake timers advance `Date.now` deterministically
+  but leave `performance.now` running on real wall-clock —
+  `Date.now()` keeps the watchdog test runs deterministic. The
+  freshness window is short (~40 ms at default config) so any
+  NTP-adjustment drift between measurements is irrelevant in
+  practice. If you copy the pattern for another worker-side
+  watchdog, do the same.

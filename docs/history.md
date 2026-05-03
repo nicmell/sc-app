@@ -2986,3 +2986,143 @@ Four sub-phases, plus a vitest bootstrap.
   every ~125 ms (8/sec at BPM 120). Cost a debugging cycle in
   32d to figure out.
 
+
+---
+
+## Phase 33 — Tab Throttling Resilience
+
+**Goal.** Plug the two main-thread holes Phase 32 didn't fix.
+Both involved timers Chromium clamps on backgrounded tabs (~1 Hz
+initially, dropping to once-per-minute after ~5 min of "intensive
+throttling"); one caused real session teardowns, the other
+caused a cosmetic UI flicker.
+
+### What shipped
+
+Two sub-phases, separate commits.
+
+*33a — Heartbeat visibility gating (commit `f1d3751`).*
+
+The bug. `AppShell.tsx`'s `/status` heartbeat (`setInterval(3000)`
++ per-tick `sendAndAwaitReply` with `timeoutMs = 2000`) ran
+unconditionally on main. Under intensive throttling both timers
+fired at most once per minute while `/status.reply` postMessages
+piled up in the worker→main queue. On the next main-thread flush
+the timer could fire before the matching reply landed; the
+heartbeat then concluded "scsynth stopped responding" and ran
+the full session teardown (`bank.dispose()` + `client.dispose()`
+→ `'disconnected'`) against a perfectly healthy server.
+
+Failure mode: leave a healthy session open in a backgrounded
+tab for 5+ min, refocus, find yourself disconnected with a
+toast claiming scsynth died.
+
+The fix.
+- Early-return inside `tick()` when
+  `document.visibilityState !== 'visible'`. The setInterval still
+  fires; the heavy work just skips. Bridge TTL (default 30 min,
+  scans every minute) is the ground-truth aliveness check during
+  background — we don't need a per-tab heartbeat for that.
+- Add a `visibilitychange` listener that fires one tick on tab
+  return so the footer status doesn't sit stale until the next
+  3 s interval boundary.
+- Bracketed the setInterval and listener cleanup in the existing
+  useEffect teardown.
+
+Minimal diff. No new state, no protocol change, just a guard +
+a listener.
+
+*33b — Clock watchdog into the worker (commit `fe85852`).*
+
+The bug. `ClockController.startWatchdog` ran a `setInterval` at
+~`tickInterval / 2` (~10 ms at default config) on main, calling
+`recompute()` which read freshness via
+`performance.now() - lastSignalAt`. `lastSignalAt` only updated
+when a `clockTick` event drained from the worker→main postMessage
+queue. Under throttling the watchdog fired late and saw a stale
+`lastSignalAt`, falsely flipping `effectiveState` to `'paused'`.
+
+Cosmetic only (audio was correct), but the symptom was wrong —
+sclang never stopped — and the watchdog had the truth in the
+wrong thread.
+
+The fix.
+- New `src/workers/clockWatchdog.ts` module: module-scoped state
+  with `startClockWatchdog(tickIntervalMs)` /
+  `stopClockWatchdog` / `recordClockTick` /
+  `disconnectClockWatchdog`. Anchors `lastTickAt = Date.now()` on
+  start; runs an unthrottled `setInterval` at
+  `max(20, tickIntervalMs / 2)`; on each check, compares against
+  `STARTUP_GRACE_MS = 500` (pre-first-tick) or
+  `tickIntervalMs × 2` (post). Only emits `clockFreshness` events
+  on fresh ↔ stale transitions, so a steady stream of ticks
+  doesn't flood the message channel.
+- `oscWorker.ts` calls `recordClockTick()` in the existing
+  `/clock/tick` branch of `emitReply`, just before the existing
+  `clockTick` post. Wires dispatch for the new
+  `clockWatchdogStart` / `clockWatchdogStop` messages.
+  `disconnectClockWatchdog` on the disconnect path.
+- `WorkerClient` typed wrappers: `startClockWatchdog`,
+  `stopClockWatchdog`, `onClockFreshness`.
+- `ClockController` drops `startWatchdog` / `stopWatchdog` /
+  `isTickFresh` / `TICK_STARTUP_GRACE_MS` / `lastSignalAt` /
+  `watchdog` field. Adds private `freshTickObserved: boolean`
+  populated by `handleFreshness`. `attach()` subscribes BEFORE
+  calling `client.startClockWatchdog` so it doesn't miss the
+  initial `fresh: true` event the worker posts on start.
+  `detach()` stops the watchdog, unsubscribes, resets state.
+  `recompute()` now reads `freshTickObserved` instead of calling
+  `isTickFresh()`. `handleTick` no longer triggers `recompute` —
+  that's redundant with the worker-driven freshness path.
+
+Tests. New `src/workers/clockWatchdog.test.ts` — 9 tests:
+initial fresh emission, stale transition past startup grace,
+fresh re-transition on `recordClockTick`, deduplication of
+repeated fresh events, post-first-tick allowance switching to
+`tickIntervalMs × 2`, stop + disconnect lifecycle, pre-start
+`recordClockTick` gracefully ignored, restart resets state.
+
+### Decisions worth carrying forward
+
+- **`Date.now()` over `performance.now()` for the watchdog
+  window.** Vitest's fake timers advance `Date.now` deterministically
+  but leave `performance.now` running on real wall-clock time —
+  using `Date.now` keeps the tests deterministic. The freshness
+  window is short (~40 ms at default config) so any NTP-adjustment
+  drift between measurements is irrelevant in practice.
+- **Bridge TTL is the ground-truth aliveness check during
+  background.** A per-tab heartbeat is a UX nicety for the active
+  user; the bridge TTL job (default 30 min) is the only reliable
+  long-window detector. Don't try to keep the tab heartbeat
+  running on hidden tabs — the trade-off is bad and the safety
+  net already exists.
+- **Worker emits only on transitions.** A steady stream of
+  `/clock/tick`s should not produce a stream of `clockFreshness`
+  events; consumers only need to know *when* state flips. The
+  module-scoped `lastSentFresh` deduplicator is small enough that
+  any future watchdog-style worker module should copy the
+  pattern.
+- **Subscribe BEFORE `startClockWatchdog`.** Order matters:
+  worker emits `fresh: true` synchronously inside
+  `startClockWatchdog`, so a listener attached after the call
+  misses the initial state. `ClockController.attach` documents
+  the order in a code comment.
+
+### Gotchas
+
+- **Heartbeat visibility check uses `document.visibilityState`,
+  not `document.hidden`.** Both work, but `visibilityState` is
+  the modern API and clearer at the call site
+  (`!== 'visible'` reads as "not visible" for any reason —
+  hidden tab, prerender, minimized window).
+- **`recordClockTick` called pre-`startClockWatchdog` is a
+  silent no-op.** A few `/clock/tick` events can decode in the
+  worker between WS open and `ClockController.attach`'s
+  `startClockWatchdog` call. Pre-start ticks update `lastTickAt`
+  but don't emit (the start emit will).
+- **Refresh-on-tab-return is one-shot.** `visibilitychange` →
+  `visible` fires `tick()` once; the regular `setInterval`
+  handles the rest. If the tab is visible for less than 3 s
+  before being backgrounded again, that one tick may be the
+  only refresh — fine for a footer status read.
+
