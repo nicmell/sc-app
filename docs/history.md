@@ -2755,3 +2755,234 @@ main OSC WS stays protocol-pure.
   `subscribe(cb)` callback is invoked locally on the same
   bufferChunk. Pre-31 fan-out semantics intact.
 
+
+---
+
+## Phase 32 — Worker-Side Sequencer Pump
+
+**Goal.** Move the step sequencer's wake loop off the main
+thread (where Chromium clamps `setInterval` to ~1 Hz on
+backgrounded tabs) into the existing OSC worker, where timers
+are not throttled. `SequencerController` keeps its full public
+API and reactive stores; the timing-critical work hops behind
+`postMessage` into a new `sequencerWorker.ts` module folded
+into the existing worker context. Same `WorkerClient` ↔
+`oscWorker` shape — adding another responsibility behind its
+own message namespace, no second worker.
+
+The user-visible payoff:
+- **No audio dropouts when the tab is backgrounded.** The
+  sequencer keeps emitting future-timetagged `/dirt/play`
+  bundles to scsynth at the right moments regardless of
+  whether the browser tab is focused. Pre-32 a backgrounded
+  tab caused bundles to fall behind their target ticks; some
+  arrived in scsynth's audio past (logged `late 0.0XX`),
+  others were dropped.
+- **No new abstraction.** Considered (then rejected) a generic
+  worker-scheduler primitive or a `SchedulerController` +
+  manager. The sequencer is the only consumer that needs
+  sample-accurate emission through a wall-clock timer; if a
+  second consumer ever appears, we extract the abstraction
+  from two real cases rather than guessing the shape now.
+
+### What shipped
+
+Four sub-phases, plus a vitest bootstrap.
+
+*32a — Worker protocol + stub handler (commit `58cd203`).*
+- `src/server/workerProtocol.ts` — new types:
+  - `SequencerBankSnapshot { slots, activeIndex, chain }` —
+    structured-clone-friendly bank shape posted to the
+    worker. Bank state is small (~few KB); diffing is
+    premature optimization, full snapshots replace on every
+    fire.
+  - `SequencerClockSnapshot { tick0Ms, tickRate, chunkSize,
+    sampleRate }` — what the worker pump needs for
+    `tickToTimetag` math. The pump itself only uses `tick0Ms`
+    + `tickRate`; `chunkSize` / `sampleRate` are forward-
+    looking metadata.
+  - `StepFired { stepIndex, tick, firedAtMs }` — emitted by
+    the worker on each scheduled step; drives the playhead UI
+    on main.
+  - `CycleBoundary { fromIndex, toIndex }` — defined in 32a
+    but ultimately unused: chain-mode advancement was simpler
+    to keep on main, driven by `stepFired` events.
+- 5 new `MainToWorker`: `sequencerStart`, `sequencerStop`,
+  `sequencerBankUpdate`, `sequencerClockUpdate`,
+  `sequencerPauseUpdate`.
+- 2 new `WorkerToMain`: `stepFired`, `cycleBoundary`.
+- `src/workers/sequencerWorker.ts` (new, stub) — receives
+  messages, holds module-scoped state, logs each event. No
+  emission yet.
+- `src/workers/oscWorker.ts` — dispatches the 5 new sequencer
+  messages to the stub handlers; calls
+  `handleSequencerDisconnect()` on the disconnect path so
+  worker state doesn't survive a WS close.
+- `src/server/WorkerClient.ts` — typed wrappers added:
+  `startSequencer`, `stopSequencer`, `updateSequencerBank`,
+  `updateSequencerClock`, `setSequencerPaused`,
+  `onStepFired`, `onCycleBoundary`. Listener sets cleared on
+  `dispose()`.
+- `SequencerController` deliberately untouched in 32a —
+  stayed on main-thread `setInterval`. Verified the protocol
+  end-to-end via a DevTools-console call.
+
+*32b — Move pump logic into worker (commit `fdc35ad`).*
+- `src/workers/sequencerWorker.ts` — replaced stub with the
+  real pump. Verbatim port of `pump()` + `tickToTimetag` +
+  `SUPERDIRT_SAFETY_LOOKAHEAD_MS` (200 ms) shift from
+  `src/sequencer/scheduler.ts`. Runs an unthrottled
+  `setInterval(25 ms)` inside the worker context. New
+  `setSequencerSender(sender)` lets the host (oscWorker)
+  inject a direct `transport.send` callback; the pump uses it
+  to ship bytes without a second `postMessage` hop. Posts
+  `stepFired` events at the audible step time (a `setTimeout`
+  with the same `SUPERDIRT_SAFETY_LOOKAHEAD_MS` shift the OSC
+  bundle uses, so UI ↔ audio stay in lockstep).
+- `src/workers/oscWorker.ts` — registers the sender once the
+  WS transport opens (in the connect path, after
+  `transport.ready`); clears it on disconnect.
+- `src/sequencer/SequencerController.ts` — replaced the
+  main-thread `setInterval`/`pumpOnce` with worker delegation.
+  `play()` snapshots bank + clock and posts
+  `client.startSequencer(...)`; subscriptions to
+  `bank.slots` / `bank.activeIndex` / `bank.chain` post fresh
+  snapshots on every reactive fire. `group.state`
+  subscription forwards pause changes via
+  `client.setSequencerPaused()`. Constructor signature swap:
+  drop `dirtClient` (worker emits OSC now), drop
+  `isGroupPaused` callback (replaced by `groupState`
+  ReadonlyStore so we subscribe rather than poll), add
+  `client`.
+- `src/sequencer/types.ts` — `ClockLike` extended with
+  `chunkSize` + `sampleRate` so the controller can build a
+  complete `SequencerClockSnapshot`.
+- `src/AppShell.tsx` — passes `client` + `groupState`; the
+  clock adapter gains `chunkSize` / `sampleRate` getters off
+  `ClockController.info`.
+- 32b shipped audio-only: playhead and chain-mode auto-advance
+  were knowingly broken in this commit, restored in 32c.
+
+*32c — Wire `stepFired` to UI + chain advance (commit
+`acebeb3`).*
+- `src/sequencer/SequencerController.ts` — new
+  `handleStepFired(step)` private method, subscribed in
+  `play()` via `client.onStepFired`. Updates
+  `_transport.currentStep` so the playhead matches the
+  audible step. Increments a local `chainElapsedSteps`
+  counter; when it crosses `entry.cycles × pattern.length`,
+  advances the chain entry (or stops on end-of-chain with
+  `loop=false`). The existing `bank.activeIndex` subscription
+  posts the new bank snapshot to the worker — no separate
+  selectIndex-side coupling.
+- No manual debouncing for refocus bursts. React 18 batches
+  state updates and `Object.is` short-circuits unchanged
+  `currentStep` writes; a 60 s background burst (~480 events
+  at 8 steps/sec) collapses to one render on refocus. Inline
+  comment documents the choice.
+- `src/sequencer/scheduler.ts` — **deleted.** Pump logic +
+  lookahead constants + `tickToTimetag` math all moved into
+  the worker in 32b. Zero remaining importers.
+- `src/sequencer/types.ts` — dropped the now-orphan
+  `DirtClientLike` interface (only consumer was scheduler.ts)
+  + the unused `Timetag` import.
+- Net diff: −211 / +66 across the three files.
+
+*32d — Vitest + worker pump tests (commit `d55b2be`).*
+- Vitest 2.1.9 lifted to a root devDep (was scoped to
+  `packages/synthdef-compiler`). New `yarn test` /
+  `yarn test:watch` scripts.
+- `vitest.config.ts` (new) — mirrors `vite.config.ts`'s `@/`
+  + workspace-package aliases. Explicit `include:
+  ['src/**/*.test.ts', 'tests/**/*.test.ts']` so the
+  synthdef-compiler tests under `packages/` keep running
+  independently from inside their own folder.
+- `tests/setup.ts` (new) — polyfills `globalThis.self =
+  globalThis` and `globalThis.window = globalThis` so the
+  worker module under test can reach `self.postMessage` and
+  osc-js can find `window` (same shim the runtime uses via
+  `workerBootstrap.ts`).
+- `src/workers/sequencerWorker.test.ts` (new) — 8 tests, all
+  passing:
+  - emits one /dirt/play bundle per active step on start
+  - emits multiple bundles as the wake loop advances
+  - skips emission while paused; resumes without catch-up
+    burst (re-anchor invariant)
+  - stops on `handleSequencerStop`
+  - `handleSequencerDisconnect` clears the wake timer
+    (idempotent)
+  - refuses to pump when started with null `tick0Ms`
+  - posts `stepFired` events to main with the right
+    `stepIndex`
+  - picks up bank updates without restart (sample changes
+    take effect within ~one wake cycle)
+- The 60-second backgrounded-tab manual validation passed
+  on the user's machine — backgrounding the browser tab no
+  longer produces audible gaps in sequencer output.
+
+### Decisions worth carrying forward
+
+- **No generic scheduler abstraction.** Sequencer is currently
+  the only consumer that needs an unthrottled timing loop in
+  a worker. When a second consumer (arpeggiator, transport,
+  high-level music construct) appears, extract the
+  abstraction from two real cases. YAGNI for now.
+- **Chain advance lives on main, not in the worker.** The
+  worker pumps the active pattern in a loop forever; main
+  counts `stepFired` events, decides when to advance entries,
+  calls `bank.selectIndex`. The existing `bank.activeIndex`
+  subscription posts the new snapshot to the worker. Keeps
+  the chain state machine in one place; the cross-thread
+  round-trip is not audio-critical (worker has ~5 ticks of
+  lookahead buffered when the new bank arrives).
+- **No bundle/snapshot diff.** Bank snapshot replaces wholesale
+  on every change. Bank shape is small (slots × patterns ×
+  tracks ~ a few KB total); structured clone is cheap.
+  Skipping diff logic is a net simplification.
+- **`CycleBoundary` protocol message defined but unused.**
+  Defined in 32a as a hedge against the chain-on-worker
+  design. Kept in the protocol enum after 32c because removing
+  it would churn imports for zero benefit; left as a
+  no-op message handler. If a future need emerges (e.g.
+  worker-driven cycle metering), the wire is already there.
+- **No manual refocus-burst debounce.** React 18 batching +
+  `Object.is` store short-circuit handle it. Validated by the
+  60 s tab-switch test.
+
+### Gotchas
+
+- **Worker `setInterval` is unthrottled, but the message
+  channel still backs up under throttling.** When the tab is
+  backgrounded the WORKER keeps pumping (audio is correct).
+  But `postMessage`s queued by the worker wait for main to
+  drain — main is throttled to ~1 Hz. On refocus, hundreds of
+  `stepFired` events flush at once. We rely on React 18 to
+  batch them; if a future React change removes batching the
+  playhead could thrash.
+- **Bank snapshot must be structured-clone-friendly.** Pattern
+  / Track / Step are POJOs; PatternBank's reactive store
+  returns those POJOs unchanged; chain is a POJO too. No
+  class instances slip through. If a future bank field gains
+  a class instance (e.g. a Date, Set, Map), the worker side
+  will receive a stripped object and break silently — audit
+  on every bank-shape change.
+- **`SequencerController` constructor signature changed.** Lost
+  `dirtClient`; the worker emits OSC now. Lost the
+  `isGroupPaused` callback; replaced by `groupState`
+  ReadonlyStore. Gained `client`. Any future caller writing a
+  fake controller for tests must match the new shape.
+- **Mid-session `tickRate` change is unsupported.** Worker
+  caches `tickRate` in its clock snapshot. If sclang restarts
+  with a different `chunkSize`, the WS severs and the
+  frontend reconnects from scratch — the worker's snapshot is
+  rebuilt at that point. We don't try to handle a
+  mid-session rate change; the inline comment in the worker
+  pump notes the unsupported scenario.
+- **Test pattern density matters.** A "single kick" pattern
+  (only step 0 active, 16-step pattern) makes the sender fire
+  every `pattern.length × stepInterval = 2 s`, which is too
+  sparse for short-window timing assertions. The test helper
+  `densePattern` uses all-active steps so the sender fires
+  every ~125 ms (8/sec at BPM 120). Cost a debugging cycle in
+  32d to figure out.
+

@@ -64,11 +64,13 @@ Browser (React, main thread)
   │                              reactive store for autocomplete.
   ├── PatternBank +             8-slot reactive store + debounced
   │   SequencerController +      localStorage. SequencerController
-  │   SequencerPanel             reads bank.activePattern, drives
-  │                              SuperDirt via dirtClient.playAtTimetag
-  │                              with tick-anchored OSC bundles. Chain
-  │                              mode advances bank.activeIndex at
-  │                              cycle boundaries.
+  │   SequencerPanel             owns transport + bank-mutation API;
+  │                              the timing-critical pump runs in
+  │                              the OSC worker (Phase 32). Subscribes
+  │                              to bank/clock/group changes and
+  │                              forwards snapshots; `stepFired` events
+  │                              from the worker drive playhead UI +
+  │                              chain auto-advance at cycle boundaries.
   ├── ServerErrorBus            decoded /fail ring, surfaced via
   │                              DebugLog header badge.
   ├── ToastContainer +          bottom-right toast stack for runtime
@@ -77,15 +79,34 @@ Browser (React, main thread)
   │                              error sticks until manual dismiss).
   └── WorkerClient              postMessage wrapper around…
       │   - sendCommand / onReply / onError / onTick
-      │   - subscribeBuffer(sub, cb) — tick-driven /b_getn pipeline
+      │   - subscribeBuffer(sub, cb) — opens /ws/scope per
+      │     subscription; Float32Array chunks fan out to listeners
+      │   - startSequencer / stopSequencer / updateSequencerBank /
+      │     updateSequencerClock / setSequencerPaused / onStepFired
+      │     — Phase 32 worker-side pump control
       ▼
 OSC Worker (module worker)
   ├── workerBootstrap.ts        sync message buffer + osc-js window shim
-  ├── transport.ts              raw binary WebSocket
-  └── oscWorker.ts              decode inbound + forward outbound bytes
-                                + /clock/tick mux + bufferId-keyed
-                                subscription table with offset-keyed
-                                pending + tick-ordered reorder buffer
+  ├── transport.ts              raw binary WebSocket (main /ws)
+  ├── scopeWire.ts              decoder for the 10-byte-header
+  │                              scope-chunk frames coming over
+  │                              per-subscription /ws/scope WSs
+  ├── sequencerWorker.ts        Phase 32 worker-side pump:
+  │                              setInterval(25ms) (unthrottled when
+  │                              tab backgrounded), ports pump() +
+  │                              tickToTimetag math + /dirt/play
+  │                              encoding from the deleted
+  │                              src/sequencer/scheduler.ts; emits
+  │                              OSC bytes via transport.send,
+  │                              posts stepFired back to main
+  └── oscWorker.ts              decode inbound + forward outbound
+                                bytes + /clock/tick mux; owns one
+                                /ws/scope WebSocket per active
+                                BufferSubscription (opened on
+                                subscribeBuffer, closed on
+                                unsubscribeBuffer); registers a
+                                transport.send sender into
+                                sequencerWorker on connect
       │
       ▼
 src-tauri backend (Rust)
@@ -96,22 +117,38 @@ src-tauri backend (Rust)
   ├── config.rs                 `config.json` schema + load helpers +
   │                              starter-config OnceLock
   ├── logging.rs                tracing init (stderr + daily-rotated file)
+  ├── scope_shm.rs              Phase 31: mmap RAII +
+  │                              find_scope_buffer_array (heuristic
+  │                              vector finder, see history.md) +
+  │                              read_scope_slot (non-mutating
+  │                              triple-buffer pull from scsynth's
+  │                              shared memory)
   ├── server/
   │   ├── mod.rs                axum router, bind/serve_on/run_bridge,
-  │   │                          /ws + /api/session* routes, TTL task
+  │   │                          /ws + /ws/scope + /api/session* +
+  │   │                          /api/scope/* routes, TTL task
   │   ├── session.rs            bridge-managed Session — owns one UDP
-  │   │                          socket per route target, runs
-  │   │                          /notify+/status handshake at create,
-  │   │                          fans inbound replies via tokio
-  │   │                          broadcast channels; SessionStore
+  │   │                          socket per route target + a lazy
+  │   │                          ScopeShm OnceCell shared by all
+  │   │                          /ws/scope subscriptions on this
+  │   │                          session; runs /notify+/status at
+  │   │                          create, fans inbound replies via
+  │   │                          tokio broadcast channels; SessionStore
   │   │                          (Arc<RwLock<HashMap<Uuid,Session>>>)
   │   │                          + evict_idle for the TTL job
-  │   ├── api.rs                POST/GET/DELETE /api/session[/:id]
-  │   │                          handlers; { error } JSON envelope
-  │   ├── ws_bridge.rs          WS ↔ Session bridge: per-target
+  │   ├── api.rs                POST/GET/DELETE /api/session[/:id] +
+  │   │                          GET /api/scope/{probe,layout,headers,
+  │   │                          debug}; { error } JSON envelope
+  │   ├── ws_bridge.rs          main WS ↔ Session bridge: per-target
   │   │                          forwarder tasks subscribe to the
   │   │                          session's broadcast channels;
   │   │                          WS→UDP routes via session.routes
+  │   │                          (pure OSC after Phase 31's per-scope
+  │   │                          WS refactor)
+  │   ├── ws_scope.rs           Phase 31: /ws/scope handler. One WS
+  │   │                          per BufferSubscription; polls SHM on
+  │   │                          every observed /clock/tick and pushes
+  │   │                          scope_buffer slots as binary frames.
   │   ├── routing.rs            RoutingTable + peek_osc_address —
   │   │                          config.json `routes` ⟹ N targets
   │   └── static_assets.rs      SPA fallback + dist resolution
@@ -134,27 +171,41 @@ ref-counts and tears down on last release. The typical flow: add
 a synth in the Synths panel, read its bus off the card, type that
 bus into the Scopes / Recordings panel.
 
-Every OSC command flows: main thread (encode) → worker (forward bytes)
-→ WebSocket → bridge → **route table prefix-match** → UDP → scsynth
-or sclang+SuperDirt. Every reply flows the inverse: target → UDP →
-bridge → WS → worker (decode, mux `/clock/tick`, intercept subscribed
-`/b_setn`) → main thread (plain `{ address, args }` POJOs via
-structured clone, or `bufferChunk` events with zero-copy
-`Float32Array`). The bridge picks the route socket by peeking the
-OSC address against `config.json -> routes` (`/dirt → 57120` is the
-SuperDirt route; everything else falls through to the default
-target = `scsynth` config field).
+Every OSC command flows: main thread (encode) → worker (forward
+bytes via the main `/ws`) → bridge → **route table prefix-match**
+→ UDP → scsynth or sclang+SuperDirt. Every reply flows the
+inverse: target → UDP → bridge → WS → worker (decode, mux
+`/clock/tick`) → main thread as plain `{ address, args }` POJOs
+via structured clone. The bridge picks the route socket by
+peeking the OSC address against `config.json -> routes`
+(`/dirt → 57120` is the SuperDirt route; `/clock`, `/scope` →
+57120 too; everything else falls through to the default target
+= `scsynth` config field).
 
-The buffer-data path is special: on each `/clock/tick` the worker
-fires `/b_getn` for every subscribed bufferId (wrapped in an
-`OSC.Bundle` with `timetag = Date.now() + READ_DELAY_MS` so
-scsynth's scheduler holds the read past the kr-vs-ar slop
-between `Impulse.kr` and `Phasor.ar`); the matching `/b_setn`
-replies are intercepted in the worker, slotted into the per-
-buffer `reorderBuffer`, and emitted in tick order as `bufferChunk`
-events. `ScopeView` runs an RAF loop that reads the latest chunk
-from a ref and draws the waveform — data rate (48 Hz) and render
-rate (60+ Hz) are intentionally decoupled.
+The buffer-data path is separate from OSC. Phase 31 retired
+`/b_getn` entirely: tap SynthDefs write via
+`ScopeOut2.ar(sigs, scopeNum, chunkSize, chunkSize)` into one
+of scsynth's 128 SHM scope buffers (allocated by sclang via
+`s.scopeBufferAllocator`). The bridge mmaps scsynth's shared
+memory once per session (`Session::ensure_scope_shm`) and
+opens a dedicated `/ws/scope` WebSocket per
+`BufferSubscription`. On every observed `/clock/tick` the
+WS's handler polls `read_scope_slot(scopeNum)` and pushes
+the slot as a 10-byte-header binary frame to the worker, which
+posts a zero-copy `Float32Array` `bufferChunk` event to main.
+`ScopeView` runs an RAF loop that reads the latest chunk from
+a ref and draws — data rate (~47 Hz at default config) and
+render rate (60+ Hz) are intentionally decoupled.
+
+The sequencer-emission path is also separate. Phase 32 moved
+the pump from a main-thread `setInterval` (clamped to ~1 Hz on
+backgrounded tabs) into the worker. `SequencerController` posts
+`sequencerStart` + bank/clock snapshots; the worker runs an
+unthrottled `setInterval(25 ms)`, encodes `/dirt/play` bundles
+with `tickToTimetag`-derived timetags, and ships them through
+`transport.send()` directly (no postMessage hop for OSC bytes).
+`stepFired` events go back to main for the playhead UI +
+chain-mode auto-advance.
 
 ## Workspace layout
 
@@ -413,16 +464,34 @@ When working on a phase:
    `plan.md` of the moved content, and (if relevant) update
    the "Current phase progress" line below.
 
-Current phase progress: **Phase 32 — Worker-Side Sequencer
-Pump** is in flight (see `plan.md`). Goal: move the sequencer's
-`setInterval(25 ms)` pump off the main thread (where browser
-tab throttling clamps it to ~1 Hz when backgrounded) into the
-existing OSC worker. `SequencerController` keeps its public
-API and reactive stores; the timing-critical work hops behind
-`postMessage` into a new `sequencerWorker.ts` module folded
-into the existing worker context (so it can call
-`transport.send()` directly without a second postMessage hop).
-Sub-phases 32a–d. No backend changes.
+Current phase progress: **No phase currently in flight.** The
+last three landed (most recent first):
+
+**Phase 32 shipped — Worker-Side Sequencer Pump.** Moved the
+sequencer's `setInterval(25 ms)` pump off the main thread
+(where Chromium clamps it to ~1 Hz on backgrounded tabs) into
+the existing OSC worker. `SequencerController` keeps its full
+public API and reactive stores; the timing-critical work hops
+behind `postMessage` into a new `src/workers/sequencerWorker.ts`
+module folded into the existing worker context, so it can call
+`transport.send()` directly without a second postMessage hop.
+32a added the protocol surface (`sequencerStart`/`Stop`/
+`BankUpdate`/`ClockUpdate`/`PauseUpdate` MainToWorker;
+`stepFired`/`cycleBoundary` WorkerToMain) + a stub handler.
+32b ported `pump()` + `tickToTimetag` math + `/dirt/play`
+encoding from `src/sequencer/scheduler.ts` into the worker;
+`SequencerController.play()` switched from `setInterval` to
+`client.startSequencer(bankSnapshot, clockSnapshot,
+isGroupPaused)` + bank/clock/group store subscriptions that
+post fresh snapshots on every reactive fire. 32c wired
+`stepFired` events back to drive the playhead store + chain-
+mode auto-advance on main (no manual debouncing — React 18
+batching + `Object.is` short-circuit handle the refocus
+burst); deleted `src/sequencer/scheduler.ts` (zero remaining
+importers) + the now-orphan `DirtClientLike` interface. 32d
+bootstrapped vitest at the root + 8 unit tests for the worker
+pump; 60-second backgrounded-tab manual validation passed.
+See `docs/history.md` Phase 32 for the full write-up.
 
 **Phase 31 shipped — SHM Buffer Ingestion (scopes +
 recordings).** Replaced the OSC `/b_getn` data path with a
@@ -652,10 +721,12 @@ Observations:
   `chunkSize = 1024` survives the filter.
 - The buffer size (`2 × chunkSize × channels × 4 bytes`) is
   sampleRate-agnostic; only `chunkSize` determines memory.
-- Total `/b_setn` traffic is also sampleRate-agnostic per scope —
+- Total scope-WS traffic is also sampleRate-agnostic per scope —
   `chunkSize × channels × 4 bytes` per tick at `sampleRate /
   chunkSize` ticks per second is `sampleRate × channels × 4`
-  bytes/sec regardless of which factor pair you pick.
+  bytes/sec regardless of which factor pair you pick. Pre-31
+  this same observation applied to `/b_setn` UDP traffic;
+  post-31 it's binary frames over the per-scope WebSocket.
 - Power-of-2 `chunkSize` keeps recording reads page-aligned
   (`1024 × 4 = 4096 bytes = 1 page`) and FFT-ready at any
   sampleRate (Future Improvement #1). The defaults (`64, 128,
@@ -681,20 +752,13 @@ Observations:
   pick between `int32` and `float32` tags. Whole-number floats
   go as int; that matches sclang and scsynth accepts it.
 - **`Impulse.kr(freq, phase=0)` fires at t=0**, not at
-  `t = 1/freq`. So tick `N` corresponds to audio frame
-  `(N-1) × samplesPerTick`, *not* `N × samplesPerTick`. The
-  `completedHalf` parity in `oscWorker.fireReads` is therefore
-  `tickIndex % 2` — cost us a debugging session in Phase 8 to
-  realise the original derivation was off by one. If you see
-  half-cycle phase jumps in the scope, check this first.
-- **kr/ar timing slop between `Impulse.kr` and `Phasor.ar`** —
-  the tick fires kr-quantised (≤ 64 ar samples = ~1.3 ms of
-  jitter at sr 48 k); the scope's `writeIdx` advances against an
-  exactly-aligned `Phasor.ar` wrap. Bare `/b_getn` at tick time
-  can clip the tail of the half mid-write. Mitigated by wrapping
-  every `/b_getn` in an `OSC.Bundle` with `timetag = Date.now() +
-  READ_DELAY_MS` (5 ms) — see `src/config/clockConfig.ts` for the
-  constant.
+  `t = 1/freq`. Pre-31 this drove a `completedHalf` parity
+  formula in the worker's `/b_getn` loop. Phase 31 retired
+  `/b_getn` entirely and Phase 30 moved the clock to sclang,
+  so the parity formula is gone — but the `Impulse.kr` t=0
+  semantics still apply if you write a new clock-adjacent
+  SynthDef. Tick `N` corresponds to audio frame
+  `(N-1) × samplesPerTick`, not `N × samplesPerTick`.
 - **scsynth's OSC clock vs. wall clock** — scsynth calibrates
   its OSC scheduling clock against the audio callback, which
   drifts 10–20 ms from `Date.now()` in practice. Bundles whose
@@ -707,41 +771,23 @@ Observations:
   `$DOWNLOAD`, `$AUDIO`, `$DESKTOP`, `$HOME`. If a save target
   outside those roots starts failing in Tauri, extend the scope
   list there — not by removing the gate altogether.
-- **Tap synths must read `clockBus`, not a local `Phasor.ar`** —
-  the worker's `completedHalf = tickIndex % 2` parity formula is
-  only valid when the buffer's half boundaries align with global
-  tick parity. A clockBus-driven `writeIdx` inherits that
-  alignment for free (clockBus has been advancing since session
-  start). A local `Phasor.ar` started by `/s_new` has its own zero
-  point — depending on whether the start tick happened to be even
-  or odd, every read lands on the wrong half and `/b_setn` replies
-  echo back with offsets that don't match `pendingRead`. Cost us
-  a Phase 12 debug cycle. The unified `bufferTapSynthDef` follows
-  the clockBus-divide-mod pattern; any new tap synth should too.
-- **Tick-driven `/b_getn` needs offset-keyed pending tracking, not
-  a single slot** — scsynth's `/b_setn` sometimes round-trips in
-  >`tickIntervalMs`, especially under load. With a single
-  `pendingRead` slot, the next tick's read overwrites the
-  previous tick's pending and the late reply mismatches the
-  current offset. The Phase 17 worker keeps
-  `pendingByOffset: Map<offset, PendingRead>` (max two entries —
-  one per ring half) so a late reply at offset 0 can land while a
-  fresh read at offset N is in flight. A `reorderBuffer:
-  Map<tickIndex, ...>` then drains chunks in tick order so
-  delivery stays linear regardless of arrival order. Applies
-  uniformly to every `BufferSubscription` after Phase 17 — scopes
-  and recordings, plus any future analyzers.
+- **`ScopeOut2.ar`, not `.kr`, in the tap SynthDef.** Phase 31's
+  `bufferTapSynthDef` writes via
+  `ScopeOut2.ar(sigs, scopeNum, chunkSize, chunkSize)`. `.kr`
+  writes one sample per control block — at chunkSize 1024 / sr
+  48 k that's a push rate of ~0.7 Hz, so a slot fills every ~1.4 s
+  and scopes appear frozen. `.ar` writes one sample per audio
+  frame, completing a slot per tick. Cost a debug cycle in
+  Phase 31; the SynthDef source has an inline reminder.
 - **`chunkSize` is fixed for the session (Phase 30) but tap-synth
-  SynthDef cache keys still must include it.** Pre-Phase-30 the
-  user could change chunkSize via a header dropdown, which
-  triggered an in-place re-init. Phase 30 removed that path —
-  chunkSize comes from sclang's `SC_APP_CLOCK_CHUNK_SIZE` env var
-  and is constant for the session. But `compileBufferTapSynthDef`'s
-  cache key still must be `(channels, chunkSize)` — sclang restarts
-  with a different chunkSize would otherwise reuse stale bytes from
-  a previous browser session if HMR keeps the module live. Old
-  SynthDefs sit on scsynth until the parent group is freed;
-  harmless, just wasted slots.
+  SynthDef cache keys still must include it.** Phase 31's
+  `bufferTapSynthDef` bakes `chunkSize` into ScopeOut2's
+  `maxFrames` / `scopeFrames` parameters. Cache key
+  `(channels, chunkSize)` — sclang restarts with a different
+  chunkSize would otherwise reuse stale bytes from a previous
+  browser session if HMR keeps the module live. Old SynthDefs
+  sit on scsynth until the parent group is freed; harmless, just
+  wasted slots.
 - **The frontend never issues `/notify` (Phase 29).** Moved to
   `Session::create` on the bridge. `setupDashboard` consumes the
   supplied `clientId` / `parentGroupId` / `sampleRate` from
@@ -763,19 +809,24 @@ Observations:
   never touch the bus allocator. So the allocator is effectively
   synth-exclusive, and bus collisions across consumer types are
   impossible by construction.
-- **Buffer refcount lifecycle.** `BufferManager.acquire(spec)` is
-  ref-counted by `(inputBus, channels, chunkSize)`. First acquire
-  triggers `/b_alloc` + `/s_new` + worker subscribe; subsequent
-  acquires on the same spec just bump the count. Each consumer
-  must call `handle.release()` exactly once when done — the
-  per-acquire handle wrapper guards against double-release with
-  an internal `released` flag, so calling `release()` more than
-  once is a silent no-op (refcount stays correct). Last release
-  → `unsubscribeBuffer` → `/n_free` + `/b_free`. The
-  `BufferManager.snapshot` reactive store reflects the live
-  `{key, spec, refcount, bufnum, nodeId, bufferId}` set on every
-  acquire/release; tap into it from a future `BuffersPanel` or
-  inspect via the dev-mode `__sc*` globals to diagnose leaks.
+- **Buffer refcount lifecycle (Phase 31 SHM flow).**
+  `BufferManager.acquire(spec)` is ref-counted by
+  `(inputBus, channels, chunkSize)`. First acquire triggers
+  `/scope/allocate` (sclang returns a free scope-buffer index
+  0..127) + `/s_new bufferTap … scopeNum=<idx>` + worker
+  `subscribeBuffer` (which opens a dedicated `/ws/scope` WS to
+  the bridge). Subsequent acquires on the same spec just bump
+  the count. Each consumer must call `handle.release()` exactly
+  once — the per-acquire handle wrapper guards against
+  double-release with an internal `released` flag, so calling
+  more than once is a silent no-op. Last release →
+  `unsubscribeBuffer` (closes the per-scope WS) → `/n_free`
+  the tap → fire-and-forget `/scope/free <idx>` (no reply
+  expected). The `BufferManager.snapshot` reactive store
+  reflects the live `{key, spec, refcount, scopeNum, nodeId,
+  bufferId}` set on every acquire/release; tap into it from a
+  future `BuffersPanel` or inspect via the dev-mode `__sc*`
+  globals to diagnose leaks.
 - **`bufferManager.clear()` warns on a non-empty map** —
   refcount-leak canary. By the time `teardownServerState` runs
   it, every consumer-side manager (`recordingManager`,
@@ -878,3 +929,40 @@ Observations:
   enum `status` triggers a TS error
   (`'status' is callable. No constituent of type
   'ConnectionStatus' is callable`).
+- **Worker `setInterval` is unthrottled, but the worker→main
+  message channel still backs up under tab throttling
+  (Phase 32).** When the tab is backgrounded the worker keeps
+  pumping (audio is correct), but every `stepFired` posted
+  back to main waits in the queue until main is unthrottled.
+  On refocus, hundreds of events flush at once. We rely on
+  React 18 batching + `Object.is` short-circuit on the
+  `currentStep` store; if a future React change drops
+  batching for postMessage events the playhead could thrash.
+  No manual debounce in the controller — keep it that way
+  unless it becomes a real problem.
+- **Bank snapshot must be structured-clone-friendly
+  (Phase 32).** `SequencerController` posts the bank shape
+  `{ slots: Pattern[], activeIndex, chain }` to the worker
+  on every reactive fire. All current fields are POJOs.
+  Adding a class instance (Date, Set, Map, anything with a
+  prototype carrying methods) would have its prototype
+  stripped by structured clone — the worker would see a
+  bare data object and break silently. Audit the bank
+  shape on every change.
+- **`SequencerController` constructor signature changed in
+  Phase 32.** Lost `dirtClient` (the worker emits OSC now)
+  + the `isGroupPaused: () => boolean` callback (replaced by
+  `groupState: ReadonlyStore<GroupState>` so the controller
+  subscribes rather than polls). Gained `client:
+  WorkerClient`. Any future fake controller written for
+  tests must match the new shape.
+- **`src/sequencer/scheduler.ts` is gone (Phase 32c).** The
+  pump function, `tickToTimetag` math, lookahead constants
+  (`INITIAL_LOOKAHEAD_TICKS`, `LOOKAHEAD_HORIZON_TICKS`,
+  `SUPERDIRT_SAFETY_LOOKAHEAD_MS = 200`) all live in
+  `src/workers/sequencerWorker.ts` now. If you need to read
+  the canonical pump implementation, look there. The 200 ms
+  SuperDirt safety shift is the load-bearing piece — it keeps
+  `bundle_timetag - sclang_now` positive so SuperDirt's
+  `playFunc` schedules `/s_new` bundles in scsynth's audio
+  future, clear of audio-clock drift.
