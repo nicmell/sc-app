@@ -8,8 +8,6 @@
  * Phase 27 plan for the rationale.
  */
 
-import type { Timetag } from '@sc-app/server-commands';
-
 /** Pattern length in steps. Power-of-two only — keeps the grid
  *  visually clean and aligns with the conventional 4/4 bar
  *  structure (subdivision 4 = 1/16ths). */
@@ -160,11 +158,6 @@ export interface ClockLike {
   readonly chunkSize: number;
   /** scsynth's nominal sample rate from `/clock/info`. */
   readonly sampleRate: number;
-}
-
-/** What the scheduler needs from a `DirtClient`. */
-export interface DirtClientLike {
-  playAtTimetag(event: Record<string, string | number>, timetag: Timetag): void;
 }
 
 /** Helpers — building blocks for both the controller and the

@@ -50,6 +50,7 @@ import type { WorkerClient } from '@/server/WorkerClient';
 import type {
   SequencerBankSnapshot,
   SequencerClockSnapshot,
+  StepFired,
 } from '@/server/workerProtocol';
 import { createStore, type ReadonlyStore } from '@/util/reactiveStore';
 
@@ -110,6 +111,14 @@ export class SequencerController {
   private offIndex: (() => void) | null = null;
   private offChain: (() => void) | null = null;
   private offGroupState: (() => void) | null = null;
+  private offStepFired: (() => void) | null = null;
+
+  /** Phase 32c — chain-mode bookkeeping driven by `stepFired`
+   *  events from the worker. Increments on each stepFired; reset
+   *  on Play and on each chain advance. Compared against
+   *  `entry.cycles × pattern.length` to decide when to switch
+   *  chain entries. */
+  private chainElapsedSteps = 0;
 
   private disposed = false;
 
@@ -335,8 +344,8 @@ export class SequencerController {
     }
 
     // If chain mode is engaged at play time, snap activeIndex to
-    // the first chain entry. (Auto-advance through chain entries
-    // is gated on Phase 32c's stepFired wiring.)
+    // the first chain entry. Auto-advance through chain entries
+    // is driven by the `stepFired` handler below.
     const chain = this.bank.chain.get();
     if (chain.enabled && chain.steps.length > 0) {
       this._chainPlaybackIndex.set(0);
@@ -345,6 +354,7 @@ export class SequencerController {
       this._chainPlaybackIndex.set(null);
     }
 
+    this.chainElapsedSteps = 0;
     this._transport.set({ isPlaying: true, currentStep: -1 });
 
     this.client.startSequencer(
@@ -363,6 +373,9 @@ export class SequencerController {
     this.offGroupState = this.groupState.subscribe((s) => {
       this.client.setSequencerPaused(s === 'paused');
     });
+    this.offStepFired = this.client.onStepFired((step) =>
+      this.handleStepFired(step),
+    );
   }
 
   stop(): void {
@@ -420,6 +433,57 @@ export class SequencerController {
     this.offChain = null;
     this.offGroupState?.();
     this.offGroupState = null;
+    this.offStepFired?.();
+    this.offStepFired = null;
+  }
+
+  /** Phase 32c — `stepFired` event from the worker pump. Updates
+   *  the playhead store + drives chain-mode auto-advance.
+   *
+   *  Refocus burst note: when the tab refocuses after being
+   *  backgrounded, the worker's queued `postMessage`s drain in
+   *  rapid succession. React 18 batches the resulting state
+   *  updates, so the visible playhead snaps to the latest in
+   *  one render. We don't manually debounce — the cost of the
+   *  state-update calls themselves is negligible (a 60-second
+   *  burst at 8 steps/sec is ~480 events; each `set()` calls
+   *  `Object.is` and only the last differing one schedules a
+   *  re-render). */
+  private handleStepFired(step: StepFired): void {
+    if (this.disposed) return;
+    if (!this._transport.get().isPlaying) return;
+
+    this._transport.update((s) => ({ ...s, currentStep: step.stepIndex }));
+
+    const idx = this._chainPlaybackIndex.get();
+    if (idx === null) return;
+    const chain = this.bank.chain.get();
+    if (idx < 0 || idx >= chain.steps.length) return;
+
+    this.chainElapsedSteps += 1;
+    const entry = chain.steps[idx];
+    const length = this.bank.activePattern.get().length;
+    const target = entry.cycles * length;
+    if (this.chainElapsedSteps < target) return;
+
+    let nextIdx = idx + 1;
+    if (nextIdx >= chain.steps.length) {
+      if (chain.loop) {
+        nextIdx = 0;
+      } else {
+        // End of chain, no loop — stop. stop() resets
+        // _chainPlaybackIndex + chainElapsedSteps via play()'s
+        // next start (chainElapsedSteps reset is also done here).
+        this.stop();
+        return;
+      }
+    }
+    this.chainElapsedSteps = 0;
+    this._chainPlaybackIndex.set(nextIdx);
+    // bank.selectIndex fires the activeIndex store ⇒ our
+    // existing offIndex subscription posts the new bank snapshot
+    // to the worker. No direct postSnapshot call needed.
+    this.bank.selectIndex(chain.steps[nextIdx].slotIndex);
   }
 }
 
