@@ -26,6 +26,13 @@
 // a client cannot touch it. chunkSize comes from
 // `SC_APP_CLOCK_CHUNK_SIZE` (default 1024).
 //
+// Phase 31: scope buffer index allocation lives here too via
+// `s.scopeBufferAllocator` (128-slot StackNumberAllocator). The
+// frontend asks for an index via `/scope/allocate` before /s_new'ing
+// a tap synth that ScopeOut2's into the SHM scope-buffer pool;
+// the bridge mmaps that pool and reads slots directly. See plan.md
+// Phase 31 for the full design.
+//
 // Two things this file's structure reflects (read CLAUDE.md's
 // "SuperDirt launch gotchas" section for full context):
 //
@@ -191,6 +198,53 @@ s.doWhenBooted({
         );
     }, '/clock/hello');
     "[sc-app] /clock/hello responder installed".postln;
+
+    // ── Phase 31: scope buffer allocation responders ────────────────
+    // The bridge owns the SHM read path for scope/recording data
+    // (Phase 31). Frontend asks sclang for a scope buffer index
+    // before /s_new'ing a tap synth that ScopeOut2's into it.
+    //
+    // sclang's `s.scopeBufferAllocator` is a StackNumberAllocator
+    // with range 0..127 — 128 scope buffer slots in scsynth's SHM
+    // segment. Each ScopeOut2 call uses one slot (multi-channel
+    // ScopeOut2 stores all channels interleaved in one slot).
+    //
+    // /scope/hello → /scope/info: informational (slot count, plus
+    //   any future layout knobs the bridge needs).
+    // /scope/allocate → /scope/allocated <idx>: pulls the next
+    //   free index. Replies on /scope/allocateFailed with an
+    //   error string when the allocator is exhausted.
+    // /scope/free <idx>: returns the index to the free list. No
+    //   reply (fire-and-forget; mirrors how SC's ScopeBuffer.free
+    //   itself doesn't round-trip).
+    OSCdef(\scAppScopeHello, { |msg, time, addr|
+        addr.sendMsg('/scope/info',
+            "numScopeBuffers", 128
+        );
+    }, '/scope/hello');
+    "[sc-app] /scope/hello responder installed".postln;
+
+    OSCdef(\scAppScopeAllocate, { |msg, time, addr|
+        var idx = s.scopeBufferAllocator.alloc;
+        if(idx.notNil) {
+            addr.sendMsg('/scope/allocated', idx);
+        } {
+            addr.sendMsg('/scope/allocateFailed',
+                "scope buffer allocator exhausted (max 128)");
+        };
+    }, '/scope/allocate');
+    "[sc-app] /scope/allocate responder installed".postln;
+
+    OSCdef(\scAppScopeFree, { |msg, time, addr|
+        var idx = msg[1];
+        if(idx.notNil and: { idx.isNumber }) {
+            s.scopeBufferAllocator.free(idx);
+        };
+        // No reply; fire-and-forget. If the index is bogus the
+        // allocator silently no-ops (StackNumberAllocator.free
+        // just appends to its free list without validation).
+    }, '/scope/free');
+    "[sc-app] /scope/free responder installed".postln;
 }, 50, {
     "[sc-app] scsynth not reachable on 127.0.0.1:57110 after 10s.\n  Start it first: yarn scsynth-only (dev) or your systemd unit (prod).".error;
 });

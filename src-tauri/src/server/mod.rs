@@ -111,7 +111,11 @@ pub async fn serve_on(
         .route(
             "/api/session/{id}",
             get(api::get_session).delete(api::delete_session),
-        );
+        )
+        .route("/api/scope/probe", get(api::get_scope_probe))
+        .route("/api/scope/layout", get(api::get_scope_layout))
+        .route("/api/scope/debug", get(api::get_scope_debug))
+        .route("/api/scope/headers", get(api::get_scope_headers));
 
     if let Some(dist) = dist {
         tracing::info!("  static → {}", dist.display());

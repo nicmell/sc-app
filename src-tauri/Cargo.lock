@@ -3211,6 +3211,7 @@ dependencies = [
  "axum",
  "clap",
  "futures-util",
+ "libc",
  "rosc",
  "serde",
  "serde_json",

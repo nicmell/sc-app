@@ -27,6 +27,7 @@ use uuid::Uuid;
 
 use super::session::{Session, SessionInfo};
 use super::AppState;
+use crate::scope_shm;
 
 /// JSON error envelope. One field, one shape — the frontend
 /// reads `error` and renders it inline.
@@ -103,4 +104,52 @@ pub async fn delete_session(
     session.cleanup().await;
     let info: SessionInfo = session.info();
     Json(info).into_response()
+}
+
+/// `GET /api/scope/probe` — Phase 31: report whether scsynth's SHM
+/// scope-buffer pool is reachable from the bridge. Frontend uses
+/// this once at session attach to decide whether the SHM-based
+/// scope/recording path is usable on this deployment.
+///
+/// "Available" means the SHM file exists at the expected path
+/// (platform-derived from the scsynth port) and we successfully
+/// mmap'd it. Doesn't yet verify the scope_buffer array is
+/// findable inside the segment — that probe happens lazily on
+/// first scope acquire (see `scope_shm::find_scope_buffer_array`).
+pub async fn get_scope_probe(State(state): State<AppState>) -> Response {
+    let port = state.routes.default_target().port();
+    let result = scope_shm::probe(port);
+    Json(result).into_response()
+}
+
+/// `GET /api/scope/layout` — Phase 31b verification: open the SHM
+/// segment AND run the scope_buffer-array heuristic scan, reporting
+/// inferred geometry (`array_start`, `stride`, `count`, segment
+/// size). Diagnostic-only — the bridge's read path uses the same
+/// `find_scope_buffer_array` internally; this endpoint just
+/// surfaces it for offline verification.
+pub async fn get_scope_layout(State(state): State<AppState>) -> Response {
+    let port = state.routes.default_target().port();
+    let result = scope_shm::probe_layout(port);
+    Json(result).into_response()
+}
+
+/// `GET /api/scope/debug` — Phase 31b diagnostic dump for when the
+/// heuristic scan in `find_scope_buffer_array` fails. Reports raw
+/// match positions, stride histogram, contiguous runs at each
+/// candidate stride, and a hex dump of the segment header.
+/// Disposable — remove or gate behind a flag once 31b is settled.
+pub async fn get_scope_debug(State(state): State<AppState>) -> Response {
+    let port = state.routes.default_target().port();
+    let result = scope_shm::debug_dump(port);
+    Json(result).into_response()
+}
+
+/// `GET /api/scope/headers` — Phase 31b: read every scope_buffer's
+/// header fields after layout resolution. Confirms the
+/// vector-resolved offsets all point at valid scope_buffer structs.
+pub async fn get_scope_headers(State(state): State<AppState>) -> Response {
+    let port = state.routes.default_target().port();
+    let result = scope_shm::dump_all_headers(port);
+    Json(result).into_response()
 }

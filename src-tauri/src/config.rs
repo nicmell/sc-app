@@ -123,11 +123,11 @@ pub fn starter() -> &'static Config {
         port: Some(DEFAULT_PORT),
         scsynth: Some(DEFAULT_SCSYNTH.to_string()),
         log_dir: None,
-        // Phase 26 seeded `/dirt`; Phase 30 adds `/clock` to the
-        // same sclang process. Both prefixes route to DEFAULT_DIRT
-        // because the SuperDirt startup script owns both responders
-        // (`OSCdef(\scAppListSamples)` for /dirt/listSamples and
-        // `OSCdef(\scAppClockHello)` for /clock/hello).
+        // Phase 26 seeded `/dirt`; Phase 30 added `/clock`; Phase 31
+        // adds `/scope`. All three prefixes route to DEFAULT_DIRT
+        // because the SuperDirt startup script owns the responders
+        // for each (`/dirt/listSamples`, `/clock/hello`,
+        // `/scope/{hello,allocate,free}`).
         routes: vec![
             Route {
                 prefix: "/dirt".into(),
@@ -135,6 +135,10 @@ pub fn starter() -> &'static Config {
             },
             Route {
                 prefix: "/clock".into(),
+                target: DEFAULT_DIRT.into(),
+            },
+            Route {
+                prefix: "/scope".into(),
                 target: DEFAULT_DIRT.into(),
             },
         ],
@@ -203,16 +207,17 @@ mod tests {
     #[test]
     fn starter_serializes_to_clean_json() {
         let body = serde_json::to_string_pretty(starter()).unwrap();
-        // Should have port, scsynth, and both SuperDirt-process
-        // routes (`/dirt` from Phase 26, `/clock` from Phase 30 —
-        // both responders live in scripts/sc-app-superdirt-startup.scd
-        // so first-launch GUI / tauri-dev sessions route correctly
-        // without manual config editing). log_dir is None and
-        // serializes-skipped.
+        // Should have port, scsynth, and the three SuperDirt-process
+        // routes (`/dirt` from Phase 26, `/clock` from Phase 30,
+        // `/scope` from Phase 31 — all three OSCdef responders live
+        // in scripts/sc-app-superdirt-startup.scd so first-launch
+        // GUI / tauri-dev sessions route correctly without manual
+        // config editing). log_dir is None and serializes-skipped.
         assert!(body.contains("\"port\": 3000"));
         assert!(body.contains("\"scsynth\": \"127.0.0.1:57110\""));
         assert!(body.contains("\"prefix\": \"/dirt\""));
         assert!(body.contains("\"prefix\": \"/clock\""));
+        assert!(body.contains("\"prefix\": \"/scope\""));
         assert!(body.contains("\"target\": \"127.0.0.1:57120\""));
         assert!(!body.contains("log_dir"));
     }
