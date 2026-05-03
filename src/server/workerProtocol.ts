@@ -184,7 +184,9 @@ export type MainToWorker =
   | { type: 'sequencerStop' }
   | { type: 'sequencerBankUpdate'; bank: SequencerBankSnapshot }
   | { type: 'sequencerClockUpdate'; clock: SequencerClockSnapshot }
-  | { type: 'sequencerPauseUpdate'; isGroupPaused: boolean };
+  | { type: 'sequencerPauseUpdate'; isGroupPaused: boolean }
+  | { type: 'clockWatchdogStart'; tickIntervalMs: number }
+  | { type: 'clockWatchdogStop' };
 
 export type WorkerToMain =
   | { type: 'ready' }
@@ -192,6 +194,7 @@ export type WorkerToMain =
   | { type: 'reply'; reply: OscReply }
   | { type: 'oscError'; error: OscError }
   | { type: 'clockTick'; tick: ClockTick }
+  | { type: 'clockFreshness'; fresh: boolean }
   | { type: 'bufferChunk'; chunk: BufferChunk }
   | { type: 'stepFired'; step: StepFired }
   | { type: 'cycleBoundary'; boundary: CycleBoundary }

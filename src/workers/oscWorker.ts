@@ -47,6 +47,12 @@ import {
   handleSequencerStop,
   setSequencerSender,
 } from './sequencerWorker';
+import {
+  disconnectClockWatchdog,
+  recordClockTick,
+  startClockWatchdog,
+  stopClockWatchdog,
+} from './clockWatchdog';
 
 interface WorkerPost {
   postMessage(msg: WorkerToMain, transfer?: Transferable[]): void;
@@ -176,11 +182,12 @@ function closeAllScopeWs(): void {
 
 function emitReply(packet: OscPacket): void {
   if (isMessage(packet)) {
-    // Clock tick intercept: emit a typed clockTick event for the
-    // ClockController's freshness watchdog. SendReply args are
-    // `nodeID replyID value0 …`, so `args[2]` is the PulseCount
-    // value (the tick index).
+    // Clock tick intercept: emit a typed clockTick event +
+    // record the tick for the worker-side freshness watchdog
+    // (Phase 33b). SendReply args are `nodeID replyID value0 …`,
+    // so `args[2]` is the PulseCount value (the tick index).
     if (packet.address === CLOCK_TICK_ADDRESS) {
+      recordClockTick();
       const tickIndex = (packet.args[2] as number) | 0;
       post({
         type: 'clockTick',
@@ -294,6 +301,7 @@ setWorkerMessageHandler(async (msg: MainToWorker) => {
       closeAllScopeWs();
       handleSequencerDisconnect();
       setSequencerSender(null);
+      disconnectClockWatchdog();
       mainWsUrl = null;
       if (transport) {
         await transport.close();
@@ -344,6 +352,16 @@ setWorkerMessageHandler(async (msg: MainToWorker) => {
 
     case 'sequencerPauseUpdate': {
       handleSequencerPauseUpdate(msg.isGroupPaused);
+      return;
+    }
+
+    case 'clockWatchdogStart': {
+      startClockWatchdog(msg.tickIntervalMs);
+      return;
+    }
+
+    case 'clockWatchdogStop': {
+      stopClockWatchdog();
       return;
     }
   }

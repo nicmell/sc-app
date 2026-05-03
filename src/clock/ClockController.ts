@@ -19,6 +19,17 @@
  * the controller is detached (no `/clock/tick` for > the watchdog window),
  * we surface `stopped` so the UI doesn't lie about a silent server.
  *
+ * **Phase 33b: freshness detection lives in the worker.** Pre-33 a
+ * main-thread `setInterval` re-evaluated freshness every
+ * `tickInterval / 2` ms. Chromium throttling clamped that to
+ * once-per-second/minute on backgrounded tabs while `clockTick`
+ * postMessages from the worker piled up — the watchdog read a
+ * stale `lastSignalAt` and falsely flipped the UI to 'paused'.
+ * 33b moves the watchdog into `src/workers/clockWatchdog.ts`,
+ * where ticks arrive without queueing and `setInterval` runs
+ * unthrottled. The worker only posts `clockFreshness` events on
+ * transitions; this controller consumes them as the truth.
+ *
  * **Group ordering invariant.** Tap synths in the parent group must
  * be `/s_new`'d with `AddToTail` so scsynth processes them after
  * the shared clock at root group head — otherwise they'd read the
@@ -47,12 +58,6 @@ import type { ClockTick } from '@/server/workerProtocol';
 
 export type ClockState = 'stopped' | 'running' | 'paused';
 
-/** Grace window applied to the freshness check before any tick has
- *  been seen — covers scsynth scheduling latency right after attach.
- *  Comfortably larger than the 2 × tickInterval watchdog that takes
- *  over once ticks are flowing. */
-const TICK_STARTUP_GRACE_MS = 500;
-
 /** /clock/hello round-trip default timeout. 3 s is generous —
  *  sclang's responder is synchronous, so the actual round-trip is
  *  one local UDP hop in each direction (sub-ms in practice). */
@@ -78,11 +83,12 @@ export class ClockController {
   private _derived: ClockDerived | null = null;
   private offTick: (() => void) | null = null;
   private offGroupState: (() => void) | null = null;
-  private watchdog: number | null = null;
+  private offClockFreshness: (() => void) | null = null;
   private attached = false;
-  /** Most recent "we expect ticks to be flowing" moment — the latest
-   *  of `attach()` or any incoming tick. Null while detached. */
-  private lastSignalAt: number | null = null;
+  /** Phase 33b: freshness state, populated by `clockFreshness`
+   *  events from the worker watchdog. The worker posts an initial
+   *  `true` on `startClockWatchdog`, then only on transitions. */
+  private freshTickObserved = false;
   /** Main-thread `Date.now()` anchored at the first tick's arrival,
    *  minus the tick's own index-in-time. Used by `tickToTimetag` to
    *  convert server tick indices into NTP timetags. Null until the
@@ -186,8 +192,13 @@ export class ClockController {
 
     this.offTick = this.client.onTick((tick) => this.handleTick(tick));
     this.offGroupState = this.group.state.subscribe((s) => this.recompute(s));
-    this.startWatchdog();
-    this.lastSignalAt = performance.now();
+    // Phase 33b: subscribe BEFORE starting the worker watchdog so
+    // we don't miss the initial `fresh: true` event the worker
+    // posts on `startClockWatchdog`.
+    this.offClockFreshness = this.client.onClockFreshness((fresh) =>
+      this.handleFreshness(fresh),
+    );
+    this.client.startClockWatchdog(this._derived.tickIntervalMs);
     this.attached = true;
     this.recompute(this.group.state.get());
 
@@ -198,13 +209,17 @@ export class ClockController {
    *  running on sclang's side — we just stop observing it.
    *  Idempotent. */
   detach(): void {
-    this.stopWatchdog();
+    if (this.attached) {
+      this.client.stopClockWatchdog();
+    }
     this.offTick?.();
     this.offTick = null;
     this.offGroupState?.();
     this.offGroupState = null;
+    this.offClockFreshness?.();
+    this.offClockFreshness = null;
     this.attached = false;
-    this.lastSignalAt = null;
+    this.freshTickObserved = false;
     this._tick0Ms = null;
     this.lastTickStore.set(null);
     this.effectiveStateStore.set('stopped');
@@ -214,13 +229,6 @@ export class ClockController {
 
   private handleTick(tick: ClockTick): void {
     this.lastTickStore.set(tick);
-    // Stamp freshness on the MAIN-thread clock, not the worker's —
-    // `tick.receivedAt` is the worker's `performance.now()`, and a
-    // worker's `performance.timeOrigin` is later than the window's,
-    // so subtracting them gives a constant origin-skew (easily
-    // 100s of ms) that would pin `isTickFresh` to false forever.
-    const nowMs = performance.now();
-    this.lastSignalAt = nowMs;
     // Anchor tick0 on the first observed tick. `Date.now()` is used
     // (not `performance.now()`) because OSC NTP timetags are aligned
     // to wall-clock epoch; `tickToTimetag(tick0Ms, N, tickRate)`
@@ -230,9 +238,17 @@ export class ClockController {
       this._tick0Ms =
         Date.now() - (tick.tickIndex * 1000) / this._derived.tickRate;
     }
-    // A fresh tick while we were showing 'paused'-due-to-silence
-    // flips us back to 'running'. Group-state-driven `paused` (real
-    // pause) stays pinned by `recompute`.
+    // Freshness is updated by the worker's `clockFreshness` event,
+    // not here — the worker calls `recordClockTick` on every
+    // `/clock/tick` decode, which is the same event that drives
+    // this listener. Avoiding a redundant `recompute` call here
+    // means we react to freshness changes only when they actually
+    // change, not every ~21 ms.
+  }
+
+  private handleFreshness(fresh: boolean): void {
+    if (this.freshTickObserved === fresh) return;
+    this.freshTickObserved = fresh;
     this.recompute(this.group.state.get());
   }
 
@@ -244,7 +260,7 @@ export class ClockController {
       next = 'stopped';
     } else if (groupState === 'paused') {
       next = 'paused';
-    } else if (this.isTickFresh()) {
+    } else if (this.freshTickObserved) {
       next = 'running';
     } else {
       // Group says running but no recent tick — surface as paused.
@@ -254,35 +270,5 @@ export class ClockController {
       next = 'paused';
     }
     this.effectiveStateStore.set(next);
-  }
-
-  private isTickFresh(): boolean {
-    if (this.lastSignalAt === null) return false;
-    if (this._derived === null) return false;
-    const ageMs = performance.now() - this.lastSignalAt;
-    // Before the first tick ever arrives, grant a startup grace so
-    // the UI doesn't immediately claim 'paused' during scsynth's
-    // scheduling latency window. Once a tick has been seen, the
-    // normal 2 × tickIntervalMs watchdog takes over.
-    const allowance = this.lastTickStore.get()
-      ? this._derived.tickIntervalMs * 2
-      : TICK_STARTUP_GRACE_MS;
-    return ageMs < allowance;
-  }
-
-  private startWatchdog(): void {
-    this.stopWatchdog();
-    if (this._derived === null) return;
-    const periodMs = Math.max(20, Math.floor(this._derived.tickIntervalMs / 2));
-    this.watchdog = window.setInterval(() => {
-      this.recompute(this.group.state.get());
-    }, periodMs);
-  }
-
-  private stopWatchdog(): void {
-    if (this.watchdog !== null) {
-      window.clearInterval(this.watchdog);
-      this.watchdog = null;
-    }
   }
 }

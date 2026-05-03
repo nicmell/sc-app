@@ -49,6 +49,7 @@ export type ReplyListener = (reply: OscReply) => void;
 export type ErrorListener = (message: string) => void;
 export type OscErrorListener = (error: OscError) => void;
 export type TickListener = (tick: ClockTick) => void;
+export type ClockFreshnessListener = (fresh: boolean) => void;
 export type BufferChunkListener = (chunk: BufferChunk) => void;
 export type StepFiredListener = (step: StepFired) => void;
 export type CycleBoundaryListener = (boundary: CycleBoundary) => void;
@@ -68,6 +69,7 @@ export class WorkerClient {
   private readonly errorListeners = new Set<ErrorListener>();
   private readonly oscErrorListeners = new Set<OscErrorListener>();
   private readonly tickListeners = new Set<TickListener>();
+  private readonly clockFreshnessListeners = new Set<ClockFreshnessListener>();
   private readonly bufferChunkListeners = new Map<
     string,
     Set<BufferChunkListener>
@@ -158,6 +160,9 @@ export class WorkerClient {
           break;
         case 'clockTick':
           for (const cb of this.tickListeners) cb(msg.tick);
+          break;
+        case 'clockFreshness':
+          for (const cb of this.clockFreshnessListeners) cb(msg.fresh);
           break;
         case 'bufferChunk': {
           const cbs = this.bufferChunkListeners.get(msg.chunk.bufferId);
@@ -258,6 +263,32 @@ export class WorkerClient {
   onTick(cb: TickListener): () => void {
     this.tickListeners.add(cb);
     return () => this.tickListeners.delete(cb) as unknown as void;
+  }
+
+  // ── Phase 33b — worker-side clock-freshness watchdog ──────────────
+
+  /** Start the worker's freshness watchdog. Called by
+   *  `ClockController.attach` once `/clock/info` resolves and we
+   *  know `tickIntervalMs`. The worker tracks `lastTickAt`,
+   *  compares it against `tickIntervalMs × 2` on its own
+   *  unthrottled `setInterval`, and posts `clockFreshness`
+   *  events on transitions. */
+  startClockWatchdog(tickIntervalMs: number): void {
+    this.post({ type: 'clockWatchdogStart', tickIntervalMs });
+  }
+
+  /** Stop the worker's freshness watchdog. */
+  stopClockWatchdog(): void {
+    this.post({ type: 'clockWatchdogStop' });
+  }
+
+  /** Subscribe to freshness transitions. Worker only emits on
+   *  fresh ↔ stale changes, so a steady stream of ticks doesn't
+   *  flood the message channel. */
+  onClockFreshness(cb: ClockFreshnessListener): () => void {
+    this.clockFreshnessListeners.add(cb);
+    return () =>
+      this.clockFreshnessListeners.delete(cb) as unknown as void;
   }
 
   /** Register a tick-driven /b_getn loop on the worker for `sub.bufnum`
@@ -462,6 +493,7 @@ export class WorkerClient {
     this.errorListeners.clear();
     this.oscErrorListeners.clear();
     this.tickListeners.clear();
+    this.clockFreshnessListeners.clear();
     this.bufferChunkListeners.clear();
     this.stepFiredListeners.clear();
     this.cycleBoundaryListeners.clear();
