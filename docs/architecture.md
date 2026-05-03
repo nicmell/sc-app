@@ -1,7 +1,7 @@
 # sc-app — Architecture
 
 A current-state architectural reference for the codebase as of
-Phase 34. Companion docs:
+Phase 35. Companion docs:
 
 - [`history.md`](./history.md) — evolution: shipped phases with
   rationale + adaptations.
@@ -62,7 +62,7 @@ their own process supervisor (`yarn osc`, the systemd units in
 │  │                         │    │  - Per-scope WS lifecycle││
 │  └─────────────────────────┘    └─────────────────────────┘│
 └────────────────────────────────────────────────────────────┘
-                       │ /ws (OSC bytes), /ws/scope (chunks)
+                       │ /ws (OSC bytes + scope chunks, in-band)
                        │ HTTP (sessions, scope diagnostics)
                        ▼
 ┌────────────────────────────────────────────────────────────┐
@@ -181,7 +181,7 @@ src/
 │   ├── workerBootstrap.ts       sync message buffer + osc-js window shim
 │   ├── transport.ts             raw binary WebSocket
 │   ├── oscWorker.ts             worker entry: encode/decode + dispatch
-│   ├── scopeWire.ts             /ws/scope binary frame decoder
+│   ├── scopeWire.ts             in-band scope wire format (Phase 35)
 │   ├── sequencerPump.ts       Phase 32 worker-side pump
 │   ├── clockWatchdog.ts         Phase 33b worker-side freshness check
 │   └── *.test.ts                vitest unit tests
@@ -224,7 +224,7 @@ Major controllers:
 | `ClockController` | passive observation of the shared clock; `effectiveState` + `lastTick` + `derived` (tickRate, sampleRate, chunkSize). |
 | `GroupController` | sc-app's parent group (`/g_new`, `/n_run`); pause/resume drives this group. |
 | `SynthManager` + `SynthController` | producers — auto-allocates a bus block, `/s_new`s a tone synth onto it. |
-| `BufferManager` + `BufferController` | shared tap layer — one ref-counted entry per `(inputBus, channels, chunkSize)` triple. Each entry: `/scope/allocate` → `/s_new` tap with `ScopeOut2.ar` → worker `subscribeBuffer` (opens `/ws/scope`). |
+| `BufferManager` + `BufferController` | shared tap layer — one ref-counted entry per `(inputBus, channels, chunkSize)` triple. Each entry: `/scope/allocate` → `/s_new` tap with `ScopeOut2.ar` → worker `subscribeBuffer` (encodes a 0x01 in-band frame on the main /ws). |
 | `ScopeManager` + `ScopeController` | consumer — takes a user-typed bus, acquires a `BufferHandle` from `BufferManager`, renders. |
 | `RecordingManager` + `RecordingController` | consumer — same `BufferHandle` acquisition, runs the WAV writer. |
 | `SequencerController` | sequencer transport + bank mutation API; delegates the timing-critical pump to the worker. |
@@ -247,7 +247,8 @@ Major controllers:
                           ▼
                   ┌───────────────┐
                   │ BufferManager │ ── /scope/allocate + /s_new tap +
-                  └───────────────┘    /ws/scope subscribe (per (inBus, ch, chunkSize))
+                  └───────────────┘    in-band 0x01 subscribe on /ws
+                                       (per (inBus, ch, chunkSize))
                      │   │   │
         BufferHandles│   │   │ (ref-counted, each consumer holds one)
                      ▼   ▼   ▼
@@ -260,7 +261,7 @@ Why this split exists:
 
 - The `BufferManager` ref-counts taps by spec, so two scope
   cards on the same bus share **one** tap synth, **one**
-  scope-buffer index, **one** `/ws/scope` connection.
+  scope-buffer index, **one** subscription on the main `/ws`.
 - Producers (SynthManager) auto-allocate buses; consumers (Scope/
   Recording) accept user-typed bus numbers and never touch the
   allocator. So bus collisions across consumer types are
@@ -352,8 +353,10 @@ oscWorker.ts (entry)
 │                        default).
 ├── transport           raw binary WebSocket. Dispatches inbound
 │                        bytes to oscWorker's onMessage.
-├── scopeWire           decoder for the 10-byte-header binary
-│                        frames coming from /ws/scope.
+├── scopeWire           Phase 35: in-band scope wire format on
+│                        the main /ws. encodeSubscribe (0x01) +
+│                        encodeUnsubscribe (0x02) +
+│                        decodeChunk (0x03) + isScopeFrame peek.
 ├── sequencerPump       Phase 32 pump: setInterval(25ms),
 │                        encodes /dirt/play bundles with
 │                        tickToTimetag, ships via transport.send,
@@ -361,10 +364,12 @@ oscWorker.ts (entry)
 ├── clockWatchdog       Phase 33b: tracks lastTickAt, runs
 │                        unthrottled setInterval, posts
 │                        clockFreshness on transitions.
-└── (per-scope WS map)  one WebSocket per active BufferSubscription;
-                         opened on subscribeBuffer, closed on
-                         unsubscribeBuffer. Frames decoded via
-                         scopeWire and posted as bufferChunk.
+└── (sub_id maps)        bidirectional Map<sub_id, bufferId>
+                         for chunk dispatch. Worker mints sub_id
+                         on subscribeBuffer; bridge echoes it
+                         back on 0x03 chunk frames; worker looks
+                         up the consumer-facing bufferId and
+                         posts bufferChunk to main.
 ```
 
 ### 4.2. Why so much in the worker
@@ -378,11 +383,14 @@ The worker's responsibilities have grown organically:
    the `/clock/tick` reply address and emits typed `clockTick`
    events to main, suppressing them from the generic `onReply`
    channel.
-3. **Per-scope WS lifecycle** (Phase 31 post-shipping refactor) —
-   each `BufferSubscription` opens its own WebSocket to
-   `/ws/scope`. The worker manages the per-`bufferId` map; on
-   `subscribeBuffer` it derives the URL from the main WS URL and
-   opens, on `unsubscribeBuffer` it closes.
+3. **In-band scope subscription dispatch** (Phase 35; Phase 31
+   originally added this in-band, then briefly used per-scope
+   `/ws/scope` connections, then Phase 35 reverted to in-band).
+   Worker mints integer `sub_id`s, encodes 0x01 subscribe / 0x02
+   unsubscribe frames on the main /ws, peeks the first byte of
+   inbound binary frames to discriminate scope chunks (0x03)
+   from OSC. Maps `sub_id ↔ bufferId` for chunk dispatch back
+   to main-thread listeners.
 4. **Sequencer pump** (Phase 32) — main posts a snapshot, worker
    runs the timing loop and ships OSC bundles directly via
    `transport.send` (no second postMessage hop for OSC bytes).
@@ -454,10 +462,13 @@ src-tauri/src/
     ├── mod.rs                   axum router, bind/serve_on, /ws handler
     ├── api.rs                   POST/GET/DELETE /api/session[/:id] +
     │                             GET /api/scope/{probe,layout,headers,debug}
-    ├── ws_bridge.rs             main /ws bridge: per-target forwarder
-    │                             tasks subscribe to session broadcast
-    ├── ws_scope.rs              Phase 31 /ws/scope handler: polls SHM
-    │                             on every observed /clock/tick
+    ├── ws_bridge.rs             main /ws bridge: per-target
+    │                             forwarder tasks subscribe to
+    │                             session broadcast. Phase 35 in-band
+    │                             scope mux: per-WS ScopeContext +
+    │                             0x01/0x02/0x03 op-tag dispatch +
+    │                             SHM polling driven by /clock/tick
+    │                             on the default-route forwarder.
     ├── routing.rs               RoutingTable + peek_osc_address
     ├── session.rs               Session + SessionStore + TTL eviction
     ├── security.rs              Phase 34 Host + WS Origin validators
@@ -594,24 +605,38 @@ writer just completed), then the data slot at
 detects "writer advanced" by tracking the previous `_stage` per
 subscription.
 
-Per `/ws/scope` handler (`server/ws_scope.rs`):
-- On upgrade, ensure the session-level mmap is open (lazy
-  `OnceCell`).
-- Subscribe to the session's default-route broadcast channel.
-- On every `/clock/tick` observed in the broadcast stream, read
-  the slot for this subscription's `scope` index. If `_stage`
-  advanced, encode the float32 payload as a 10-byte-header
-  binary frame and send it down the WS.
-- On WS close, drop the subscription. The mmap stays alive for
-  other subscriptions on the same session.
+In-band on the main `/ws` (Phase 35; `server/ws_bridge.rs`):
+- Per-WS `ScopeContext` (subscription map keyed by `sub_id` +
+  lazy `Arc<ScopeShm>` from `Session::ensure_scope_shm`).
+- Recv loop peeks first byte of each binary frame:
+  - 0x01 → `handle_scope_subscribe`: decodes
+    `(sub_id, scope_idx, channels, chunk_size)`, ensures the
+    session-level mmap on first call, inserts into the per-WS
+    map.
+  - 0x02 → `handle_scope_unsubscribe`: removes from the map.
+  - Otherwise → existing OSC forward path.
+- The default-route forwarder is a specialization of
+  `forward_broadcast` that additionally peeks each broadcast
+  payload for `/clock/tick`. On hit, calls `read_scope_slot(idx)`
+  for every active subscription on this WS and sends a 0x03
+  chunk frame for those whose `_stage` advanced.
+- On WS close, `ScopeContext` drops with the function scope —
+  taking the per-WS subscription map with it. The session-level
+  mmap survives for other WSs.
 
-Wire frame format:
+Wire frame format (subscribe / unsubscribe / chunk; all
+little-endian, packed):
 ```
-[ tickIndex u32_le | isGap u8 | channels u8 | frameCount u32_le | float32_le payload ]
-  4 bytes            1 byte    1 byte         4 bytes              frameCount × channels × 4 bytes
+0x01 subscribe    [op:u8 | sub_id:u32 | scope:u32 | channels:u32 | chunk:u32]
+0x02 unsubscribe  [op:u8 | sub_id:u32]
+0x03 chunk        [op:u8 | sub_id:u32 | tick:u32 | is_gap:u8 |
+                   channels:u8 | frames:u32 | float32 payload…]
 ```
-`bufferId` is implicit in the connection (URL-borne, both ends
-already know it).
+
+`sub_id` is minted by the worker, never interpreted by the
+bridge — just echoed back on chunk frames. Worker maintains a
+`Map<sub_id, bufferId>` to dispatch chunks to main-thread
+listeners.
 
 ### 5.5. Static assets
 
@@ -633,10 +658,9 @@ match a real file in `dist/` — standard SPA fallback.
 - `enforce_host` middleware (layered before `with_state` in
   `serve_on`) — rejects 421 Misdirected Request on any HTTP
   request whose `Host` header isn't a loopback hostname.
-- `check_ws_origin` helper (called from `ws_handler` and
-  `ws_scope_handler` before `ws.on_upgrade`) — rejects 403
-  Forbidden on WS upgrades whose `Origin` header (when present)
-  isn't a loopback origin.
+- `check_ws_origin` helper (called from `ws_handler` before
+  `ws.on_upgrade`) — rejects 403 Forbidden on WS upgrades whose
+  `Origin` header (when present) isn't a loopback origin.
 
 Allowlist: hostname ∈ `{127.0.0.1, localhost, ::1}`; origin
 schemes ∈ `{http, https}` plus `tauri://localhost`. Port is
@@ -831,7 +855,7 @@ client.sendCommand(packet)
 client.onReply(cb) fires
 ```
 
-### 7.3. Scope / recording chunk delivery (Phase 31)
+### 7.3. Scope / recording chunk delivery (Phase 31 SHM + Phase 35 in-band)
 
 ```
 main thread             worker             bridge            scsynth
@@ -847,21 +871,22 @@ BufferManager.acquire(spec)
                                                     writing into SHM[idx]
   client.subscribeBuffer(spec)
     postMessage{subscribeBuffer}  ▶
-                                    derive /ws/scope URL
-                                    new WebSocket(url)
-                                                  ──HTTP──▶ /ws/scope upgrade:
-                                                              - check_ws_origin
-                                                              - ensure_scope_shm
-                                                              - subscribe to broadcast
-                                                  ◀──101──
-  …running…                                       
-                                                  on /clock/tick:
-                                                    read SHM[idx]
-                                                    if _stage advanced:
-                                                      send 10-byte-header
-                                                      binary frame
+                                    assign sub_id; encode 0x01
+                                    transport.send(0x01 frame)
+                                                  ──WS──▶  ScopeContext.subs
+                                                            .insert(sub_id, …)
+                                                          (ensure_scope_shm
+                                                           on first subscribe)
+  …running…
+                                                  on /clock/tick (broadcast):
+                                                    forward OSC reply to WS
+                                                    poll_scope_chunks:
+                                                      read SHM[idx];
+                                                      if _stage advanced:
+                                                        encode 0x03 frame
                                                   ──WS──▶
-                                    decode via scopeWire
+                                    isScopeFrame? yes → decodeChunk
+                                    look up bufferId by sub_id
                                     postMessage{bufferChunk}  ▶
 RecordingController.onChunk:
   WAV.appendFrames(chunk)
@@ -1033,7 +1058,7 @@ are:
   attackers) — considered, deferred. The "ship a token in the
   bundled HTML, require it on every API call" pattern would close
   that gap but adds plumbing through `WorkerClient`,
-  `bootstrapSession`, and the `/ws/scope` URL builder. Not done.
+  `bootstrapSession`, and the `/ws` URL builder. Not done.
 - **Auth** — sc-app has no user model. The session UUID is the
   only artifact identifying a "client" to the bridge.
 
@@ -1092,9 +1117,10 @@ synthdef-compiler runs its own vitest from inside its folder.
   posts bytes. Inbound replies arrive as plain `{ address, args }`
   POJOs (structured-clone-stripped, no class methods).
 - **The worker owns one transport, one timing loop family, and
-  per-scope WS lifecycle. Nothing else.** When considering moving
-  more work into the worker, ask whether it's timing-critical or
-  byte-CPU-critical. If neither, keep on main.
+  the in-band scope subscription dispatch. Nothing else.** When
+  considering moving more work into the worker, ask whether
+  it's timing-critical or byte-CPU-critical. If neither, keep
+  on main.
 
 ### 11.2. Observable state
 

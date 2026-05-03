@@ -79,18 +79,23 @@ Browser (React, main thread)
   │                              error sticks until manual dismiss).
   └── WorkerClient              postMessage wrapper around…
       │   - sendCommand / onReply / onError / onTick
-      │   - subscribeBuffer(sub, cb) — opens /ws/scope per
-      │     subscription; Float32Array chunks fan out to listeners
+      │   - subscribeBuffer(sub, cb) — Phase 35: encodes a 0x01
+      │     scope-subscribe frame on the main /ws; chunk frames
+      │     (0x03) come back in-band and fan out to listeners
       │   - startSequencer / stopSequencer / updateSequencerBank /
       │     updateSequencerClock / setSequencerPaused / onStepFired
       │     — Phase 32 worker-side pump control
       ▼
 OSC Worker (module worker)
   ├── workerBootstrap.ts        sync message buffer + osc-js window shim
-  ├── transport.ts              raw binary WebSocket (main /ws)
-  ├── scopeWire.ts              decoder for the 10-byte-header
-  │                              scope-chunk frames coming over
-  │                              per-subscription /ws/scope WSs
+  ├── transport.ts              raw binary WebSocket (the only WS;
+  │                              Phase 35 retired /ws/scope)
+  ├── scopeWire.ts              Phase 35: in-band wire format on the
+  │                              main /ws — encodeSubscribe (0x01),
+  │                              encodeUnsubscribe (0x02), decodeChunk
+  │                              (0x03), isScopeFrame peek helper.
+  │                              Integer sub_id minted by the worker;
+  │                              bridge echoes back on chunks.
   ├── sequencerPump.ts          Phase 32 worker-side pump
   │                              (renamed post-32 from
   │                              sequencerWorker.ts — module, not
@@ -104,13 +109,15 @@ OSC Worker (module worker)
   │                              posts stepFired back to main
   └── oscWorker.ts              the actual Worker entry point.
                                 decode inbound + forward outbound
-                                bytes + /clock/tick mux; owns one
-                                /ws/scope WebSocket per active
-                                BufferSubscription (opened on
-                                subscribeBuffer, closed on
-                                unsubscribeBuffer); registers a
+                                bytes + /clock/tick mux. Inbound
+                                handler peeks first byte: 0x03 →
+                                scope chunk decode (post bufferChunk
+                                with Float32Array transferred);
+                                otherwise OSC decode. Maintains
+                                subIdByBufferId/bufferIdBySubId maps
+                                for chunk dispatch. Registers a
                                 transport.send sender into
-                                sequencerPump on connect
+                                sequencerPump on connect.
       │
       ▼
 src-tauri backend (Rust)
@@ -129,30 +136,31 @@ src-tauri backend (Rust)
   │                              shared memory)
   ├── server/
   │   ├── mod.rs                axum router, bind/serve_on/run_bridge,
-  │   │                          /ws + /ws/scope + /api/session* +
-  │   │                          /api/scope/* routes, TTL task
+  │   │                          /ws + /api/session* + /api/scope/*
+  │   │                          routes, TTL task
   │   ├── session.rs            bridge-managed Session — owns one UDP
   │   │                          socket per route target + a lazy
-  │   │                          ScopeShm OnceCell shared by all
-  │   │                          /ws/scope subscriptions on this
-  │   │                          session; runs /notify+/status at
-  │   │                          create, fans inbound replies via
-  │   │                          tokio broadcast channels; SessionStore
+  │   │                          ScopeShm OnceCell shared across all
+  │   │                          WSs on this session; runs
+  │   │                          /notify+/status at create, fans inbound
+  │   │                          replies via tokio broadcast channels;
+  │   │                          SessionStore
   │   │                          (Arc<RwLock<HashMap<Uuid,Session>>>)
   │   │                          + evict_idle for the TTL job
   │   ├── api.rs                POST/GET/DELETE /api/session[/:id] +
   │   │                          GET /api/scope/{probe,layout,headers,
   │   │                          debug}; { error } JSON envelope
-  │   ├── ws_bridge.rs          main WS ↔ Session bridge: per-target
-  │   │                          forwarder tasks subscribe to the
-  │   │                          session's broadcast channels;
-  │   │                          WS→UDP routes via session.routes
-  │   │                          (pure OSC after Phase 31's per-scope
-  │   │                          WS refactor)
-  │   ├── ws_scope.rs           Phase 31: /ws/scope handler. One WS
-  │   │                          per BufferSubscription; polls SHM on
-  │   │                          every observed /clock/tick and pushes
-  │   │                          scope_buffer slots as binary frames.
+  │   ├── ws_bridge.rs          main WS ↔ Session bridge. Per-target
+  │   │                          broadcast forwarders + Phase 35 in-band
+  │   │                          scope multiplex: per-WS ScopeContext
+  │   │                          owns the subscription map keyed by
+  │   │                          sub_id; default-route forwarder peeks
+  │   │                          /clock/tick and emits 0x03 chunk
+  │   │                          frames for advanced slots; recv loop
+  │   │                          peeks first byte to dispatch
+  │   │                          0x01/0x02/OSC. ScopeContext drops
+  │   │                          when the WS closes (explicit cleanup
+  │   │                          point — see history.md Phase 35).
   │   ├── routing.rs            RoutingTable + peek_osc_address —
   │   │                          config.json `routes` ⟹ N targets
   │   └── static_assets.rs      SPA fallback + dist resolution
@@ -186,16 +194,21 @@ peeking the OSC address against `config.json -> routes`
 57120 too; everything else falls through to the default target
 = `scsynth` config field).
 
-The buffer-data path is separate from OSC. Phase 31 retired
-`/b_getn` entirely: tap SynthDefs write via
+The buffer-data path uses SHM but rides the same WS as OSC.
+Phase 31 retired `/b_getn` entirely: tap SynthDefs write via
 `ScopeOut2.ar(sigs, scopeNum, chunkSize, chunkSize)` into one
 of scsynth's 128 SHM scope buffers (allocated by sclang via
 `s.scopeBufferAllocator`). The bridge mmaps scsynth's shared
-memory once per session (`Session::ensure_scope_shm`) and
-opens a dedicated `/ws/scope` WebSocket per
-`BufferSubscription`. On every observed `/clock/tick` the
-WS's handler polls `read_scope_slot(scopeNum)` and pushes
-the slot as a 10-byte-header binary frame to the worker, which
+memory once per session (`Session::ensure_scope_shm`). Phase 35
+moved chunk delivery back onto the main `/ws` (after a brief
+detour through per-scope `/ws/scope` connections in 31's
+post-shipping refactor) — multiplexed by a one-byte op tag
+(0x01 subscribe / 0x02 unsubscribe / 0x03 chunk; OSC's `/` and
+`#` first bytes keep the dispatch unambiguous). On every
+observed `/clock/tick`, the WS's default-route forwarder polls
+`read_scope_slot(scopeNum)` for every active subscription on
+this WS and emits 0x03 chunk frames for advanced slots. The
+worker's recv handler peeks the first byte, decodes 0x03 →
 posts a zero-copy `Float32Array` `bufferChunk` event to main.
 `ScopeView` runs an RAF loop that reads the latest chunk from
 a ref and draws — data rate (~47 Hz at default config) and
@@ -469,7 +482,29 @@ When working on a phase:
    the "Current phase progress" line below.
 
 Current phase progress: **No phase currently in flight.** The
-last five landed (most recent first):
+last six landed (most recent first):
+
+**Phase 35 shipped — In-Band Scope Chunks.** Retired the
+per-scope `/ws/scope` WebSocket adopted in Phase 31's
+post-shipping refactor (commit `dfeb924`). Scope subscribe /
+unsubscribe / chunk frames now travel as binary messages on the
+main `/ws`, multiplexed by a one-byte op tag (0x01 subscribe /
+0x02 unsubscribe / 0x03 chunk). OSC frames always start with
+`/` (0x2F) or `#` (0x23), so the op-tag space is unambiguous.
+Wire format gains an integer `sub_id` (u32) instead of the
+length-prefixed string `bufferId` we had pre-`dfeb924` —
+~30+ bytes saved per chunk; bridge never has to interpret it,
+just echoes back. Worker keeps a small
+`Map<sub_id, bufferId>` for chunk dispatch to main-thread
+listeners; main-thread API (`BufferHandle.subscribe`,
+`latestChunk`, `release`) bit-identical. Bridge gains a per-WS
+`ScopeContext` with explicit drop-on-WS-close cleanup logging
+(no more "subscription = WS lifecycle" auto-cleanup, but the
+context is owned by `handle_ws_session`'s scope so it drops
+naturally; debug log names the count of subscriptions
+released). 3 new Rust tests for the chunk frame layout
+round-trip + the first-byte dispatch invariant. See
+`docs/history.md` Phase 35.
 
 **Phase 34 shipped — Loopback Identity Hardening.** Validates
 the `Host` header on every HTTP request and the `Origin` header
@@ -860,20 +895,21 @@ Observations:
   never touch the bus allocator. So the allocator is effectively
   synth-exclusive, and bus collisions across consumer types are
   impossible by construction.
-- **Buffer refcount lifecycle (Phase 31 SHM flow).**
+- **Buffer refcount lifecycle (Phase 31 SHM + Phase 35 in-band).**
   `BufferManager.acquire(spec)` is ref-counted by
   `(inputBus, channels, chunkSize)`. First acquire triggers
   `/scope/allocate` (sclang returns a free scope-buffer index
   0..127) + `/s_new bufferTap … scopeNum=<idx>` + worker
-  `subscribeBuffer` (which opens a dedicated `/ws/scope` WS to
-  the bridge). Subsequent acquires on the same spec just bump
-  the count. Each consumer must call `handle.release()` exactly
-  once — the per-acquire handle wrapper guards against
-  double-release with an internal `released` flag, so calling
-  more than once is a silent no-op. Last release →
-  `unsubscribeBuffer` (closes the per-scope WS) → `/n_free`
-  the tap → fire-and-forget `/scope/free <idx>` (no reply
-  expected). The `BufferManager.snapshot` reactive store
+  `subscribeBuffer` (which encodes a 0x01 frame on the main /ws;
+  bridge installs the subscription in its per-WS `ScopeContext`).
+  Subsequent acquires on the same spec just bump the count.
+  Each consumer must call `handle.release()` exactly once —
+  the per-acquire handle wrapper guards against double-release
+  with an internal `released` flag, so calling more than once
+  is a silent no-op. Last release → `unsubscribeBuffer`
+  (encodes a 0x02 frame; bridge removes from its `ScopeContext`)
+  → `/n_free` the tap → fire-and-forget `/scope/free <idx>` (no
+  reply expected). The `BufferManager.snapshot` reactive store
   reflects the live `{key, spec, refcount, scopeNum, nodeId,
   bufferId}` set on every acquire/release; tap into it from a
   future `BuffersPanel` or inspect via the dev-mode `__sc*`
@@ -1063,8 +1099,9 @@ Observations:
 - **Bridge enforces loopback `Host` and `Origin` headers
   (Phase 34).** `src-tauri/src/server/security.rs` has the
   validators + an axum `enforce_host` middleware layered before
-  `with_state` in `serve_on`. WS handlers (`ws_handler`,
-  `ws_scope_handler`) call `check_ws_origin` before upgrade.
+  `with_state` in `serve_on`. The single WS handler
+  (`ws_handler` — Phase 35 retired the separate
+  `ws_scope_handler`) calls `check_ws_origin` before upgrade.
   Allowlist: hostname ∈ `{127.0.0.1, localhost, ::1}` for Host;
   `http(s)://<loopback>` plus `tauri://localhost` for Origin.
   Port is intentionally not validated — bridge is loopback-bound
@@ -1087,3 +1124,34 @@ Observations:
   drop and triggers reconnect logic. The handler signature
   takes `headers: HeaderMap` so the check can run synchronously
   before the WebSocket extractor's upgrade step.
+- **Scope chunks travel in-band on the main /ws (Phase 35).**
+  First-byte dispatch: 0x01 subscribe / 0x02 unsubscribe /
+  0x03 chunk; OSC's `/` (0x2F) and `#` (0x23) keep the op-tag
+  space unambiguous. Wire is in `src/workers/scopeWire.ts` +
+  `src-tauri/src/server/ws_bridge.rs`'s `encode_chunk` /
+  scope handlers — change one, change the other. Subscription
+  ID is an integer minted by the worker; bridge never
+  interprets it. The pre-35 `/ws/scope` endpoint is gone.
+- **WS-close cleans up scope subscriptions explicitly
+  (Phase 35).** `ScopeContext` is owned by
+  `handle_ws_session`'s scope, so it drops when the function
+  returns — taking the per-WS subscription map with it.
+  `forwarder_tasks.abort()` at end-of-function stops the
+  polling/forwarding tasks. A `tracing::debug` line names the
+  count of subscriptions dropped, so the cleanup is visible in
+  traces. The session-level `scope_shm: OnceCell` survives
+  WS close — other WSs on the same session reuse it; it drops
+  only when the `Session` itself drops (TTL eviction or
+  DELETE). If a future refactor moves `ScopeContext` onto the
+  `Session` (shared across WSs), audit the cleanup story
+  carefully.
+- **Default-route forwarder owns SHM polling (Phase 35).** The
+  forwarder for `session.scsynth_addr` is a specialization of
+  `forward_broadcast` (`forward_default_route`) that peeks each
+  broadcast payload for `/clock/tick` and, on hit, polls SHM
+  for every active subscription on this WS via
+  `poll_scope_chunks`. The forward-OSC-then-poll-SHM ordering
+  is intentional: the worker's clock-watchdog records the tick
+  on the OSC decode path BEFORE any chunk arrives. Reversing
+  the order would invert the watchdog's freshness anchoring
+  by ~one network hop's worth of latency.

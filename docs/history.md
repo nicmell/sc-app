@@ -3274,3 +3274,212 @@ dev proxy).
   validator caught a real misconfiguration, which is the
   point.
 
+
+---
+
+## Phase 35 — In-Band Scope Chunks
+
+**Goal.** Retire the per-scope `/ws/scope` WebSocket adopted in
+Phase 31's post-shipping refactor (commit `dfeb924`) and put
+scope chunk delivery back on the main `/ws` connection,
+multiplexed by a one-byte op tag. Fundamentally a revert of
+`dfeb924` (which itself reverted `b23f3bf`'s in-band design),
+with one improvement: integer subscription IDs instead of
+length-prefixed string `bufferId`s.
+
+The per-scope WS gave us "subscription = WS lifecycle"
+auto-cleanup at the cost of N WebSockets per session, separate
+URL building, separate handshakes, separate Origin checks, and
+a bigger worker-side state machine (per-`bufferId` WS map,
+`mainWsUrl` capture, URL builder). For typical 1–4 active
+subscriptions the trade-off was bad — the auto-cleanup property
+isn't worth the protocol surface.
+
+### What shipped
+
+Single implementation commit (`469af08`); plan + close commits
+bracket it as usual.
+
+#### Wire format on the main `/ws`
+
+Multiplexed by **first byte**:
+
+| Byte | Direction | Meaning |
+|---|---|---|
+| `/` (0x2F) | both | OSC message |
+| `#` (0x23) | both | OSC bundle (`#bundle\0`) |
+| 0x01 | main → bridge | Subscribe |
+| 0x02 | main → bridge | Unsubscribe |
+| 0x03 | bridge → main | Chunk |
+
+OSC frames always start with `/` or `#`, so 0x01..0x03 are
+unambiguous discriminators. Frame layouts (all little-endian,
+packed):
+
+```
+0x01 subscribe    [op:u8 | sub_id:u32 | scope:u32 | channels:u32 | chunk:u32]
+0x02 unsubscribe  [op:u8 | sub_id:u32]
+0x03 chunk        [op:u8 | sub_id:u32 | tick:u32 | is_gap:u8 |
+                   channels:u8 | frames:u32 | float32 payload…]
+```
+
+`sub_id` is minted by the worker on subscribe — a monotonic
+`u32` counter local to the worker. The bridge never interprets
+it (just echoes it back on chunk frames). The worker keeps a
+small `Map<sub_id, bufferId>` to dispatch incoming chunks back
+to main-thread listeners.
+
+#### Bridge side
+
+`src-tauri/src/server/ws_bridge.rs` (~250 lines re-added):
+  - Per-WS `ScopeContext` struct: lazily-populated `Arc<ScopeShm>`
+    (shared with the session's `scope_shm` `OnceCell`) +
+    `HashMap<u32, ScopeSubscription>` keyed by `sub_id`.
+  - WS recv loop now peeks the first byte of each binary frame
+    and dispatches: 0x01 → `handle_scope_subscribe` (decodes
+    sub_id/scope_idx/channels/chunk_size, ensures the
+    session-level mmap on first call, inserts into the per-WS
+    map); 0x02 → `handle_scope_unsubscribe` (removes from the
+    map); otherwise → existing OSC forward path.
+  - The default-route forwarder is now
+    `forward_default_route`, a specialization of
+    `forward_broadcast` that additionally peeks each broadcast
+    payload for `/clock/tick`. On hit, polls
+    `read_scope_slot(scope_idx)` for every active subscription
+    on this WS via `poll_scope_chunks`, and emits 0x03 chunk
+    frames for those whose `_stage` advanced. Non-default-route
+    forwarders (e.g. for `/dirt → :57120`) keep using the
+    plain `forward_broadcast`.
+  - **WS-close cleanup is explicit.** `ScopeContext` is owned
+    by `handle_ws_session`'s scope (not on the `Session`); it
+    drops when the function returns. `forwarder_tasks.abort()`
+    at end-of-function stops the polling/forwarding tasks.
+    A `tracing::debug` line at the cleanup point names
+    `session_id` + count of subscriptions dropped, so the
+    cleanup is visible in logs. The session-level
+    `scope_shm: OnceCell` stays alive across the WS close —
+    other WSs on the same session keep using it.
+
+`src-tauri/src/server/ws_scope.rs` — deleted. `mod.rs` drops
+`pub mod ws_scope;` and the `/ws/scope` route from the axum
+router.
+
+`src-tauri/src/server/session.rs` — unchanged. `scope_shm:
+OnceCell<Arc<ScopeShm>>` stays as the per-session lazy mmap.
+
+`src-tauri/src/scope_shm.rs` — unchanged. `read_scope_slot`,
+`MmapRegion`, `find_scope_buffer_array` all reused.
+
+#### Worker side
+
+`src/workers/scopeWire.ts` rewritten:
+  - `SCOPE_OP_{SUBSCRIBE, UNSUBSCRIBE, CHUNK}` constants.
+  - `isScopeFrame(bytes)` peek helper — used by `oscWorker` to
+    discriminate at the WS recv boundary.
+  - `encodeSubscribe(subId, params)` / `encodeUnsubscribe(subId)` —
+    the worker's outbound encoders.
+  - `decodeChunk(bytes) → DecodedScopeChunk` — inbound decoder
+    with format validation. Pre-35's `decodeScopeFrame` (per-WS
+    layout) is gone.
+
+`src/workers/oscWorker.ts`:
+  - Dropped `scopeWebSockets` map, `mainWsUrl` capture (no
+    longer needed — no per-scope WS to build URLs for),
+    `buildScopeWsUrl`, `openScopeWs`, `closeScopeWs`,
+    `closeAllScopeWs`.
+  - Added `subIdByBufferId: Map<string, number>` and
+    `bufferIdBySubId: Map<number, string>` plus a `nextSubId`
+    u32 counter.
+  - `handleInboundBytes(bytes)`: peek first byte; if scope
+    frame, `decodeChunk` + post `bufferChunk` to main with the
+    Float32Array transferred. Otherwise OSC decode path.
+  - On `subscribeBuffer`: assign sub_id, encode 0x01 frame,
+    `transport.send`. If a stale sub_id exists for the same
+    bufferId (consumer restarted), send a 0x02 first to keep
+    the bridge's state consistent.
+  - On `unsubscribeBuffer`: encode 0x02, drop both maps.
+  - On `disconnect`: `clearScopeSubscriptions()` resets the
+    maps + counter.
+
+`src/server/workerProtocol.ts` — unchanged. `BufferSubscription`
+and `BufferChunk` shapes stay (the wire change is below the
+worker→main API).
+
+#### Tests
+
+3 new Rust unit tests in `ws_bridge::tests`:
+  - `chunk_frame_layout` — round-trips a known chunk through
+    `encode_chunk` and asserts header byte positions match the
+    spec the worker decodes from. Catches accidental drift
+    between bridge and worker layouts.
+  - `chunk_frame_is_gap_flag` — verifies the gap byte position.
+  - `first_byte_dispatch_unambiguous_with_osc` — asserts
+    SCOPE_OP_{SUBSCRIBE, UNSUBSCRIBE, CHUNK} all differ from
+    `/` and `#`. Locks in the dispatch invariant.
+
+22/22 Rust tests pass; 17/17 frontend tests pass.
+
+#### Live verification
+
+Smoke-tested against a started bridge:
+  - `/api/scope/probe` still 200 with the mmap details.
+  - `/ws/scope` route is gone; falls through to the SPA static
+    fallback (200 with `index.html` — clean 404-equivalent for
+    a removed route in an SPA-fallback router).
+  - Main `/ws` still 400s without `?session=<uuid>`.
+
+### Decisions worth carrying forward
+
+- **Integer `sub_id` over string `bufferId` in the wire.** The
+  worker mints; the bridge echoes. ~30+ bytes saved per chunk
+  frame (and millions of chunks per session). Cleaner protocol
+  shape — bridge never has to interpret an opaque consumer-side
+  identifier. The string `bufferId` stays at the worker→main
+  API boundary, where it identifies the consumer-facing handle.
+- **Default-route forwarder owns SHM polling.** All scope state
+  lives next to the broadcast subscription that observes
+  `/clock/tick`. One task per WS handles both
+  forward-OSC-replies and emit-scope-chunks; the SHM poll is
+  driven by the same channel that already wakes us up on each
+  tick.
+- **No 35a/b/c sub-phasing.** Bridge changes, worker changes,
+  and `scopeWire.ts` rewrite are tightly coupled — a partial
+  commit would break the wire. One implementation commit, full
+  green at every boundary.
+- **Idempotent subscribe/unsubscribe.** Replacing an existing
+  `sub_id` logs a warning + replaces (the worker shouldn't ever
+  send duplicates, but defensive coding is cheap). Removing an
+  unknown `sub_id` is a debug-level no-op.
+
+### Gotchas
+
+- **WS-close cleanup is no longer automatic.** The per-scope WS
+  gave us "WS lifetime = subscription lifetime" for free. Phase
+  35 needs the explicit `ScopeContext` drop at end-of-`handle_ws_session`
+  to release the per-WS subscription state. That works because
+  the context is owned by the function's stack frame; if a
+  future refactor moves it onto the `Session` (shared across
+  WSs), audit the cleanup story carefully.
+- **Forward-OSC-then-poll-SHM ordering.** The default-route
+  forwarder sends the OSC reply to the WS first, THEN polls
+  SHM. This means the worker observes `/clock/tick` slightly
+  before the chunk frame for that tick — convenient for the
+  worker's clock-watchdog, which records the tick on the OSC
+  decode path before any chunk arrives. Reversing the order
+  (chunk first, OSC second) would be wire-correct but would
+  invert the clock-watchdog's freshness anchoring by ~one
+  network hop's worth of latency.
+- **Lock granularity.** `ScopeContext` is `Arc<TokioMutex>`;
+  `poll_scope_chunks` holds the lock across the entire SHM-poll
+  loop. At ~47 Hz with O(1) work per subscription this is
+  comfortable, but if subscription counts ever grow into the
+  hundreds it'd be worth profiling for lock contention vs the
+  recv-loop's subscribe/unsubscribe path.
+- **Chunk frames interleave with broadcast OSC payloads on the
+  same WS sink.** The forwarder takes the WS-sink mutex twice
+  per `/clock/tick` cycle (once for the OSC reply, once for the
+  chunk batch). Worst case is N scope subscriptions all on the
+  same WS, all advancing at the same tick — that's still one
+  mutex acquisition for the whole batch, not N separate
+  acquisitions.
+
