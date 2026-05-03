@@ -63,7 +63,7 @@ interface DashboardResources {
   registry: SynthDefRegistry;
   group: GroupController;
   clock: ClockController;
-  ids: { node: IdAllocator; buffer: IdAllocator; bus: IdAllocator };
+  ids: { node: IdAllocator; bus: IdAllocator };
   bufferManager: BufferManager;
   synthManager: SynthManager;
   scopeManager: ScopeManager;
@@ -311,15 +311,19 @@ async function setupDashboard(
   // a sclang-allocated index < 32, well below this allocator's
   // start point — no collision).
   const idBase = clientId * PER_CLIENT_ID_OFFSET + ID_ALLOCATOR_START;
+  // Phase 31: the `buffer` IdAllocator is gone — scope buffers
+  // are sclang-allocated (0..127, via `s.scopeBufferAllocator`),
+  // and `BufferController` no longer issues `/b_alloc`. Only
+  // tone synths still use `node` (taps share it but don't
+  // allocate from it themselves) and the bus allocator stays.
   const ids = {
     node: new IdAllocator(idBase),
-    buffer: new IdAllocator(idBase),
     bus: new IdAllocator(32),
   };
 
   console.log(
     `[sc:app] setupDashboard clientId=${clientId} parentGroupId=${parentGroupId} ` +
-      `idBase=${idBase} (node + buffer allocator start)`,
+      `idBase=${idBase} (node allocator start)`,
   );
 
   // Phase 24: subscribe to /fail replies BEFORE any /s_new fires.
@@ -354,10 +358,9 @@ async function setupDashboard(
   });
   const bufferManager = new BufferManager({
     client,
-    clock,
     group,
     registry,
-    ids: { node: ids.node, buffer: ids.buffer },
+    ids: { node: ids.node },
   });
   const scopeManager = new ScopeManager({
     bufferManager,

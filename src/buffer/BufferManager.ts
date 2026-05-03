@@ -1,19 +1,20 @@
 /**
  * Ref-counted owner of `BufferController`s, keyed by
- * `(inputBus, channels, chunkSize)`. The single producer of `/b_alloc`
- * + tap-synth `/s_new` for the consumer side; scopes and recordings
- * acquire / release handles instead of allocating their own.
+ * `(inputBus, channels, chunkSize)`. The single producer of tap-synth
+ * `/s_new` (post-Phase-31, with `ScopeOut2` writing to a sclang-
+ * allocated scope_buffer index) for the consumer side; scopes and
+ * recordings acquire / release handles instead of allocating their own.
  *
  * Sharing semantics: two consumers with the same spec share one
  * controller and one handle's-worth of refcount each. The first
  * acquire pays the round-trip; subsequent ones return immediately.
- * The last release tears down the tap synth + buffer.
+ * The last release tears down the tap synth + frees the scope_buffer
+ * index.
  *
- * Phase 16 scope: scaffolding only. `BufferManager` is not yet
- * constructed by `AppShell`; the running app continues to use
- * `ScopeManager` / `RecordingManager`'s per-consumer buffer paths.
- * Phase 19 / 20 migrate the consumers; Phase 21 wires this into
- * `setupDashboard` / `teardownServerState`.
+ * Phase 31: SHM availability is probed once at construction (via
+ * `GET /api/scope/probe`). If unavailable (remote scsynth, exotic
+ * deployment), `acquire()` rejects immediately with a clear error
+ * — there is no OSC `/b_getn` fallback path post-31.
  */
 
 import { createStore, type ReadonlyStore } from '@/util/reactiveStore';
@@ -23,7 +24,7 @@ import {
   type BufferHandle,
   type BufferSpec,
 } from './BufferController';
-import type { ClockController } from '@/clock/ClockController';
+import { probeScopeShm, type ScopeShmProbe } from '@/scope/scopeClient';
 import type { GroupController } from '@/server/GroupController';
 import type { IdAllocator } from '@/server/IdAllocator';
 import type { SynthDefRegistry } from '@/server/SynthDefRegistry';
@@ -31,20 +32,19 @@ import type { WorkerClient } from '@/server/WorkerClient';
 
 export interface BufferManagerOptions {
   client: WorkerClient;
-  clock: ClockController;
   group: GroupController;
   registry: SynthDefRegistry;
-  ids: { node: IdAllocator; buffer: IdAllocator };
+  ids: { node: IdAllocator };
 }
 
-/** One row in the debug snapshot store. `bufnum` / `nodeId` are
+/** One row in the debug snapshot store. `scopeNum` / `nodeId` are
  *  read at snapshot-emission time — they're non-null between a
  *  successful `start()` and `dispose()`. */
 export interface BufferSnapshot {
   key: string;
   spec: BufferSpec;
   refcount: number;
-  bufnum: number | null;
+  scopeNum: number | null;
   nodeId: number | null;
   bufferId: string;
 }
@@ -100,23 +100,33 @@ export class BufferManager {
    *  the same Promise instead of double-allocating a buffer + tap. */
   private readonly inflight = new Map<string, Promise<BufferHandle>>();
   private readonly snapshotStore = createStore<BufferSnapshot[]>([]);
+  /** Phase 31: SHM availability bit, populated by a one-shot
+   *  `GET /api/scope/probe` lazily on first `acquire()`. Cached
+   *  per-instance — re-probing on every acquire is wasteful, and
+   *  scsynth-locality doesn't change mid-session. */
+  private shmProbe: ScopeShmProbe | null = null;
 
   constructor(opts: BufferManagerOptions) {
     this.opts = opts;
   }
 
   /** Live debug surface — one row per active buffer with its key,
-   *  spec, refcount, and (current) bufnum / nodeId. Foundation for a
-   *  future `BuffersPanel`; also catches refcount leaks visibly
-   *  during normal operation rather than only at teardown. */
+   *  spec, refcount, and (current) scopeNum / nodeId. Foundation
+   *  for a future `BuffersPanel`; also catches refcount leaks
+   *  visibly during normal operation rather than only at teardown. */
   get snapshot(): ReadonlyStore<BufferSnapshot[]> {
     return this.snapshotStore;
   }
 
   /** Get a handle to a buffer matching `spec`, allocating if none
-   *  exists. The first acquire pays a `/b_alloc` + `/s_new` +
-   *  `/sync` round-trip; subsequent acquires on the same spec
+   *  exists. The first acquire pays a `/scope/allocate` + `/s_new`
+   *  + `/sync` round-trip; subsequent acquires on the same spec
    *  return immediately with a fresh handle wrapper.
+   *
+   *  Phase 31: rejects immediately if the bridge's SHM probe says
+   *  scsynth's scope_buffer pool isn't reachable (e.g. scsynth
+   *  is on a different machine). All sc-app deployments colocate
+   *  scsynth + bridge so this is normally a no-op gate.
    *
    *  Capped at `ACQUIRE_TIMEOUT_MS` per call. If the underlying
    *  `spinUp` resolves AFTER the caller's timeout fired, the
@@ -124,6 +134,20 @@ export class BufferManager {
    *  doesn't sit in the entries map unowned. */
   async acquire(spec: BufferSpec): Promise<BufferHandle> {
     validateSpec(spec);
+
+    // Phase 31: SHM probe gate. Lazy + cached per-manager.
+    if (this.shmProbe === null) {
+      this.shmProbe = await probeScopeShm();
+    }
+    if (!this.shmProbe.available) {
+      const detail = this.shmProbe.error ?? 'unknown reason';
+      throw new Error(
+        `BufferManager.acquire: SHM scope-buffer pool not available ` +
+          `(${detail}). scsynth must be running on the same machine as ` +
+          `the bridge for scopes/recordings to work.`,
+      );
+    }
+
     const key = keyOf(spec);
 
     const existing = this.entries.get(key);
@@ -238,7 +262,6 @@ export class BufferManager {
     const bufferId = freshBufferId();
     const ctrlOpts: BufferControllerOptions = {
       client: this.opts.client,
-      clock: this.opts.clock,
       group: this.opts.group,
       registry: this.opts.registry,
       ids: this.opts.ids,
@@ -298,7 +321,7 @@ export class BufferManager {
         key,
         spec: ctrl.spec,
         refcount,
-        bufnum: ctrl.bufnum.get(),
+        scopeNum: ctrl.scopeNum.get(),
         nodeId: ctrl.nodeId.get(),
         bufferId: ctrl.bufferId,
       })),

@@ -68,39 +68,37 @@ export interface ClockTick {
   receivedAt: number;
 }
 
-/** Tick-driven `/b_getn` subscription registered with the worker.
- *  One entry per `bufferId`; multiple main-thread listeners on the
+/** SHM scope-buffer subscription registered with the worker. One
+ *  entry per `bufferId`; multiple main-thread listeners on the
  *  same `bufferId` share the worker subscription (the
- *  `WorkerClient` fans out replies on the main side). */
+ *  `WorkerClient` fans out chunks on the main side).
+ *
+ *  Phase 31 rewrite: pre-31 this was a `/b_getn`-driven OSC ring
+ *  read; post-31 the bridge mmaps scsynth's SHM scope_buffer pool
+ *  and pushes pre-decoded chunks down the WS as `0x03`-tagged
+ *  binary frames. The shape here covers what the worker forwards
+ *  to the bridge in the matching `0x01` subscribe frame. */
 export interface BufferSubscription {
   /** Stable identifier chosen by the caller. The worker keys its
    *  subscription table on this; main-side fan-out routes
    *  `bufferChunk` events back to listeners by this id. */
   bufferId: string;
-  /** scsynth bufnum the tap synth is writing into. The worker
-   *  matches inbound /b_setn replies by bufnum → bufferId. */
-  bufnum: number;
+  /** Scope buffer index (0..127) sclang's
+   *  `s.scopeBufferAllocator` returned for this consumer. The
+   *  bridge maps this to a byte offset in the SHM segment via
+   *  `find_scope_buffer_array` and reads slots from there. */
+  scopeNum: number;
   channels: number;
-  /** Frames-per-channel per chunk (= `samplesPerTick` per
-   *  `clock.derived`). The worker fires one /b_getn per tick reading
-   *  `chunkSize × channels` samples from the just-completed half. */
+  /** Frames per chunk (= `ScopeOut2`'s `scopeFrames` parameter
+   *  baked into the tap SynthDef). One chunk = one slot of the
+   *  scope_buffer triple-buffer = one tick of audio. */
   chunkSize: number;
-  /** Skip the first tick after subscribing. Default `true` — the
-   *  buffer holds a partial half between /b_alloc (zero-fill) and
-   *  the first tick boundary; reading it would emit one bogus chunk
-   *  before steady state. */
-  skipFirstTick?: boolean;
-  /** Retry policy for missing /b_setn replies. Default
-   *  `{ maxAttempts: 1, deadlineMs: 50 }`. On exhaustion the worker
-   *  emits a synthetic zero-fill chunk (`isGap: true`) so consumers
-   *  see one chunk per tick regardless of network jitter. */
-  retry?: { maxAttempts: number; deadlineMs: number };
 }
 
-/** One chunk delivered to main. Posted on every successful /b_setn
- *  *and* on retry exhaustion (zero-filled, `isGap: true`). Consumers
- *  see chunks in strict tick order — the worker's reorder buffer
- *  holds out-of-order replies until their slot drains.
+/** One chunk delivered to main. Posted on every bridge-emitted
+ *  `0x03` frame for an active subscription. Consumers see chunks
+ *  in arrival order; gap detection is bridge-side and surfaces via
+ *  `isGap: true` chunks.
  *
  *  `data.length === chunkSize × channels`. The Float32Array is
  *  transferred (its underlying ArrayBuffer is detached on the worker
@@ -111,13 +109,14 @@ export interface BufferChunk {
   bufferId: string;
   data: Float32Array;
   channels: number;
-  /** `tickIndex` of the tick whose /b_getn was answered (or
-   *  zero-filled). Monotonically increasing per `bufferId`. */
+  /** Tick-counter associated with the chunk. Bridge-supplied
+   *  (currently 0, until the bridge wires its `/clock/tick`
+   *  observer through to chunk emission — Phase 31c follow-up). */
   tickIndex: number;
-  /** True when the chunk is a worker-synthesized zero-fill in lieu
-   *  of a missing /b_setn reply. Recordings materialize this as a
-   *  gap entry; scopes typically ignore the flag and render the
-   *  zeros as silence. */
+  /** True when the chunk is a bridge-synthesized zero-fill in lieu
+   *  of a missed scope_buffer slot (writer outpaced reader).
+   *  Recordings materialize this as a gap entry; scopes typically
+   *  ignore the flag and render the zeros as silence. */
   isGap: boolean;
 }
 

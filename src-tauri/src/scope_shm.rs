@@ -665,6 +665,127 @@ const DD_OFF_FRAMES: usize = 8;
 /// `server_shm.hpp`, `num_scope_buffers = 128`).
 const EXPECTED_SCOPE_BUFFER_COUNT: usize = 128;
 
+// ── Wire format for the bridge ↔ worker scope channel ─────────────
+//
+// Phase 31c: scope subscribe/unsubscribe + buffer-chunk frames
+// share the existing WebSocket alongside OSC traffic. We
+// distinguish them by a 1-byte op tag at the start of each binary
+// WS frame. OSC frames start with `/` (0x2f) for messages or `#`
+// (0x23) for bundles, so any byte ≤ 0x1f is unambiguous as a
+// non-OSC scope-protocol op.
+//
+// **Wire format**:
+//
+// `SCOPE_OP_SUBSCRIBE = 0x01` (worker → bridge):
+//   [op:u8 = 0x01]
+//   [scope_idx:u32_le]
+//   [channels:u32_le]
+//   [chunk_size:u32_le]
+//   [buffer_id_len:u8]
+//   [buffer_id:utf8 bytes]
+//
+// `SCOPE_OP_UNSUBSCRIBE = 0x02` (worker → bridge):
+//   [op:u8 = 0x02]
+//   [buffer_id_len:u8]
+//   [buffer_id:utf8 bytes]
+//
+// `SCOPE_OP_CHUNK = 0x03` (bridge → worker):
+//   [op:u8 = 0x03]
+//   [tick_index:u32_le]
+//   [is_gap:u8]            // 0 or 1
+//   [channels:u8]
+//   [frame_count:u32_le]
+//   [buffer_id_len:u8]
+//   [buffer_id:utf8 bytes]
+//   [frame_count × channels × float32_le]
+
+pub const SCOPE_OP_SUBSCRIBE: u8 = 0x01;
+pub const SCOPE_OP_UNSUBSCRIBE: u8 = 0x02;
+pub const SCOPE_OP_CHUNK: u8 = 0x03;
+
+/// Decoded subscribe message from the worker.
+#[derive(Debug, Clone)]
+pub struct SubscribeMsg {
+    pub buffer_id: String,
+    pub scope_idx: u32,
+    pub channels: u32,
+    pub chunk_size: u32,
+}
+
+/// Decoded unsubscribe message from the worker.
+#[derive(Debug, Clone)]
+pub struct UnsubscribeMsg {
+    pub buffer_id: String,
+}
+
+pub fn decode_subscribe(bytes: &[u8]) -> Result<SubscribeMsg, String> {
+    if bytes.len() < 1 + 4 + 4 + 4 + 1 {
+        return Err("subscribe frame: too short".to_string());
+    }
+    if bytes[0] != SCOPE_OP_SUBSCRIBE {
+        return Err(format!("subscribe frame: wrong op tag 0x{:02x}", bytes[0]));
+    }
+    let scope_idx = u32::from_le_bytes(bytes[1..5].try_into().unwrap());
+    let channels = u32::from_le_bytes(bytes[5..9].try_into().unwrap());
+    let chunk_size = u32::from_le_bytes(bytes[9..13].try_into().unwrap());
+    let id_len = bytes[13] as usize;
+    if bytes.len() < 14 + id_len {
+        return Err("subscribe frame: buffer_id truncated".to_string());
+    }
+    let buffer_id = std::str::from_utf8(&bytes[14..14 + id_len])
+        .map_err(|e| format!("subscribe frame: buffer_id not utf8: {}", e))?
+        .to_owned();
+    Ok(SubscribeMsg {
+        buffer_id,
+        scope_idx,
+        channels,
+        chunk_size,
+    })
+}
+
+pub fn decode_unsubscribe(bytes: &[u8]) -> Result<UnsubscribeMsg, String> {
+    if bytes.len() < 2 {
+        return Err("unsubscribe frame: too short".to_string());
+    }
+    if bytes[0] != SCOPE_OP_UNSUBSCRIBE {
+        return Err(format!("unsubscribe frame: wrong op tag 0x{:02x}", bytes[0]));
+    }
+    let id_len = bytes[1] as usize;
+    if bytes.len() < 2 + id_len {
+        return Err("unsubscribe frame: buffer_id truncated".to_string());
+    }
+    let buffer_id = std::str::from_utf8(&bytes[2..2 + id_len])
+        .map_err(|e| format!("unsubscribe frame: buffer_id not utf8: {}", e))?
+        .to_owned();
+    Ok(UnsubscribeMsg { buffer_id })
+}
+
+/// Encode a buffer chunk for transport to the worker.
+pub fn encode_chunk(
+    buffer_id: &str,
+    tick_index: u32,
+    is_gap: bool,
+    channels: u8,
+    frame_count: u32,
+    interleaved_floats: &[f32],
+) -> Vec<u8> {
+    let id_bytes = buffer_id.as_bytes();
+    let id_len = id_bytes.len().min(255);
+    let payload_bytes = interleaved_floats.len() * 4;
+    let mut out = Vec::with_capacity(1 + 4 + 1 + 1 + 4 + 1 + id_len + payload_bytes);
+    out.push(SCOPE_OP_CHUNK);
+    out.extend_from_slice(&tick_index.to_le_bytes());
+    out.push(if is_gap { 1 } else { 0 });
+    out.push(channels);
+    out.extend_from_slice(&frame_count.to_le_bytes());
+    out.push(id_len as u8);
+    out.extend_from_slice(&id_bytes[..id_len]);
+    for &f in interleaved_floats {
+        out.extend_from_slice(&f.to_le_bytes());
+    }
+    out
+}
+
 /// Boost.Interprocess `offset_ptr<T>` "null" sentinel. Per Boost
 /// convention, an offset of 1 means null (offset of 0 would mean
 /// "point to self", which is also useless).

@@ -1,43 +1,55 @@
 /**
- * One shared buffer + tap synth + (Phase-17) worker subscription,
+ * One shared tap synth + (Phase 31) scope-buffer subscription,
  * ref-counted by `BufferManager` and consumed by N scopes /
  * recorders / future analyzers reading the same
  * `(inputBus, channels, chunkSize)` triple.
  *
- * Producer / consumer split:
+ * Producer / consumer split (unchanged from pre-31):
  *   - Producer = a synth (typically from `SynthsPanel`) writes
  *     audio onto `spec.inputBus`.
- *   - Tap synth = this controller's `/s_new` reads that bus into
- *     the buffer (`AddToTail` so it runs after the producer in
- *     the same control block).
+ *   - Tap synth = this controller's `/s_new` reads that bus and
+ *     forwards it to a scope_buffer slot via `ScopeOut2`. Added
+ *     `AddToTail` so it runs after the producer in the same
+ *     control block.
  *   - Consumers = scopes / recorders subscribe to chunk delivery
- *     via `subscribe(cb)` (push) or `latestChunk` (pull). Both
- *     APIs are exposed through the `BufferHandle` returned from
+ *     via `subscribe(cb)` (push) or `latestChunk` (pull), both
+ *     exposed through the `BufferHandle` returned from
  *     `BufferManager.acquire`.
  *
- * Phase 16 scope: full lifecycle (`/b_alloc` + `/s_new` + `/sync`,
- * `/n_free` + `/b_free`) is implemented; worker chunk delivery is
- * stubbed pending the Phase 17 worker-subscription pivot. The
- * class is not yet referenced from `AppShell` so the missing
- * chunk path is inert until Phase 17 wires it up.
+ * Phase 31 lifecycle on `start()`:
+ *   1. `/scope/allocate` round-trip → sclang returns a scope buffer
+ *      index from `s.scopeBufferAllocator`.
+ *   2. Compile-and-load the (channels, chunkSize)-keyed tap SynthDef
+ *      via `SynthDefRegistry`.
+ *   3. `/s_new` the tap with `scopeNum = <allocated>` — ScopeOut2
+ *      writes input audio into the SHM scope_buffer slot for that
+ *      index, every audio block.
+ *   4. `WorkerClient.subscribeBuffer({ bufferId, scopeNum, ... })`
+ *      registers the subscription; the bridge mmaps SHM and pushes
+ *      `bufferChunk` events to main on every observed `/clock/tick`.
+ *
+ * On `dispose()`: unsubscribe → `/n_free` → `/scope/free <idx>`.
+ * No `/b_alloc` / `/b_free`; no client-side `bufnum` allocator —
+ * scope buffers are 0..127 globally, owned by sclang.
  *
  * This controller is owned exclusively by `BufferManager`. Direct
  * instantiation from consumers is a programming error — go
  * through `BufferManager.acquire`.
  */
 
-import {
-  AddToTail,
-  bAlloc,
-  bFree,
-  nFree,
-  sNew,
-} from '@sc-app/server-commands';
+import { AddToTail, nFree, sNew } from '@sc-app/server-commands';
 import {
   bufferTapSynthDefName,
   compileBufferTapSynthDef,
 } from '@/synthdefs/bufferTapSynthDef';
-import type { ClockController } from '@/clock/ClockController';
+import {
+  SCOPE_ALLOCATED_REPLY,
+  SCOPE_ALLOCATE_FAILED_REPLY,
+  parseScopeAllocateFailed,
+  parseScopeAllocated,
+  scopeAllocate,
+  scopeFree,
+} from '@/scope/scopeClient';
 import type { GroupController } from '@/server/GroupController';
 import type { IdAllocator } from '@/server/IdAllocator';
 import { createStore, type ReadonlyStore } from '@/util/reactiveStore';
@@ -49,8 +61,9 @@ export type { BufferChunk };
 
 /** Sharing key for `BufferManager`: any two consumers with the same
  *  `(inputBus, channels, chunkSize)` triple share one underlying
- *  tap synth + buffer. `channels` is a positive integer with no
- *  upper bound — multichannel buses are first-class. */
+ *  tap synth + scope buffer index. `channels` is a positive
+ *  integer with no upper bound — multichannel buses are
+ *  first-class. */
 export interface BufferSpec {
   inputBus: number;
   channels: number;
@@ -76,39 +89,43 @@ export interface BufferHandle {
   subscribe(cb: (chunk: BufferChunk) => void): () => void;
   /** Decrement the buffer's refcount. Idempotent — calling more
    *  than once on the same handle is a silent no-op. The refcount
-   *  hitting zero triggers tap-synth + buffer teardown. */
+   *  hitting zero triggers tap-synth + scope-buffer teardown. */
   release(): Promise<void>;
 }
 
 export interface BufferControllerOptions {
   client: WorkerClient;
-  clock: ClockController;
   group: GroupController;
   registry: SynthDefRegistry;
-  ids: { node: IdAllocator; buffer: IdAllocator };
+  ids: { node: IdAllocator };
   spec: BufferSpec;
   bufferId: string;
 }
+
+/** Default `/scope/allocate` round-trip timeout. sclang's responder
+ *  is synchronous (a single `s.scopeBufferAllocator.alloc` call) so
+ *  the actual round-trip is sub-millisecond on localhost; this is
+ *  generous headroom for unusual cases. */
+const SCOPE_ALLOC_TIMEOUT_MS = 2000;
 
 export class BufferController {
   readonly bufferId: string;
   readonly spec: BufferSpec;
 
   private readonly client: WorkerClient;
-  private readonly clock: ClockController;
   private readonly group: GroupController;
   private readonly registry: SynthDefRegistry;
   private readonly nodeIds: IdAllocator;
-  private readonly bufferIds: IdAllocator;
 
-  private readonly bufnumStore = createStore<number | null>(null);
+  private readonly scopeNumStore = createStore<number | null>(null);
   private readonly nodeIdStore = createStore<number | null>(null);
   private readonly latestChunkStore = createStore<BufferChunk | null>(null);
 
   private readonly subscribers = new Set<(chunk: BufferChunk) => void>();
 
-  /** Worker-subscription unsubscribe handle. Set during `start()` after
-   *  /b_alloc + /s_new + /sync resolve; cleared in `dispose()`. */
+  /** Worker-subscription unsubscribe handle. Set during `start()`
+   *  after `/scope/allocate` + `/s_new` resolve; cleared in
+   *  `dispose()`. */
   private workerUnsubscribe: (() => void) | null = null;
 
   private started = false;
@@ -116,24 +133,22 @@ export class BufferController {
 
   constructor(opts: BufferControllerOptions) {
     this.client = opts.client;
-    this.clock = opts.clock;
     this.group = opts.group;
     this.registry = opts.registry;
     this.nodeIds = opts.ids.node;
-    this.bufferIds = opts.ids.buffer;
     this.spec = opts.spec;
     this.bufferId = opts.bufferId;
   }
 
-  /** Read-only view of the current scsynth bufnum, or `null` when
-   *  not running. Read by `BufferManager.snapshot` for debug
-   *  visibility; not part of `BufferHandle`. */
-  get bufnum(): ReadonlyStore<number | null> {
-    return this.bufnumStore;
+  /** Read-only view of the current scope buffer index, or `null`
+   *  when not running. Read by `BufferManager.snapshot` for debug
+   *  visibility. */
+  get scopeNum(): ReadonlyStore<number | null> {
+    return this.scopeNumStore;
   }
 
-  /** Read-only view of the current scsynth nodeId of the tap synth,
-   *  or `null` when not running. */
+  /** Read-only view of the current scsynth nodeId of the tap
+   *  synth, or `null` when not running. */
   get nodeId(): ReadonlyStore<number | null> {
     return this.nodeIdStore;
   }
@@ -142,15 +157,33 @@ export class BufferController {
     return this.latestChunkStore;
   }
 
-  /** Allocate the buffer, /s_new the tap synth, and (Phase 17)
+  /** Allocate a scope buffer index, /s_new the tap synth, and
    *  register a worker subscription. Idempotent. Throws on partial
-   *  failure; the catch-block calls `dispose()` so any /b_alloc
-   *  that succeeded before the /s_new failed (or vice versa) is
-   *  cleaned up uniformly. */
+   *  failure; the catch-block calls `dispose()` so any allocation
+   *  that succeeded before a later step failed is cleaned up
+   *  uniformly. */
   async start(): Promise<void> {
     if (this.started) return;
     try {
       const { channels, chunkSize, inputBus } = this.spec;
+
+      // Phase 31: ask sclang for a scope buffer index. sclang owns
+      // `s.scopeBufferAllocator` (StackNumberAllocator(0, 127)).
+      // Reply lands either on `/scope/allocated <idx>` (success) or
+      // `/scope/allocateFailed <reason>` (allocator exhausted).
+      const reply = await this.client.sendAndAwaitReply(
+        scopeAllocate(),
+        (r) =>
+          r.address === SCOPE_ALLOCATED_REPLY ||
+          r.address === SCOPE_ALLOCATE_FAILED_REPLY,
+        SCOPE_ALLOC_TIMEOUT_MS,
+      );
+      if (reply.address === SCOPE_ALLOCATE_FAILED_REPLY) {
+        const { reason } = parseScopeAllocateFailed(reply.args);
+        throw new Error(`scope buffer allocation failed: ${reason}`);
+      }
+      const { index: scopeNum } = parseScopeAllocated(reply.args);
+      this.scopeNumStore.set(scopeNum);
 
       const synthName = bufferTapSynthDefName(channels, chunkSize);
       await this.registry.ensureLoaded(
@@ -158,34 +191,23 @@ export class BufferController {
         compileBufferTapSynthDef(channels, chunkSize),
       );
 
-      const bufnum = this.bufferIds.next();
-      // Two-half ring: tap alternates writing into half 0 then half
-      // 1 each tick. Consumers read the just-completed half while
-      // the next is being written. `bAlloc` takes frame count; total
-      // size = `ringFrames × channels × 4 bytes`.
-      const ringFrames = chunkSize * 2;
-      await this.client.sendAndSync(bAlloc(bufnum, ringFrames, channels));
-      this.bufnumStore.set(bufnum);
-
       const nodeId = this.nodeIds.next();
       await this.client.sendAndSync(
         sNew(synthName, nodeId, AddToTail, this.group.groupId, {
           inBus: inputBus,
-          bufnum,
-          clockBus: this.clock.clockBus,
+          scopeNum,
         }),
       );
       this.nodeIdStore.set(nodeId);
 
-      // Register the tick-driven /b_getn loop on the worker. Inbound
-      // /b_setn replies route through `deliverChunk` → push fan-out
-      // + pull store. The worker's default `skipFirstTick: true`
-      // drops the partial half between /b_alloc and the first tick
-      // boundary, so consumers see only clean half-completed chunks.
+      // Register the SHM-driven subscription. The bridge mmaps
+      // scsynth's scope_buffer SHM segment, polls on every
+      // observed `/clock/tick`, and emits `bufferChunk` events
+      // back to main with the just-completed scope_buffer slot.
       const handle = this.client.subscribeBuffer(
         {
           bufferId: this.bufferId,
-          bufnum,
+          scopeNum,
           channels,
           chunkSize,
         },
@@ -196,11 +218,10 @@ export class BufferController {
       this.started = true;
     } catch (err) {
       // SINGLE CLEANUP PATH. `dispose()` is null-safe across every
-      // partial state (no nodeId set yet, no bufnum set yet, etc.),
-      // which is the entire reason this catch can route through one
-      // function regardless of which step inside the try failed.
-      // Cleanup errors are swallowed so the original failure — the
-      // meaningful one — is what propagates to the caller.
+      // partial state (no nodeId set yet, no scopeNum set yet,
+      // etc.). Cleanup errors are swallowed so the original
+      // failure — the meaningful one — is what propagates to the
+      // caller.
       try {
         await this.dispose();
       } catch {
@@ -211,17 +232,14 @@ export class BufferController {
   }
 
   /** Tear down everything `start()` allocated. Null-safe and
-   *  idempotent; handles every partial state (no nodeId, no
-   *  bufnum, /s_new failed mid-bundle, etc.). Safe to call from
+   *  idempotent; handles every partial state. Safe to call from
    *  `start()`'s catch-block. */
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
 
-    // Unsubscribe FIRST so the worker stops firing /b_getn against a
-    // soon-to-be-freed bufnum, and any in-flight /b_setn reply lands
-    // at a removed local listener (and is dropped) rather than
-    // routing into a torn-down `deliverChunk`.
+    // Unsubscribe FIRST so the bridge stops polling SHM for a
+    // about-to-be-freed scope_buffer index.
     if (this.workerUnsubscribe) {
       this.workerUnsubscribe();
       this.workerUnsubscribe = null;
@@ -240,13 +258,17 @@ export class BufferController {
       }
     }
 
-    const bufnum = this.bufnumStore.get();
-    if (bufnum !== null) {
-      this.bufnumStore.set(null);
+    const scopeNum = this.scopeNumStore.get();
+    if (scopeNum !== null) {
+      this.scopeNumStore.set(null);
+      // Fire-and-forget: sclang's `/scope/free` doesn't reply.
       try {
-        await this.client.sendAndSync(bFree(bufnum));
+        this.client.sendCommand(scopeFree(scopeNum));
       } catch (err) {
-        console.warn(`[sc:buffer ${this.bufferId}] bFree failed`, err);
+        console.warn(
+          `[sc:buffer ${this.bufferId}] scope/free send failed`,
+          err,
+        );
       }
     }
   }
@@ -265,14 +287,15 @@ export class BufferController {
     };
   }
 
-  /** Integration seam for Phase 17: the worker chunk dispatch will
-   *  call this for every delivered chunk. Updates the pull store
-   *  and fans out to push subscribers in registration order. */
+  /** Worker chunk dispatch: called for every bridge-emitted
+   *  `bufferChunk` event matching this `bufferId`. Updates the
+   *  pull store and fans out to push subscribers in registration
+   *  order. */
   deliverChunk(chunk: BufferChunk): void {
     if (this.disposed) return;
     this.latestChunkStore.set(chunk);
-    // Snapshot the set so a subscriber that unsubscribes inside its
-    // own callback doesn't mutate the iteration mid-flight.
+    // Snapshot the set so a subscriber that unsubscribes inside
+    // its own callback doesn't mutate the iteration mid-flight.
     for (const cb of [...this.subscribers]) {
       try {
         cb(chunk);
