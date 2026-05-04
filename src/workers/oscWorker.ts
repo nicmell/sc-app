@@ -4,16 +4,13 @@
  * forward bytes either direction. Inbound bytes are decoded here so
  * the main thread receives plain `{ address, args }` POJOs.
  *
- * Phase 35: scope chunk delivery is back in-band on the main /ws
- * (after a brief detour through per-scope `/ws/scope` connections in
- * Phase 31's post-shipping refactor). One Web Worker, one transport,
- * one WS — scope subscribe/unsubscribe/chunk frames travel as binary
- * messages with op-tag discriminators (0x01/0x02/0x03 — see
- * `scopeWire.ts`). Inbound `transport.onMessage` peeks the first byte
- * to dispatch between OSC decode and chunk decode. Subscription IDs
- * are integer counters minted here; the bridge echoes them back on
- * chunk frames and we look up the consumer-facing `bufferId` to fan
- * out to listeners.
+ * Phase 38: the WS is a pure OSC bridge. Scope subscribe /
+ * unsubscribe / chunk frames are real OSC messages
+ * (`/scope/{subscribe,unsubscribe,chunk}`), encoded via builders
+ * in `@sc-app/server-commands`. Subscription IDs are integer
+ * counters minted here and echoed by the bridge on chunk replies;
+ * we look up the consumer-facing `bufferId` to fan out to
+ * listeners.
  *
  * Decode failures surface as `error` events; the stream keeps flowing.
  */
@@ -29,8 +26,13 @@ console.log('[sc:worker] module loading …');
 
 import {
   decode,
+  encode,
   isBundle,
   isMessage,
+  parseScopeChunkArgs,
+  scopeSubscribe,
+  scopeUnsubscribe,
+  SCOPE_CHUNK_ADDRESS,
   type OscPacket,
 } from '@sc-app/server-commands';
 import type {
@@ -40,12 +42,6 @@ import type {
   WorkerToMain,
 } from '../server/workerProtocol';
 import { createOscTransport, type OscTransport } from './transport';
-import {
-  decodeChunk,
-  encodeSubscribe,
-  encodeUnsubscribe,
-  isScopeFrame,
-} from './scopeWire';
 import {
   handleSequencerBankUpdate,
   handleSequencerClockUpdate,
@@ -91,10 +87,11 @@ console.log('[sc:worker] ready for messages');
 
 let transport: OscTransport | null = null;
 
-// Phase 35: scope subscription bookkeeping. Wire format uses an
-// integer `sub_id` minted here; the bridge echoes it back on chunk
-// frames. We dispatch chunks to main-thread listeners by the
-// consumer-facing `bufferId`, so we maintain both directions.
+// Phase 38: scope subscription bookkeeping. /scope/subscribe
+// (OSC) carries an integer `subId` minted here; the bridge echoes
+// it on /scope/chunk replies. We dispatch chunks to main-thread
+// listeners by the consumer-facing `bufferId`, so we maintain
+// both directions.
 let nextSubId = 1;
 const subIdByBufferId = new Map<string, number>();
 const bufferIdBySubId = new Map<number, string>();
@@ -117,18 +114,21 @@ function handleSubscribeBuffer(sub: BufferSubscription): void {
   // (Duplicate subscribe usually means the consumer restarted.)
   const stale = subIdByBufferId.get(sub.bufferId);
   if (stale !== undefined) {
-    transport.send(encodeUnsubscribe(stale));
+    transport.send(encode(scopeUnsubscribe(stale)));
     bufferIdBySubId.delete(stale);
   }
   const subId = nextSubId++;
   subIdByBufferId.set(sub.bufferId, subId);
   bufferIdBySubId.set(subId, sub.bufferId);
   transport.send(
-    encodeSubscribe(subId, {
-      scope: sub.scopeNum,
-      channels: sub.channels,
-      chunkSize: sub.chunkSize,
-    }),
+    encode(
+      scopeSubscribe({
+        subId,
+        scope: sub.scopeNum,
+        channels: sub.channels,
+        chunkSize: sub.chunkSize,
+      }),
+    ),
   );
 }
 
@@ -138,7 +138,7 @@ function handleUnsubscribeBuffer(bufferId: string): void {
   subIdByBufferId.delete(bufferId);
   bufferIdBySubId.delete(subId);
   if (transport) {
-    transport.send(encodeUnsubscribe(subId));
+    transport.send(encode(scopeUnsubscribe(subId)));
   }
   // No transport ⇒ already disconnected; the bridge's per-WS
   // cleanup has already dropped the subscription server-side.
@@ -157,6 +157,40 @@ function emitReply(packet: OscPacket): void {
         type: 'clockTick',
         tick: { tickIndex, receivedAt: performance.now() },
       });
+      return;
+    }
+
+    // Phase 38: /scope/chunk reply. Parse the args (subId, tick,
+    // isGap, channels, blob) into a Float32Array (allocated fresh
+    // by the BE byte-swap loop) and post `bufferChunk` to main
+    // with the buffer transferred. Dispatch to the consumer's
+    // bufferId via `bufferIdBySubId`.
+    if (packet.address === SCOPE_CHUNK_ADDRESS) {
+      try {
+        const chunk = parseScopeChunkArgs(packet.args as unknown[]);
+        const bufferId = bufferIdBySubId.get(chunk.subId);
+        if (bufferId === undefined) {
+          // Could be a chunk for a subscription we just
+          // unsubscribed from — bridge had a chunk in flight
+          // when our /scope/unsubscribe arrived. Drop silently.
+          return;
+        }
+        post(
+          {
+            type: 'bufferChunk',
+            chunk: {
+              bufferId,
+              data: chunk.data,
+              channels: chunk.channels,
+              tickIndex: chunk.tickIndex,
+              isGap: chunk.isGap,
+            },
+          },
+          [chunk.data.buffer],
+        );
+      } catch (err) {
+        console.error('[sc:worker] /scope/chunk parse failed', err);
+      }
       return;
     }
 
@@ -194,41 +228,10 @@ function emitReply(packet: OscPacket): void {
   }
 }
 
-/** Dispatch one inbound binary frame from the main /ws. Phase 35:
- *  peek the first byte. 0x03 → scope chunk (decode + dispatch by
- *  bufferId); otherwise → OSC decode path. The op-tag space
- *  (0x01..0x03) cannot collide with OSC since OSC frames always
- *  start with `/` (0x2F) or `#` (0x23). */
+/** Dispatch one inbound binary frame from the main /ws. Phase 38:
+ *  pure OSC bridge — every frame is decoded as OSC; `/scope/chunk`
+ *  is just another reply address handled in `emitReply`. */
 function handleInboundBytes(bytes: Uint8Array): void {
-  if (isScopeFrame(bytes)) {
-    try {
-      const chunk = decodeChunk(bytes);
-      const bufferId = bufferIdBySubId.get(chunk.subId);
-      if (bufferId === undefined) {
-        // Could be a chunk for a subscription we just unsubscribed
-        // from — bridge had a chunk in flight when our 0x02 frame
-        // arrived. Drop silently; not an error.
-        return;
-      }
-      post(
-        {
-          type: 'bufferChunk',
-          chunk: {
-            bufferId,
-            data: chunk.data,
-            channels: chunk.channels,
-            tickIndex: chunk.tickIndex,
-            isGap: chunk.isGap,
-          },
-        },
-        [chunk.data.buffer],
-      );
-    } catch (err) {
-      console.error('[sc:worker] scope chunk decode failed', err);
-    }
-    return;
-  }
-  // OSC path.
   try {
     const packet = decode(bytes);
     emitReply(packet);

@@ -40,7 +40,9 @@ use std::sync::Arc;
 use regex::Regex;
 
 use super::session::Session;
-use crate::scope::middleware::{InboundScopeMiddleware, ScopeContext};
+use crate::scope::middleware::{
+    InboundScopeMiddleware, OutboundScopeMiddleware, ScopeContext,
+};
 
 /// Outcome of a middleware invocation.
 #[derive(Debug)]
@@ -120,19 +122,12 @@ impl<'a> WsCtx<'a> {
 }
 
 /// Outbound middlewares (claim addresses heading WS → bridge →
-/// UDP). Phase 37c leaves this empty — the binary 0x01/0x02
-/// scope subscribe/unsubscribe frames bypass the OSC-address-
-/// keyed middleware system. Phase 38 will add `Scope` variants
-/// for `/scope/subscribe` and `/scope/unsubscribe` once those
-/// addresses become real OSC messages.
+/// UDP). Phase 38 added the `Scope` variant for
+/// `/scope/{subscribe,unsubscribe}`.
 #[derive(Clone, Copy, Debug)]
 pub enum OutboundMiddleware {
-    /// Empty-enum placeholder. The dispatcher's `match *mw`
-    /// stays exhaustive in 37c by matching this single variant
-    /// (and never registering any). Phase 38 replaces this with
-    /// real variants.
-    #[doc(hidden)]
-    _Phantom,
+    /// Scope-owned outbound middleware (subscribe / unsubscribe).
+    Scope(OutboundScopeMiddleware),
 }
 
 /// Inbound middlewares (claim addresses heading UDP → bridge →
@@ -234,17 +229,20 @@ pub(crate) async fn dispatch_inbound<'a>(
     MiddlewareOutcome::PassThrough
 }
 
-/// Outbound dispatch table. Phase 38 will add real variants.
-/// 37c keeps the empty `_Phantom` placeholder; the registry is
-/// always empty so this match arm never executes.
+/// Outbound dispatch table. Each variant delegates to the owning
+/// module's `run_outbound` function — keeps domain logic out of
+/// `server::middleware` while still letting the dispatcher avoid
+/// `dyn Future` boxing.
 async fn invoke_outbound<'a>(
     mw: OutboundMiddleware,
-    _ctx: &mut WsCtx<'a>,
+    ctx: &mut WsCtx<'a>,
     _address: &str,
-    _payload: &[u8],
+    payload: &[u8],
 ) -> MiddlewareOutcome {
     match mw {
-        OutboundMiddleware::_Phantom => MiddlewareOutcome::PassThrough,
+        OutboundMiddleware::Scope(variant) => {
+            crate::scope::middleware::run_outbound(variant, ctx, payload).await
+        }
     }
 }
 

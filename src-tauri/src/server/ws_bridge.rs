@@ -78,9 +78,7 @@ use super::middleware::{
 };
 use super::routing::peek_osc_address;
 use super::session::Session;
-use crate::scope::middleware::{
-    self as scope_mw, ScopeContext, SCOPE_OP_SUBSCRIBE, SCOPE_OP_UNSUBSCRIBE,
-};
+use crate::scope::middleware::{self as scope_mw, ScopeContext};
 
 /// Bridge a WebSocket against an existing [`Session`]'s pre-bound
 /// UDP sockets. Inbound replies fan out via `broadcast::Sender`
@@ -93,18 +91,20 @@ pub async fn handle_ws_session(ws: WebSocket, session: Arc<Session>) -> Result<(
     let (tx, mut rx) = ws.split();
     let tx = Arc::new(TokioMutex::new(tx));
 
-    // Phase 35: per-WS scope subscriptions. Wrapped in a Mutex so
-    // the recv loop (handles 0x01/0x02 from main) and the
-    // broadcast forwarder (runs the inbound middleware on every
-    // payload) can both mutate it.
+    // Per-WS scope subscriptions. Wrapped in a Mutex so the recv
+    // loop (outbound dispatch on /scope/{subscribe,unsubscribe})
+    // and the broadcast forwarder (inbound dispatch on
+    // /clock/tick + /b_setn) can both mutate it.
     let scope_ctx = Arc::new(TokioMutex::new(ScopeContext::new()));
 
-    // Phase 37c: build the per-WS middleware registries. Outbound
-    // is empty in 37c (binary 0x01/0x02 frames bypass middleware;
-    // Phase 38 adds OSC variants). Inbound gets the scope-owned
-    // handlers appropriate for this session's ScopeMode.
-    let outbound_registry: Arc<MiddlewareRegistry<OutboundMiddleware>> =
-        Arc::new(MiddlewareRegistry::new());
+    // Phase 38: pure-OSC scope wire. Outbound registry claims
+    // /scope/subscribe + /scope/unsubscribe. Inbound registry
+    // gets the scope-mode-appropriate handlers.
+    let outbound_registry: Arc<MiddlewareRegistry<OutboundMiddleware>> = {
+        let mut reg = MiddlewareRegistry::new();
+        scope_mw::register_outbound_middlewares(&mut reg);
+        Arc::new(reg)
+    };
     let inbound_registry: Arc<MiddlewareRegistry<InboundMiddleware>> = {
         let mut reg = MiddlewareRegistry::new();
         scope_mw::register_inbound_middlewares(&mut reg, session.scope_mode);
@@ -134,12 +134,11 @@ pub async fn handle_ws_session(ws: WebSocket, session: Arc<Session>) -> Result<(
         forwarder_tasks.push(task);
     }
 
-    // WS → UDP loop. Per binary frame:
-    //   1. Peek the first byte. 0x01/0x02 → binary scope
-    //      subprotocol (delegates to scope::middleware).
-    //   2. Otherwise → OSC: dispatch_outbound first; if PassThrough
-    //      (always in 37c), fall through to routes.route_for + UDP
-    //      send. Orphan addresses drop+warn.
+    // WS → UDP loop. Phase 38: every inbound binary frame is
+    // pure OSC. Run dispatch_outbound first; if Consumed
+    // (e.g. /scope/subscribe), stop. If PassThrough or
+    // ConsumedAndSend, route via routes.route_for + UDP send.
+    // Orphan addresses (no route + no middleware) drop+warn.
     while let Some(msg) = rx.next().await {
         match msg {
             Ok(Message::Binary(bytes)) => {
@@ -147,54 +146,20 @@ pub async fn handle_ws_session(ws: WebSocket, session: Arc<Session>) -> Result<(
                 if bytes_slice.is_empty() {
                     continue;
                 }
-                match bytes_slice[0] {
-                    SCOPE_OP_SUBSCRIBE => {
-                        if let Err(e) = scope_mw::ws_scope_subscribe_binary(
-                            bytes_slice,
-                            scope_ctx.as_ref(),
-                            &session,
-                        )
-                        .await
-                        {
-                            tracing::warn!(
-                                error = %e,
-                                session_id = %session.session_id,
-                                "scope subscribe failed"
-                            );
-                        }
-                    }
-                    SCOPE_OP_UNSUBSCRIBE => {
-                        if let Err(e) = scope_mw::ws_scope_unsubscribe_binary(
-                            bytes_slice,
-                            scope_ctx.as_ref(),
-                            &session,
-                        )
-                        .await
-                        {
-                            tracing::warn!(
-                                error = %e,
-                                session_id = %session.session_id,
-                                "scope unsubscribe failed"
-                            );
-                        }
-                    }
-                    _ => {
-                        if let Err(e) = handle_outbound_osc(
-                            bytes_slice,
-                            &scope_ctx,
-                            &session,
-                            &outbound_registry,
-                        )
-                        .await
-                        {
-                            tracing::warn!(
-                                error = %e,
-                                session_id = %session.session_id,
-                                "outbound dispatch error"
-                            );
-                            break;
-                        }
-                    }
+                if let Err(e) = handle_outbound_osc(
+                    bytes_slice,
+                    &scope_ctx,
+                    &session,
+                    &outbound_registry,
+                )
+                .await
+                {
+                    tracing::warn!(
+                        error = %e,
+                        session_id = %session.session_id,
+                        "outbound dispatch error"
+                    );
+                    break;
                 }
             }
             Ok(Message::Close(_)) => break,

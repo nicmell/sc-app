@@ -36,7 +36,7 @@ anyhow = "1"
 # Phase 22 — minimal OSC awareness in the bridge for ungraceful-
 # disconnect cleanup. Only used to decode `/done /notify` replies
 # and encode the cleanup bundle (/g_freeAll, /n_free, /notify 0).
-rosc = "0.10"
+rosc = "0.11"
 
 # Phase 29 — bridge-managed sessions keyed by per-tab UUIDs from
 # `sessionStorage`. v4 for random IDs at session creation; serde

@@ -1,41 +1,41 @@
-//! Scope-related middleware bodies (Phase 37c).
+//! Scope-related middleware bodies.
 //!
 //! Pre-37 the scope dispatch logic lived inline in
-//! `server/ws_bridge.rs`. Phase 37c relocates the bodies here:
+//! `server/ws_bridge.rs`. Phase 37c relocated the bodies here.
+//! Phase 38 retired the binary 0x01/0x02/0x03 wire format —
+//! `/scope/{subscribe,unsubscribe,chunk}` are real OSC messages
+//! now. This module owns:
 //!
 //! - [`ScopeContext`] — the per-WS subscription state (SHM
 //!   subscriptions + OSC poll state).
-//! - [`ws_scope_subscribe`] / [`ws_scope_unsubscribe`] — called
-//!   directly by `ws_bridge.rs`'s recv loop on 0x01 / 0x02 binary
-//!   frames. Phase 38 will route OSC-format `/scope/subscribe` /
-//!   `/scope/unsubscribe` through these same functions via the
-//!   outbound middleware registry.
+//! - Outbound middlewares: [`outbound_scope_subscribe`] /
+//!   [`outbound_scope_unsubscribe`] — claim `^/scope/subscribe$`
+//!   and `^/scope/unsubscribe$` on the recv path. Parse the OSC
+//!   message and mutate `ScopeContext`.
 //! - Inbound middlewares: [`inbound_chunk_emit_on_tick`] (SHM mode),
 //!   [`inbound_bgetn_issue_on_tick`] (OSC mode),
 //!   [`inbound_intercept_bsetn`] (OSC mode). Registered via
 //!   [`register_inbound_middlewares`] at WS attach.
-//! - [`encode_chunk`] — the 0x03 binary chunk frame producer.
-//!   Phase 38 replaces this with an OSC `/scope/chunk` message.
+//! - [`encode_scope_chunk`] — the `/scope/chunk` OSC reply
+//!   producer. Blob-arg payload, big-endian f32.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use anyhow::Result;
+use rosc::{OscMessage, OscPacket, OscType};
 
 use crate::scope::osc::{self as scope_osc, OscPollState, OscScopeSubscription};
 use crate::scope::shm::{self as scope_shm, ScopeReadResult};
 use crate::scope::ScopeMode;
 use crate::server::middleware::{
-    InboundMiddleware, MiddlewareOutcome, MiddlewareRegistry, WsCtx,
+    InboundMiddleware, MiddlewareOutcome, MiddlewareRegistry, OutboundMiddleware,
+    WsCtx,
 };
-use crate::server::session::{ScopeShm, Session};
+use crate::server::session::ScopeShm;
 
-/// Binary scope wire-format op codes (Phase 35). Phase 38 will
-/// retire these in favor of OSC `/scope/{subscribe,unsubscribe,
-/// chunk}` messages.
-pub const SCOPE_OP_SUBSCRIBE: u8 = 0x01;
-pub const SCOPE_OP_UNSUBSCRIBE: u8 = 0x02;
-pub const SCOPE_OP_CHUNK: u8 = 0x03;
+pub const SCOPE_SUBSCRIBE_ADDRESS: &str = "/scope/subscribe";
+pub const SCOPE_UNSUBSCRIBE_ADDRESS: &str = "/scope/unsubscribe";
+pub const SCOPE_CHUNK_ADDRESS: &str = "/scope/chunk";
 
 /// Per-WS scope subscription record (SHM mode). Keyed by the
 /// worker-minted `sub_id`. Bridge never interprets `sub_id`
@@ -94,72 +94,126 @@ impl Default for ScopeContext {
     }
 }
 
-// ===== Subscribe / unsubscribe (called from ws_bridge's recv loop) =====
+// ===== Outbound middlewares: /scope/{subscribe,unsubscribe} =====
 
-/// Decode a 0x01 binary subscribe frame and install the
-/// subscription on the per-WS [`ScopeContext`]. Phase 37c: the
-/// frame layout still mirrors Phase 35's binary wire format
-/// `[op | sub_id:u32 | scope:u32 | channels:u32 | chunk:u32]`.
-/// Phase 38 will retire the binary format; the parsed parameters
-/// will arrive from an OSC message instead, but the body of this
-/// function (state mutation on `ScopeContext`) stays the same.
-pub async fn ws_scope_subscribe_binary(
-    bytes: &[u8],
-    scope_ctx: &tokio::sync::Mutex<ScopeContext>,
-    session: &Arc<Session>,
-) -> Result<()> {
-    if bytes.len() < 17 {
-        anyhow::bail!("subscribe frame too short ({} < 17)", bytes.len());
+/// Decode the OSC payload into a top-level message; non-message
+/// payloads (bundles) for scope addresses are not expected and
+/// drop with a warn.
+fn decode_top_message(payload: &[u8]) -> Option<OscMessage> {
+    let pkt = rosc::decoder::decode_udp(payload).ok()?.1;
+    match pkt {
+        OscPacket::Message(m) => Some(m),
+        OscPacket::Bundle(_) => None,
     }
-    let sub_id = u32::from_le_bytes(bytes[1..5].try_into().unwrap());
-    let scope_or_bufnum = u32::from_le_bytes(bytes[5..9].try_into().unwrap());
-    let channels = u32::from_le_bytes(bytes[9..13].try_into().unwrap());
-    let chunk_size = u32::from_le_bytes(bytes[13..17].try_into().unwrap());
-    install_subscription(scope_ctx, session, sub_id, scope_or_bufnum, channels, chunk_size).await
 }
 
-/// Decode a 0x02 binary unsubscribe frame and remove the entry
-/// from [`ScopeContext`]. Same Phase 37c → 38 migration shape as
-/// [`ws_scope_subscribe_binary`].
-pub async fn ws_scope_unsubscribe_binary(
-    bytes: &[u8],
-    scope_ctx: &tokio::sync::Mutex<ScopeContext>,
-    session: &Arc<Session>,
-) -> Result<()> {
-    if bytes.len() < 5 {
-        anyhow::bail!("unsubscribe frame too short ({} < 5)", bytes.len());
+fn expect_int(arg: Option<&OscType>) -> Option<i32> {
+    match arg? {
+        OscType::Int(v) => Some(*v),
+        _ => None,
     }
-    let sub_id = u32::from_le_bytes(bytes[1..5].try_into().unwrap());
-    let mut ctx = scope_ctx.lock().await;
-    let removed = match session.scope_mode {
-        ScopeMode::Shm => ctx.shm_subs.remove(&sub_id).is_some(),
-        ScopeMode::Osc => ctx.osc.subs.remove(&sub_id).is_some(),
+}
+
+/// Outbound `/scope/subscribe` middleware. OSC args:
+/// `subId:i, scope:i, channels:i, chunk:i`. The `scope` field is
+/// interpreted as a scope_buffer index (SHM mode) or bufnum (OSC
+/// fallback mode); the frontend chooses, the bridge interprets
+/// per `Session::scope_mode`. Returns `Consumed` — the bridge
+/// handles the subscription locally; nothing forwards to UDP.
+async fn outbound_scope_subscribe<'a>(
+    ctx: &mut WsCtx<'a>,
+    payload: &[u8],
+) -> MiddlewareOutcome {
+    let Some(msg) = decode_top_message(payload) else {
+        tracing::warn!(
+            session_id = %ctx.session.session_id,
+            "outbound /scope/subscribe: malformed OSC payload"
+        );
+        return MiddlewareOutcome::Consumed;
+    };
+    let mut args = msg.args.iter();
+    let (Some(sub_id), Some(scope_or_bufnum), Some(channels), Some(chunk_size)) = (
+        expect_int(args.next()),
+        expect_int(args.next()),
+        expect_int(args.next()),
+        expect_int(args.next()),
+    ) else {
+        tracing::warn!(
+            session_id = %ctx.session.session_id,
+            args = ?msg.args,
+            "outbound /scope/subscribe: expected (i,i,i,i) args"
+        );
+        return MiddlewareOutcome::Consumed;
+    };
+    if let Err(e) = install_subscription(
+        ctx,
+        sub_id as u32,
+        scope_or_bufnum as u32,
+        channels as u32,
+        chunk_size as u32,
+    )
+    .await
+    {
+        tracing::warn!(
+            error = %e,
+            session_id = %ctx.session.session_id,
+            "outbound /scope/subscribe failed"
+        );
+    }
+    MiddlewareOutcome::Consumed
+}
+
+/// Outbound `/scope/unsubscribe` middleware. OSC args: `subId:i`.
+/// Returns `Consumed`.
+async fn outbound_scope_unsubscribe<'a>(
+    ctx: &mut WsCtx<'a>,
+    payload: &[u8],
+) -> MiddlewareOutcome {
+    let Some(msg) = decode_top_message(payload) else {
+        tracing::warn!(
+            session_id = %ctx.session.session_id,
+            "outbound /scope/unsubscribe: malformed OSC payload"
+        );
+        return MiddlewareOutcome::Consumed;
+    };
+    let Some(sub_id) = expect_int(msg.args.first()) else {
+        tracing::warn!(
+            session_id = %ctx.session.session_id,
+            args = ?msg.args,
+            "outbound /scope/unsubscribe: expected (i,) args"
+        );
+        return MiddlewareOutcome::Consumed;
+    };
+    let sub_id = sub_id as u32;
+    let scope = &mut *ctx.scope;
+    let removed = match ctx.session.scope_mode {
+        ScopeMode::Shm => scope.shm_subs.remove(&sub_id).is_some(),
+        ScopeMode::Osc => scope.osc.subs.remove(&sub_id).is_some(),
     };
     if !removed {
         tracing::debug!(sub_id, "scope unsubscribe for unknown sub_id");
     }
-    Ok(())
+    MiddlewareOutcome::Consumed
 }
 
-async fn install_subscription(
-    scope_ctx: &tokio::sync::Mutex<ScopeContext>,
-    session: &Arc<Session>,
+async fn install_subscription<'a>(
+    ctx: &mut WsCtx<'a>,
     sub_id: u32,
     scope_or_bufnum: u32,
     channels: u32,
     chunk_size: u32,
-) -> Result<()> {
+) -> anyhow::Result<()> {
+    let session = ctx.session.clone();
     match session.scope_mode {
         ScopeMode::Shm => {
-            let mut ctx = scope_ctx.lock().await;
-            if ctx.shm.is_none() {
+            if ctx.scope.shm.is_none() {
                 let shm = session
                     .ensure_scope_shm()
                     .await
                     .map_err(|e| anyhow::anyhow!("ensure_scope_shm failed: {e}"))?;
-                ctx.shm = Some(shm);
+                ctx.scope.shm = Some(shm);
             }
-            let shm = ctx.shm.as_ref().expect("shm just set above");
+            let shm = ctx.scope.shm.as_ref().expect("shm just set above");
             if (scope_or_bufnum as usize) >= shm.layout.count {
                 anyhow::bail!(
                     "scope index {} out of range (layout count {})",
@@ -167,7 +221,7 @@ async fn install_subscription(
                     shm.layout.count
                 );
             }
-            if let Some(prev) = ctx.shm_subs.insert(
+            if let Some(prev) = ctx.scope.shm_subs.insert(
                 sub_id,
                 ShmScopeSubscription {
                     sub_id,
@@ -194,8 +248,7 @@ async fn install_subscription(
             );
         }
         ScopeMode::Osc => {
-            let mut ctx = scope_ctx.lock().await;
-            if let Some(prev) = ctx.osc.subs.insert(
+            if let Some(prev) = ctx.scope.osc.subs.insert(
                 sub_id,
                 OscScopeSubscription::new(sub_id, scope_or_bufnum, channels, chunk_size),
             ) {
@@ -223,10 +276,11 @@ async fn install_subscription(
 // ===== Inbound middleware bodies =====
 
 /// SHM mode: on each `/clock/tick`, poll SHM for every active
-/// subscription on this WS and emit a 0x03 chunk frame for those
-/// whose `_stage` advanced. Returns `PassThrough` so the tick
-/// itself still reaches the worker (the watchdog needs it). Chunks
-/// are pushed onto `ctx.ws_extras` for the dispatcher to flush.
+/// subscription on this WS and emit a `/scope/chunk` OSC reply
+/// for those whose `_stage` advanced. Returns `PassThrough` so
+/// the tick itself still reaches the worker (the watchdog needs
+/// it). Chunks are pushed onto `ctx.ws_extras` for the dispatcher
+/// to flush.
 fn inbound_chunk_emit_on_tick(ctx: &mut WsCtx<'_>) -> MiddlewareOutcome {
     let scope = &mut *ctx.scope;
     let Some(shm) = scope.shm.clone() else {
@@ -245,11 +299,11 @@ fn inbound_chunk_emit_on_tick(ctx: &mut WsCtx<'_>) -> MiddlewareOutcome {
                 }
                 sub.last_seen_stage = stage as i32;
                 sub.tick_index = sub.tick_index.wrapping_add(1);
-                ctx.ws_extras.push(encode_chunk(
+                ctx.ws_extras.push(encode_scope_chunk(
                     sub.sub_id,
                     sub.tick_index,
                     false,
-                    channels.min(255) as u8,
+                    channels as u32,
                     frames as u32,
                     &floats,
                 ));
@@ -310,10 +364,10 @@ fn inbound_bgetn_issue_on_tick(ctx: &mut WsCtx<'_>) -> MiddlewareOutcome {
 /// OSC mode: try to intercept a `/b_setn` broadcast payload. If
 /// its bufnum matches one of this WS's active subscriptions,
 /// returns `ConsumedAndSend(chunk_bytes)` — the bridge swaps the
-/// reply for the encoded chunk frame. If no subscription matches
-/// (different bufnum, or parse failure), returns `PassThrough`
-/// and the original `/b_setn` flows to the WS as a normal OSC
-/// reply.
+/// reply for the encoded `/scope/chunk` OSC message. If no
+/// subscription matches (different bufnum, or parse failure),
+/// returns `PassThrough` and the original `/b_setn` flows to the
+/// WS as a normal OSC reply.
 fn inbound_intercept_bsetn(ctx: &mut WsCtx<'_>, payload: &[u8]) -> MiddlewareOutcome {
     let Some(parsed) = scope_osc::parse_bsetn(payload) else {
         return MiddlewareOutcome::PassThrough;
@@ -329,21 +383,19 @@ fn inbound_intercept_bsetn(ctx: &mut WsCtx<'_>, payload: &[u8]) -> MiddlewareOut
         // Stale reply (we issued a new /b_getn meanwhile). Drop;
         // the original /b_setn still doesn't get forwarded
         // because matching bufnum + stale offset is bug-territory
-        // — the worker would discard it anyway. PassThrough would
-        // forward; ConsumedAndSend([]) would suppress. We
-        // suppress.
+        // — the worker would discard it anyway.
         return MiddlewareOutcome::Consumed;
     }
     let Some(floats) = scope_osc::decode_bsetn_floats(parsed.raw_floats) else {
         return MiddlewareOutcome::PassThrough;
     };
     let frame_count = sub.chunk_size;
-    let channels = sub.channels.min(255) as u8;
+    let channels = sub.channels;
     let is_gap = sub.last_was_gap;
     sub.pending_offset = None;
     sub.last_was_gap = false;
     sub.tick_index = sub.tick_index.wrapping_add(1);
-    let frame = encode_chunk(
+    let frame = encode_scope_chunk(
         sub.sub_id,
         sub.tick_index,
         is_gap,
@@ -354,34 +406,47 @@ fn inbound_intercept_bsetn(ctx: &mut WsCtx<'_>, payload: &[u8]) -> MiddlewareOut
     MiddlewareOutcome::ConsumedAndSend(frame)
 }
 
-/// Encode one 0x03 chunk frame. See `ws_bridge.rs`'s module docs
-/// for the layout (and `src/workers/scopeWire.ts` for the worker
-/// decoder). Phase 38 will retire this in favor of an OSC
-/// `/scope/chunk` message.
-pub fn encode_chunk(
+/// Encode one `/scope/chunk` OSC message. Args:
+///   `subId:i, tick:i, isGap:i, channels:i, data:b`.
+/// `data` is a blob of `frame_count × channels × 4` bytes of
+/// **big-endian** IEEE-754 float32, channel-interleaved. BE for
+/// consistency with OSC's `,f` type — pinned by
+/// `encode_scope_chunk_endianness_pin` test.
+pub fn encode_scope_chunk(
     sub_id: u32,
     tick_index: u32,
     is_gap: bool,
-    channels: u8,
+    channels: u32,
     frame_count: u32,
     interleaved_floats: &[f32],
 ) -> Vec<u8> {
-    // Header: op + sub_id + tick + is_gap + channels + frames
-    //         1     4       4      1        1          4    = 15 bytes
-    let mut out = Vec::with_capacity(15 + interleaved_floats.len() * 4);
-    out.push(SCOPE_OP_CHUNK);
-    out.extend_from_slice(&sub_id.to_le_bytes());
-    out.extend_from_slice(&tick_index.to_le_bytes());
-    out.push(if is_gap { 1 } else { 0 });
-    out.push(channels);
-    out.extend_from_slice(&frame_count.to_le_bytes());
+    debug_assert_eq!(
+        interleaved_floats.len(),
+        (frame_count as usize) * (channels as usize),
+        "encode_scope_chunk: floats len ({}) != frame_count ({}) * channels ({})",
+        interleaved_floats.len(),
+        frame_count,
+        channels,
+    );
+    let mut blob = Vec::with_capacity(interleaved_floats.len() * 4);
     for &f in interleaved_floats {
-        out.extend_from_slice(&f.to_le_bytes());
+        blob.extend_from_slice(&f.to_be_bytes());
     }
-    out
+    let msg = OscMessage {
+        addr: SCOPE_CHUNK_ADDRESS.into(),
+        args: vec![
+            OscType::Int(sub_id as i32),
+            OscType::Int(tick_index as i32),
+            OscType::Int(if is_gap { 1 } else { 0 }),
+            OscType::Int(channels as i32),
+            OscType::Blob(blob),
+        ],
+    };
+    rosc::encoder::encode(&OscPacket::Message(msg))
+        .expect("encode_scope_chunk: rosc encoder failure (BUG)")
 }
 
-// ===== Dispatch entry points (called from server::middleware::invoke_inbound) =====
+// ===== Dispatch entry points (called from server::middleware::invoke_*) =====
 
 /// Run an inbound middleware variant. Called by the dispatcher
 /// in `server::middleware`. Direct-dispatch via match on the enum
@@ -398,6 +463,19 @@ pub(crate) fn run_inbound(
     }
 }
 
+/// Run an outbound middleware variant. Called by the dispatcher
+/// in `server::middleware`.
+pub(crate) async fn run_outbound<'a>(
+    variant: OutboundScopeMiddleware,
+    ctx: &mut WsCtx<'a>,
+    payload: &[u8],
+) -> MiddlewareOutcome {
+    match variant {
+        OutboundScopeMiddleware::Subscribe => outbound_scope_subscribe(ctx, payload).await,
+        OutboundScopeMiddleware::Unsubscribe => outbound_scope_unsubscribe(ctx, payload).await,
+    }
+}
+
 /// Variants of the scope-owned inbound middlewares. Lives in
 /// the scope module (not server::middleware) because the bodies
 /// are scope-domain logic; the server middleware enum
@@ -410,6 +488,32 @@ pub enum InboundScopeMiddleware {
     BgetnIssueOnTick,
     /// OSC mode: on /b_setn, match by bufnum and emit a chunk.
     InterceptBsetn,
+}
+
+/// Variants of the scope-owned outbound middlewares.
+#[derive(Clone, Copy, Debug)]
+pub enum OutboundScopeMiddleware {
+    /// Claims `/scope/subscribe` on the recv path.
+    Subscribe,
+    /// Claims `/scope/unsubscribe` on the recv path.
+    Unsubscribe,
+}
+
+/// Register the outbound middlewares (mode-independent — the
+/// scope module handles both SHM and OSC under the same
+/// addresses; the per-mode branching happens in
+/// `install_subscription`). Called once per WS attach.
+pub fn register_outbound_middlewares(
+    reg: &mut MiddlewareRegistry<OutboundMiddleware>,
+) {
+    reg.register(
+        r"^/scope/subscribe$",
+        OutboundMiddleware::Scope(OutboundScopeMiddleware::Subscribe),
+    );
+    reg.register(
+        r"^/scope/unsubscribe$",
+        OutboundMiddleware::Scope(OutboundScopeMiddleware::Unsubscribe),
+    );
 }
 
 /// Register the inbound middlewares appropriate for the
@@ -442,44 +546,60 @@ pub fn register_inbound_middlewares(
 mod tests {
     use super::*;
 
-    /// Wire-format round-trip: encode a chunk, manually decode the
-    /// header bytes (mirrors the worker-side `decodeChunk` in
-    /// `src/workers/scopeWire.ts`). Catches accidental layout
-    /// changes between bridge and worker.
+    /// Round-trip: encode a chunk via `encode_scope_chunk`, decode
+    /// with rosc, assert the args match. Covers the wire shape
+    /// the worker expects.
     #[test]
-    fn chunk_frame_layout() {
+    fn encode_scope_chunk_round_trip() {
         let payload = [0.5_f32, -0.25_f32, 1.0_f32, -1.0_f32];
-        let frame = encode_chunk(7, 42, false, 2, 2, &payload);
+        let bytes = encode_scope_chunk(7, 42, false, 2, 2, &payload);
 
-        assert_eq!(frame[0], SCOPE_OP_CHUNK);
-        assert_eq!(u32::from_le_bytes(frame[1..5].try_into().unwrap()), 7);
-        assert_eq!(u32::from_le_bytes(frame[5..9].try_into().unwrap()), 42);
-        assert_eq!(frame[9], 0);
-        assert_eq!(frame[10], 2);
-        assert_eq!(u32::from_le_bytes(frame[11..15].try_into().unwrap()), 2);
+        let (_, packet) = rosc::decoder::decode_udp(&bytes).expect("decode");
+        let OscPacket::Message(msg) = packet else {
+            panic!("expected Message, got Bundle");
+        };
+        assert_eq!(msg.addr, SCOPE_CHUNK_ADDRESS);
+        assert_eq!(msg.args.len(), 5);
+        assert!(matches!(msg.args[0], OscType::Int(7)));
+        assert!(matches!(msg.args[1], OscType::Int(42)));
+        assert!(matches!(msg.args[2], OscType::Int(0)));
+        assert!(matches!(msg.args[3], OscType::Int(2)));
+        let OscType::Blob(ref blob) = msg.args[4] else {
+            panic!("expected Blob arg, got {:?}", msg.args[4]);
+        };
+        assert_eq!(blob.len(), payload.len() * 4);
         for (i, &f) in payload.iter().enumerate() {
-            let off = 15 + i * 4;
-            assert_eq!(
-                f32::from_le_bytes(frame[off..off + 4].try_into().unwrap()),
-                f
-            );
+            // Big-endian bytes inside the blob (Phase 38 invariant).
+            let chunk: [u8; 4] = blob[i * 4..i * 4 + 4].try_into().unwrap();
+            assert_eq!(f32::from_be_bytes(chunk), f);
         }
-        assert_eq!(frame.len(), 15 + payload.len() * 4);
+    }
+
+    /// Endianness pin — a known float must produce a known byte
+    /// sequence in the blob payload. Catches accidental host-
+    /// native or little-endian regressions on either side of the
+    /// wire (bridge encoder, worker decoder).
+    #[test]
+    fn encode_scope_chunk_endianness_pin() {
+        // 1.0_f32 in IEEE-754 = 0x3F800000 (big-endian bytes).
+        let bytes = encode_scope_chunk(0, 0, false, 1, 1, &[1.0_f32]);
+        let (_, packet) = rosc::decoder::decode_udp(&bytes).unwrap();
+        let OscPacket::Message(msg) = packet else {
+            panic!()
+        };
+        let OscType::Blob(ref blob) = msg.args[4] else {
+            panic!()
+        };
+        assert_eq!(blob.as_slice(), &[0x3F, 0x80, 0x00, 0x00]);
     }
 
     #[test]
-    fn chunk_frame_is_gap_flag() {
-        let frame = encode_chunk(0, 0, true, 1, 0, &[]);
-        assert_eq!(frame[9], 1);
-    }
-
-    #[test]
-    fn first_byte_dispatch_unambiguous_with_osc() {
-        // OSC always starts with `/` (0x2F) for messages or `#`
-        // (0x23) for bundles. 0x01..0x03 must not collide.
-        for op in [SCOPE_OP_SUBSCRIBE, SCOPE_OP_UNSUBSCRIBE, SCOPE_OP_CHUNK] {
-            assert_ne!(op, b'/');
-            assert_ne!(op, b'#');
-        }
+    fn encode_scope_chunk_is_gap_flag() {
+        let bytes = encode_scope_chunk(0, 0, true, 1, 0, &[]);
+        let (_, packet) = rosc::decoder::decode_udp(&bytes).unwrap();
+        let OscPacket::Message(msg) = packet else {
+            panic!()
+        };
+        assert!(matches!(msg.args[2], OscType::Int(1)));
     }
 }
