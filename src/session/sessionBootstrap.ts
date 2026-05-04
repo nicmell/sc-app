@@ -27,6 +27,20 @@ export interface DirtSample {
   count: number;
 }
 
+/** scsynth version snapshot from `/version.reply`. Phase 39
+ *  hotfix: replaces the per-session `/version` round-trip; the
+ *  bridge captures this at boot and surfaces it via SessionInfo. */
+export interface ScsynthVersion {
+  progName: string;
+  major: number;
+  minor: number;
+  /** SC reports patch as a string (e.g. `".0"`); preserved
+   *  verbatim. */
+  patch: string;
+  branch: string;
+  commitHash: string;
+}
+
 /** Cached clock metadata from sclang's bootstrap reply. Phase 39b
  *  replaces the per-session `/clock/hello → /clock/info` round-trip
  *  with this cached snapshot. `null` if sclang isn't reachable. */
@@ -63,6 +77,7 @@ export interface SessionInfo {
   clock: SessionClockInfo | null;
   numScopeBuffers: number | null;
   dirtSamples: DirtSample[];
+  scsynthVersion: ScsynthVersion | null;
 }
 
 /** Read-or-create. If `sessionStorage` has an id, try to read it

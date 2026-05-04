@@ -61,6 +61,11 @@ const BROADCAST_CAPACITY: usize = 4096;
 const NOTIFY_TIMEOUT: Duration = Duration::from_secs(2);
 /// `/status` handshake timeout. Same shape.
 const STATUS_TIMEOUT: Duration = Duration::from_secs(2);
+/// `/version` handshake timeout. Phase 39 hotfix: bridge fetches
+/// scsynth's version once at boot; cached on metadata so
+/// frontend SessionInfo carries it (no per-session /version
+/// round-trip).
+const VERSION_TIMEOUT: Duration = Duration::from_secs(1);
 /// Phase 39b: `/sc-app/bootstrap/hello` round-trip per attempt.
 const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(3);
 /// Phase 39b: how many bootstrap attempts before giving up
@@ -98,6 +103,12 @@ pub struct ServerMetadata {
     /// Nominal sample rate from `/status.reply`. Used by
     /// `tickToTimetag` math + scope chunk geometry.
     pub sample_rate: Option<u32>,
+    /// Phase 39 hotfix: scsynth version from `/version.reply`,
+    /// captured at boot. Surfaced via SessionInfo so the
+    /// frontend's footer doesn't need a per-session OSC
+    /// round-trip. `None` if scsynth doesn't support /version
+    /// (rare; ancient forks).
+    pub scsynth_version: Option<ScsynthVersion>,
 
     // ── Sclang-side (populated by /sc-app/bootstrap/info) ──
     /// Phase 39d: full clock metadata, populated by the bridge
@@ -142,6 +153,21 @@ pub struct ClockMetadata {
 pub struct DirtSample {
     pub name: String,
     pub count: i32,
+}
+
+/// scsynth version snapshot from `/version.reply`. camelCase JSON
+/// to match the frontend's `ScsynthVersion` type.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScsynthVersion {
+    pub prog_name: String,
+    pub major: i32,
+    pub minor: i32,
+    /// SC reports patch as a string (e.g. `".0"`); preserved
+    /// verbatim.
+    pub patch: String,
+    pub branch: String,
+    pub commit_hash: String,
 }
 
 /// One UDP target's bridge-level state: the connected socket, the
@@ -192,14 +218,34 @@ impl Server {
         let mut metadata = ServerMetadata::default();
         match role {
             ServerRole::Scsynth => {
-                // /notify + /status BEFORE the recv task starts.
-                // The handshake reads replies directly from the
-                // socket; spawning the recv task afterward
-                // avoids the broadcast race.
+                // /notify + /status + /version BEFORE the recv
+                // task starts. The handshake reads replies
+                // directly from the socket; spawning the recv
+                // task afterward avoids the broadcast race.
                 let client_id = notify_handshake(&socket).await?;
                 let sample_rate = status_handshake(&socket).await?;
                 metadata.scsynth_client_id = Some(client_id);
                 metadata.sample_rate = Some(sample_rate);
+                // /version is non-fatal — old/exotic scsynth
+                // forks may not respond. Log + continue without
+                // version metadata.
+                match version_handshake(&socket).await {
+                    Ok(v) => {
+                        tracing::info!(
+                            target = %target,
+                            version = %format!("{} {}.{}{}", v.prog_name, v.major, v.minor, v.patch),
+                            "scsynth /version.reply"
+                        );
+                        metadata.scsynth_version = Some(v);
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            target = %target,
+                            error = %e,
+                            "scsynth /version probe failed (non-fatal)"
+                        );
+                    }
+                }
                 tracing::info!(
                     target = %target,
                     client_id,
@@ -593,6 +639,73 @@ fn osc_float(v: &OscType) -> Option<f64> {
         OscType::Long(n) => Some(*n as f64),
         _ => None,
     }
+}
+
+/// Send `/version` and await `/version.reply
+/// progName major minor patch branch commitHash`. Same shape
+/// as `notify_handshake` — synchronous read from the socket
+/// before the recv task starts.
+async fn version_handshake(sock: &UdpSocket) -> Result<ScsynthVersion> {
+    let pkt = OscPacket::Message(OscMessage {
+        addr: "/version".into(),
+        args: vec![],
+    });
+    let bytes = rosc::encoder::encode(&pkt).context("encode /version")?;
+    sock.send(&bytes).await.context("send /version")?;
+
+    let mut buf = vec![0u8; 65_536];
+    let deadline = tokio::time::Instant::now() + VERSION_TIMEOUT;
+    loop {
+        let remaining = deadline
+            .checked_duration_since(tokio::time::Instant::now())
+            .ok_or_else(|| anyhow!("/version timed out"))?;
+        let n = match timeout(remaining, sock.recv(&mut buf)).await {
+            Ok(Ok(n)) => n,
+            Ok(Err(e)) => return Err(anyhow!("recv during /version handshake: {e}")),
+            Err(_) => return Err(anyhow!("/version timed out")),
+        };
+        if let Some(v) = parse_version_reply(&buf[..n]) {
+            return Ok(v);
+        }
+        // Other reply on this socket; ignore + keep waiting.
+    }
+}
+
+fn parse_version_reply(bytes: &[u8]) -> Option<ScsynthVersion> {
+    let packet = rosc::decoder::decode_udp(bytes).ok()?.1;
+    let msg = match packet {
+        OscPacket::Message(m) => m,
+        _ => return None,
+    };
+    if msg.addr != "/version.reply" {
+        return None;
+    }
+    let prog_name = match msg.args.first() {
+        Some(OscType::String(s)) => s.clone(),
+        _ => "scsynth".to_string(),
+    };
+    let major = osc_int(msg.args.get(1)?)?;
+    let minor = osc_int(msg.args.get(2)?)?;
+    let patch = match msg.args.get(3) {
+        Some(OscType::String(s)) => s.clone(),
+        _ => String::new(),
+    };
+    let branch = match msg.args.get(4) {
+        Some(OscType::String(s)) => s.clone(),
+        _ => String::new(),
+    };
+    let commit_hash = match msg.args.get(5) {
+        Some(OscType::String(s)) => s.clone(),
+        _ => String::new(),
+    };
+    Some(ScsynthVersion {
+        prog_name,
+        major,
+        minor,
+        patch,
+        branch,
+        commit_hash,
+    })
 }
 
 /// Parse a `/done /notify <clientId>` reply. Returns `Some(cid)`

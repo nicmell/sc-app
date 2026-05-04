@@ -1,18 +1,25 @@
 /**
- * Typed snapshots of scsynth's `/status.reply` and `/version.reply`,
- * plus the parsers that turn the worker's plain `{address, args}`
- * POJOs into them.
+ * Typed snapshot of scsynth's `/status.reply` plus the parser that
+ * turns the worker's plain `{address, args}` POJO into it.
  *
  * `/status.reply` is polled on every heartbeat (see `AppShell`) and
- * surfaced in the dashboard footer. `/version.reply` is fetched once
- * per session (in `setupDashboard`) — scsynth's version doesn't
- * change while we're connected.
+ * surfaced in the dashboard footer.
  *
- * Both parsers are defensive against missing / off-type args: a
- * malformed reply just yields zeros / empty strings rather than
- * throwing, so a future scsynth fork that returns an unexpected
- * shape doesn't crash the dashboard.
+ * The parser is defensive against missing / off-type args: a
+ * malformed reply just yields zeros rather than throwing, so a
+ * future scsynth fork that returns an unexpected shape doesn't crash
+ * the dashboard.
+ *
+ * Phase 39 hotfix: `/version.reply` parsing moved to the bridge.
+ * The bridge captures it at boot via `version_handshake` and surfaces
+ * it via `SessionInfo.scsynthVersion`; the frontend just consumes the
+ * pre-parsed object. `ScsynthVersion` lives in `sessionBootstrap.ts`
+ * (the source of truth for SessionInfo); `formatVersion` re-exported
+ * here for the Footer.
  */
+
+import type { ScsynthVersion } from '@/session/sessionBootstrap';
+export type { ScsynthVersion } from '@/session/sessionBootstrap';
 
 export interface ScsynthStatus {
   numUgens: number;
@@ -27,17 +34,6 @@ export interface ScsynthStatus {
   nominalSampleRate: number;
   /** Hardware-measured rate. Drifts by 10s of ppm vs. nominal. */
   actualSampleRate: number;
-}
-
-export interface ScsynthVersion {
-  /** Typically `"scsynth"`. */
-  progName: string;
-  major: number;
-  minor: number;
-  /** SC reports patch as a string (e.g. `".0"`); preserved verbatim. */
-  patch: string;
-  branch: string;
-  commitHash: string;
 }
 
 interface ReplyLike {
@@ -61,19 +57,6 @@ export function parseStatus(reply: ReplyLike): ScsynthStatus {
   };
 }
 
-/** `/version.reply progName major minor patch branch commitHash`. */
-export function parseVersion(reply: ReplyLike): ScsynthVersion {
-  const args = reply.args;
-  return {
-    progName: stringArg(args, 0, 'scsynth'),
-    major: numericArg(args, 1),
-    minor: numericArg(args, 2),
-    patch: stringArg(args, 3, ''),
-    branch: stringArg(args, 4, ''),
-    commitHash: stringArg(args, 5, ''),
-  };
-}
-
 /** "scsynth 3.13.0" — patch is concatenated as-is since SC reports it
  *  as a string already (".0", ".0-beta1", etc.). */
 export function formatVersion(v: ScsynthVersion): string {
@@ -88,13 +71,4 @@ function numericArg(
   const v = args[i];
   if (typeof v === 'number' && Number.isFinite(v)) return v;
   return fallback;
-}
-
-function stringArg(
-  args: ReadonlyArray<unknown>,
-  i: number,
-  fallback = '',
-): string {
-  const v = args[i];
-  return typeof v === 'string' ? v : fallback;
 }

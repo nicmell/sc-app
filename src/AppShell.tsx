@@ -14,13 +14,14 @@ import { SessionProvider, type ConnectionStatus } from '@/session/SessionContext
 import { BufferManager } from '@/buffer/BufferManager';
 import { DirtClient } from '@/dirt/DirtClient';
 import { RecordingManager } from '@/recording/RecordingManager';
-import { status, version } from '@sc-app/server-commands';
+import { status } from '@sc-app/server-commands';
 import {
   awaitSclangReady,
   bootstrapSession,
   clearStoredSession,
   deleteSession,
   type SessionInfo,
+  type ScsynthVersion,
 } from '@/session/sessionBootstrap';
 import { ClockController } from '@/clock/ClockController';
 import type { ClockInfo } from '@/clock/clockClient';
@@ -35,12 +36,7 @@ import { SynthDefRegistry } from '@/server/SynthDefRegistry';
 import { SynthManager } from '@/synth/SynthManager';
 import { WorkerClient } from '@/server/WorkerClient';
 import { createStore, type Store } from '@/util/reactiveStore';
-import {
-  parseStatus,
-  parseVersion,
-  type ScsynthStatus,
-  type ScsynthVersion,
-} from '@/server/serverInfo';
+import { parseStatus, type ScsynthStatus } from '@/server/serverInfo';
 
 /** Per-client offset for node + buffer ID allocators.
  *
@@ -117,8 +113,10 @@ interface DashboardResources {
    *  `null` until the first reply lands (~tick after dashboard
    *  mount). The footer reads this via `useSyncExternalStore`. */
   status: Store<ScsynthStatus | null>;
-  /** Fetched once at `setupDashboard` time. `null` if `/version`
-   *  timed out (informational only — connect doesn't block on it). */
+  /** scsynth version snapshot, captured by the bridge at boot via
+   *  `version_handshake` and surfaced through `SessionInfo`. `null`
+   *  if scsynth didn't reply to `/version` at bridge boot
+   *  (informational only — connect doesn't block on it). */
   version: ScsynthVersion | null;
 }
 
@@ -311,6 +309,7 @@ async function setupDashboard(
   sampleRate: number,
   clockInfo: ClockInfo,
   dirtSamples: DirtSample[],
+  scsynthVersion: ScsynthVersion | null,
   bank: PatternBank,
 ): Promise<DashboardResources> {
   // Phase 39a — IdAllocator base partitions across both the
@@ -424,25 +423,16 @@ async function setupDashboard(
     groupState: group.state,
   });
 
-  // One-shot /version fetch. Informational only — fail open with
-  // null rather than blocking the dashboard if it times out (which
-  // shouldn't happen against a healthy scsynth, but old or exotic
-  // forks might not support /version).
-  let parsedVersion: ScsynthVersion | null = null;
-  try {
-    const reply = await client.sendAndAwaitReply(
-      version(),
-      (r) => r.address === '/version.reply',
-      1500,
-    );
-    parsedVersion = parseVersion(reply);
+  // Phase 39 hotfix: scsynth version is captured by the bridge at
+  // boot (`version_handshake`) and surfaced via SessionInfo. No
+  // per-session OSC round-trip; the value is informational only and
+  // displayed in the footer.
+  if (scsynthVersion) {
     console.log(
-      `[sc:app] /version reply: ${parsedVersion.progName} ` +
-        `${parsedVersion.major}.${parsedVersion.minor}${parsedVersion.patch}` +
-        (parsedVersion.branch ? ` (${parsedVersion.branch})` : ''),
+      `[sc:app] scsynth version (cached from bridge): ${scsynthVersion.progName} ` +
+        `${scsynthVersion.major}.${scsynthVersion.minor}${scsynthVersion.patch}` +
+        (scsynthVersion.branch ? ` (${scsynthVersion.branch})` : ''),
     );
-  } catch (err) {
-    console.warn('[sc:app] /version probe failed (non-fatal):', err);
   }
 
   console.log('[sc:app] dashboard ready');
@@ -463,7 +453,7 @@ async function setupDashboard(
     parentGroupId,
     sampleRate,
     status: createStore<ScsynthStatus | null>(null),
-    version: parsedVersion,
+    version: scsynthVersion,
     errorBus,
     dirtClient,
     sequencer,
@@ -700,6 +690,7 @@ export function AppShell() {
         resolvedInfo.sampleRate,
         clockInfo,
         resolvedInfo.dirtSamples,
+        resolvedInfo.scsynthVersion,
         bank,
       );
     } catch (err) {

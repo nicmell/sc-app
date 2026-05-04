@@ -30,7 +30,7 @@ use serde::Serialize;
 use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
 
-use super::server::{ClockMetadata, DirtSample, Server};
+use super::server::{ClockMetadata, DirtSample, ScsynthVersion, Server};
 use crate::scope::ScopeMode;
 
 /// scsynth's `clientId = 0` is the single-client default; using
@@ -265,6 +265,12 @@ pub struct SessionInfo {
     /// autocomplete from this list — no per-session
     /// `/dirt/listSamples` round-trip.
     pub dirt_samples: Vec<DirtSample>,
+    /// Phase 39 hotfix: scsynth version captured at bridge
+    /// boot. Surfaced on SessionInfo so the dashboard footer
+    /// doesn't need a per-session `/version` round-trip (which
+    /// hit the routing-orphan path post-Phase-37 since
+    /// `/version` wasn't in the scsynth regex).
+    pub scsynth_version: Option<ScsynthVersion>,
 }
 
 /// Build the public-API view of this session by combining
@@ -274,14 +280,19 @@ pub async fn session_info(
     scsynth_server: &Arc<Server>,
     sclang_server: Option<&Arc<Server>>,
 ) -> Result<SessionInfo> {
-    let scsynth_metadata = scsynth_server.metadata().await;
-    let scsynth_client_id = scsynth_metadata
-        .scsynth_client_id
-        .ok_or_else(|| anyhow!("scsynth Server has no clientId — bridge not bootstrapped"))?;
-    let sample_rate = scsynth_metadata
-        .sample_rate
-        .ok_or_else(|| anyhow!("scsynth Server has no sample rate — bridge not bootstrapped"))?;
-    drop(scsynth_metadata);
+    let scsynth_version = {
+        let scsynth_metadata = scsynth_server.metadata().await;
+        let scsynth_client_id = scsynth_metadata
+            .scsynth_client_id
+            .ok_or_else(|| anyhow!("scsynth Server has no clientId — bridge not bootstrapped"))?;
+        let sample_rate = scsynth_metadata
+            .sample_rate
+            .ok_or_else(|| anyhow!("scsynth Server has no sample rate — bridge not bootstrapped"))?;
+        let scsynth_version = scsynth_metadata.scsynth_version.clone();
+        // Bind the values we need before dropping the guard.
+        (scsynth_client_id, sample_rate, scsynth_version)
+    };
+    let (scsynth_client_id, sample_rate, scsynth_version) = scsynth_version;
 
     let (clock, num_scope_buffers, dirt_samples) = if let Some(sclang) = sclang_server {
         let m = sclang.metadata().await;
@@ -301,6 +312,7 @@ pub async fn session_info(
         clock,
         num_scope_buffers,
         dirt_samples,
+        scsynth_version,
     })
 }
 
