@@ -83,7 +83,7 @@ struct ShmScopeSubscription {
 /// active path's storage gets entries. A handoff between modes
 /// mid-session is unsupported (Session::scope_mode is frozen at
 /// create).
-struct ScopeContext {
+pub(crate) struct ScopeContext {
     /// SHM mode: lazily-populated session-level mmap. Multiple
     /// WSs on the same session share one mapping (lives on
     /// `Session::scope_shm`).

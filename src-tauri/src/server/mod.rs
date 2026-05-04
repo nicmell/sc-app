@@ -28,7 +28,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use axum::extract::{Query, Request, State, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode};
-use axum::middleware;
+use axum::middleware::from_fn as axum_middleware_from_fn;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
@@ -37,6 +37,7 @@ use tokio::net::TcpListener;
 use uuid::Uuid;
 
 mod api;
+pub(crate) mod middleware;
 mod routing;
 mod security;
 mod session;
@@ -153,7 +154,7 @@ pub async fn serve_on(
     // so it sees every route — `/ws`, `/api/*`, the static
     // fallback, all of it.
     let app = app
-        .layer(middleware::from_fn(security::enforce_host))
+        .layer(axum_middleware_from_fn(security::enforce_host))
         .with_state(state);
     axum::serve(listener, app).await.context("axum serve error")?;
     Ok(())
