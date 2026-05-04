@@ -23,20 +23,20 @@
 // INSTANCE creation (clock /s_new, scope-buffer allocation) and
 // runtime config (chunkSize, num scope buffers, sample rate).
 // Each install function contributes its keys to
-// `~scAppBootstrapCtx`; the bootstrap responder serializes the
+// `~bootstrapCtx`; the bootstrap responder serializes the
 // dict on demand. The bridge fetches once at boot via
 // `/bootstrap/hello` and surfaces the values via SessionInfo +
 // uses them to drive its own /s_new of any shared synths.
 //
 // To add a new shared synth following this pattern:
-//   1. Create lib/<name>.scd that defines `~scAppInstall<Name>`
+//   1. Create lib/<name>.scd that defines `~install<Name>`
 //      = { ... }`. Inside: SynthDef.add() the def, allocate any
 //      needed buses, contribute (name, value) keys to
-//      `~scAppBootstrapCtx[\<name>]`. DON'T /s_new — that's the
+//      `~bootstrapCtx[\<name>]`. DON'T /s_new — that's the
 //      bridge's job.
 //   2. Add the file to the load list below.
 //   3. Add a call in `s.doWhenBooted` BEFORE
-//      `~scAppInstallBootstrap.()` so the new keys are available
+//      `~installBootstrap.()` so the new keys are available
 //      when the responder serializes.
 //   4. On the bridge side (`src-tauri/src/server/server.rs`),
 //      extend `apply_info_args` to parse the new keys and
@@ -75,7 +75,7 @@
 var libDir = PathName(thisProcess.nowExecutingPath).pathOnly +/+ "lib";
 
 // Load sub-module definitions. Each file just sets a
-// `~scAppInstall<Name>` function in the global env via `.load`.
+// `~install<Name>` function in the global env via `.load`.
 // Nothing runs yet — the install functions are called inside
 // `s.doWhenBooted` once scsynth is reachable.
 [
@@ -115,22 +115,22 @@ s.doWhenBooted({
     s.notify;
     s.sync;
 
-    ~scAppInstallClock.();
-    ~scAppInstallSuperDirt.();
+    ~installClock.();
+    ~installSuperDirt.();
     // Phase 39c: scope responders moved to the bridge. The
     // bridge owns the 0..127 scope-buffer allocator + the
     // /scope/{allocate,free,subscribe,unsubscribe} OSC handling.
     // Sclang reports the pool size via the bootstrap reply.
-    ~scAppBootstrapCtx[\scope] = (numScopeBuffers: 128);
+    ~bootstrapCtx[\scope] = (numScopeBuffers: 128);
     // Phase 39 hotfix follow-up: capture scsynth /version via
     // the already-open scsynth connection so the bridge doesn't
     // need its own /version handshake. Must run after s.notify
     // (so scsynth replies are routed back to sclang) and before
-    // ~scAppInstallBootstrap (so the responder sees the captured
+    // ~installBootstrap (so the responder sees the captured
     // value).
-    ~scAppInstallVersion.();
-    ~scAppInstallBootstrap.();
+    ~installVersion.();
+    ~installBootstrap.();
 }, 50, {
-    "[sc-app] scsynth not reachable on 127.0.0.1:57110 after 10s.\n  Start it first: yarn scsynth-only (dev) or your systemd unit (prod).".error;
+    "scsynth not reachable on 127.0.0.1:57110 after 10s.\n  Start it first: yarn scsynth-only (dev) or your systemd unit (prod).".error;
 });
 )

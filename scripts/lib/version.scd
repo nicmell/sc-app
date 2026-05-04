@@ -11,7 +11,7 @@
 // dashboard footer renders "scsynth (version unknown)".
 
 (
-~scAppInstallVersion = {
+~installVersion = {
     var reply = nil;
     var done = Condition.new;
     var func;
@@ -30,7 +30,7 @@
 
     if(reply.notNil) {
         // /version.reply progName major minor patch branch commitHash
-        ~scAppBootstrapCtx[\scsynthVersion] = (
+        ~bootstrapCtx[\scsynthVersion] = (
             progName: reply[1].asString,
             major: reply[2].asInteger,
             minor: reply[3].asInteger,
@@ -38,14 +38,14 @@
             branch: reply[5].asString,
             commitHash: reply[6].asString
         );
-        "[sc-app] scsynth /version captured: % %.%%".format(
-            ~scAppBootstrapCtx[\scsynthVersion][\progName],
-            ~scAppBootstrapCtx[\scsynthVersion][\major],
-            ~scAppBootstrapCtx[\scsynthVersion][\minor],
-            ~scAppBootstrapCtx[\scsynthVersion][\patch]
+        "scsynth /version captured: % %.%%".format(
+            ~bootstrapCtx[\scsynthVersion][\progName],
+            ~bootstrapCtx[\scsynthVersion][\major],
+            ~bootstrapCtx[\scsynthVersion][\minor],
+            ~bootstrapCtx[\scsynthVersion][\patch]
         ).postln;
     } {
-        "[sc-app] scsynth /version timed out — bootstrap will report version=null".warn;
+        "scsynth /version timed out — bootstrap will report version=null".warn;
     };
 };
 )

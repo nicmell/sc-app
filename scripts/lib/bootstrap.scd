@@ -21,25 +21,25 @@
 //     (or empty args if /version timed out at sclang boot —
 //      bridge tolerates and reports version=null)
 //
-// Each install function (`~scAppInstallX(bootstrapCtx)`)
+// Each install function (`~installX(bootstrapCtx)`)
 // contributes its keys to `bootstrapCtx` at install time;
 // the responder serializes the dict on demand.
 //
-// `~scAppBootstrapCtx` is initialized empty; the orchestrator
+// `~bootstrapCtx` is initialized empty; the orchestrator
 // fills it via the install functions, then installs the
 // responder. After install, mutations are not expected (bridge
 // reads once at boot).
 
 (
-~scAppBootstrapCtx = (
+~bootstrapCtx = (
     clock: (),
     scope: (),
     dirt: ()
 );
 
-~scAppInstallBootstrap = {
-    OSCdef(\scAppBootstrapHello, { |msg, time, addr|
-        var ctx = ~scAppBootstrapCtx;
+~installBootstrap = {
+    OSCdef(\bootstrapHello, { |msg, time, addr|
+        var ctx = ~bootstrapCtx;
         var infoArgs = List.new;
         var samplesArgs = List.new;
         var versionArgs = List.new;
@@ -65,7 +65,7 @@
             };
         };
 
-        // scsynth /version snapshot captured by ~scAppInstallVersion
+        // scsynth /version snapshot captured by ~installVersion
         // (lib/version.scd). Sent unconditionally so the bridge's
         // bootstrap waiter has a deterministic third message; empty
         // args = timed out at sclang boot, bridge falls back to None.
@@ -83,11 +83,11 @@
         addr.sendMsg('/bootstrap/scsynth-version', *versionArgs);
     }, '/bootstrap/hello');
 
-    "[sc-app] /bootstrap/hello responder installed (% clock keys, % scope keys, % dirt samples, version=%)".format(
-        ~scAppBootstrapCtx[\clock].size,
-        ~scAppBootstrapCtx[\scope].size,
+    "/bootstrap/hello responder installed (% clock keys, % scope keys, % dirt samples, version=%)".format(
+        ~bootstrapCtx[\clock].size,
+        ~bootstrapCtx[\scope].size,
         if(~dirt.notNil) { ~dirt.buffers.size } { 0 },
-        ~scAppBootstrapCtx[\scsynthVersion].notNil
+        ~bootstrapCtx[\scsynthVersion].notNil
     ).postln;
 };
 )

@@ -547,7 +547,7 @@ their replies via `ws_extras`, no UDP) and the `\scAppClock`
 `/s_new` (`chunkSize` moves from `SC_APP_CLOCK_CHUNK_SIZE` env
 to `config.clock_chunk_size`). sclang's role strips down to
 "declare" — `.add()` SynthDefs, allocate buses, contribute to
-`~scAppBootstrapCtx`. Cost: shared sockets mean every WS sees
+`~bootstrapCtx`. Cost: shared sockets mean every WS sees
 every `/fail` (cross-session reply visibility); documented as
 a known gotcha. Files: new `src-tauri/src/server/server.rs`
 (~640 lines: Server class + bootstrap handshake + clock
@@ -1138,13 +1138,13 @@ Observations:
   `sc-app-superdirt-startup.scd` is a thin orchestrator (~110
   lines): it sets `s.options.*`, runs `s.newAllocators`, kicks
   off the alive thread, and inside `s.doWhenBooted` calls
-  `~scAppInstallClock.()`, `~scAppInstallSuperDirt.()`,
-  `~scAppInstallDirtListSamples.()`, `~scAppInstallScopeResponders.()`
+  `~installClock.()`, `~installSuperDirt.()`,
+  `~installDirtListSamples.()`, `~installScopeResponders.()`
   in order. Each function lives in its own file under
   `scripts/lib/` (clock.scd, superdirt.scd, dirt-list-samples.scd,
   scope.scd), loaded at pre-boot via `.load`. When adding a new
   responder family, drop a new `lib/<name>.scd` defining
-  `~scAppInstallX = { ... }`, then add the filename to the
+  `~installX = { ... }`, then add the filename to the
   orchestrator's load array AND a call inside doWhenBooted.
 - **`tauri dev` reads `app_config_dir/config.json`, NOT the
   project's `./config.json`.** On macOS that's

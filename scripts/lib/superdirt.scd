@@ -5,10 +5,10 @@
 // Listens on UDP 57120 — the bridge's `/dirt/* → 127.0.0.1:57120`
 // route forwards `/dirt/play` and friends here.
 (
-~scAppInstallSuperDirt = {
+~installSuperDirt = {
     ~dirt = SuperDirt(2, s);
     ~dirt.loadSoundFiles("SC_APP_DIRT_SAMPLES".getenv);
     ~dirt.start(57120, 0 ! 12);
-    "[sc-app] SuperDirt ready on UDP 57120".postln;
+    "SuperDirt ready on UDP 57120".postln;
 };
 )

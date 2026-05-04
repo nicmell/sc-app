@@ -136,7 +136,7 @@ pub struct ServerMetadata {
 }
 
 /// Clock metadata from sclang's `\scAppClock` synth + the
-/// `~scAppBootstrapCtx[\clock]` dictionary.
+/// `~bootstrapCtx[\clock]` dictionary.
 #[derive(Debug, Clone, Copy, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClockMetadata {

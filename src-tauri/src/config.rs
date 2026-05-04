@@ -68,7 +68,7 @@ pub const DEFAULT_SESSION_TTL_SECONDS: u64 = 1800;
 /// Built-in default clock chunkSize. Power-of-2; produces a
 /// ~21 ms tick at 48 kHz (47 Hz). Pre-Phase-39d this default
 /// lived in `scripts/lib/chunk-size.scd`'s
-/// `~scAppParseChunkSize` thunk; Phase 39d hoists it to bridge
+/// `~parseChunkSize` thunk; Phase 39d hoists it to bridge
 /// config.
 pub const DEFAULT_CLOCK_CHUNK_SIZE: u32 = 1024;
 
