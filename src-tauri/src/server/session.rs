@@ -293,7 +293,7 @@ pub async fn session_info(
 
     // Phase 39 hotfix follow-up: scsynth_version moved off scsynth's
     // metadata onto sclang's. sclang captures it at its own boot and
-    // forwards to the bridge in /sc-app/bootstrap/scsynth-version;
+    // forwards to the bridge in /bootstrap/scsynth-version;
     // the bridge has no direct /version handshake anymore.
     let (clock, num_scope_buffers, dirt_samples, scsynth_version) =
         if let Some(sclang) = sclang_server {

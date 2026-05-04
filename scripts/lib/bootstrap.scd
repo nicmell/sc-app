@@ -2,10 +2,10 @@
 //
 // Replaces the per-session /clock/hello + /scope/hello +
 // /dirt/listSamples round-trips with a single bridge-to-sclang
-// handshake at bridge boot. Bridge sends
-// `/sc-app/bootstrap/hello`; sclang responds with three messages:
+// handshake at bridge boot. Bridge sends `/bootstrap/hello`;
+// sclang responds with three messages:
 //
-//   /sc-app/bootstrap/info
+//   /bootstrap/info
 //     "clockBus", <int>,
 //     "clockNodeId", <int>,
 //     "tickRate", <float>,
@@ -13,10 +13,10 @@
 //     "sampleRate", <float>,
 //     "numScopeBuffers", <int>
 //
-//   /sc-app/bootstrap/samples
+//   /bootstrap/samples
 //     name1, count1, name2, count2, ...
 //
-//   /sc-app/bootstrap/scsynth-version
+//   /bootstrap/scsynth-version
 //     progName, major, minor, patch, branch, commitHash
 //     (or empty args if /version timed out at sclang boot —
 //      bridge tolerates and reports version=null)
@@ -78,12 +78,12 @@
             versionArgs.add(v[\commitHash]);
         };
 
-        addr.sendMsg('/sc-app/bootstrap/info', *infoArgs);
-        addr.sendMsg('/sc-app/bootstrap/samples', *samplesArgs);
-        addr.sendMsg('/sc-app/bootstrap/scsynth-version', *versionArgs);
-    }, '/sc-app/bootstrap/hello');
+        addr.sendMsg('/bootstrap/info', *infoArgs);
+        addr.sendMsg('/bootstrap/samples', *samplesArgs);
+        addr.sendMsg('/bootstrap/scsynth-version', *versionArgs);
+    }, '/bootstrap/hello');
 
-    "[sc-app] /sc-app/bootstrap/hello responder installed (% clock keys, % scope keys, % dirt samples, version=%)".format(
+    "[sc-app] /bootstrap/hello responder installed (% clock keys, % scope keys, % dirt samples, version=%)".format(
         ~scAppBootstrapCtx[\clock].size,
         ~scAppBootstrapCtx[\scope].size,
         if(~dirt.notNil) { ~dirt.buffers.size } { 0 },

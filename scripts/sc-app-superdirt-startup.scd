@@ -25,9 +25,8 @@
 // Each install function contributes its keys to
 // `~scAppBootstrapCtx`; the bootstrap responder serializes the
 // dict on demand. The bridge fetches once at boot via
-// `/sc-app/bootstrap/hello` and surfaces the values via
-// SessionInfo + uses them to drive its own /s_new of any shared
-// synths.
+// `/bootstrap/hello` and surfaces the values via SessionInfo +
+// uses them to drive its own /s_new of any shared synths.
 //
 // To add a new shared synth following this pattern:
 //   1. Create lib/<name>.scd that defines `~scAppInstall<Name>`
@@ -46,7 +45,7 @@
 //
 // ── Sub-modules under lib/ ───────────────────────────────────────────
 //
-//   - lib/bootstrap.scd           /sc-app/bootstrap/hello responder
+//   - lib/bootstrap.scd           /bootstrap/hello responder
 //   - lib/clock.scd               Phase 30 shared clock SynthDef
 //   - lib/superdirt.scd           SuperDirt boot
 //   - lib/version.scd             scsynth /version capture

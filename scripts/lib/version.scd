@@ -2,12 +2,12 @@
 // sclang boot. Eliminates the bridge's direct /version OSC
 // handshake — sclang is already connected to scsynth (via s.notify
 // + s.sync above), so we route the round-trip through there and
-// surface the result as part of the /sc-app/bootstrap/hello reply
+// surface the result as part of the /bootstrap/hello reply
 // alongside clock + scope + dirt metadata.
 //
 // On timeout (~exotic scsynth fork, or scsynth quit between notify
 // and version) the version key stays nil; the bootstrap responder
-// emits an empty /sc-app/bootstrap/scsynth-version message and the
+// emits an empty /bootstrap/scsynth-version message and the
 // dashboard footer renders "scsynth (version unknown)".
 
 (

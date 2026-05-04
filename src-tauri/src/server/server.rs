@@ -61,9 +61,9 @@ const BROADCAST_CAPACITY: usize = 4096;
 const NOTIFY_TIMEOUT: Duration = Duration::from_secs(2);
 /// `/status` handshake timeout. Same shape.
 const STATUS_TIMEOUT: Duration = Duration::from_secs(2);
-/// Phase 39b: `/sc-app/bootstrap/hello` round-trip per attempt.
+/// Phase 39b: `/bootstrap/hello` round-trip per attempt.
 /// Phase 39 hotfix follow-up: also covers the new
-/// `/sc-app/bootstrap/scsynth-version` reply (third message), so
+/// `/bootstrap/scsynth-version` reply (third message), so
 /// the budget needs to span all three sclang -> bridge sends.
 const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(3);
 /// Phase 39b: how many bootstrap attempts before giving up
@@ -79,7 +79,7 @@ pub enum ServerRole {
     /// node-ID space; sub_client_id allocation partitions further.
     Scsynth,
     /// sclang+SuperDirt — Phase 39b will run
-    /// `/sc-app/bootstrap/hello` here. Phase 39a treats it as
+    /// `/bootstrap/hello` here. Phase 39a treats it as
     /// generic (no handshake).
     #[allow(dead_code)] // 39b uses this.
     Sclang,
@@ -102,10 +102,10 @@ pub struct ServerMetadata {
     /// `tickToTimetag` math + scope chunk geometry.
     pub sample_rate: Option<u32>,
 
-    // ── Sclang-side (populated by /sc-app/bootstrap/*) ─────
+    // ── Sclang-side (populated by /bootstrap/*) ─────
     /// Phase 39 hotfix follow-up: scsynth `/version.reply` snapshot,
     /// captured by sclang at its own boot (lib/version.scd) and
-    /// echoed back to the bridge in the `/sc-app/bootstrap/scsynth-
+    /// echoed back to the bridge in the `/bootstrap/scsynth-
     /// version` message. Lives on the sclang Server's metadata
     /// because that's where the bridge received it from; the field
     /// describes scsynth, but the chain of custody runs through
@@ -475,9 +475,9 @@ struct BootstrapParsed {
     scsynth_version: Option<ScsynthVersion>,
 }
 
-/// Send `/sc-app/bootstrap/hello` and await three reply messages:
-/// `/sc-app/bootstrap/info`, `/sc-app/bootstrap/samples`,
-/// `/sc-app/bootstrap/scsynth-version`. Retries `BOOTSTRAP_RETRIES`
+/// Send `/bootstrap/hello` and await three reply messages:
+/// `/bootstrap/info`, `/bootstrap/samples`,
+/// `/bootstrap/scsynth-version`. Retries `BOOTSTRAP_RETRIES`
 /// times before giving up.
 async fn bootstrap_handshake(sock: &UdpSocket) -> Result<BootstrapParsed> {
     for attempt in 0..BOOTSTRAP_RETRIES {
@@ -499,14 +499,14 @@ async fn bootstrap_handshake(sock: &UdpSocket) -> Result<BootstrapParsed> {
 
 async fn try_bootstrap(sock: &UdpSocket) -> Result<BootstrapParsed> {
     let pkt = OscPacket::Message(OscMessage {
-        addr: "/sc-app/bootstrap/hello".into(),
+        addr: "/bootstrap/hello".into(),
         args: vec![],
     });
-    let bytes = rosc::encoder::encode(&pkt).context("encode /sc-app/bootstrap/hello")?;
-    sock.send(&bytes).await.context("send /sc-app/bootstrap/hello")?;
+    let bytes = rosc::encoder::encode(&pkt).context("encode /bootstrap/hello")?;
+    sock.send(&bytes).await.context("send /bootstrap/hello")?;
 
-    // Sclang sends back three messages: /sc-app/bootstrap/info,
-    // /sc-app/bootstrap/samples, and /sc-app/bootstrap/scsynth-
+    // Sclang sends back three messages: /bootstrap/info,
+    // /bootstrap/samples, and /bootstrap/scsynth-
     // version. Wait for all three within the timeout. They may
     // arrive as separate UDP datagrams or (less commonly) as a
     // single bundle.
@@ -530,15 +530,15 @@ async fn try_bootstrap(sock: &UdpSocket) -> Result<BootstrapParsed> {
             .1;
         for msg in flatten_packet(packet) {
             match msg.addr.as_str() {
-                "/sc-app/bootstrap/info" => {
+                "/bootstrap/info" => {
                     apply_info_args(&mut parsed, &msg.args);
                     got_info = true;
                 }
-                "/sc-app/bootstrap/samples" => {
+                "/bootstrap/samples" => {
                     parsed.dirt_samples = parse_samples_args(&msg.args);
                     got_samples = true;
                 }
-                "/sc-app/bootstrap/scsynth-version" => {
+                "/bootstrap/scsynth-version" => {
                     parsed.scsynth_version = parse_scsynth_version_args(&msg.args);
                     got_version = true;
                 }
@@ -563,7 +563,7 @@ fn flatten_packet(pkt: OscPacket) -> Vec<OscMessage> {
     }
 }
 
-/// Apply kv pairs from `/sc-app/bootstrap/info` to a parsed
+/// Apply kv pairs from `/bootstrap/info` to a parsed
 /// metadata struct. Args alternate (string key, primitive
 /// value). Unknown keys are ignored.
 ///
@@ -640,7 +640,7 @@ fn osc_float(v: &OscType) -> Option<f64> {
     }
 }
 
-/// Parse the args of a `/sc-app/bootstrap/scsynth-version` reply.
+/// Parse the args of a `/bootstrap/scsynth-version` reply.
 /// Args layout: `progName major minor patch branch commitHash`.
 /// Empty args = sclang's /version capture timed out at its own
 /// boot; returns `None` so the bridge surfaces version=null on
@@ -759,15 +759,15 @@ pub async fn ensure_sclang_bootstrapped(
     let mut rx = sclang_server.subscribe();
 
     let pkt = OscPacket::Message(OscMessage {
-        addr: "/sc-app/bootstrap/hello".into(),
+        addr: "/bootstrap/hello".into(),
         args: vec![],
     });
     let bytes =
-        rosc::encoder::encode(&pkt).context("encode /sc-app/bootstrap/hello")?;
+        rosc::encoder::encode(&pkt).context("encode /bootstrap/hello")?;
     sclang_server
         .send(&bytes)
         .await
-        .context("send /sc-app/bootstrap/hello")?;
+        .context("send /bootstrap/hello")?;
 
     let mut parsed = BootstrapParsed::default();
     let mut got_info = false;
@@ -793,15 +793,15 @@ pub async fn ensure_sclang_bootstrapped(
         };
         for msg in flatten_packet(pkt) {
             match msg.addr.as_str() {
-                "/sc-app/bootstrap/info" => {
+                "/bootstrap/info" => {
                     apply_info_args(&mut parsed, &msg.args);
                     got_info = true;
                 }
-                "/sc-app/bootstrap/samples" => {
+                "/bootstrap/samples" => {
                     parsed.dirt_samples = parse_samples_args(&msg.args);
                     got_samples = true;
                 }
-                "/sc-app/bootstrap/scsynth-version" => {
+                "/bootstrap/scsynth-version" => {
                     parsed.scsynth_version = parse_scsynth_version_args(&msg.args);
                     got_version = true;
                 }

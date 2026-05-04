@@ -89,7 +89,7 @@ pub struct Config {
     pub scsynth: Option<String>,
     /// Phase 39b: sclang+SuperDirt address (host:port). Used by
     /// the bridge to identify which Server runs the
-    /// `/sc-app/bootstrap/hello` round-trip at boot. If unset,
+    /// `/bootstrap/hello` round-trip at boot. If unset,
     /// the bridge skips the bootstrap and clock/scope/sequencer
     /// features rely on their pre-39b OSC round-trips (which
     /// Phase 39c+39d remove from sclang).
