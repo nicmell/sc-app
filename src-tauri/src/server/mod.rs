@@ -101,41 +101,49 @@ pub async fn bind(port: u16) -> Result<(TcpListener, SocketAddr)> {
 }
 
 /// Run the HTTP+WS server on a pre-bound listener. Builds one
-/// [`Server`] per unique route target (plus `scsynth_addr` if
-/// not already a route target) at boot, runs the scsynth
+/// [`Server`] per unique route target at boot, runs the scsynth
 /// handshake (`/notify` + `/status`) once, then accepts HTTP
 /// connections.
+///
+/// Phase 39 hotfix follow-up: `scsynth_addr` and `sclang_addr` are
+/// no longer separate parameters — they're derived from the routes
+/// table by walking it for known probe addresses (`/notify` for
+/// scsynth, `/bootstrap/hello` for sclang). Returns an error if no
+/// route matches `/notify` (the bridge can't function without a
+/// scsynth handshake target); a missing sclang route just disables
+/// clock/scope/sequencer features.
 pub async fn serve_on(
     listener: TcpListener,
     routes: RoutingTable,
-    scsynth_addr: SocketAddr,
-    sclang_addr: Option<SocketAddr>,
     clock_chunk_size: u32,
     dist: Option<PathBuf>,
     session_ttl: Duration,
     force_osc_mode: bool,
 ) -> Result<()> {
     tracing::info!("  /ws routing table:\n{}", routes.describe());
-    tracing::info!(scsynth = %scsynth_addr, "  scsynth handshake address");
+
+    let scsynth_addr = routes.route_for("/notify").ok_or_else(|| {
+        anyhow::anyhow!(
+            "config.routes has no route matching `/notify` — the bridge \
+             needs a scsynth target. Check config.json's routes table."
+        )
+    })?;
+    let sclang_addr = routes.route_for("/bootstrap/hello");
+    tracing::info!(scsynth = %scsynth_addr, "  scsynth target (derived from routes via /notify)");
     if let Some(addr) = sclang_addr {
-        tracing::info!(sclang = %addr, "  sclang bootstrap address");
+        tracing::info!(sclang = %addr, "  sclang target (derived from routes via /bootstrap/hello)");
     } else {
-        tracing::info!("  sclang bootstrap: none configured (clock/scope/sequencer features may not work)");
+        tracing::info!("  sclang: no /bootstrap/hello route — clock/scope/sequencer features will not work");
     }
     tracing::info!(
         ttl_seconds = session_ttl.as_secs(),
         "  session TTL"
     );
 
-    // Build Servers for every unique route target + the scsynth
-    // address (which may not be a route target) + the sclang
-    // address (Phase 39b: if configured, runs the bootstrap
-    // round-trip there to populate cached metadata).
-    let mut targets: HashSet<SocketAddr> = routes.unique_targets().into_iter().collect();
-    targets.insert(scsynth_addr);
-    if let Some(addr) = sclang_addr {
-        targets.insert(addr);
-    }
+    // Build Servers for every unique route target. With scsynth +
+    // sclang derived from the routes table, every target we need is
+    // already in `routes.unique_targets()`.
+    let targets: HashSet<SocketAddr> = routes.unique_targets().into_iter().collect();
 
     let mut servers: HashMap<SocketAddr, Arc<Server>> = HashMap::new();
     for target in targets {
@@ -276,8 +284,6 @@ pub async fn serve_on(
 pub async fn run_bridge(
     port: u16,
     routes: RoutingTable,
-    scsynth_addr: SocketAddr,
-    sclang_addr: Option<SocketAddr>,
     clock_chunk_size: u32,
     dist: Option<PathBuf>,
     session_ttl: Duration,
@@ -288,8 +294,6 @@ pub async fn run_bridge(
     serve_on(
         listener,
         routes,
-        scsynth_addr,
-        sclang_addr,
         clock_chunk_size,
         dist,
         session_ttl,

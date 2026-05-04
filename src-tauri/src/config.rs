@@ -47,18 +47,17 @@ pub const LINUX_SYSTEM_PATH: &str = "/etc/sc-app/config.json";
 /// Built-in default port for the bridge HTTP listener.
 pub const DEFAULT_PORT: u16 = 3000;
 
-/// Built-in default scsynth address. Used as a hint for
-/// `Session::create`'s handshake socket when the user hasn't
-/// overridden it via the `scsynth` config field. NOT a routing
-/// fallback (Phase 37 retired the implicit catch-all).
-pub const DEFAULT_SCSYNTH: &str = "127.0.0.1:57110";
+/// Built-in default scsynth address. Used as the target of the
+/// starter config's scsynth-command-surface route. The bridge
+/// derives "this is scsynth" by walking the routes table for the
+/// regex that matches `/notify` (post-Phase-39 hotfix).
+pub(crate) const DEFAULT_SCSYNTH: &str = "127.0.0.1:57110";
 
-/// Built-in default sclang+SuperDirt address. The starter config
-/// pre-populates a `/dirt → DEFAULT_DIRT` route so a first-launch
-/// GUI / tauri-dev session has working SuperDirt routing without
-/// the user having to edit `config.json` first. (Phase 26 +
-/// `scripts/start-osc.sh` always assume sclang on this port.)
-pub const DEFAULT_DIRT: &str = "127.0.0.1:57120";
+/// Built-in default sclang+SuperDirt address. Used as the target
+/// of the starter config's sclang route entry. The bridge derives
+/// "this is sclang" by walking the routes table for the regex
+/// that matches `/bootstrap/hello` (post-Phase-39 hotfix).
+pub(crate) const DEFAULT_DIRT: &str = "127.0.0.1:57120";
 
 /// Built-in default TTL for idle bridge-managed sessions.
 /// 30 minutes is generous enough to forgive someone walking
@@ -79,22 +78,6 @@ pub struct Config {
     /// HTTP port to bind for the bridge.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub port: Option<u16>,
-    /// scsynth address (host:port). Used by `Session::create` to
-    /// pick the handshake socket (the one that runs `/notify 1` +
-    /// `/status` at session boot). Phase 37 dropped the
-    /// implicit-catch-all-route role this field had pre-Phase-37 —
-    /// the routes table now must enumerate scsynth's command
-    /// surface explicitly.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub scsynth: Option<String>,
-    /// Phase 39b: sclang+SuperDirt address (host:port). Used by
-    /// the bridge to identify which Server runs the
-    /// `/bootstrap/hello` round-trip at boot. If unset,
-    /// the bridge skips the bootstrap and clock/scope/sequencer
-    /// features rely on their pre-39b OSC round-trips (which
-    /// Phase 39c+39d remove from sclang).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sclang: Option<String>,
     /// Phase 39d: clock SynthDef chunkSize. Pre-39d this lived
     /// in sclang as the `SC_APP_CLOCK_CHUNK_SIZE` env var; Phase
     /// 39d hoists it to bridge config so the chunk size is
@@ -154,29 +137,31 @@ static STARTER_CELL: OnceLock<Config> = OnceLock::new();
 pub fn starter() -> &'static Config {
     STARTER_CELL.get_or_init(|| Config {
         port: Some(DEFAULT_PORT),
-        scsynth: Some(DEFAULT_SCSYNTH.to_string()),
-        sclang: Some(DEFAULT_DIRT.to_string()),
         clock_chunk_size: Some(DEFAULT_CLOCK_CHUNK_SIZE),
         log_dir: None,
-        // Phase 37: the routes table is now an ORDERED list of
-        // regex entries with no implicit default. Two starter
-        // entries cover the deployed surface:
-        //  - `^/(dirt|clock|scope)(/|$)` → SuperDirt process
+        // Phase 37: the routes table is an ORDERED list of regex
+        // entries with no implicit default. Phase 39 hotfix
+        // follow-up: there are no separate `scsynth` / `sclang`
+        // config fields anymore — the bridge derives those at boot
+        // by walking the routes for known probe addresses
+        // (`/notify` for scsynth, `/bootstrap/hello` for sclang).
+        // The two starter entries below cover both:
+        //  - `^/(dirt|clock|scope|bootstrap)(/|$)` → sclang+SuperDirt
         //    (Phase 26's /dirt, Phase 30's /clock, Phase 31's
-        //    /scope responders all live in
+        //    /scope, Phase 39b's /bootstrap responders all live in
         //    scripts/sc-app-superdirt-startup.scd).
         //  - `^/([sngbcdpu]_|notify|status|sync|cmd|dumpOSC|
         //    clearSched|error|quit|version)` → scsynth's command
         //    surface (per the SuperCollider Server-Command-Reference;
-        //    `/version` is included so any future caller reaches
-        //    scsynth — the bridge itself probes /version at boot
-        //    over its own UDP socket, not via the route table).
+        //    `/version` is included for future callers — the bridge
+        //    itself doesn't issue /version anymore, sclang captures
+        //    it on the bridge's behalf).
         // Anything outside these two regexes that isn't claimed
         // by a middleware (e.g. /scope/subscribe) gets dropped
         // with a warn! log.
         routes: vec![
             Route {
-                pattern: r"^/(dirt|clock|scope)(/|$)".into(),
+                pattern: r"^/(dirt|clock|scope|bootstrap)(/|$)".into(),
                 target: DEFAULT_DIRT.into(),
             },
             Route {
@@ -250,12 +235,14 @@ mod tests {
     fn starter_serializes_to_clean_json() {
         let body = serde_json::to_string_pretty(starter()).unwrap();
         assert!(body.contains("\"port\": 3000"));
-        assert!(body.contains("\"scsynth\": \"127.0.0.1:57110\""));
-        assert!(body.contains("\"sclang\": \"127.0.0.1:57120\""));
         assert!(body.contains("\"clock_chunk_size\": 1024"));
-        // Phase 37 starter routes: sclang prefixes + scsynth
-        // command surface. Both regexes, no implicit default.
-        assert!(body.contains(r"^/(dirt|clock|scope)(/|$)"));
+        // Phase 39 hotfix follow-up: scsynth/sclang fields are gone;
+        // the routes table is the single source of truth. The bridge
+        // derives the handshake targets at boot via route_for("/notify")
+        // (scsynth) and route_for("/bootstrap/hello") (sclang).
+        assert!(!body.contains("\"scsynth\""));
+        assert!(!body.contains("\"sclang\""));
+        assert!(body.contains(r"^/(dirt|clock|scope|bootstrap)(/|$)"));
         assert!(body.contains(r"^/([sngbcdpu]_|notify|status|sync|cmd|dumpOSC|clearSched|error|quit|version)"));
         assert!(body.contains("\"target\": \"127.0.0.1:57120\""));
         assert!(body.contains("\"target\": \"127.0.0.1:57110\""));
@@ -266,8 +253,6 @@ mod tests {
     fn config_with_routes_roundtrips() {
         let cfg = Config {
             port: Some(3000),
-            scsynth: Some("127.0.0.1:57110".into()),
-            sclang: Some("127.0.0.1:57120".into()),
             clock_chunk_size: Some(1024),
             log_dir: Some("./logs".into()),
             routes: vec![Route {
@@ -281,6 +266,28 @@ mod tests {
         assert_eq!(back.port, Some(3000));
         assert_eq!(back.routes.len(), 1);
         assert_eq!(back.routes[0].pattern, r"^/dirt(/|$)");
+    }
+
+    #[test]
+    fn pre_phase_39_scsynth_field_rejected_by_deny_unknown_fields() {
+        // Phase 39 hotfix follow-up: removed cfg.scsynth and
+        // cfg.sclang. A starter config from before this drop will
+        // fail to deserialize; the user gets a "unknown field"
+        // error and either deletes the file (regenerates) or
+        // hand-edits to remove the dead fields.
+        let json = r#"{ "scsynth": "127.0.0.1:57110" }"#;
+        let result: Result<Config, _> = serde_json::from_str(json);
+        assert!(
+            result.is_err(),
+            "expected legacy `scsynth` field to be rejected"
+        );
+
+        let json = r#"{ "sclang": "127.0.0.1:57120" }"#;
+        let result: Result<Config, _> = serde_json::from_str(json);
+        assert!(
+            result.is_err(),
+            "expected legacy `sclang` field to be rejected"
+        );
     }
 
     #[test]

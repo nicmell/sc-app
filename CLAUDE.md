@@ -12,8 +12,8 @@ WS↔UDP bridge between the frontend worker and scsynth, optionally
 also serving the bundled `dist/` over HTTP.
 
 **scsynth is not managed by this app** — it's expected to be already
-running at `127.0.0.1:57110` (or whatever the bridge's
-`config.json -> scsynth` points to).
+running at `127.0.0.1:57110` (or whatever the target of the
+`/notify`-matching route in `config.json` points to).
 
 Forward-looking design lives in `plan.md` (pending phases, open
 questions, acceptance criteria); the historical record of shipped
@@ -365,22 +365,24 @@ so typos error out). All fields are `Option<…>`; missing fields
 fall through. Fields:
 
 - `port` — HTTP port to bind for the bridge.
-- `scsynth` — scsynth address (host:port). Used by
-  `Session::create` to pick the handshake socket (the one that
-  runs `/notify 1` + `/status` at session boot). Phase 37
-  retired the implicit-catch-all role this field had — the
-  routes table now must enumerate scsynth's command surface
-  explicitly.
+- `clock_chunk_size` — Phase 39d shared clock chunkSize (audio
+  frames per tick). Default 1024.
 - `log_dir` — directory for daily-rotated NDJSON logs.
 - `routes` — OSC address-pattern routes
   (`[{ pattern: regex, target }]`, Phase 37). Walked top-to-
   bottom; first regex match wins. **No implicit default** —
   packets whose address matches no entry AND aren't claimed by
   a middleware drop with a `warn!` log. Starter seeds:
-  - `^/(dirt|clock|scope)(/|$)` → `127.0.0.1:57120` (SuperDirt
-    process; `/dirt`, `/clock`, `/scope` responder subtrees).
-  - `^/([sngbcdpu]_|notify|status|sync|cmd|dumpOSC|clearSched|error|quit)`
+  - `^/(dirt|clock|scope|bootstrap)(/|$)` → `127.0.0.1:57120`
+    (sclang+SuperDirt; `/dirt`, `/clock`, `/scope`, `/bootstrap`
+    responder subtrees).
+  - `^/([sngbcdpu]_|notify|status|sync|cmd|dumpOSC|clearSched|error|quit|version)`
     → `127.0.0.1:57110` (scsynth's command surface).
+  Phase 39 hotfix follow-up: the bridge derives the boot-handshake
+  targets from this table — `route_for("/notify")` picks scsynth,
+  `route_for("/bootstrap/hello")` picks sclang. There are no
+  separate `scsynth` / `sclang` config fields anymore; to point
+  at a different process, edit the relevant route's `target`.
 - `session_ttl_seconds` — how long an idle bridge-managed
   session lingers before TTL eviction runs `Session::cleanup`
   (`/g_freeAll` + `/n_free` + `/notify 0`). Default 1800
@@ -389,19 +391,18 @@ fall through. Fields:
 Discovery:
 
 - **GUI mode** reads `app.path().app_config_dir()/config.json` and
-  writes a starter file (port + scsynth + `/dirt → 57120` and
-  `/clock → 57120` routes) on first launch via
+  writes a starter file (port + clock_chunk_size + the two
+  starter routes) on first launch via
   `Config::write_default_if_missing`. Subsequent launches never
-  overwrite the user's edits — even when `Config` gains new
-  fields, an old user-written file just keeps its existing
-  shape and the bridge defaults the missing fields. (Caveat:
-  if a user has a stale starter config from before the `/dirt`
-  route was seeded, SuperDirt routing breaks silently with
-  `/fail /dirt/hello: Command not found`. Same shape post-Phase-30
-  for `/clock`: a stale config without the `/clock` route makes
-  `clock.attach()` time out with the message "Could not attach to
-  the shared clock (/clock/hello)". Fix: delete the config-dir
-  file to regenerate or hand-edit the route in.)
+  overwrite the user's edits. **Stale-config gotcha**: because
+  `Config` uses `deny_unknown_fields`, a starter file written
+  before a field was renamed/removed (e.g. the pre-Phase-39
+  `scsynth`/`sclang` keys) fails to deserialize loudly — the
+  user must delete the file to regenerate, or hand-edit to drop
+  the offending field. Routing-shape stale-configs (e.g. a
+  starter from before `/bootstrap` was added to the sclang regex)
+  surface as `Could not attach to the shared clock` or similar
+  bootstrap-timeout symptoms; same fix.
 - **Bridge mode** uses `--config <path>` if explicitly passed (must
   exist; fails loudly otherwise), else auto-discovers
   `./config.json` (CWD-relative, for `yarn bridge` / `yarn
@@ -409,11 +410,15 @@ Discovery:
 
 Precedence (highest → lowest):
 
-1. CLI flag (bridge only — `--port`, `--scsynth`, `--log-dir`)
-2. Env var (`SC_PORT`, `SC_SCSYNTH_ADDR`)
+1. CLI flag (bridge only — `--port`, `--log-dir`)
+2. Env var (`SC_PORT`)
 3. `config.json` value
-4. Built-in default (3000 / `127.0.0.1:57110` / stderr-only /
-   1800 s TTL / no routes)
+4. Built-in default (3000 / stderr-only / 1800 s TTL / starter
+   routes if `routes` is empty)
+
+Phase 39 hotfix follow-up: scsynth + sclang targets aren't in
+this precedence chain — they're derived from the routes table.
+Edit the route entry's `target` to point at a different process.
 
 `dist` is intentionally *not* in the config schema — it has its own
 resolution path (resource_dir auto-resolves in bundle, `--dist`
@@ -534,7 +539,7 @@ Sessions become per-tab bookkeeping (`sub_client_id`,
 `parent_group_id`, `scope_mode`); bridge runs `/notify 1` once
 at boot — `maxLogins=8` is no longer a session ceiling.
 SessionInfo carries cached `clock` / `numScopeBuffers` /
-`dirtSamples` from a single `/sc-app/bootstrap/hello` round-trip
+`dirtSamples` from a single `/bootstrap/hello` round-trip
 to sclang at boot — frontend's setup path makes ZERO sclang
 OSC round-trips. Bridge owns the scope-buffer allocator
 (`/scope/{allocate,free}` are outbound middlewares synthesizing
@@ -1109,11 +1114,11 @@ Observations:
   edit.
 - **`?scsynth=HOST:PORT` query parameter is GONE (Phase 29d).**
   Pre-29 every WS upgrade carried a per-connection scsynth
-  override. Sessions are now bound to `config.json -> scsynth`
-  at creation time and don't accept overrides. To point a
-  session at a different scsynth, edit `config.json` and
-  restart the bridge. The WS upgrade requires
-  `?session=<uuid>` and 400s without it.
+  override. The bridge now derives the scsynth target at boot
+  from `config.json -> routes` (the entry whose regex matches
+  `/notify`). To point at a different scsynth, edit that
+  route's `target` and restart the bridge. The WS upgrade
+  requires `?session=<uuid>` and 400s without it.
 - **Bridge owns scsynth-side cleanup (Phase 29d).** Pre-29 the
   frontend fired `/g_freeAll` + `/notify 0` from a `pagehide`
   listener. Now the frontend just sends `DELETE

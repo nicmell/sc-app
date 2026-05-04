@@ -18,7 +18,6 @@
 //! failure is fatal — the bridge exits with code 1 rather than
 //! booting with a half-broken route map.
 
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -29,8 +28,6 @@ use crate::server::static_assets;
 
 pub fn run_blocking(
     port: u16,
-    scsynth: SocketAddr,
-    sclang: Option<SocketAddr>,
     clock_chunk_size: u32,
     routes: Vec<Route>,
     dist_override: Option<PathBuf>,
@@ -70,8 +67,6 @@ pub fn run_blocking(
         if let Err(e) = server::run_bridge(
             port,
             table,
-            scsynth,
-            sclang,
             clock_chunk_size,
             dist,
             session_ttl,

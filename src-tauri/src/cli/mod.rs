@@ -7,11 +7,17 @@
 //!
 //! Config precedence for the bridge subcommand:
 //!
-//! 1. CLI flag (`--port`, `--scsynth`, `--log-dir`)
-//! 2. Env var (`SC_PORT`, `SC_SCSYNTH_ADDR`)
+//! 1. CLI flag (`--port`, `--log-dir`)
+//! 2. Env var (`SC_PORT`)
 //! 3. `config.json` value (`--config <path>` or auto-discovered at
 //!    [`config::LINUX_SYSTEM_PATH`])
 //! 4. Built-in default
+//!
+//! Phase 39 hotfix follow-up: scsynth + sclang targets are no
+//! longer config fields / env vars / CLI flags; they're derived
+//! from the routes table by walking it for `/notify` (scsynth) and
+//! `/bootstrap/hello` (sclang). To override, edit the route entry
+//! in `config.json`.
 //!
 //! GUI mode does the same precedence inside `gui::run` (no CLI
 //! flags; reads env + `app_config_dir/config.json`).
@@ -24,17 +30,13 @@
 mod bridge;
 mod gui;
 
-use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
 
 use std::time::Duration;
 
-use crate::config::{
-    self, Config, DEFAULT_DIRT, DEFAULT_PORT, DEFAULT_SCSYNTH,
-    DEFAULT_SESSION_TTL_SECONDS,
-};
+use crate::config::{self, Config, DEFAULT_PORT, DEFAULT_SESSION_TTL_SECONDS};
 
 #[derive(Parser)]
 #[command(name = "sc-app", version, about = "SCSynth Oscilloscope & Recorder")]
@@ -53,13 +55,6 @@ enum Command {
         /// config.json `port`, then 3000.
         #[arg(short, long)]
         port: Option<u16>,
-
-        /// Default scsynth address. Each WebSocket connection may
-        /// override this via `?scsynth=HOST:PORT`. Falls back to
-        /// env (`SC_SCSYNTH_ADDR`), config.json `scsynth`, then
-        /// `127.0.0.1:57110`.
-        #[arg(long)]
-        scsynth: Option<String>,
 
         /// Override the static asset directory. Without this flag
         /// `dist/` is resolved via Tauri's resource-dir mechanism,
@@ -99,7 +94,6 @@ pub fn run() {
         None => gui::run(),
         Some(Command::Bridge {
             port,
-            scsynth,
             dist,
             log_dir,
             config,
@@ -111,21 +105,6 @@ pub fn run() {
                 .or_else(|| std::env::var("SC_PORT").ok().and_then(|s| s.parse().ok()))
                 .or(cfg.port)
                 .unwrap_or(DEFAULT_PORT);
-            let scsynth_str = scsynth
-                .or_else(|| std::env::var("SC_SCSYNTH_ADDR").ok())
-                .or(cfg.scsynth)
-                .unwrap_or_else(|| DEFAULT_SCSYNTH.to_string());
-            let scsynth = parse_scsynth_or_die(&scsynth_str);
-            // Phase 39b: sclang address for the bootstrap round-trip.
-            // Defaults to DEFAULT_DIRT so a stale starter config
-            // (written before Phase 39 added the field) still gets a
-            // working bootstrap. Always Some(_) — if sclang isn't
-            // actually reachable, `try_lazy_sclang_bootstrap` retries
-            // on every GET /api/session.
-            let sclang_str = cfg
-                .sclang
-                .unwrap_or_else(|| DEFAULT_DIRT.to_string());
-            let sclang = Some(parse_scsynth_or_die(&sclang_str));
             // Phase 39d: clock chunkSize. Pre-39d this lived in
             // sclang's SC_APP_CLOCK_CHUNK_SIZE env var; Phase 39d
             // hoists it to bridge config.
@@ -135,15 +114,22 @@ pub fn run() {
                 .or(cfg.clock_chunk_size)
                 .unwrap_or(crate::config::DEFAULT_CLOCK_CHUNK_SIZE);
             let log_dir = log_dir.or(cfg.log_dir);
-            let routes = cfg.routes;
+            // Phase 39 hotfix follow-up: scsynth + sclang targets
+            // come from the routes table now (derived in serve_on
+            // via route_for("/notify") + route_for("/bootstrap/hello")).
+            // If the user hasn't supplied any routes, fall back to
+            // the starter routes — they cover both targets.
+            let routes = if cfg.routes.is_empty() {
+                config::starter().routes.clone()
+            } else {
+                cfg.routes
+            };
             let session_ttl = Duration::from_secs(
                 cfg.session_ttl_seconds.unwrap_or(DEFAULT_SESSION_TTL_SECONDS),
             );
 
             bridge::run_blocking(
                 port,
-                scsynth,
-                sclang,
                 clock_chunk_size,
                 routes,
                 dist,
@@ -201,12 +187,3 @@ fn resolve_bridge_config(explicit: Option<&Path>) -> Config {
     Config::default()
 }
 
-fn parse_scsynth_or_die(raw: &str) -> SocketAddr {
-    match raw.parse::<SocketAddr>() {
-        Ok(addr) => addr,
-        Err(e) => {
-            eprintln!("error: invalid scsynth address {raw:?}: {e}");
-            std::process::exit(2);
-        }
-    }
-}

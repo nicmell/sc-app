@@ -9,10 +9,10 @@
 //!
 //! Config: GUI mode reads
 //! `app.path().app_config_dir()/config.json` and writes a default
-//! version on first launch (port + scsynth seeded with built-ins;
-//! `log_dir` left out so it falls through to
-//! `app.path().app_log_dir()`). Precedence is the same as bridge
-//! mode minus the CLI flags: env > config > built-in.
+//! version on first launch (port + starter routes; `log_dir`
+//! left out so it falls through to `app.path().app_log_dir()`).
+//! Precedence is the same as bridge mode minus the CLI flags:
+//! env > config > built-in.
 //!
 //! Logging: `init_tracing` runs *inside* `.setup()` so it can pick
 //! up either the config-supplied `log_dir` or the platform-standard
@@ -20,16 +20,12 @@
 //! by Tauri's managed state via [`TracingGuard`] for the app's
 //! lifetime.
 
-use std::net::SocketAddr;
-
 use tauri::utils::config::BackgroundThrottlingPolicy;
 use tauri::Manager;
 
 use std::time::Duration;
 
-use crate::config::{
-    Config, DEFAULT_DIRT, DEFAULT_PORT, DEFAULT_SCSYNTH, DEFAULT_SESSION_TTL_SECONDS,
-};
+use crate::config::{Config, DEFAULT_PORT, DEFAULT_SESSION_TTL_SECONDS};
 use crate::logging;
 use crate::server::{self, RoutingTable};
 use crate::server::static_assets::DIST_SUBPATH;
@@ -75,31 +71,15 @@ pub fn run() {
                 }
             }
 
-            // 3. Resolve port + scsynth: env > config > default.
+            // 3. Resolve port: env > config > default. Phase 39
+            //    hotfix follow-up: scsynth + sclang targets come
+            //    from the routes table now (derived in
+            //    `serve_on`); no separate config / env hooks.
             let port = std::env::var("SC_PORT")
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .or(cfg.port)
                 .unwrap_or(DEFAULT_PORT);
-            let scsynth_str = std::env::var("SC_SCSYNTH_ADDR")
-                .ok()
-                .or(cfg.scsynth)
-                .unwrap_or_else(|| DEFAULT_SCSYNTH.to_string());
-            let scsynth: SocketAddr = scsynth_str
-                .parse()
-                .map_err(|e| format!("invalid scsynth {scsynth_str:?}: {e}"))?;
-            // Phase 39b: sclang bootstrap target. Defaults to
-            // DEFAULT_DIRT so a stale starter config (written before
-            // Phase 39 added the field) still gets a working
-            // bootstrap. Pass `Some(_)` always — if sclang isn't
-            // actually reachable, the lazy retry in
-            // `try_lazy_sclang_bootstrap` handles it.
-            let sclang_str = cfg.sclang.unwrap_or_else(|| DEFAULT_DIRT.to_string());
-            let sclang: Option<SocketAddr> = Some(
-                sclang_str
-                    .parse()
-                    .map_err(|e| format!("invalid sclang {sclang_str:?}: {e}"))?,
-            );
             // Phase 39d: clock chunkSize from config (env override
             // for back-compat with pre-39d SC_APP_CLOCK_CHUNK_SIZE
             // deployments).
@@ -117,10 +97,10 @@ pub fn run() {
             //     each `target` host:port via lookup_host AND
             //     compiles its `pattern` regex. Failure is fatal —
             //     we'd rather refuse to boot than start with a
-            //     half-broken route map. Phase 37: scsynth_addr is
-            //     no longer the routing-table default; it's passed
-            //     to `serve_on` separately for `Session::create`'s
-            //     handshake socket.
+            //     half-broken route map. Phase 39 hotfix follow-up:
+            //     `serve_on` derives the scsynth + sclang handshake
+            //     targets from this table (route_for("/notify") +
+            //     route_for("/bootstrap/hello")).
             let routes_cfg = if cfg.routes.is_empty() {
                 crate::config::starter().routes.clone()
             } else {
@@ -157,8 +137,6 @@ pub fn run() {
                 if let Err(e) = server::serve_on(
                     listener,
                     table,
-                    scsynth,
-                    sclang,
                     clock_chunk_size,
                     dist,
                     session_ttl,

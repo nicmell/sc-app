@@ -1,16 +1,14 @@
 {
   "port": 3000,
-  "scsynth": "127.0.0.1:57110",
-  "sclang": "127.0.0.1:57120",
   "clock_chunk_size": 1024,
   "log_dir": "./logs",
   "routes": [
     {
-      "pattern": "^/(dirt|clock|scope)(/|$)",
+      "pattern": "^/(dirt|clock|scope|bootstrap)(/|$)",
       "target": "127.0.0.1:57120"
     },
     {
-      "pattern": "^/([sngbcdpu]_|notify|status|sync|cmd|dumpOSC|clearSched|error|quit)",
+      "pattern": "^/([sngbcdpu]_|notify|status|sync|cmd|dumpOSC|clearSched|error|quit|version)",
       "target": "127.0.0.1:57110"
     }
   ]
