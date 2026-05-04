@@ -66,8 +66,7 @@ var libDir = PathName(thisProcess.nowExecutingPath).pathOnly +/+ "lib";
     "bootstrap.scd",
     "clock.scd",
     "superdirt.scd",
-    "dirt-list-samples.scd",
-    "scope.scd"
+    "dirt-list-samples.scd"
 ].do { |f|
     (libDir +/+ f).load;
 };
@@ -102,7 +101,10 @@ s.doWhenBooted({
     ~scAppInstallClock.(clockChunkSize);
     ~scAppInstallSuperDirt.();
     ~scAppInstallDirtListSamples.();
-    ~scAppInstallScopeResponders.();
+    // Phase 39c: scope responders moved to the bridge.
+    // ~scAppBootstrapCtx[\scope][\numScopeBuffers] is set by
+    // bootstrap.scd as the canonical default (128).
+    ~scAppBootstrapCtx[\scope] = (numScopeBuffers: 128);
     ~scAppInstallBootstrap.();
 }, 50, {
     "[sc-app] scsynth not reachable on 127.0.0.1:57110 after 10s.\n  Start it first: yarn scsynth-only (dev) or your systemd unit (prod).".error;

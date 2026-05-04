@@ -42,7 +42,7 @@ use regex::Regex;
 use super::server::Server;
 use super::session::Session;
 use crate::scope::middleware::{
-    InboundScopeMiddleware, OutboundScopeMiddleware, ScopeContext,
+    BridgeScopeAllocator, InboundScopeMiddleware, OutboundScopeMiddleware, ScopeContext,
 };
 
 /// Outcome of a middleware invocation.
@@ -76,9 +76,14 @@ pub enum Direction {
 pub(crate) struct WsCtx<'a> {
     pub session: &'a Arc<Session>,
     /// Phase 39a: shared scsynth Server. Used by middlewares that
-    /// need to talk to scsynth (`ensure_scope_shm`, future
-    /// `/b_getn` issuance via UDP-extras).
+    /// need to talk to scsynth (`ensure_scope_shm`, `/b_getn`
+    /// issuance via UDP-extras).
     pub scsynth_server: &'a Arc<Server>,
+    /// Phase 39c: bridge-owned scope-buffer allocator (shared
+    /// across all sessions). Used by `OutboundScopeMiddleware::
+    /// {Allocate, Free}` to claim / release indices in
+    /// `0..num_scope_buffers`.
+    pub scope_allocator: &'a Arc<BridgeScopeAllocator>,
     /// Scope state. Already locked by the dispatcher; the handler
     /// gets exclusive mutable access for the duration of the
     /// callback.
@@ -102,6 +107,7 @@ impl<'a> WsCtx<'a> {
     pub fn new(
         session: &'a Arc<Session>,
         scsynth_server: &'a Arc<Server>,
+        scope_allocator: &'a Arc<BridgeScopeAllocator>,
         scope: &'a mut ScopeContext,
         direction: Direction,
         source_target: Option<SocketAddr>,
@@ -109,6 +115,7 @@ impl<'a> WsCtx<'a> {
         Self {
             session,
             scsynth_server,
+            scope_allocator,
             scope,
             direction,
             source_target,

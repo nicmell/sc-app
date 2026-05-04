@@ -36,6 +36,54 @@ use crate::server::server::ScopeShm;
 pub const SCOPE_SUBSCRIBE_ADDRESS: &str = "/scope/subscribe";
 pub const SCOPE_UNSUBSCRIBE_ADDRESS: &str = "/scope/unsubscribe";
 pub const SCOPE_CHUNK_ADDRESS: &str = "/scope/chunk";
+pub const SCOPE_ALLOCATE_ADDRESS: &str = "/scope/allocate";
+pub const SCOPE_FREE_ADDRESS: &str = "/scope/free";
+pub const SCOPE_ALLOCATED_ADDRESS: &str = "/scope/allocated";
+
+/// Default scope-buffer pool size when sclang's metadata isn't
+/// available at bridge boot. scsynth allocates 128 scope buffer
+/// slots in the SHM segment by default; matching that is the
+/// safe fallback.
+pub const DEFAULT_NUM_SCOPE_BUFFERS: u32 = 128;
+
+/// Bridge-side replacement for sclang's
+/// `s.scopeBufferAllocator` (a `StackNumberAllocator(0, 127)`).
+/// Phase 39c hoists the allocator to the bridge so
+/// `/scope/allocate` doesn't need a UDP round-trip — the
+/// outbound middleware allocates locally and synthesizes the
+/// reply via `WsCtx::ws_extras`.
+pub struct BridgeScopeAllocator {
+    /// Free-list of available indices. Initialized
+    /// `(0..pool_size).rev()` so `pop()` hands out 0, 1, 2, …
+    /// in order (cosmetic; not load-bearing).
+    free_list: tokio::sync::Mutex<Vec<u32>>,
+}
+
+impl BridgeScopeAllocator {
+    pub fn new(pool_size: u32) -> Self {
+        let free_list: Vec<u32> = (0..pool_size).rev().collect();
+        Self {
+            free_list: tokio::sync::Mutex::new(free_list),
+        }
+    }
+
+    pub async fn alloc(&self) -> Option<u32> {
+        let mut list = self.free_list.lock().await;
+        list.pop()
+    }
+
+    pub async fn free(&self, idx: u32) {
+        let mut list = self.free_list.lock().await;
+        if !list.contains(&idx) {
+            list.push(idx);
+        }
+    }
+
+    #[cfg(test)]
+    pub async fn free_count(&self) -> usize {
+        self.free_list.lock().await.len()
+    }
+}
 
 /// Per-WS scope subscription record (SHM mode). Keyed by the
 /// worker-minted `sub_id`. Bridge never interprets `sub_id`
@@ -160,6 +208,80 @@ async fn outbound_scope_subscribe<'a>(
             "outbound /scope/subscribe failed"
         );
     }
+    MiddlewareOutcome::Consumed
+}
+
+/// Outbound `/scope/allocate` middleware. Bridge owns the
+/// scope-buffer allocator (Phase 39c); this pops a free index
+/// and emits `/scope/allocated <idx>` synthetically via
+/// `ws_extras`. No UDP round-trip.
+async fn outbound_scope_allocate<'a>(
+    ctx: &mut WsCtx<'a>,
+    _payload: &[u8],
+) -> MiddlewareOutcome {
+    match ctx.scope_allocator.alloc().await {
+        Some(idx) => {
+            let reply = OscMessage {
+                addr: SCOPE_ALLOCATED_ADDRESS.into(),
+                args: vec![OscType::Int(idx as i32)],
+            };
+            let bytes = rosc::encoder::encode(&OscPacket::Message(reply))
+                .expect("encode_scope_allocated reply (BUG)");
+            ctx.ws_extras.push(bytes);
+            tracing::debug!(
+                session_id = %ctx.session.session_id,
+                idx,
+                "scope index allocated"
+            );
+        }
+        None => {
+            tracing::warn!(
+                session_id = %ctx.session.session_id,
+                "scope allocator exhausted; refusing /scope/allocate"
+            );
+            // No reply pushed — frontend's sendAndAwaitReply will
+            // time out. Surface a /fail-style error in a future
+            // iteration if needed.
+        }
+    }
+    MiddlewareOutcome::Consumed
+}
+
+/// Outbound `/scope/free` middleware. OSC args: `idx:i`.
+/// Returns the index to the bridge's allocator. No reply.
+async fn outbound_scope_free<'a>(
+    ctx: &mut WsCtx<'a>,
+    payload: &[u8],
+) -> MiddlewareOutcome {
+    let Some(msg) = decode_top_message(payload) else {
+        tracing::warn!(
+            session_id = %ctx.session.session_id,
+            "outbound /scope/free: malformed OSC payload"
+        );
+        return MiddlewareOutcome::Consumed;
+    };
+    let Some(idx) = expect_int(msg.args.first()) else {
+        tracing::warn!(
+            session_id = %ctx.session.session_id,
+            args = ?msg.args,
+            "outbound /scope/free: expected (i,) args"
+        );
+        return MiddlewareOutcome::Consumed;
+    };
+    if idx < 0 {
+        tracing::warn!(
+            session_id = %ctx.session.session_id,
+            idx,
+            "outbound /scope/free: negative index ignored"
+        );
+        return MiddlewareOutcome::Consumed;
+    }
+    ctx.scope_allocator.free(idx as u32).await;
+    tracing::debug!(
+        session_id = %ctx.session.session_id,
+        idx,
+        "scope index freed"
+    );
     MiddlewareOutcome::Consumed
 }
 
@@ -474,6 +596,8 @@ pub(crate) async fn run_outbound<'a>(
     match variant {
         OutboundScopeMiddleware::Subscribe => outbound_scope_subscribe(ctx, payload).await,
         OutboundScopeMiddleware::Unsubscribe => outbound_scope_unsubscribe(ctx, payload).await,
+        OutboundScopeMiddleware::Allocate => outbound_scope_allocate(ctx, payload).await,
+        OutboundScopeMiddleware::Free => outbound_scope_free(ctx, payload).await,
     }
 }
 
@@ -498,6 +622,13 @@ pub enum OutboundScopeMiddleware {
     Subscribe,
     /// Claims `/scope/unsubscribe` on the recv path.
     Unsubscribe,
+    /// Phase 39c: claims `/scope/allocate`. Bridge owns the
+    /// buffer-index allocator; emits `/scope/allocated <idx>`
+    /// synthetically.
+    Allocate,
+    /// Phase 39c: claims `/scope/free`. Returns the index to
+    /// the bridge's allocator.
+    Free,
 }
 
 /// Register the outbound middlewares (mode-independent — the
@@ -514,6 +645,14 @@ pub fn register_outbound_middlewares(
     reg.register(
         r"^/scope/unsubscribe$",
         OutboundMiddleware::Scope(OutboundScopeMiddleware::Unsubscribe),
+    );
+    reg.register(
+        r"^/scope/allocate$",
+        OutboundMiddleware::Scope(OutboundScopeMiddleware::Allocate),
+    );
+    reg.register(
+        r"^/scope/free$",
+        OutboundMiddleware::Scope(OutboundScopeMiddleware::Free),
     );
 }
 
@@ -602,5 +741,31 @@ mod tests {
             panic!()
         };
         assert!(matches!(msg.args[2], OscType::Int(1)));
+    }
+
+    #[tokio::test]
+    async fn bridge_scope_allocator_alloc_free() {
+        let alloc = BridgeScopeAllocator::new(4);
+        // Alloc all four (in pop order: 0, 1, 2, 3 — the
+        // free-list is initialized reversed).
+        let a = alloc.alloc().await.unwrap();
+        let b = alloc.alloc().await.unwrap();
+        let c = alloc.alloc().await.unwrap();
+        let d = alloc.alloc().await.unwrap();
+        assert_eq!((a, b, c, d), (0, 1, 2, 3));
+        // Pool exhausted.
+        assert_eq!(alloc.alloc().await, None);
+        // Free one; can re-alloc.
+        alloc.free(b).await;
+        assert_eq!(alloc.alloc().await, Some(b));
+    }
+
+    #[tokio::test]
+    async fn bridge_scope_allocator_double_free_is_idempotent() {
+        let alloc = BridgeScopeAllocator::new(2);
+        let _ = alloc.alloc().await.unwrap();
+        alloc.free(0).await;
+        alloc.free(0).await; // duplicate
+        assert_eq!(alloc.free_count().await, 2);
     }
 }

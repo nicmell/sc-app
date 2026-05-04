@@ -168,6 +168,7 @@ async fn handle_outbound_osc(
         let mut ctx = WsCtx::new(
             session,
             &state.scsynth_server,
+            &state.scope_allocator,
             &mut scope,
             Direction::Outbound,
             None,
@@ -284,6 +285,7 @@ async fn forward_one_payload(
         let mut ctx = WsCtx::new(
             session,
             &state.scsynth_server,
+            &state.scope_allocator,
             &mut scope,
             Direction::Inbound,
             Some(target),

@@ -46,6 +46,8 @@ pub use routing::RoutingTable;
 use server::{Server, ServerRole};
 use session::{send_bridge_notify_off, SessionStore, SubClientIdAllocator};
 
+use crate::scope::middleware::{BridgeScopeAllocator, DEFAULT_NUM_SCOPE_BUFFERS};
+
 /// How often the TTL eviction task scans the session store.
 const TTL_SCAN_INTERVAL: Duration = Duration::from_secs(60);
 
@@ -65,6 +67,10 @@ pub(crate) struct AppState {
     /// (`ClockMetadata`, `num_scope_buffers`, `dirt_samples`)
     /// surfaced via `SessionInfo`.
     pub sclang_server: Option<Arc<Server>>,
+    /// Phase 39c: bridge-owned scope-buffer allocator. Sized
+    /// from `SclangServer.metadata.num_scope_buffers` at boot
+    /// (default 128 if sclang isn't reachable).
+    pub scope_allocator: Arc<BridgeScopeAllocator>,
     pub sessions: SessionStore,
     pub sub_client_id_allocator: Arc<SubClientIdAllocator>,
     /// Phase 36: when true, every new session uses
@@ -144,11 +150,28 @@ pub async fn serve_on(
         .clone();
     let sclang_server = sclang_addr.and_then(|addr| servers.get(&addr).cloned());
 
+    // Phase 39c: size the bridge-owned scope-buffer allocator
+    // from sclang's bootstrap reply. If sclang wasn't reachable
+    // (or its bootstrap missed `numScopeBuffers`), fall back to
+    // the scsynth default (128 SHM scope buffer slots).
+    let scope_pool_size: u32 = match &sclang_server {
+        Some(s) => s
+            .metadata()
+            .await
+            .num_scope_buffers
+            .map(|n| n.max(0) as u32)
+            .unwrap_or(DEFAULT_NUM_SCOPE_BUFFERS),
+        None => DEFAULT_NUM_SCOPE_BUFFERS,
+    };
+    tracing::info!(scope_pool_size, "  scope-buffer allocator pool sized");
+    let scope_allocator = Arc::new(BridgeScopeAllocator::new(scope_pool_size));
+
     let state = AppState {
         routes: Arc::new(routes),
         servers: Arc::new(servers),
         scsynth_server: scsynth_server.clone(),
         sclang_server,
+        scope_allocator,
         sessions: SessionStore::new(),
         sub_client_id_allocator: Arc::new(SubClientIdAllocator::new()),
         force_osc_mode,
