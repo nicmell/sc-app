@@ -38,11 +38,17 @@ use crate::scope::ScopeMode;
 /// `100`. Mirrors the same fallback in `src/AppShell.tsx`.
 const FALLBACK_PARENT_GROUP_ID: i32 = 100;
 
-/// Phase 39a: base group ID for per-session parent groups.
-/// `parent_group_id = SESSION_GROUP_BASE + sub_client_id`.
-/// Sits above the clock's nodeId 999 + sclang's defaultGroup at
-/// 1, with room for future shared-synth nodeIds.
-const SESSION_GROUP_BASE: i32 = 1000;
+/// Phase 39a hotfix: parent_group_id is partitioned by both the
+/// bridge's clientId AND the sub_client_id to avoid colliding
+/// with sclang+SuperDirt's node-ID range (sclang at clientId=0
+/// allocates synths from 1000+; SuperDirt orbits land in
+/// 1000–1999). The formula mirrors the frontend's IdAllocator
+/// partition: `bridge_client_id × 1M + sub_client_id × 100K +
+/// 100`. Single-client (`bridge_client_id=0`, `sub_client_id=0`)
+/// keeps the legacy 100 group id for back-compat.
+const PARENT_GROUP_OFFSET_PER_CLIENT_ID: i32 = 1_000_000;
+const PARENT_GROUP_OFFSET_PER_SUB_CLIENT_ID: i32 = 100_000;
+const PARENT_GROUP_OFFSET_WITHIN_SLICE: i32 = 100;
 
 /// Maximum concurrent sessions. Each session owns a
 /// `sub_client_id` in `[0, MAX_SESSIONS)`. The bridge-level
@@ -137,7 +143,12 @@ impl Session {
             );
             FALLBACK_PARENT_GROUP_ID
         } else {
-            SESSION_GROUP_BASE + (sub_client_id as i32)
+            // Bridge-clientId-scoped partition to stay clear of
+            // sclang+SuperDirt's node range (clientId=0 allocator
+            // starts at 1000; SuperDirt orbits land 1000–1999).
+            bridge_client_id * PARENT_GROUP_OFFSET_PER_CLIENT_ID
+                + (sub_client_id as i32) * PARENT_GROUP_OFFSET_PER_SUB_CLIENT_ID
+                + PARENT_GROUP_OFFSET_WITHIN_SLICE
         };
 
         // Phase 36: probe SHM availability for this session. The

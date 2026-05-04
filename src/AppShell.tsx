@@ -16,6 +16,7 @@ import { DirtClient } from '@/dirt/DirtClient';
 import { RecordingManager } from '@/recording/RecordingManager';
 import { status, version } from '@sc-app/server-commands';
 import {
+  awaitSclangReady,
   bootstrapSession,
   clearStoredSession,
   deleteSession,
@@ -560,7 +561,11 @@ type BootstrapState =
   | { phase: 'pending' }
   | { phase: 'ready'; info: SessionInfo }
   | { phase: 'disconnected' }
-  | { phase: 'error'; error: string };
+  | { phase: 'error'; error: string }
+  /** Phase 39 hotfix: bridge created the session but sclang
+   *  wasn't reachable at boot time. AppShell is polling the
+   *  bridge while showing a "waiting for sclang…" banner. */
+  | { phase: 'waiting-for-sclang'; sessionId: string };
 
 export function AppShell() {
   const [resources, setResources] = useState<DashboardResources | null>(null);
@@ -664,25 +669,37 @@ export function AppShell() {
     let built: DashboardResources;
     try {
       // Phase 39b: cached clock metadata is required for dashboard
-      // bring-up (the ClockController is constructed with it). If
-      // sclang wasn't reachable at bridge boot, info.clock is null
-      // — surface a clear error instead of half-bringing-up.
-      if (info.clock === null) {
-        throw new Error(
-          'sclang not reachable at bridge boot — clock metadata missing. ' +
-            'Start sclang+SuperDirt and refresh.',
+      // bring-up. Phase 39 hotfix: if sclang wasn't reachable when
+      // the session was first created, info.clock will be null —
+      // poll the bridge until the lazy bootstrap completes (every
+      // GET retriggers the bridge's bootstrap attempt).
+      let resolvedInfo = info;
+      if (resolvedInfo.clock === null) {
+        console.warn(
+          '[sc:app] clock metadata missing — waiting for sclang to become reachable',
         );
+        setBootstrapState({
+          phase: 'waiting-for-sclang',
+          sessionId: info.sessionId,
+        });
+        resolvedInfo = await awaitSclangReady(info.sessionId);
       }
-      const clockInfo: ClockInfo = info.clock;
+      const clockInfo: ClockInfo =
+        resolvedInfo.clock ??
+        (() => {
+          throw new Error(
+            'awaitSclangReady resolved with null clock — invariant violated',
+          );
+        })();
       built = await setupDashboard(
         next,
-        info.sessionId,
-        info.scsynthClientId,
-        info.subClientId,
-        info.parentGroupId,
-        info.sampleRate,
+        resolvedInfo.sessionId,
+        resolvedInfo.scsynthClientId,
+        resolvedInfo.subClientId,
+        resolvedInfo.parentGroupId,
+        resolvedInfo.sampleRate,
         clockInfo,
-        info.dirtSamples,
+        resolvedInfo.dirtSamples,
         bank,
       );
     } catch (err) {
@@ -946,7 +963,9 @@ export function AppShell() {
   // heartbeat tick.
   const connectionStatus: ConnectionStatus = resources
     ? 'connected'
-    : bootstrapState.phase === 'pending' || bootstrapState.phase === 'ready'
+    : bootstrapState.phase === 'pending' ||
+        bootstrapState.phase === 'ready' ||
+        bootstrapState.phase === 'waiting-for-sclang'
       ? 'connecting'
       : 'disconnected';
 
@@ -974,8 +993,16 @@ export function AppShell() {
       />
       {showLoadingOverlay && (
         <LoadingModal
-          title="Connecting…"
-          message="Establishing the bridge session and connecting to scsynth."
+          title={
+            bootstrapState.phase === 'waiting-for-sclang'
+              ? 'Waiting for sclang…'
+              : 'Connecting…'
+          }
+          message={
+            bootstrapState.phase === 'waiting-for-sclang'
+              ? 'Bridge is up; sclang+SuperDirt isn’t reachable yet. Start it; this dialog will close automatically.'
+              : 'Establishing the bridge session and connecting to scsynth.'
+          }
         />
       )}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />

@@ -9,9 +9,39 @@ use axum::Json;
 use serde::Serialize;
 use uuid::Uuid;
 
+use super::server::{ensure_sclang_bootstrapped, instantiate_bridge_clock};
 use super::session::{session_info, Session};
 use super::AppState;
 use crate::scope::shm as scope_shm;
+
+/// Phase 39 hotfix: if sclang's bootstrap missed at bridge boot
+/// (bridge started before sclang), retry now. Both `post_session`
+/// and `get_session` call this so the frontend can poll until
+/// sclang comes up. Best-effort — failures are logged at debug.
+async fn try_lazy_sclang_bootstrap(state: &AppState) {
+    let Some(sclang) = state.sclang_server.as_ref() else {
+        return;
+    };
+    if sclang.metadata().await.clock_bus.is_some() {
+        return; // already populated
+    }
+    if let Err(e) = ensure_sclang_bootstrapped(sclang).await {
+        tracing::debug!(
+            error = %e,
+            "lazy sclang bootstrap still failing (sclang not yet reachable)"
+        );
+        return;
+    }
+    if let Err(e) = instantiate_bridge_clock(
+        &state.scsynth_server,
+        sclang,
+        state.clock_chunk_size,
+    )
+    .await
+    {
+        tracing::warn!(error = %e, "lazy clock /s_new failed after bootstrap");
+    }
+}
 
 #[derive(Serialize)]
 struct ErrorBody {
@@ -29,10 +59,14 @@ fn error_response(status: StatusCode, message: impl Into<String>) -> Response {
 }
 
 /// `POST /api/session` — mint a new session. Phase 39a: pure
-/// bookkeeping (no UDP). Returns 503 if the bridge isn't yet
-/// fully bootstrapped (e.g. scsynth handshake hasn't completed —
-/// shouldn't happen post-`serve_on`, but defensive).
+/// bookkeeping (no UDP). Phase 39 hotfix: if sclang's bootstrap
+/// missed at bridge boot (bridge started before sclang), retry
+/// here. The user-facing flow becomes "start the bridge, start
+/// sclang, open a tab" — the order between bridge + sclang
+/// stops mattering.
 pub async fn post_session(State(state): State<AppState>) -> Response {
+    try_lazy_sclang_bootstrap(&state).await;
+
     let session = match Session::create(
         &state.sub_client_id_allocator,
         &state.scsynth_server,
@@ -66,6 +100,10 @@ pub async fn post_session(State(state): State<AppState>) -> Response {
 /// `GET /api/session/:id` — read an existing session. Touches
 /// `last_active` as a side effect so an idle frontend hitting
 /// this on a timer counts as a TTL keep-alive.
+///
+/// Phase 39 hotfix: also opportunistically retries the sclang
+/// bootstrap if it's still missing. Frontend polls this when
+/// `clock` is null waiting for sclang to come up.
 pub async fn get_session(State(state): State<AppState>, Path(id): Path<Uuid>) -> Response {
     let Some(session) = state.sessions.get_and_touch(&id).await else {
         return error_response(
@@ -73,6 +111,7 @@ pub async fn get_session(State(state): State<AppState>, Path(id): Path<Uuid>) ->
             format!("session {id} not found (expired or never existed)"),
         );
     };
+    try_lazy_sclang_bootstrap(&state).await;
     match session_info(
         &session,
         &state.scsynth_server,

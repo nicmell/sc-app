@@ -71,6 +71,10 @@ pub(crate) struct AppState {
     /// from `SclangServer.metadata.num_scope_buffers` at boot
     /// (default 128 if sclang isn't reachable).
     pub scope_allocator: Arc<BridgeScopeAllocator>,
+    /// Phase 39d: clock chunkSize from config; used by the
+    /// lazy bootstrap path to call `instantiate_bridge_clock`
+    /// when the boot-time bootstrap missed sclang.
+    pub clock_chunk_size: u32,
     pub sessions: SessionStore,
     pub sub_client_id_allocator: Arc<SubClientIdAllocator>,
     /// Phase 36: when true, every new session uses
@@ -200,6 +204,7 @@ pub async fn serve_on(
         scsynth_server: scsynth_server.clone(),
         sclang_server,
         scope_allocator,
+        clock_chunk_size,
         sessions: SessionStore::new(),
         sub_client_id_allocator: Arc::new(SubClientIdAllocator::new()),
         force_osc_mode,

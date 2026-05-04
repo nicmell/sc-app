@@ -70,7 +70,12 @@ export interface SessionInfo {
  *  fall through to `POST /api/session`. The new id is persisted
  *  before returning so a reload immediately after this call
  *  finds the same session. Throws on POST failure — callers
- *  render the message in the recovery screen. */
+ *  render the message in the recovery screen.
+ *
+ *  Phase 39 hotfix: if the bridge's session was created when
+ *  sclang wasn't reachable, `clock` will be null and the
+ *  dashboard can't bring up. The caller (AppShell) is in charge
+ *  of polling — `awaitSclangReady` below handles that. */
 export async function bootstrapSession(): Promise<SessionInfo> {
   const stored = readStoredSessionId();
   if (stored) {
@@ -87,6 +92,42 @@ export async function bootstrapSession(): Promise<SessionInfo> {
   const fresh = await createSession();
   storeSessionId(fresh.sessionId);
   return fresh;
+}
+
+/** Phase 39 hotfix: poll `GET /api/session/:id` until the bridge's
+ *  cached sclang metadata is populated (`info.clock !== null`).
+ *  Each GET on the bridge re-attempts the lazy sclang bootstrap,
+ *  so this poll also nudges the bridge to keep trying sclang.
+ *
+ *  Use case: user starts the bridge before starting sclang. First
+ *  POST creates a session with `clock: null`; this loop resolves
+ *  once sclang comes up. Caller renders a "waiting for sclang"
+ *  banner while the promise is pending.
+ *
+ *  Resolves with the populated SessionInfo on success; rejects on
+ *  timeout. */
+export async function awaitSclangReady(
+  sessionId: string,
+  opts: { timeoutMs?: number; pollMs?: number } = {},
+): Promise<SessionInfo> {
+  const timeoutMs = opts.timeoutMs ?? 60_000;
+  const pollMs = opts.pollMs ?? 1500;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const info = await fetchSession(sessionId);
+      if (info && info.clock !== null) {
+        return info;
+      }
+    } catch (err) {
+      console.warn('[sc:session] awaitSclangReady poll error:', err);
+    }
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+  throw new Error(
+    `sclang not reachable after ${timeoutMs / 1000}s. ` +
+      `Start sclang+SuperDirt and refresh; check the bridge log for bootstrap errors.`,
+  );
 }
 
 /** GET /api/session/:id. Returns null on 404; throws on other

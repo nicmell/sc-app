@@ -288,6 +288,25 @@ impl Server {
         m.clock = Some(clock);
     }
 
+    /// Phase 39 hotfix: write the parsed bootstrap reply into
+    /// metadata. Used by [`ensure_sclang_bootstrapped`] for the
+    /// runtime re-bootstrap path (when the boot-time bootstrap
+    /// missed sclang because the bridge started before sclang
+    /// was up).
+    async fn set_bootstrap_metadata(
+        &self,
+        clock_bus: Option<i32>,
+        clock_node_id: Option<i32>,
+        num_scope_buffers: Option<i32>,
+        dirt_samples: Vec<DirtSample>,
+    ) {
+        let mut m = self.metadata.write().await;
+        m.clock_bus = clock_bus;
+        m.clock_node_id = clock_node_id;
+        m.num_scope_buffers = num_scope_buffers;
+        m.dirt_samples = dirt_samples;
+    }
+
     /// Lazily open the SHM scope-buffer pool for this scsynth
     /// Server. First caller pays the mmap + layout-scan cost;
     /// subsequent callers wait on the `OnceCell` and get the
@@ -626,6 +645,98 @@ fn parse_status_reply(bytes: &[u8]) -> Option<u32> {
         return None;
     }
     Some(sr.round() as u32)
+}
+
+// ===== Lazy re-bootstrap (Phase 39 hotfix) =====
+
+/// Re-bootstrap timeout for runtime re-attempts. Shorter than
+/// the boot-time per-attempt timeout because the recv task is
+/// already running and broadcasting; sclang's reply lands as
+/// soon as it's processed.
+const LAZY_BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Run the sclang bootstrap handshake AGAIN, this time reading
+/// the reply via the Server's broadcast channel (the recv task
+/// is already running). Used by `post_session` when the
+/// boot-time bootstrap missed sclang (e.g. bridge started
+/// before sclang). Idempotent: if metadata is already populated,
+/// returns Ok(()) immediately.
+///
+/// Concurrency: serialized via [`Server`]'s internal lock so two
+/// concurrent session creates don't both attempt to bootstrap.
+pub async fn ensure_sclang_bootstrapped(
+    sclang_server: &Arc<Server>,
+) -> Result<()> {
+    // Fast path: metadata already populated.
+    if sclang_server.metadata().await.clock_bus.is_some() {
+        return Ok(());
+    }
+
+    // Subscribe BEFORE sending so we don't race the broadcast.
+    let mut rx = sclang_server.subscribe();
+
+    let pkt = OscPacket::Message(OscMessage {
+        addr: "/sc-app/bootstrap/hello".into(),
+        args: vec![],
+    });
+    let bytes =
+        rosc::encoder::encode(&pkt).context("encode /sc-app/bootstrap/hello")?;
+    sclang_server
+        .send(&bytes)
+        .await
+        .context("send /sc-app/bootstrap/hello")?;
+
+    let mut parsed = BootstrapParsed::default();
+    let mut got_info = false;
+    let mut got_samples = false;
+    let deadline = tokio::time::Instant::now() + LAZY_BOOTSTRAP_TIMEOUT;
+    while !got_info || !got_samples {
+        let remaining = deadline
+            .checked_duration_since(tokio::time::Instant::now())
+            .ok_or_else(|| {
+                anyhow!("lazy bootstrap timed out (no reply from sclang)")
+            })?;
+        let payload = match timeout(remaining, rx.recv()).await {
+            Ok(Ok(p)) => p,
+            Ok(Err(_lagged_or_closed)) => continue,
+            Err(_) => {
+                anyhow::bail!("lazy bootstrap timed out (no reply from sclang)")
+            }
+        };
+        let pkt = match rosc::decoder::decode_udp(&payload) {
+            Ok((_, p)) => p,
+            Err(_) => continue,
+        };
+        for msg in flatten_packet(pkt) {
+            match msg.addr.as_str() {
+                "/sc-app/bootstrap/info" => {
+                    apply_info_args(&mut parsed, &msg.args);
+                    got_info = true;
+                }
+                "/sc-app/bootstrap/samples" => {
+                    parsed.dirt_samples = parse_samples_args(&msg.args);
+                    got_samples = true;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    sclang_server
+        .set_bootstrap_metadata(
+            parsed.clock_bus,
+            parsed.clock_node_id,
+            parsed.num_scope_buffers,
+            parsed.dirt_samples,
+        )
+        .await;
+
+    tracing::info!(
+        target = %sclang_server.target(),
+        "sclang lazy bootstrap succeeded"
+    );
+
+    Ok(())
 }
 
 // ===== Bridge-owned clock /s_new (Phase 39d) =====
