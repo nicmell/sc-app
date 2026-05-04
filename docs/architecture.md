@@ -180,8 +180,10 @@ src/
 ├── workers/                    code that runs in the OSC worker context
 │   ├── workerBootstrap.ts       sync message buffer + osc-js window shim
 │   ├── transport.ts             raw binary WebSocket
-│   ├── oscWorker.ts             worker entry: encode/decode + dispatch
-│   ├── scopeWire.ts             in-band scope wire format (Phase 35)
+│   ├── oscWorker.ts             worker entry: encode/decode + dispatch.
+│   │                             Phase 38 pure-OSC: /scope/chunk handled
+│   │                             in the OSC reply pump (no first-byte
+│   │                             peek). scopeWire.ts deleted.
 │   ├── sequencerPump.ts       Phase 32 worker-side pump
 │   ├── clockWatchdog.ts         Phase 33b worker-side freshness check
 │   └── *.test.ts                vitest unit tests
@@ -224,7 +226,7 @@ Major controllers:
 | `ClockController` | passive observation of the shared clock; `effectiveState` + `lastTick` + `derived` (tickRate, sampleRate, chunkSize). |
 | `GroupController` | sc-app's parent group (`/g_new`, `/n_run`); pause/resume drives this group. |
 | `SynthManager` + `SynthController` | producers — auto-allocates a bus block, `/s_new`s a tone synth onto it. |
-| `BufferManager` + `BufferController` | shared tap layer — one ref-counted entry per `(inputBus, channels, chunkSize)` triple. Each entry: `/scope/allocate` → `/s_new` tap with `ScopeOut2.ar` → worker `subscribeBuffer` (encodes a 0x01 in-band frame on the main /ws). |
+| `BufferManager` + `BufferController` | shared tap layer — one ref-counted entry per `(inputBus, channels, chunkSize)` triple. Each entry: `/scope/allocate` → `/s_new` tap with `ScopeOut2.ar` → worker `subscribeBuffer` (encodes a `/scope/subscribe` OSC message on the main /ws). |
 | `ScopeManager` + `ScopeController` | consumer — takes a user-typed bus, acquires a `BufferHandle` from `BufferManager`, renders. |
 | `RecordingManager` + `RecordingController` | consumer — same `BufferHandle` acquisition, runs the WAV writer. |
 | `SequencerController` | sequencer transport + bank mutation API; delegates the timing-critical pump to the worker. |
@@ -247,7 +249,7 @@ Major controllers:
                           ▼
                   ┌───────────────┐
                   │ BufferManager │ ── /scope/allocate + /s_new tap +
-                  └───────────────┘    in-band 0x01 subscribe on /ws
+                  └───────────────┘    /scope/subscribe OSC on /ws
                                        (per (inBus, ch, chunkSize))
                      │   │   │
         BufferHandles│   │   │ (ref-counted, each consumer holds one)
@@ -340,8 +342,8 @@ here.
 > a **module** that runs inside that one worker context. They
 > share the thread, the transport, and `self.postMessage`. This
 > matters because the file naming (`sequencerPump.ts`,
-> `clockWatchdog.ts`, `scopeWire.ts`) can read as "one worker
-> each" — it isn't.
+> `clockWatchdog.ts`) can read as "one worker each" — it
+> isn't.
 
 ### 4.1. Module layout
 
@@ -353,10 +355,6 @@ oscWorker.ts (entry)
 │                        default).
 ├── transport           raw binary WebSocket. Dispatches inbound
 │                        bytes to oscWorker's onMessage.
-├── scopeWire           Phase 35: in-band scope wire format on
-│                        the main /ws. encodeSubscribe (0x01) +
-│                        encodeUnsubscribe (0x02) +
-│                        decodeChunk (0x03) + isScopeFrame peek.
 ├── sequencerPump       Phase 32 pump: setInterval(25ms),
 │                        encodes /dirt/play bundles with
 │                        tickToTimetag, ships via transport.send,
@@ -367,9 +365,9 @@ oscWorker.ts (entry)
 └── (sub_id maps)        bidirectional Map<sub_id, bufferId>
                          for chunk dispatch. Worker mints sub_id
                          on subscribeBuffer; bridge echoes it
-                         back on 0x03 chunk frames; worker looks
-                         up the consumer-facing bufferId and
-                         posts bufferChunk to main.
+                         back on /scope/chunk OSC replies; worker
+                         looks up the consumer-facing bufferId
+                         and posts bufferChunk to main (Phase 38).
 ```
 
 ### 4.2. Why so much in the worker
@@ -385,12 +383,13 @@ The worker's responsibilities have grown organically:
    channel.
 3. **In-band scope subscription dispatch** (Phase 35; Phase 31
    originally added this in-band, then briefly used per-scope
-   `/ws/scope` connections, then Phase 35 reverted to in-band).
-   Worker mints integer `sub_id`s, encodes 0x01 subscribe / 0x02
-   unsubscribe frames on the main /ws, peeks the first byte of
-   inbound binary frames to discriminate scope chunks (0x03)
-   from OSC. Maps `sub_id ↔ bufferId` for chunk dispatch back
-   to main-thread listeners.
+   `/ws/scope` connections, then Phase 35 reverted to in-band;
+   Phase 38 turned the wire format pure-OSC).
+   Worker mints integer `sub_id`s, encodes `/scope/subscribe`
+   and `/scope/unsubscribe` OSC messages on the main /ws.
+   `/scope/chunk` replies are handled in the OSC reply pump
+   alongside `/clock/tick` and `/fail`. Maps `sub_id ↔
+   bufferId` for chunk dispatch back to main-thread listeners.
 4. **Sequencer pump** (Phase 32) — main posts a snapshot, worker
    runs the timing loop and ships OSC bundles directly via
    `transport.send` (no second postMessage hop for OSC bytes).
@@ -664,21 +663,17 @@ mutable-borrow complexity. The middleware set is a fixed
 in-tree enum (no plugin surface yet); enum + match dispatch
 avoids `Pin<Box<dyn Future>>` on the hot path.
 
-Phase 37c's registered middlewares are scope-domain; they live
+Phase 37c+38 registered middlewares are scope-domain; they live
 in `crate::scope::middleware` and register via
-`scope::middleware::register_inbound_middlewares` per session
-ScopeMode:
+`scope::middleware::register_{outbound,inbound}_middlewares`:
 
 | Variant | Direction | Address regex | Behavior |
 |---|---|---|---|
-| `ScopeChunkEmitOnTick` | inbound | `^/clock/tick$` | SHM mode. Polls SHM for active subs; pushes 0x03 chunk frames to `ws_extras`. PassThrough. |
-| `ScopeBgetnIssueOnTick` | inbound | `^/clock/tick$` | OSC mode. Pushes `/b_getn` bundles to `udp_extras`. PassThrough. |
-| `ScopeInterceptBsetn` | inbound | `^/b_setn` | OSC mode. Bufnum match → `ConsumedAndSend(chunk_bytes)`. No match → PassThrough. |
-
-`OutboundMiddleware` is empty in Phase 37 — the binary 0x01/0x02
-scope subscribe/unsubscribe frames bypass middleware (they're
-not OSC). Phase 38 will add `Scope` outbound variants when
-those become real OSC messages.
+| `OutboundScopeMiddleware::Subscribe` | outbound | `^/scope/subscribe$` | Phase 38. Parse OSC args, install subscription on `ScopeContext`. `Consumed`. |
+| `OutboundScopeMiddleware::Unsubscribe` | outbound | `^/scope/unsubscribe$` | Phase 38. Remove subscription from `ScopeContext`. `Consumed`. |
+| `InboundScopeMiddleware::ChunkEmitOnTick` | inbound | `^/clock/tick$` | SHM mode. Polls SHM for active subs; pushes `/scope/chunk` OSC replies to `ws_extras`. `PassThrough`. |
+| `InboundScopeMiddleware::BgetnIssueOnTick` | inbound | `^/clock/tick$` | OSC fallback mode. Pushes `/b_getn` bundles to `udp_extras`. `PassThrough`. |
+| `InboundScopeMiddleware::InterceptBsetn` | inbound | `^/b_setn` | OSC fallback mode. Bufnum match → `ConsumedAndSend(/scope/chunk_bytes)`. No match → `PassThrough`. |
 
 `WsCtx<'_>` carries the per-call state: `&Arc<Session>`,
 `&mut ScopeContext` (per-WS), `direction`, `source_target`,
@@ -705,30 +700,37 @@ lifetime. The mode is exposed at `/api/scope/probe` →
 
 - **`ScopeMode::Shm`** — scsynth's POSIX shared memory segment.
   Default when SHM is reachable. Phase 31's hot path; Phase 35
-  put it in-band on the main `/ws`.
+  put it in-band on the main `/ws`; Phase 38 turned the wire
+  format pure-OSC.
 - **`ScopeMode::Osc`** — `/b_getn` polling fallback. Used when
   SHM is unreachable (remote scsynth, exotic deployment) or
   forced via `bridge --no-shm`. Phase 36 added it as a Rust
   bridge module so the worker stays mode-blind.
 
-**Wire frame format on `/ws`** (subscribe / unsubscribe /
-chunk; identical in both modes; little-endian, packed):
-```
-0x01 subscribe    [op:u8 | sub_id:u32 | scope:u32 | channels:u32 | chunk:u32]
-0x02 unsubscribe  [op:u8 | sub_id:u32]
-0x03 chunk        [op:u8 | sub_id:u32 | tick:u32 | is_gap:u8 |
-                   channels:u8 | frames:u32 | float32 payload…]
-```
+**Wire format on `/ws`** (subscribe / unsubscribe / chunk;
+identical in both modes; Phase 38 pure OSC):
 
-The `scope:u32` field on 0x01 is interpreted as a scope-buffer
-index in SHM mode and as a bufnum in OSC mode. The frontend
-chooses the right value at the controller layer based on
-`SessionInfo.scopeMode`. The worker is mode-blind.
+| Address | Direction | Args |
+|---|---|---|
+| `/scope/subscribe` | WS → bridge | `subId:i, scope:i, channels:i, chunk:i` |
+| `/scope/unsubscribe` | WS → bridge | `subId:i` |
+| `/scope/chunk` | bridge → WS | `subId:i, tick:i, isGap:i, channels:i, data:b` |
 
-`sub_id` is minted by the worker, never interpreted by the
-bridge — just echoed back on chunk frames. Worker maintains a
-`Map<sub_id, bufferId>` to dispatch chunks to main-thread
-listeners.
+`data` is a blob of `frame_count × channels × 4 bytes` of
+**big-endian** IEEE-754 float32, channel-interleaved. BE for
+consistency with OSC's `,f` type — pinned by tests on both
+ends. Worker decodes via `DataView.getFloat32(off, false)`
+into a fresh `Float32Array` (transferable to main thread).
+
+The `scope:i` field on `/scope/subscribe` is interpreted as a
+scope-buffer index in SHM mode and as a bufnum in OSC mode.
+The frontend chooses the right value at the controller layer
+based on `SessionInfo.scopeMode`. The worker is mode-blind.
+
+`subId` is minted by the worker, never interpreted by the
+bridge — just echoed back on `/scope/chunk` replies. Worker
+maintains a `Map<sub_id, bufferId>` to dispatch chunks to
+main-thread listeners.
 
 #### SHM mode (`scope::shm`)
 
@@ -775,14 +777,17 @@ bridge does the rest:
   for each subscription whose previous read has settled.
   In-flight reads at tick boundary drop + mark `is_gap=true`
   on the next chunk.
-- Inbound `/b_setn` replies are intercepted in
-  `try_intercept_bsetn` (called from `forward_default_route`):
-  decoded by `parse_bsetn` + bufnum-matched against the WS's
-  `OscPollState`. Match → encoded as 0x03 chunk frame +
-  suppressed from WS forward. No match → forwarded as a normal
-  OSC reply (worker discards).
-- `encode_chunk` produces 0x03 chunk frames byte-for-byte
-  identical to the SHM path's `encode_chunk`.
+- Inbound `/b_setn` replies are intercepted by the
+  `InterceptBsetn` middleware (called from
+  `forward_with_dispatch`): decoded by `parse_bsetn` +
+  bufnum-matched against the WS's `OscPollState`. Match →
+  encoded as `/scope/chunk` OSC message via
+  `encode_scope_chunk` + returned as `ConsumedAndSend(bytes)`
+  so the dispatcher swaps the reply. No match → `PassThrough`
+  forwards as a normal OSC reply (worker discards).
+- `encode_scope_chunk` produces `/scope/chunk` OSC messages
+  byte-for-byte identical to what SHM mode emits via
+  `ChunkEmitOnTick`.
 
 **Practical ceiling.** OSC mode caps at ~250 Hz tick rate
 because `READ_DELAY_MS = 5 ms` no longer fits inside
@@ -790,28 +795,31 @@ because `READ_DELAY_MS = 5 ms` no longer fits inside
 equivalent ceiling. See `CLAUDE.md`'s chunkSize × sampleRate
 table for the affected cells (⚠OSC marker).
 
-#### Mode dispatch in `ws_bridge.rs` (Phase 36)
+#### Mode dispatch in `ws_bridge.rs` (Phase 36 + 38)
 
-Per-WS `ScopeContext` is now dual-shaped:
-- `shm_subs: HashMap<u32, ShmScopeSubscription>` (Phase 35
-  rename of the single-mode `ScopeSubscription`).
+Per-WS `ScopeContext` is dual-shaped:
+- `shm_subs: HashMap<u32, ShmScopeSubscription>` (Phase 35).
 - `osc: OscPollState` (Phase 36).
 
-Recv loop peeks first byte of each binary frame:
-- 0x01 → `handle_scope_subscribe`: branches on
-  `session.scope_mode`. SHM: ensures session-level mmap on
-  first call, inserts into `shm_subs`. OSC: inserts into
-  `osc`. The 0x01 frame's `scope:u32` field is interpreted
-  appropriately.
-- 0x02 → `handle_scope_unsubscribe`: removes from the
-  matching map.
-- Otherwise → existing OSC forward path.
+Recv loop is pure-OSC (Phase 38): every binary frame goes
+through `peek_osc_address` + `dispatch_outbound`. The
+registered scope middlewares (`OutboundScopeMiddleware::
+{Subscribe, Unsubscribe}`) claim `/scope/subscribe` and
+`/scope/unsubscribe`; they parse the OSC args, branch on
+`session.scope_mode`, and insert/remove on the matching
+subscription map. The `scope:i` arg is interpreted as
+scope_buffer index (SHM) or bufnum (OSC). Other addresses
+fall through to `routes.route_for` + UDP send (or drop+warn
+if no route matches).
 
-Default-route forwarder peeks each broadcast payload:
-- For `/clock/tick`: SHM mode → `poll_scope_chunks` (the
-  Phase 35 path); OSC mode → `issue_bgetn_for_subs`.
-- For `/b_setn` (OSC mode only): `try_intercept_bsetn` —
-  match → emit 0x03 chunk + drop; no match → forward.
+Each broadcast forwarder runs `dispatch_inbound` per payload:
+- For `/clock/tick`: SHM mode → `ChunkEmitOnTick`
+  (`poll_scope_chunks`-equivalent, pushes `/scope/chunk` OSC
+  messages to `ws_extras`); OSC mode → `BgetnIssueOnTick`
+  (pushes `/b_getn` bundles to `udp_extras`).
+- For `/b_setn` (OSC mode only): `InterceptBsetn` — match →
+  `ConsumedAndSend(/scope/chunk_bytes)`; no match →
+  `PassThrough`.
 - Otherwise → forward as normal OSC reply.
 
 On WS close, `ScopeContext` drops with the function scope —

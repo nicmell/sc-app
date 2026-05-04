@@ -2,8 +2,9 @@
  * Scope-protocol OSC commands (Phase 38).
  *
  * Pre-Phase-38 these flowed as binary 0x01/0x02/0x03 frames on
- * the main /ws (`src/workers/scopeWire.ts`). Phase 38 retired the
- * binary mux in favor of plain OSC messages; the bridge handles
+ * the main /ws via a now-deleted `src/workers/scopeWire.ts` module.
+ * Phase 38 retired the binary mux in favor of plain OSC messages;
+ * the bridge handles
  * `/scope/{subscribe,unsubscribe}` via outbound middleware
  * (`src-tauri/src/scope/middleware.rs`) and emits `/scope/chunk`
  * inbound as a regular OSC reply.

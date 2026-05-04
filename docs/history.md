@@ -4198,5 +4198,221 @@ Phase 38 will:
 - Replace the worker's `handleInboundBytes` first-byte peek
   with a regular OSC reply pump entry for `/scope/chunk`.
 
+## Phase 38 — Pure-OSC Scope Wire Format
+
+**Goal.** Retire the binary 0x01 / 0x02 / 0x03 op-tag mux that
+Phase 35 introduced for scope subscribe / unsubscribe / chunk
+frames. Replace with proper OSC messages —
+`/scope/subscribe`, `/scope/unsubscribe`, `/scope/chunk` — so
+the main `/ws` becomes a pure OSC bridge. The Phase 37
+middleware infrastructure already held the dispatch shape;
+this phase filled in the outbound `Scope` middleware variants
+and switched the worker from binary-frame peeking to plain
+OSC decoding.
+
+### What shipped
+
+Two commits — `b6a7729` (38a/b combined: bridge + frontend
+flip, bidirectional wire change) and the closing commit (38c,
+this one). Plan + close commits bracket as usual.
+
+#### Wire format
+
+| Address | Direction | Args |
+|---|---|---|
+| `/scope/subscribe` | WS → bridge | `subId:i, scope:i, channels:i, chunk:i` |
+| `/scope/unsubscribe` | WS → bridge | `subId:i` |
+| `/scope/chunk` | bridge → WS | `subId:i, tick:i, isGap:i, channels:i, data:b` |
+
+- `isGap` as `i` (0/1) — OSC 1.0 has no bool type.
+- `channels` widened from u8 (binary frame) to i32 — eliminates
+  a >255-channel edge case.
+- `data` blob: `frame_count × channels × 4 bytes` of
+  **big-endian** IEEE-754 float32, channel-interleaved. BE for
+  consistency with OSC's `,f` type. Pinned by unit tests on
+  both ends.
+- Worker decode path: extract the blob `Uint8Array`, byte-swap
+  per-float into a fresh `Float32Array`, transfer to main
+  (zero-copy across postMessage). ~376 KB/sec/scope swap cost
+  at default config — trivial.
+
+The `scope` field on `/scope/subscribe` keeps Phase 36's dual
+meaning: scope-buffer index in SHM mode, bufnum in OSC fallback
+mode. Bridge interprets per `Session::scope_mode`.
+
+#### Bridge (Rust)
+
+`src-tauri/src/scope/middleware.rs`:
+- `encode_chunk` (binary 0x03) → `encode_scope_chunk` —
+  rosc-encoded `/scope/chunk` with `OscType::Blob` arg.
+  Endianness invariant pinned: `1.0_f32 → 0x3F 0x80 0x00 0x00`
+  in the blob payload.
+- `ws_scope_{subscribe,unsubscribe}_binary` →
+  `outbound_scope_{subscribe,unsubscribe}` middlewares. Decode
+  the OSC message via `rosc::decoder::decode_udp`, extract args
+  with `expect_int`, delegate to the existing
+  `install_subscription` helper. Return `Consumed`.
+- New `OutboundScopeMiddleware { Subscribe, Unsubscribe }`
+  enum + `run_outbound` async dispatcher.
+- `register_outbound_middlewares` hooks both addresses.
+- `SCOPE_OP_*` constants and the binary frame layout removed
+  entirely.
+
+`src-tauri/src/server/middleware.rs`:
+- `OutboundMiddleware` gains `Scope(OutboundScopeMiddleware)`
+  variant; `_Phantom` placeholder retired.
+- `invoke_outbound` delegates to `crate::scope::middleware::
+  run_outbound`.
+
+`src-tauri/src/server/ws_bridge.rs`:
+- Recv loop's first-byte 0x01/0x02 branch dropped. Every
+  binary frame goes through OSC peek + `handle_outbound_osc`.
+  Recv loop shrinks ~30 lines.
+- `register_outbound_middlewares` called at WS attach.
+
+`src-tauri/Cargo.toml`: `rosc = "0.10"` → `"0.11"`. **Library
+upgrade was load-bearing** — rosc 0.10.1 had a bug in
+`pad_to_32_bit_boundary` where already-4-aligned cursors tried
+to consume 4 more bytes (returned `ReadError(Eof)` on blobs
+whose size was a multiple of 4). 0.11.4's `match` arm fixes the
+already-aligned case to return `0`. API-compatible upgrade —
+no other code changes needed.
+
+#### Frontend
+
+`packages/server-commands/src/commands/scope.ts` (new):
+- `scopeSubscribe(params): OSC.Message` — `{subId, scope,
+  channels, chunkSize}` builder.
+- `scopeUnsubscribe(subId): OSC.Message`.
+- `parseScopeChunkArgs(args)` — given the rosc-decoded `args`
+  array, validate types and unpack the blob into a typed
+  `DecodedScopeChunk { subId, tickIndex, isGap, channels,
+  frameCount, data: Float32Array }`.
+- `decodeBlobFloatsBE(blob)` — DataView-based per-float
+  byte-swap into a fresh `Float32Array`. The `Float32Array`
+  owns its `ArrayBuffer` so the worker can transfer it.
+
+`src/workers/scopeWire.ts`: **deleted** (Phase 38c). The 119
+lines of binary frame layout / `isScopeFrame` / `decodeChunk`
+moved to `server-commands/scope.ts` (parser side) and
+`scope/middleware.rs` (encoder side).
+
+`src/workers/oscWorker.ts`:
+- Drop `scopeWire` imports + the `handleInboundBytes`
+  first-byte peek. `isScopeFrame` is gone.
+- `handleSubscribeBuffer` / `handleUnsubscribeBuffer` use the
+  new OSC builders + `transport.send(encode(message))`.
+- `emitReply` gains a `/scope/chunk` case: parse args, post
+  `bufferChunk` to main with `Float32Array.buffer` transferred
+  zero-copy. Sits alongside the existing `/clock/tick` and
+  `/fail` intercepts in the OSC reply pump.
+- `handleInboundBytes` shrinks to pure OSC decode + emitReply.
+
+#### Tests
+
+Rust:
+- `encode_scope_chunk_round_trip` — encode → decode via rosc,
+  assert args match + blob bytes are BE-equivalent of input.
+- `encode_scope_chunk_endianness_pin` — `1.0_f32` → `0x3F 0x80
+  0x00 0x00`. Catches accidental host-native or LE
+  regressions.
+- `encode_scope_chunk_is_gap_flag` — `is_gap=true` produces
+  `Int(1)` in arg position 2.
+
+Vitest (`src/scope/scopeOscWire.test.ts` — new):
+- Builder round-trips for `scopeSubscribe` / `scopeUnsubscribe`
+  via `encode` → `decode` → arg comparison.
+- `decodeBlobFloatsBE` endianness pin (matches the Rust pin).
+- `parseScopeChunkArgs` round-trip against
+  hand-constructed bridge-shaped fixture bytes.
+- Type checks: non-blob `data` arg rejected with throw;
+  `isGap > 0` parses as `true`.
+
+`cargo test --lib`: 47/47 (was 43; +4 from chunk OSC tests).
+Vitest: 25/25 (was 17; +8 from scopeOscWire tests).
+
+### Decisions worth carrying forward
+
+- **`MiddlewareOutcome::Consumed` for scope subscribe/unsubscribe.**
+  These are per-WS bookkeeping ops that don't generate replies
+  back to the WS — `Consumed` (not `ConsumedAndSend`) is the
+  right outcome. `/scope/allocated` synthetic replies become
+  Phase 39's concern when the bridge takes over the
+  scope-buffer allocator.
+- **Big-endian floats inside the blob.** Symmetric to OSC's
+  `,f` type. The encode/decode swap cost is negligible
+  (~376 KB/sec/scope), and the consistency with the rest of
+  the OSC payload makes the byte layout reviewable. Pinned by
+  fixed test bytes on both ends.
+- **`channels` widened to i32 in the OSC version.** The pre-38
+  binary frame packed channels into a u8; in OSC the alignment
+  cost is free anyway (4-byte slots for ints), so the `min(255)
+  as u8` cap is gone. Doesn't matter today (1–2 channels
+  typical) but eliminates the cliff.
+- **rosc bumped to 0.11.4.** 0.10.1's `pad_to_32_bit_boundary`
+  bug only surfaced once we started encoding blob args; the
+  pre-38 OSC traffic (int args only) never hit it. Upgrading
+  earlier wouldn't have helped — the bug was dormant. Worth a
+  gotcha entry in CLAUDE.md so future blob users don't try to
+  pin to 0.10.x.
+- **Single-commit bridge+frontend flip (38a/b combined).** The
+  wire is bidirectional; a half-changed state breaks scope. No
+  staging benefit from splitting — one logical commit, both
+  sides flip together. Reviewer reads the diff in one go.
+
+### Gotchas
+
+- **rosc 0.10.x has a blob decoder bug.** `pad_to_32_bit_boundary`
+  used `4 - offset%4` instead of `match offset%4 { 0 => 0, r =>
+  4 - r }`, so an already-4-aligned blob cursor tried to consume
+  4 more bytes and returned `ReadError(Eof)`. Fixed in 0.11.4.
+  Don't downgrade past 0.11.
+- **Big-endian float bytes inside the blob, not host-native.**
+  The bridge encodes via `f32::to_be_bytes()`; the worker
+  decodes via `DataView.getFloat32(off, false)` (the `false`
+  flag = BE). A naive `new Float32Array(blob.buffer, ...)` view
+  would interpret the bytes as host-native (LE on x86 / Apple
+  Silicon) and produce noise. The byte-swap loop is the
+  correct path.
+- **`OscPacket::Bundle` is rejected on `/scope/{subscribe,
+  unsubscribe}`.** The middleware's `decode_top_message` only
+  accepts `OscPacket::Message`; bundles drop with a warn. The
+  worker doesn't bundle these (they're one-shot commands), so
+  this isn't a real concern, but a future contributor wrapping
+  scope ops in a bundle would see a silent drop. Document in
+  the new wire-format spec.
+- **`/scope/chunk` collides with the sclang `^/(dirt|clock|
+  scope)(/|$)` regex route.** Fortunately `/scope/chunk` is
+  bridge → WS only — never enters routing. The middleware-
+  first dispatch order (Phase 37) means outbound scope addresses
+  are claimed by `outbound_scope_*` before routing kicks in;
+  inbound never goes through routing. So no collision in
+  practice. Worth knowing if a future `/scope/X` address is
+  added that's bridge-handled in BOTH directions.
+- **`SCOPE_*_ADDRESS` constants live in three places.**
+  `packages/server-commands/src/commands/scope.ts` (frontend
+  builders + parsers), `src-tauri/src/scope/middleware.rs`
+  (Rust), and the `register_outbound_middlewares` regex
+  patterns. They must stay in sync. The constants are short
+  enough that a contradicting value would surface in tests
+  immediately, but worth a cross-ref comment.
+- **Blob alignment on the worker side.** osc-js gives us the
+  blob bytes as a `Uint8Array` whose underlying `ArrayBuffer`
+  may NOT be 4-byte-aligned for a `Float32Array` view. The
+  byte-swap loop sidesteps this: it allocates a fresh
+  `Float32Array(count)` and writes float-by-float via DataView.
+  Don't try to optimize by using `new Float32Array(blob.buffer,
+  blob.byteOffset, count)` — alignment is unspecified.
+
+### Phase 38 → Phase 39 dependency
+
+Phase 39c (bridge owns scope-buffer allocator) plugs into the
+outbound `^/scope/subscribe$` middleware established here —
+the bridge picks the index from its own allocator + emits
+`/scope/allocated` via `WsCtx::ws_extras`. Phase 38 is the
+prerequisite; Phase 39 builds on its dispatch shape.
+
+
+
 
 

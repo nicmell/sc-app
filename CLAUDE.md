@@ -79,9 +79,9 @@ Browser (React, main thread)
   │                              error sticks until manual dismiss).
   └── WorkerClient              postMessage wrapper around…
       │   - sendCommand / onReply / onError / onTick
-      │   - subscribeBuffer(sub, cb) — Phase 35: encodes a 0x01
-      │     scope-subscribe frame on the main /ws; chunk frames
-      │     (0x03) come back in-band and fan out to listeners
+      │   - subscribeBuffer(sub, cb) — Phase 38: encodes a
+      │     /scope/subscribe OSC message; /scope/chunk replies
+      │     come back in-band and fan out to listeners
       │   - startSequencer / stopSequencer / updateSequencerBank /
       │     updateSequencerClock / setSequencerPaused / onStepFired
       │     — Phase 32 worker-side pump control
@@ -90,12 +90,6 @@ OSC Worker (module worker)
   ├── workerBootstrap.ts        sync message buffer + osc-js window shim
   ├── transport.ts              raw binary WebSocket (the only WS;
   │                              Phase 35 retired /ws/scope)
-  ├── scopeWire.ts              Phase 35: in-band wire format on the
-  │                              main /ws — encodeSubscribe (0x01),
-  │                              encodeUnsubscribe (0x02), decodeChunk
-  │                              (0x03), isScopeFrame peek helper.
-  │                              Integer sub_id minted by the worker;
-  │                              bridge echoes back on chunks.
   ├── sequencerPump.ts          Phase 32 worker-side pump
   │                              (renamed post-32 from
   │                              sequencerWorker.ts — module, not
@@ -107,16 +101,18 @@ OSC Worker (module worker)
   │                              src/sequencer/scheduler.ts; emits
   │                              OSC bytes via transport.send,
   │                              posts stepFired back to main
-  └── oscWorker.ts              the actual Worker entry point.
-                                decode inbound + forward outbound
-                                bytes + /clock/tick mux. Inbound
-                                handler peeks first byte: 0x03 →
-                                scope chunk decode (post bufferChunk
-                                with Float32Array transferred);
-                                otherwise OSC decode. Maintains
-                                subIdByBufferId/bufferIdBySubId maps
-                                for chunk dispatch. Registers a
-                                transport.send sender into
+  └── oscWorker.ts              the actual Worker entry point
+                                (Phase 38: pure-OSC). Decode
+                                inbound + forward outbound bytes.
+                                /clock/tick, /fail, and /scope/chunk
+                                are intercepted in the OSC reply
+                                pump; /scope/chunk parses the BE
+                                float32 blob via parseScopeChunkArgs
+                                and posts bufferChunk with a fresh
+                                Float32Array transferred. Maintains
+                                subIdByBufferId/bufferIdBySubId
+                                maps for chunk dispatch. Registers
+                                a transport.send sender into
                                 sequencerPump on connect.
       │
       ▼
@@ -140,14 +136,20 @@ src-tauri backend (Rust)
   │   │                           per-WS subscription map, bundle
   │   │                           encode (NTP timetag), /b_setn parse,
   │   │                           chunk encode (matches SHM byte layout)
-  │   └── middleware.rs          Phase 37c: scope-owned middleware
+  │   └── middleware.rs          Phase 37c/38: scope-owned middleware
   │                               bodies + ScopeContext struct.
-  │                               ws_scope_*_binary entries for the
-  │                               0x01/0x02 frames. InboundScopeMiddleware
-  │                               variants for ChunkEmitOnTick (SHM),
-  │                               BgetnIssueOnTick (OSC), InterceptBsetn
-  │                               (OSC). register_inbound_middlewares
-  │                               wires them in per ScopeMode.
+  │                               outbound_scope_{subscribe,unsubscribe}
+  │                               (Phase 38) parse the OSC args via
+  │                               rosc and mutate ScopeContext.
+  │                               InboundScopeMiddleware variants for
+  │                               ChunkEmitOnTick (SHM),
+  │                               BgetnIssueOnTick (OSC),
+  │                               InterceptBsetn (OSC).
+  │                               encode_scope_chunk produces the
+  │                               /scope/chunk OSC reply (BE float
+  │                               blob). register_*_middlewares
+  │                               wire everything per ScopeMode at
+  │                               WS attach.
   ├── server/
   │   ├── mod.rs                axum router, bind/serve_on/run_bridge,
   │   │                          /ws + /api/session* + /api/scope/*
@@ -164,14 +166,16 @@ src-tauri backend (Rust)
   │   ├── api.rs                POST/GET/DELETE /api/session[/:id] +
   │   │                          GET /api/scope/{probe,layout,headers,
   │   │                          debug}; { error } JSON envelope
-  │   ├── ws_bridge.rs          thin WS ↔ Session bridge (Phase 37c).
-  │   │                          Recv loop dispatches 0x01/0x02 binary
-  │   │                          scope frames into scope::middleware
-  │   │                          directly; OSC payloads run through
-  │   │                          dispatch_outbound (empty registry in
-  │   │                          37 → falls through to routes), then
-  │   │                          UDP send. Each broadcast forwarder
-  │   │                          runs dispatch_inbound; ws_extras /
+  │   ├── ws_bridge.rs          thin WS ↔ Session bridge (Phase 38).
+  │   │                          Pure-OSC recv: every binary frame
+  │   │                          goes through OSC peek +
+  │   │                          dispatch_outbound. Outbound scope
+  │   │                          ops are claimed by the registered
+  │   │                          /scope/{subscribe,unsubscribe}
+  │   │                          middlewares; everything else routes
+  │   │                          via routes.route_for + UDP send.
+  │   │                          Each broadcast forwarder runs
+  │   │                          dispatch_inbound; ws_extras /
   │   │                          udp_extras side channels carry per-
   │   │                          tick chunks / /b_getn bundles.
   │   ├── middleware.rs         Phase 37b: address-keyed dispatch.
@@ -230,19 +234,20 @@ Phase 31 retired `/b_getn` entirely: tap SynthDefs write via
 of scsynth's 128 SHM scope buffers (allocated by sclang via
 `s.scopeBufferAllocator`). The bridge mmaps scsynth's shared
 memory once per session (`Session::ensure_scope_shm`). Phase 35
-moved chunk delivery back onto the main `/ws` (after a brief
-detour through per-scope `/ws/scope` connections in 31's
-post-shipping refactor) — multiplexed by a one-byte op tag
-(0x01 subscribe / 0x02 unsubscribe / 0x03 chunk; OSC's `/` and
-`#` first bytes keep the dispatch unambiguous). On every
-observed `/clock/tick`, the WS's default-route forwarder polls
-`read_scope_slot(scopeNum)` for every active subscription on
-this WS and emits 0x03 chunk frames for advanced slots. The
-worker's recv handler peeks the first byte, decodes 0x03 →
-posts a zero-copy `Float32Array` `bufferChunk` event to main.
-`ScopeView` runs an RAF loop that reads the latest chunk from
-a ref and draws — data rate (~47 Hz at default config) and
-render rate (60+ Hz) are intentionally decoupled.
+moved chunk delivery back onto the main `/ws`; Phase 38 turned
+those frames into proper OSC messages —
+`/scope/{subscribe,unsubscribe,chunk}` — so the main `/ws` is a
+pure OSC bridge. `/scope/chunk` carries the float payload as an
+OSC blob arg of big-endian IEEE-754 float32, channel-interleaved.
+On every observed `/clock/tick`, an inbound middleware on the
+broadcast forwarder polls `read_scope_slot(scopeNum)` for every
+active subscription on this WS and emits `/scope/chunk` replies
+for advanced slots. The worker's reply pump matches `/scope/chunk`
+in `emitReply`, byte-swaps the BE blob into a fresh
+`Float32Array`, and posts a `bufferChunk` event to main with the
+buffer transferred. `ScopeView` runs an RAF loop that reads the
+latest chunk from a ref and draws — data rate (~47 Hz at default
+config) and render rate (60+ Hz) are intentionally decoupled.
 
 The sequencer-emission path is also separate. Phase 32 moved
 the pump from a main-thread `setInterval` (clamped to ~1 Hz on
@@ -519,7 +524,25 @@ When working on a phase:
    the "Current phase progress" line below.
 
 Current phase progress: **No phase currently in flight.** The
-last eight landed (most recent first):
+last nine landed (most recent first):
+
+**Phase 38 shipped — Pure-OSC Scope Wire Format.** Retired the
+binary 0x01 / 0x02 / 0x03 op-tag mux on `/ws` introduced by
+Phase 35. `/scope/{subscribe,unsubscribe,chunk}` are real OSC
+messages now; the main `/ws` is a pure OSC bridge.
+`/scope/chunk` carries the float payload as an OSC blob arg of
+big-endian IEEE-754 float32, channel-interleaved (~376 KB/s/scope
+of decode-side byte-swap, trivial). The Phase 37 outbound
+middleware enum gained `Scope(OutboundScopeMiddleware)`
+variants — the registered handlers parse the OSC args and
+delegate to the existing `install_subscription` helper (no
+behavioral change beyond the wire format). Worker dropped
+`src/workers/scopeWire.ts` and the `handleInboundBytes`
+first-byte peek; `/scope/chunk` is now a regular case in the
+OSC reply pump alongside `/clock/tick` and `/fail`. Required a
+rosc bump 0.10 → 0.11 — 0.10.1 had a `pad_to_32_bit_boundary`
+bug that returned `ReadError(Eof)` on already-4-aligned blob
+cursors. See `docs/history.md` Phase 38.
 
 **Phase 37 shipped — Regex Routing + Address-Keyed Middlewares.**
 Replaced the prefix-based routing table + implicit catch-all
@@ -989,25 +1012,27 @@ Observations:
   never touch the bus allocator. So the allocator is effectively
   synth-exclusive, and bus collisions across consumer types are
   impossible by construction.
-- **Buffer refcount lifecycle (Phase 31 SHM + Phase 35 in-band).**
-  `BufferManager.acquire(spec)` is ref-counted by
-  `(inputBus, channels, chunkSize)`. First acquire triggers
+- **Buffer refcount lifecycle (Phase 31 SHM + Phase 35 in-band
+  + Phase 38 OSC).** `BufferManager.acquire(spec)` is ref-counted
+  by `(inputBus, channels, chunkSize)`. First acquire triggers
   `/scope/allocate` (sclang returns a free scope-buffer index
   0..127) + `/s_new bufferTap … scopeNum=<idx>` + worker
-  `subscribeBuffer` (which encodes a 0x01 frame on the main /ws;
-  bridge installs the subscription in its per-WS `ScopeContext`).
-  Subsequent acquires on the same spec just bump the count.
-  Each consumer must call `handle.release()` exactly once —
-  the per-acquire handle wrapper guards against double-release
-  with an internal `released` flag, so calling more than once
-  is a silent no-op. Last release → `unsubscribeBuffer`
-  (encodes a 0x02 frame; bridge removes from its `ScopeContext`)
-  → `/n_free` the tap → fire-and-forget `/scope/free <idx>` (no
-  reply expected). The `BufferManager.snapshot` reactive store
-  reflects the live `{key, spec, refcount, scopeNum, nodeId,
-  bufferId}` set on every acquire/release; tap into it from a
-  future `BuffersPanel` or inspect via the dev-mode `__sc*`
-  globals to diagnose leaks.
+  `subscribeBuffer` (which encodes a `/scope/subscribe` OSC
+  message; bridge's outbound middleware installs the
+  subscription in its per-WS `ScopeContext`). Subsequent
+  acquires on the same spec just bump the count. Each consumer
+  must call `handle.release()` exactly once — the per-acquire
+  handle wrapper guards against double-release with an internal
+  `released` flag, so calling more than once is a silent no-op.
+  Last release → `unsubscribeBuffer` (encodes a `/scope/unsubscribe`
+  OSC message; bridge's outbound middleware removes from
+  `ScopeContext`) → `/n_free` the tap → fire-and-forget
+  `/scope/free <idx>` (no reply expected). The
+  `BufferManager.snapshot` reactive store reflects the live
+  `{key, spec, refcount, scopeNum, nodeId, bufferId}` set on
+  every acquire/release; tap into it from a future `BuffersPanel`
+  or inspect via the dev-mode `__sc*` globals to diagnose
+  leaks.
 - **`bufferManager.clear()` warns on a non-empty map** —
   refcount-leak canary. By the time `teardownServerState` runs
   it, every consumer-side manager (`recordingManager`,
@@ -1360,3 +1385,34 @@ Observations:
   `crate::scope::middleware` can resolve `Session` and
   `ScopeShm` types. Crate-scoped only — external crates still
   don't see them.
+- **Pure-OSC scope wire format (Phase 38).** The binary
+  0x01/0x02/0x03 op-tag mux is gone. `/scope/subscribe`,
+  `/scope/unsubscribe`, `/scope/chunk` are real OSC messages.
+  Frontend builders + parsers live in
+  `packages/server-commands/src/commands/scope.ts`; bridge
+  encoder/parser in `src-tauri/src/scope/middleware.rs`. The
+  three address constants are defined in BOTH places + as regex
+  patterns in `register_outbound_middlewares` — keep them in
+  sync.
+- **`/scope/chunk` blob is big-endian float32, not host-native
+  (Phase 38).** Bridge encodes via `f32::to_be_bytes()`; worker
+  decodes via `DataView.getFloat32(off, false)` into a fresh
+  `Float32Array` (transferable). DON'T try to view the blob
+  bytes as a `Float32Array` directly — the underlying buffer's
+  alignment is unspecified, AND the bytes would be misread as
+  LE on x86 / Apple Silicon. The byte-swap loop is the correct
+  decode path. Pinned by tests on both ends (`1.0_f32 → 0x3F
+  0x80 0x00 0x00`).
+- **Don't downgrade rosc below 0.11 (Phase 38).** rosc 0.10.1's
+  `pad_to_32_bit_boundary` had a bug where already-4-aligned
+  cursors tried to consume 4 more bytes, returning
+  `ReadError(Eof)` on blobs whose size was a multiple of 4.
+  0.11.4's `match` arm returns 0 for the aligned case. The bug
+  was dormant pre-Phase-38 (we only used int args); blob-arg
+  decoding is what surfaced it.
+- **OSC bundles on `/scope/{subscribe,unsubscribe}` are dropped
+  with a warn (Phase 38).** The middleware's
+  `decode_top_message` only accepts `OscPacket::Message`. The
+  worker doesn't bundle these (one-shot commands), but a
+  future contributor wrapping scope ops in a bundle would see
+  silent drops. Document if a real use case appears.
