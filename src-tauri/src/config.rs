@@ -80,6 +80,14 @@ pub struct Config {
     /// surface explicitly.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scsynth: Option<String>,
+    /// Phase 39b: sclang+SuperDirt address (host:port). Used by
+    /// the bridge to identify which Server runs the
+    /// `/sc-app/bootstrap/hello` round-trip at boot. If unset,
+    /// the bridge skips the bootstrap and clock/scope/sequencer
+    /// features rely on their pre-39b OSC round-trips (which
+    /// Phase 39c+39d remove from sclang).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sclang: Option<String>,
     /// Directory to write rotated NDJSON logs into. When `None` in
     /// both config + env + flag, the bridge stays stderr-only and
     /// the GUI falls back to `app.path().app_log_dir()`.
@@ -132,6 +140,7 @@ pub fn starter() -> &'static Config {
     STARTER_CELL.get_or_init(|| Config {
         port: Some(DEFAULT_PORT),
         scsynth: Some(DEFAULT_SCSYNTH.to_string()),
+        sclang: Some(DEFAULT_DIRT.to_string()),
         log_dir: None,
         // Phase 37: the routes table is now an ORDERED list of
         // regex entries with no implicit default. Two starter
@@ -223,6 +232,7 @@ mod tests {
         let body = serde_json::to_string_pretty(starter()).unwrap();
         assert!(body.contains("\"port\": 3000"));
         assert!(body.contains("\"scsynth\": \"127.0.0.1:57110\""));
+        assert!(body.contains("\"sclang\": \"127.0.0.1:57120\""));
         // Phase 37 starter routes: sclang prefixes + scsynth
         // command surface. Both regexes, no implicit default.
         assert!(body.contains(r"^/(dirt|clock|scope)(/|$)"));
@@ -237,6 +247,7 @@ mod tests {
         let cfg = Config {
             port: Some(3000),
             scsynth: Some("127.0.0.1:57110".into()),
+            sclang: Some("127.0.0.1:57120".into()),
             log_dir: Some("./logs".into()),
             routes: vec![Route {
                 pattern: r"^/dirt(/|$)".into(),

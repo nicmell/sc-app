@@ -60,6 +60,11 @@ pub(crate) struct AppState {
     /// `servers[scsynth_addr]`. Avoids a HashMap lookup on the
     /// hot paths (cleanup, scope SHM probe, /b_getn issuance).
     pub scsynth_server: Arc<Server>,
+    /// Phase 39b: convenience strong-ref to the sclang Server,
+    /// if configured. Holds cached bootstrap metadata
+    /// (`ClockMetadata`, `num_scope_buffers`, `dirt_samples`)
+    /// surfaced via `SessionInfo`.
+    pub sclang_server: Option<Arc<Server>>,
     pub sessions: SessionStore,
     pub sub_client_id_allocator: Arc<SubClientIdAllocator>,
     /// Phase 36: when true, every new session uses
@@ -94,30 +99,40 @@ pub async fn serve_on(
     listener: TcpListener,
     routes: RoutingTable,
     scsynth_addr: SocketAddr,
+    sclang_addr: Option<SocketAddr>,
     dist: Option<PathBuf>,
     session_ttl: Duration,
     force_osc_mode: bool,
 ) -> Result<()> {
     tracing::info!("  /ws routing table:\n{}", routes.describe());
     tracing::info!(scsynth = %scsynth_addr, "  scsynth handshake address");
+    if let Some(addr) = sclang_addr {
+        tracing::info!(sclang = %addr, "  sclang bootstrap address");
+    } else {
+        tracing::info!("  sclang bootstrap: none configured (clock/scope/sequencer features may not work)");
+    }
     tracing::info!(
         ttl_seconds = session_ttl.as_secs(),
         "  session TTL"
     );
 
     // Build Servers for every unique route target + the scsynth
-    // address (which may not be a route target).
+    // address (which may not be a route target) + the sclang
+    // address (Phase 39b: if configured, runs the bootstrap
+    // round-trip there to populate cached metadata).
     let mut targets: HashSet<SocketAddr> = routes.unique_targets().into_iter().collect();
     targets.insert(scsynth_addr);
+    if let Some(addr) = sclang_addr {
+        targets.insert(addr);
+    }
 
     let mut servers: HashMap<SocketAddr, Arc<Server>> = HashMap::new();
     for target in targets {
         let role = if target == scsynth_addr {
             ServerRole::Scsynth
+        } else if Some(target) == sclang_addr {
+            ServerRole::Sclang
         } else {
-            // Phase 39a doesn't yet distinguish sclang from
-            // generic targets — Phase 39b will (so the bootstrap
-            // round-trip can run on the SclangServer).
             ServerRole::Generic
         };
         let server = Server::build(target, role).await?;
@@ -127,11 +142,13 @@ pub async fn serve_on(
         .get(&scsynth_addr)
         .expect("scsynth Server must be in the map (just inserted)")
         .clone();
+    let sclang_server = sclang_addr.and_then(|addr| servers.get(&addr).cloned());
 
     let state = AppState {
         routes: Arc::new(routes),
         servers: Arc::new(servers),
         scsynth_server: scsynth_server.clone(),
+        sclang_server,
         sessions: SessionStore::new(),
         sub_client_id_allocator: Arc::new(SubClientIdAllocator::new()),
         force_osc_mode,
@@ -195,13 +212,23 @@ pub async fn run_bridge(
     port: u16,
     routes: RoutingTable,
     scsynth_addr: SocketAddr,
+    sclang_addr: Option<SocketAddr>,
     dist: Option<PathBuf>,
     session_ttl: Duration,
     force_osc_mode: bool,
 ) -> Result<()> {
     let (listener, addr) = bind(port).await?;
     tracing::info!(addr = %addr, "sc-app listening on http://{addr}");
-    serve_on(listener, routes, scsynth_addr, dist, session_ttl, force_osc_mode).await
+    serve_on(
+        listener,
+        routes,
+        scsynth_addr,
+        sclang_addr,
+        dist,
+        session_ttl,
+        force_osc_mode,
+    )
+    .await
 }
 
 async fn ws_handler(

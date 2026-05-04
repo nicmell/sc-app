@@ -30,7 +30,7 @@ use serde::Serialize;
 use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
 
-use super::server::Server;
+use super::server::{ClockMetadata, DirtSample, Server};
 use crate::scope::ScopeMode;
 
 /// scsynth's `clientId = 0` is the single-client default; using
@@ -241,18 +241,44 @@ pub struct SessionInfo {
     pub parent_group_id: i32,
     /// Phase 36: SHM vs OSC fallback.
     pub scope_mode: ScopeMode,
+    /// Phase 39b: cached clock metadata from sclang's bootstrap
+    /// reply. `None` if sclang isn't reachable / the bootstrap
+    /// hasn't completed — clock-dependent UI handles this
+    /// gracefully (Connect screen shows "sclang not reachable").
+    pub clock: Option<ClockMetadata>,
+    /// Phase 39b: scope buffer pool size from sclang's
+    /// `s.scopeBufferAllocator` range.
+    pub num_scope_buffers: Option<i32>,
+    /// Phase 39b: snapshot of `~dirt.buffers` at sclang boot.
+    /// Frontend's sequencer panel populates the sample-name
+    /// autocomplete from this list — no per-session
+    /// `/dirt/listSamples` round-trip.
+    pub dirt_samples: Vec<DirtSample>,
 }
 
 /// Build the public-API view of this session by combining
-/// per-session state with bridge-wide scsynth Server metadata.
-pub async fn session_info(session: &Session, scsynth_server: &Arc<Server>) -> Result<SessionInfo> {
-    let metadata = scsynth_server.metadata().await;
-    let scsynth_client_id = metadata
+/// per-session state with bridge-wide Server metadata.
+pub async fn session_info(
+    session: &Session,
+    scsynth_server: &Arc<Server>,
+    sclang_server: Option<&Arc<Server>>,
+) -> Result<SessionInfo> {
+    let scsynth_metadata = scsynth_server.metadata().await;
+    let scsynth_client_id = scsynth_metadata
         .scsynth_client_id
         .ok_or_else(|| anyhow!("scsynth Server has no clientId — bridge not bootstrapped"))?;
-    let sample_rate = metadata
+    let sample_rate = scsynth_metadata
         .sample_rate
         .ok_or_else(|| anyhow!("scsynth Server has no sample rate — bridge not bootstrapped"))?;
+    drop(scsynth_metadata);
+
+    let (clock, num_scope_buffers, dirt_samples) = if let Some(sclang) = sclang_server {
+        let m = sclang.metadata().await;
+        (m.clock, m.num_scope_buffers, m.dirt_samples.clone())
+    } else {
+        (None, None, Vec::new())
+    };
+
     Ok(SessionInfo {
         session_id: session.session_id,
         scsynth_client_id,
@@ -261,6 +287,9 @@ pub async fn session_info(session: &Session, scsynth_server: &Arc<Server>) -> Re
         sample_rate,
         parent_group_id: session.parent_group_id,
         scope_mode: session.scope_mode,
+        clock,
+        num_scope_buffers,
+        dirt_samples,
     })
 }
 

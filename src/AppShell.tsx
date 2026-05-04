@@ -22,6 +22,8 @@ import {
   type SessionInfo,
 } from '@/session/sessionBootstrap';
 import { ClockController } from '@/clock/ClockController';
+import type { ClockInfo } from '@/clock/clockClient';
+import type { DirtSample } from '@/session/sessionBootstrap';
 import { GroupController } from '@/server/GroupController';
 import { IdAllocator } from '@/server/IdAllocator';
 import { ScopeManager } from '@/scope/ScopeManager';
@@ -306,6 +308,8 @@ async function setupDashboard(
   subClientId: number,
   parentGroupId: number,
   sampleRate: number,
+  clockInfo: ClockInfo,
+  dirtSamples: DirtSample[],
   bank: PatternBank,
 ): Promise<DashboardResources> {
   // Phase 39a — IdAllocator base partitions across both the
@@ -338,20 +342,22 @@ async function setupDashboard(
 
   const registry = new SynthDefRegistry(client);
   const group = new GroupController(client, parentGroupId);
-  const clock = new ClockController({ client, group });
+  // Phase 39b: ClockController takes ClockInfo at construction
+  // (cached by the bridge at boot via /sc-app/bootstrap/hello).
+  // No per-session /clock/hello round-trip.
+  const clock = new ClockController({ client, group, info: clockInfo });
 
-  // Phase 30: the parent group is created here (paused, via
+  // Parent group is created here (paused, via
   // `GroupController.ensureCreated`'s atomic /g_new + /n_run 0
   // bundle), separately from the shared clock — which lives in
   // sclang at scsynth's root group, OUTSIDE this client's parent
-  // group. `clock.attach()` round-trips /clock/hello to read the
-  // running clock's config (tickRate / chunkSize / sampleRate / clockBus).
+  // group.
   await group.ensureCreated();
-  const clockInfo = await clock.attach();
+  clock.attach();
   console.log(
-    `[sc:app] attached to shared clock — clockBus=${clockInfo.clockBus}, ` +
+    `[sc:app] clock attached — clockBus=${clockInfo.clockBus}, ` +
       `sampleRate=${clockInfo.sampleRate}, chunkSize=${clockInfo.chunkSize}, ` +
-      `tickRate=${clock.derived.tickRate.toFixed(3)} Hz`,
+      `tickRate=${clock.derived.tickRate.toFixed(3)} Hz (from cached bootstrap)`,
   );
   const synthManager = new SynthManager({
     client,
@@ -377,18 +383,13 @@ async function setupDashboard(
 
   // Phase 26: SuperDirt client over the same WS. Fire-and-forget
   // hello probe (Q2 = once on mount); status flips when reply
-  // lands or the timeout expires. After hello lands `'alive'`,
-  // fire `/dirt/listSamples` once to populate the sequencer's
-  // sample-name autocomplete (Phase 27a). Failure is silent —
-  // the OSCdef may not be loaded on older sclang scripts; the
-  // datalist just stays empty and the user types free-text.
+  // lands or the timeout expires.
+  // Phase 39b: sample-bank list is seeded from the cached
+  // bootstrap snapshot (SessionInfo.dirtSamples) — no per-session
+  // /dirt/listSamples round-trip.
   const dirtClient = new DirtClient(client);
-  void dirtClient.probe().then((alive) => {
-    if (!alive) return;
-    void dirtClient.listSamples().catch((err) => {
-      console.warn('[sc:app] /dirt/listSamples failed:', err);
-    });
-  });
+  dirtClient.setSampleBanks(dirtSamples);
+  void dirtClient.probe();
 
   // Phase 27a/c: step sequencer. Owns transport + wake loop;
   // pattern state lives on the long-lived `bank`. Reads
@@ -662,6 +663,17 @@ export function AppShell() {
 
     let built: DashboardResources;
     try {
+      // Phase 39b: cached clock metadata is required for dashboard
+      // bring-up (the ClockController is constructed with it). If
+      // sclang wasn't reachable at bridge boot, info.clock is null
+      // — surface a clear error instead of half-bringing-up.
+      if (info.clock === null) {
+        throw new Error(
+          'sclang not reachable at bridge boot — clock metadata missing. ' +
+            'Start sclang+SuperDirt and refresh.',
+        );
+      }
+      const clockInfo: ClockInfo = info.clock;
       built = await setupDashboard(
         next,
         info.sessionId,
@@ -669,6 +681,8 @@ export function AppShell() {
         info.subClientId,
         info.parentGroupId,
         info.sampleRate,
+        clockInfo,
+        info.dirtSamples,
         bank,
       );
     } catch (err) {

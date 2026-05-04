@@ -63,6 +63,7 @@ var libDir = PathName(thisProcess.nowExecutingPath).pathOnly +/+ "lib";
 // in the same `currentEnvironment` this orchestrator uses below.
 [
     "chunk-size.scd",
+    "bootstrap.scd",
     "clock.scd",
     "superdirt.scd",
     "dirt-list-samples.scd",
@@ -102,6 +103,7 @@ s.doWhenBooted({
     ~scAppInstallSuperDirt.();
     ~scAppInstallDirtListSamples.();
     ~scAppInstallScopeResponders.();
+    ~scAppInstallBootstrap.();
 }, 50, {
     "[sc-app] scsynth not reachable on 127.0.0.1:57110 after 10s.\n  Start it first: yarn scsynth-only (dev) or your systemd unit (prod).".error;
 });

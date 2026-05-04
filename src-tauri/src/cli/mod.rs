@@ -115,6 +115,12 @@ pub fn run() {
                 .or(cfg.scsynth)
                 .unwrap_or_else(|| DEFAULT_SCSYNTH.to_string());
             let scsynth = parse_scsynth_or_die(&scsynth_str);
+            // Phase 39b: optional sclang address for the bootstrap
+            // round-trip. Default starter config seeds it; if a
+            // user explicitly omits it, we run without sclang
+            // metadata (clock/scope/sequencer features may not
+            // work).
+            let sclang = cfg.sclang.as_deref().map(parse_scsynth_or_die);
             let log_dir = log_dir.or(cfg.log_dir);
             let routes = cfg.routes;
             let session_ttl = Duration::from_secs(
@@ -122,7 +128,7 @@ pub fn run() {
             );
 
             bridge::run_blocking(
-                port, scsynth, routes, dist, log_dir, session_ttl, no_shm,
+                port, scsynth, sclang, routes, dist, log_dir, session_ttl, no_shm,
             );
         }
     }

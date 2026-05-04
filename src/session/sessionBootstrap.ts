@@ -19,15 +19,39 @@
 
 const STORAGE_KEY = 'sc.session';
 
+/** A single dirt sample bank entry (name + count of samples in
+ *  the bank). Surfaced via SessionInfo (Phase 39b: replaces the
+ *  per-session `/dirt/listSamples` round-trip). */
+export interface DirtSample {
+  name: string;
+  count: number;
+}
+
+/** Cached clock metadata from sclang's bootstrap reply. Phase 39b
+ *  replaces the per-session `/clock/hello → /clock/info` round-trip
+ *  with this cached snapshot. `null` if sclang isn't reachable. */
+export interface SessionClockInfo {
+  clockBus: number;
+  clockNodeId: number;
+  tickRate: number;
+  chunkSize: number;
+  sampleRate: number;
+}
+
 /** Mirror of the Rust [`server::session::SessionInfo`] JSON
  *  shape (camelCase via `#[serde(rename_all)]`).
  *
  *  Phase 39a: `clientId` was renamed to `scsynthClientId` (the
  *  bridge-level scsynth `/notify` clientId, shared across all
  *  sessions). New `subClientId` partitions the bridge's node-ID
- *  space across concurrent sessions. The frontend's IdAllocator
- *  base is `scsynthClientId * 1_000_000 + subClientId * 100_000
- *  + 1000`. */
+ *  space across concurrent sessions. IdAllocator base is
+ *  `scsynthClientId * 1_000_000 + subClientId * 100_000 + 1000`.
+ *
+ *  Phase 39b: `clock`, `numScopeBuffers`, `dirtSamples` carry
+ *  cached sclang metadata so the frontend's
+ *  ClockController + DirtClient don't need per-session OSC
+ *  round-trips. `clock` is `null` if sclang wasn't reachable
+ *  at bridge boot. */
 export interface SessionInfo {
   sessionId: string;
   scsynthClientId: number;
@@ -36,6 +60,9 @@ export interface SessionInfo {
   sampleRate: number;
   parentGroupId: number;
   scopeMode?: 'shm' | 'osc';
+  clock: SessionClockInfo | null;
+  numScopeBuffers: number | null;
+  dirtSamples: DirtSample[];
 }
 
 /** Read-or-create. If `sessionStorage` has an id, try to read it

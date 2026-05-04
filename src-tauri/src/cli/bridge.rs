@@ -30,6 +30,7 @@ use crate::server::static_assets;
 pub fn run_blocking(
     port: u16,
     scsynth: SocketAddr,
+    sclang: Option<SocketAddr>,
     routes: Vec<Route>,
     dist_override: Option<PathBuf>,
     log_dir: Option<PathBuf>,
@@ -65,8 +66,16 @@ pub fn run_blocking(
                 std::process::exit(1);
             }
         };
-        if let Err(e) =
-            server::run_bridge(port, table, scsynth, dist, session_ttl, force_osc_mode).await
+        if let Err(e) = server::run_bridge(
+            port,
+            table,
+            scsynth,
+            sclang,
+            dist,
+            session_ttl,
+            force_osc_mode,
+        )
+        .await
         {
             tracing::error!(error = %e, "bridge error");
             std::process::exit(1);

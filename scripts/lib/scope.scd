@@ -18,6 +18,13 @@
 //   itself doesn't round-trip).
 (
 ~scAppInstallScopeResponders = {
+    // Phase 39b: contribute scope metadata to the bootstrap
+    // context. The bridge reads numScopeBuffers from the
+    // bootstrap reply at boot.
+    ~scAppBootstrapCtx[\scope] = (
+        numScopeBuffers: 128
+    );
+
     OSCdef(\scAppScopeHello, { |msg, time, addr|
         addr.sendMsg('/scope/info', "numScopeBuffers", 128);
     }, '/scope/hello');

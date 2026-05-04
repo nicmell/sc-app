@@ -88,6 +88,15 @@ pub fn run() {
             let scsynth: SocketAddr = scsynth_str
                 .parse()
                 .map_err(|e| format!("invalid scsynth {scsynth_str:?}: {e}"))?;
+            // Phase 39b: optional sclang bootstrap target.
+            let sclang = cfg
+                .sclang
+                .as_deref()
+                .map(|s| {
+                    s.parse::<SocketAddr>()
+                        .map_err(|e| format!("invalid sclang {s:?}: {e}"))
+                })
+                .transpose()?;
 
             let session_ttl = Duration::from_secs(
                 cfg.session_ttl_seconds.unwrap_or(DEFAULT_SESSION_TTL_SECONDS),
@@ -138,6 +147,7 @@ pub fn run() {
                     listener,
                     table,
                     scsynth,
+                    sclang,
                     dist,
                     session_ttl,
                     /* force_osc_mode = */ false,

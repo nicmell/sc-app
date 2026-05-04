@@ -31,9 +31,7 @@ import type { WorkerClient } from '@/server/WorkerClient';
 
 import {
   DIRT_HELLO_REPLY,
-  DIRT_SAMPLES_REPLY,
   dirtHello,
-  dirtListSamples,
   dirtPlay,
   dirtSetControlBus,
 } from './dirtCommands';
@@ -48,7 +46,6 @@ import type {
 const HELLO_TIMEOUT_MS = 1000;
 const DEFAULT_LOOKAHEAD_MS = 100;
 const RECENT_EVENT_RING_SIZE = 20;
-const LIST_SAMPLES_TIMEOUT_MS = 2000;
 
 export type DirtReplyListener = (reply: DirtReply) => void;
 
@@ -60,12 +57,6 @@ interface PendingHello {
   timer: number;
 }
 
-interface PendingListSamples {
-  resolve: (banks: SampleBank[]) => void;
-  reject: (e: Error) => void;
-  timer: number;
-}
-
 export class DirtClient {
   private readonly _status = createStore<DirtStatus>('probing');
   private readonly _recentEvents = createStore<ReadonlyArray<DirtEventLog>>([]);
@@ -74,7 +65,6 @@ export class DirtClient {
   private readonly client: WorkerClient;
   private offReply: (() => void) | null = null;
   private helloPending: PendingHello | null = null;
-  private listSamplesPending: PendingListSamples | null = null;
   private disposed = false;
 
   constructor(client: WorkerClient) {
@@ -156,25 +146,13 @@ export class DirtClient {
     });
   }
 
-  /** Phase 27 — query SuperDirt for the loaded sample-bank list
-   *  via the custom `/dirt/listSamples` OSCdef in the sclang
-   *  startup script. Updates `sampleBanks` on success. Resolves
-   *  with the new list, or rejects on timeout (which usually
-   *  means the older startup script is in use — the responder is
-   *  Phase 27a). Only one query in flight at a time. */
-  async listSamples(timeoutMs: number = LIST_SAMPLES_TIMEOUT_MS): Promise<SampleBank[]> {
-    if (this.disposed) return [];
-    if (this.listSamplesPending) {
-      throw new Error('/dirt/listSamples already in flight');
-    }
-    return new Promise<SampleBank[]>((resolve, reject) => {
-      const timer = window.setTimeout(() => {
-        this.listSamplesPending = null;
-        reject(new Error(`/dirt/listSamples timed out after ${timeoutMs} ms`));
-      }, timeoutMs);
-      this.listSamplesPending = { resolve, reject, timer };
-      this.sendPacket(dirtListSamples());
-    });
+  /** Phase 39b: seed the sample-bank store from the cached
+   *  bootstrap snapshot (SessionInfo.dirtSamples). Replaces the
+   *  pre-39 `/dirt/listSamples` OSC round-trip; the bridge
+   *  fetches once at boot, frontend reads from there. */
+  setSampleBanks(banks: ReadonlyArray<SampleBank>): void {
+    if (this.disposed) return;
+    this._sampleBanks.set(banks);
   }
 
   /** Round-trip `/dirt/hello`; resolve `true` on reply, `false` on
@@ -215,12 +193,6 @@ export class DirtClient {
     if (this.helloPending) {
       const pending = this.helloPending;
       this.helloPending = null;
-      window.clearTimeout(pending.timer);
-      pending.reject(new Error('DirtClient disposed'));
-    }
-    if (this.listSamplesPending) {
-      const pending = this.listSamplesPending;
-      this.listSamplesPending = null;
       window.clearTimeout(pending.timer);
       pending.reject(new Error('DirtClient disposed'));
     }
@@ -265,17 +237,6 @@ export class DirtClient {
       pending.resolve();
     }
 
-    if (reply.address === DIRT_SAMPLES_REPLY) {
-      const banks = parseSampleBanks(reply.args);
-      this._sampleBanks.set(banks);
-      if (this.listSamplesPending) {
-        const pending = this.listSamplesPending;
-        this.listSamplesPending = null;
-        window.clearTimeout(pending.timer);
-        pending.resolve(banks);
-      }
-    }
-
     for (const cb of this.replyListeners) cb(reply);
   }
 
@@ -286,24 +247,6 @@ export class DirtClient {
     );
     this._recentEvents.set(next);
   }
-}
-
-/** Parse `/dirt/samples` reply args. The OSCdef in
- *  `scripts/sc-app-superdirt-startup.scd` flattens the bank dict
- *  into an interleaved `[name1, count1, name2, count2, …]` arg
- *  list. Robust to odd-length payloads (drops trailing orphan)
- *  and to non-numeric counts (coerces, falls back to 0). */
-function parseSampleBanks(args: ReadonlyArray<unknown>): SampleBank[] {
-  const banks: SampleBank[] = [];
-  for (let i = 0; i + 1 < args.length; i += 2) {
-    const name = args[i];
-    const count = args[i + 1];
-    if (typeof name !== 'string') continue;
-    const n = typeof count === 'number' ? count : Number(count);
-    banks.push({ name, count: Number.isFinite(n) ? n : 0 });
-  }
-  banks.sort((a, b) => a.name.localeCompare(b.name));
-  return banks;
 }
 
 /** Render a Tidal-ish shorthand from an event input — used as the

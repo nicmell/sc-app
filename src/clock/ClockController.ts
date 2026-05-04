@@ -44,12 +44,7 @@ import type {
   ClockDerived,
 } from '@/config/clockConfig';
 import { deriveClock } from '@/config/clockConfig';
-import {
-  CLOCK_INFO_REPLY,
-  clockHello,
-  parseClockInfo,
-  type ClockInfo,
-} from '@/clock/clockClient';
+import { type ClockInfo } from '@/clock/clockClient';
 import { GroupController, type GroupState } from '@/server/GroupController';
 import type { ReadonlyStore } from '@/util/reactiveStore';
 import { createStore } from '@/util/reactiveStore';
@@ -58,18 +53,17 @@ import type { ClockTick } from '@/server/workerProtocol';
 
 export type ClockState = 'stopped' | 'running' | 'paused';
 
-/** /clock/hello round-trip default timeout. 3 s is generous —
- *  sclang's responder is synchronous, so the actual round-trip is
- *  one local UDP hop in each direction (sub-ms in practice). */
-const ATTACH_TIMEOUT_MS = 3000;
-
 interface ClockControllerOptions {
   client: WorkerClient;
   /** Used for `effectiveState` derivation only — the controller does
-   *  not manipulate the group itself. UI components that want to
-   *  pause / resume should call `group.pause()` / `group.resume()`
-   *  directly. */
+   *  not manipulate the group itself. */
   group: GroupController;
+  /** Phase 39b: `ClockInfo` from cached SessionInfo metadata.
+   *  Pre-39 the controller did its own `/clock/hello` round-trip
+   *  in `attach()`; post-39 the bridge fetches once at boot via
+   *  `/sc-app/bootstrap/hello` and surfaces it via `SessionInfo.clock`.
+   *  No more per-session OSC round-trip. */
+  info: ClockInfo;
 }
 
 export class ClockController {
@@ -98,21 +92,27 @@ export class ClockController {
   constructor(opts: ClockControllerOptions) {
     this.client = opts.client;
     this.group = opts.group;
+    this._info = opts.info;
+    this._derived = deriveClock(
+      { sampleRate: opts.info.sampleRate },
+      { chunkSize: opts.info.chunkSize },
+    );
   }
 
-  /** ClockInfo from the most recent `attach()`. Throws if read
-   *  before `attach()` has resolved — callers should sequence their
-   *  setup against the awaited promise. */
+  /** ClockInfo cached from SessionInfo at construction. Always
+   *  populated (Phase 39b: no async fetch). */
   get info(): ClockInfo {
     if (this._info === null) {
-      throw new Error('ClockController.info read before attach() resolved');
+      throw new Error('ClockController.info: invariant violated (info null after construction)');
     }
     return this._info;
   }
 
   get derived(): ClockDerived {
     if (this._derived === null) {
-      throw new Error('ClockController.derived read before attach() resolved');
+      throw new Error(
+        'ClockController.derived: invariant violated (derived null after construction)',
+      );
     }
     return this._derived;
   }
@@ -155,42 +155,17 @@ export class ClockController {
     return this._tick0Ms;
   }
 
-  /** Round-trip `/clock/hello`, parse `/clock/info`, register the
-   *  trig handler, and start watching for `/clock/tick` freshness.
-   *  Idempotent — second call returns the cached info without a
-   *  fresh round-trip. */
-  async attach(timeoutMs: number = ATTACH_TIMEOUT_MS): Promise<ClockInfo> {
-    if (this.attached && this._info !== null) return this._info;
-
-    let reply;
-    try {
-      reply = await this.client.sendAndAwaitReply(
-        clockHello(),
-        (r) => r.address === CLOCK_INFO_REPLY,
-        timeoutMs,
-      );
-    } catch (err) {
-      // Most common causes:
-      //   - sclang isn't running (start it via `yarn osc` /
-      //     `yarn superdirt-only`).
-      //   - The bridge config is missing the `/clock` route, so
-      //     /clock/hello falls through to the default scsynth
-      //     target and scsynth replies `/fail` instead of /clock/info.
-      // Wrap the underlying timeout/error with context so the toast
-      // points the user at the likely fix.
-      const cause = err instanceof Error ? err.message : String(err);
+  /** Phase 39b: register the tick handler and start the
+   *  freshness watchdog. ClockInfo is already populated from
+   *  SessionInfo at construction; no per-session OSC round-trip.
+   *  Idempotent. */
+  attach(): void {
+    if (this.attached) return;
+    if (this._derived === null) {
       throw new Error(
-        `Could not attach to the shared clock (/clock/hello): ${cause}. ` +
-          `Check that sclang+SuperDirt is running and that config.json ` +
-          `has a "/clock → 127.0.0.1:57120" route.`,
+        'ClockController.attach: derived not populated (constructor invariant violated)',
       );
     }
-    const info = parseClockInfo(reply.args);
-    this._info = info;
-    this._derived = deriveClock(
-      { sampleRate: info.sampleRate },
-      { chunkSize: info.chunkSize },
-    );
 
     this.offTick = this.client.onTick((tick) => this.handleTick(tick));
     this.offGroupState = this.group.state.subscribe((s) => this.recompute(s));
@@ -203,8 +178,6 @@ export class ClockController {
     this.client.startClockWatchdog(this._derived.tickIntervalMs);
     this.attached = true;
     this.recompute(this.group.state.get());
-
-    return info;
   }
 
   /** Tear down listeners and the watchdog. The shared clock keeps

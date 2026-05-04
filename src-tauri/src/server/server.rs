@@ -61,6 +61,11 @@ const BROADCAST_CAPACITY: usize = 4096;
 const NOTIFY_TIMEOUT: Duration = Duration::from_secs(2);
 /// `/status` handshake timeout. Same shape.
 const STATUS_TIMEOUT: Duration = Duration::from_secs(2);
+/// Phase 39b: `/sc-app/bootstrap/hello` round-trip per attempt.
+const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(3);
+/// Phase 39b: how many bootstrap attempts before giving up
+/// (and continuing to serve HTTP/WS without sclang metadata).
+const BOOTSTRAP_RETRIES: u32 = 5;
 
 /// What kind of server this is. Drives the boot-time handshake +
 /// what fields of [`ServerMetadata`] get populated.
@@ -84,6 +89,7 @@ pub enum ServerRole {
 /// handshakes at boot and read by sessions / API handlers.
 #[derive(Debug, Default, Clone)]
 pub struct ServerMetadata {
+    // ── Scsynth-side (populated by /notify + /status) ──────
     /// scsynth's assigned `clientId` from `/done /notify`. Bridge
     /// runs `/notify 1` once at boot; this is the bridge-wide
     /// `clientId`. Sessions get a `sub_client_id` that partitions
@@ -92,8 +98,38 @@ pub struct ServerMetadata {
     /// Nominal sample rate from `/status.reply`. Used by
     /// `tickToTimetag` math + scope chunk geometry.
     pub sample_rate: Option<u32>,
-    // Phase 39b will add: clock_bus, clock_node_id, tick_rate,
-    // chunk_size, num_scope_buffers, dirt_buffers, sc_app_synthdefs.
+
+    // ── Sclang-side (populated by /sc-app/bootstrap/info) ──
+    /// Phase 39b clock metadata. None if sclang isn't reachable
+    /// at bridge boot OR if the clock SynthDef wasn't installed.
+    pub clock: Option<ClockMetadata>,
+    /// Phase 39b scope-buffer pool size (sclang's
+    /// `s.scopeBufferAllocator` range, 128).
+    pub num_scope_buffers: Option<i32>,
+    /// Phase 39b dirt sample bank — `(name, count)` pairs from
+    /// `~dirt.buffers`. Empty if SuperDirt didn't install or no
+    /// samples were loaded.
+    pub dirt_samples: Vec<DirtSample>,
+}
+
+/// Clock metadata from sclang's `\scAppClock` synth + the
+/// `~scAppBootstrapCtx[\clock]` dictionary.
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClockMetadata {
+    pub clock_bus: i32,
+    pub clock_node_id: i32,
+    pub tick_rate: f64,
+    pub chunk_size: i32,
+    pub sample_rate: f64,
+}
+
+/// One entry in the dirt sample bank.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirtSample {
+    pub name: String,
+    pub count: i32,
 }
 
 /// One UDP target's bridge-level state: the connected socket, the
@@ -159,10 +195,32 @@ impl Server {
                     "scsynth Server bootstrapped"
                 );
             }
-            ServerRole::Sclang | ServerRole::Generic => {
-                // No-op for 39a. Phase 39b adds the
-                // /sc-app/bootstrap/hello round-trip here for
-                // ServerRole::Sclang.
+            ServerRole::Sclang => {
+                match bootstrap_handshake(&socket).await {
+                    Ok(parsed) => {
+                        metadata.clock = parsed.clock;
+                        metadata.num_scope_buffers = parsed.num_scope_buffers;
+                        metadata.dirt_samples = parsed.dirt_samples;
+                        tracing::info!(
+                            target = %target,
+                            clock = ?metadata.clock,
+                            num_scope_buffers = ?metadata.num_scope_buffers,
+                            dirt_sample_count = metadata.dirt_samples.len(),
+                            "sclang Server bootstrapped"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            target = %target,
+                            error = %e,
+                            "sclang bootstrap failed — continuing without sclang metadata. \
+                             Clock + scope + sequencer features may not work until sclang \
+                             is reachable + the bridge is restarted."
+                        );
+                    }
+                }
+            }
+            ServerRole::Generic => {
                 tracing::info!(target = %target, ?role, "Server bootstrapped (no handshake)");
             }
         }
@@ -325,6 +383,182 @@ async fn status_handshake(sock: &UdpSocket) -> Result<u32> {
         if let Some(rate) = parse_status_reply(&buf[..n]) {
             return Ok(rate);
         }
+    }
+}
+
+// ===== Sclang bootstrap (Phase 39b) =====
+
+#[derive(Debug, Default)]
+struct BootstrapParsed {
+    clock: Option<ClockMetadata>,
+    num_scope_buffers: Option<i32>,
+    dirt_samples: Vec<DirtSample>,
+}
+
+/// Send `/sc-app/bootstrap/hello` and await
+/// `/sc-app/bootstrap/info` + `/sc-app/bootstrap/samples`
+/// replies. Retries `BOOTSTRAP_RETRIES` times before giving up.
+async fn bootstrap_handshake(sock: &UdpSocket) -> Result<BootstrapParsed> {
+    for attempt in 0..BOOTSTRAP_RETRIES {
+        match try_bootstrap(sock).await {
+            Ok(parsed) => return Ok(parsed),
+            Err(e) if attempt + 1 < BOOTSTRAP_RETRIES => {
+                tracing::debug!(
+                    attempt = attempt + 1,
+                    retries = BOOTSTRAP_RETRIES,
+                    error = %e,
+                    "sclang bootstrap attempt failed; retrying"
+                );
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    unreachable!("loop exits via Ok or final Err")
+}
+
+async fn try_bootstrap(sock: &UdpSocket) -> Result<BootstrapParsed> {
+    let pkt = OscPacket::Message(OscMessage {
+        addr: "/sc-app/bootstrap/hello".into(),
+        args: vec![],
+    });
+    let bytes = rosc::encoder::encode(&pkt).context("encode /sc-app/bootstrap/hello")?;
+    sock.send(&bytes).await.context("send /sc-app/bootstrap/hello")?;
+
+    // Sclang sends back two messages: /sc-app/bootstrap/info and
+    // /sc-app/bootstrap/samples. Wait for both within the
+    // timeout. They may arrive as separate UDP datagrams or
+    // (less commonly) as a single bundle.
+    let mut parsed = BootstrapParsed::default();
+    let mut got_info = false;
+    let mut got_samples = false;
+    let mut buf = vec![0u8; 65_536];
+    let deadline = tokio::time::Instant::now() + BOOTSTRAP_TIMEOUT;
+    while !got_info || !got_samples {
+        let remaining = deadline
+            .checked_duration_since(tokio::time::Instant::now())
+            .ok_or_else(|| anyhow!("bootstrap timed out (no reply from sclang)"))?;
+        let n = match timeout(remaining, sock.recv(&mut buf)).await {
+            Ok(Ok(n)) => n,
+            Ok(Err(e)) => return Err(anyhow!("recv during bootstrap: {e}")),
+            Err(_) => return Err(anyhow!("bootstrap timed out (no reply from sclang)")),
+        };
+        let packet = rosc::decoder::decode_udp(&buf[..n])
+            .map_err(|e| anyhow!("bootstrap decode: {e:?}"))?
+            .1;
+        for msg in flatten_packet(packet) {
+            match msg.addr.as_str() {
+                "/sc-app/bootstrap/info" => {
+                    apply_info_args(&mut parsed, &msg.args);
+                    got_info = true;
+                }
+                "/sc-app/bootstrap/samples" => {
+                    parsed.dirt_samples = parse_samples_args(&msg.args);
+                    got_samples = true;
+                }
+                _ => {
+                    // Some other reply on this socket (rare).
+                    // Ignore + keep waiting.
+                }
+            }
+        }
+    }
+    Ok(parsed)
+}
+
+fn flatten_packet(pkt: OscPacket) -> Vec<OscMessage> {
+    match pkt {
+        OscPacket::Message(m) => vec![m],
+        OscPacket::Bundle(b) => b
+            .content
+            .into_iter()
+            .flat_map(flatten_packet)
+            .collect(),
+    }
+}
+
+/// Apply kv pairs from `/sc-app/bootstrap/info` to a parsed
+/// metadata struct. Args alternate (string key, primitive
+/// value). Unknown keys are ignored.
+fn apply_info_args(out: &mut BootstrapParsed, args: &[OscType]) {
+    let mut clock_bus: Option<i32> = None;
+    let mut clock_node_id: Option<i32> = None;
+    let mut tick_rate: Option<f64> = None;
+    let mut chunk_size: Option<i32> = None;
+    let mut sample_rate: Option<f64> = None;
+
+    let mut iter = args.iter();
+    while let Some(key_arg) = iter.next() {
+        let OscType::String(key) = key_arg else {
+            tracing::debug!(?key_arg, "bootstrap info: non-string key, skipping");
+            continue;
+        };
+        let Some(value) = iter.next() else {
+            tracing::debug!(key, "bootstrap info: dangling key with no value");
+            break;
+        };
+        match key.as_str() {
+            "clockBus" => clock_bus = osc_int(value),
+            "clockNodeId" => clock_node_id = osc_int(value),
+            "tickRate" => tick_rate = osc_float(value),
+            "chunkSize" => chunk_size = osc_int(value),
+            "sampleRate" => sample_rate = osc_float(value),
+            "numScopeBuffers" => out.num_scope_buffers = osc_int(value),
+            _ => {
+                tracing::debug!(key, "bootstrap info: unknown key");
+            }
+        }
+    }
+    if let (Some(b), Some(n), Some(t), Some(c), Some(s)) =
+        (clock_bus, clock_node_id, tick_rate, chunk_size, sample_rate)
+    {
+        out.clock = Some(ClockMetadata {
+            clock_bus: b,
+            clock_node_id: n,
+            tick_rate: t,
+            chunk_size: c,
+            sample_rate: s,
+        });
+    }
+}
+
+fn parse_samples_args(args: &[OscType]) -> Vec<DirtSample> {
+    let mut out = Vec::with_capacity(args.len() / 2);
+    let mut iter = args.iter();
+    while let Some(name_arg) = iter.next() {
+        let OscType::String(name) = name_arg else {
+            continue;
+        };
+        let Some(count_arg) = iter.next() else {
+            break;
+        };
+        let Some(count) = osc_int(count_arg) else {
+            continue;
+        };
+        out.push(DirtSample {
+            name: name.clone(),
+            count,
+        });
+    }
+    out
+}
+
+fn osc_int(v: &OscType) -> Option<i32> {
+    match v {
+        OscType::Int(n) => Some(*n),
+        OscType::Long(n) => Some(*n as i32),
+        OscType::Float(f) => Some(*f as i32),
+        OscType::Double(f) => Some(*f as i32),
+        _ => None,
+    }
+}
+
+fn osc_float(v: &OscType) -> Option<f64> {
+    match v {
+        OscType::Float(f) => Some(*f as f64),
+        OscType::Double(f) => Some(*f),
+        OscType::Int(n) => Some(*n as f64),
+        OscType::Long(n) => Some(*n as f64),
+        _ => None,
     }
 }
 

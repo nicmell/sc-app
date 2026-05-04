@@ -74,20 +74,16 @@
         ~scAppClockChunkSize
     ).postln;
 
-    // /clock/hello → /clock/info responder. Wire shape:
-    // interleaved [key, value, key, value, …] — same as
-    // /dirt/samples so the bridge's reply-routing fans it back to
-    // the requesting WS unchanged. Frontend (Phase 30b) parses
-    // the pairs into a typed ClockInfo object.
-    OSCdef(\scAppClockHello, { |msg, time, addr|
-        addr.sendMsg('/clock/info',
-            "tickRate", ~scAppClockTickRate,
-            "chunkSize", ~scAppClockChunkSize,
-            "sampleRate", s.sampleRate,
-            "clockBus", ~scAppClockBus.index,
-            "clockNodeId", ~scAppClockNodeId
-        );
-    }, '/clock/hello');
-    "[sc-app] /clock/hello responder installed".postln;
+    // Phase 39b: contribute to the bootstrap context. Replaces
+    // the pre-39 /clock/hello → /clock/info round-trip; bridge
+    // fetches once at boot via /sc-app/bootstrap/hello and
+    // exposes the values on SessionInfo.
+    ~scAppBootstrapCtx[\clock] = (
+        clockBus: ~scAppClockBus.index,
+        clockNodeId: ~scAppClockNodeId,
+        tickRate: ~scAppClockTickRate,
+        chunkSize: ~scAppClockChunkSize,
+        sampleRate: s.sampleRate
+    );
 };
 )

@@ -1,29 +1,16 @@
-// Phase 27a: /dirt/listSamples responder. Frontend's sequencer
-// panel populates a sample-name autocomplete from the banks
-// SuperDirt actually has loaded. SuperDirt itself exposes
-// nothing for this — the dict lives on `~dirt.buffers`, keyed by
-// Symbol with Array-of-BufferProxy values. We flatten it into an
-// interleaved `[name1, count1, name2, count2, …]` reply on
-// /dirt/samples.
+// Phase 27a → 39b: pre-39 this installed an `/dirt/listSamples`
+// OSCdef so the frontend could query SuperDirt's loaded banks
+// at session-attach time. Phase 39b removed the round-trip:
+// `~scAppInstallBootstrap` reads `~dirt.buffers` once at boot
+// and includes the snapshot in the bootstrap reply (see
+// `lib/bootstrap.scd`). Frontend's DirtClient seeds its
+// `sampleBanks` store from `SessionInfo.dirtSamples`.
 //
-// `addr` is the sender (the bridge's per-route UDP socket in
-// Phase 26 deployments); sendMsg back there and the bridge fans
-// it onto the WebSocket the original request came in on.
-//
-// Must run AFTER `~scAppInstallSuperDirt.()` since it reads
-// `~dirt.buffers`.
+// This install function stays as a no-op to keep the
+// orchestrator's load list stable — Phase 39e cleanup will
+// drop the file entirely.
 (
 ~scAppInstallDirtListSamples = {
-    OSCdef(\scAppListSamples, { |msg, time, addr|
-        var args = List.new;
-        if(~dirt.notNil) {
-            ~dirt.buffers.keysValuesDo { |name, list|
-                args.add(name.asString);
-                args.add(list.size);
-            };
-        };
-        addr.sendMsg('/dirt/samples', *args);
-    }, '/dirt/listSamples');
-    "[sc-app] /dirt/listSamples responder installed".postln;
+    "[sc-app] /dirt/listSamples responder skipped (Phase 39b: bootstrap reply carries the sample list)".postln;
 };
 )

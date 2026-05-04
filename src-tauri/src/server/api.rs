@@ -46,7 +46,13 @@ pub async fn post_session(State(state): State<AppState>) -> Response {
             return error_response(StatusCode::SERVICE_UNAVAILABLE, format!("{:#}", e));
         }
     };
-    let info = match session_info(&session, &state.scsynth_server).await {
+    let info = match session_info(
+        &session,
+        &state.scsynth_server,
+        state.sclang_server.as_ref(),
+    )
+    .await
+    {
         Ok(info) => info,
         Err(e) => {
             tracing::error!(error = ?e, "session_info failed");
@@ -67,7 +73,13 @@ pub async fn get_session(State(state): State<AppState>, Path(id): Path<Uuid>) ->
             format!("session {id} not found (expired or never existed)"),
         );
     };
-    match session_info(&session, &state.scsynth_server).await {
+    match session_info(
+        &session,
+        &state.scsynth_server,
+        state.sclang_server.as_ref(),
+    )
+    .await
+    {
         Ok(info) => Json(info).into_response(),
         Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("{:#}", e)),
     }
@@ -82,7 +94,13 @@ pub async fn delete_session(State(state): State<AppState>, Path(id): Path<Uuid>)
     session
         .cleanup(&state.scsynth_server, &state.sub_client_id_allocator)
         .await;
-    match session_info(&session, &state.scsynth_server).await {
+    match session_info(
+        &session,
+        &state.scsynth_server,
+        state.sclang_server.as_ref(),
+    )
+    .await
+    {
         Ok(info) => Json(info).into_response(),
         Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("{:#}", e)),
     }
