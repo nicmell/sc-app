@@ -94,12 +94,20 @@ pub fn run() {
             );
 
             // 3.5 Build the routing table. `cfg.routes` resolves
-            //     each `target` host:port via lookup_host. Failure
-            //     is fatal — we'd rather refuse to boot than start
-            //     with a half-broken route map.
-            let routes_cfg = cfg.routes.clone();
+            //     each `target` host:port via lookup_host AND
+            //     compiles its `pattern` regex. Failure is fatal —
+            //     we'd rather refuse to boot than start with a
+            //     half-broken route map. Phase 37: scsynth_addr is
+            //     no longer the routing-table default; it's passed
+            //     to `serve_on` separately for `Session::create`'s
+            //     handshake socket.
+            let routes_cfg = if cfg.routes.is_empty() {
+                crate::config::starter().routes.clone()
+            } else {
+                cfg.routes.clone()
+            };
             let table = tauri::async_runtime::block_on(
-                RoutingTable::build(scsynth, &routes_cfg),
+                RoutingTable::build(&routes_cfg),
             )
             .map_err(|e| format!("routing table: {e}"))?;
 
@@ -129,6 +137,7 @@ pub fn run() {
                 if let Err(e) = server::serve_on(
                     listener,
                     table,
+                    scsynth,
                     dist,
                     session_ttl,
                     /* force_osc_mode = */ false,

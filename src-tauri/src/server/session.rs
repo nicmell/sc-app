@@ -156,10 +156,18 @@ impl Session {
     /// own all subsequent reads.
     pub async fn create(
         routes: Arc<RoutingTable>,
+        scsynth_addr: SocketAddr,
         force_osc_mode: bool,
     ) -> Result<Self> {
-        let default_addr = routes.default_target();
-        let unique_targets = routes.unique_targets();
+        // Phase 37: scsynth address is passed explicitly (used to
+        // pick the handshake socket) rather than derived from the
+        // routing table's "default". The routes table no longer
+        // has a default; scsynth still must be reachable for the
+        // /notify + /status round-trips below.
+        let mut unique_targets = routes.unique_targets();
+        if !unique_targets.contains(&scsynth_addr) {
+            unique_targets.push(scsynth_addr);
+        }
 
         // Bind one UDP socket per unique target. Same shape as the
         // pre-29 ws_bridge, but the sockets live for the session's
@@ -175,8 +183,8 @@ impl Session {
             target_sockets.insert(*target, Arc::new(sock));
         }
         let scsynth_socket = target_sockets
-            .get(&default_addr)
-            .ok_or_else(|| anyhow!("default route socket missing — internal error"))?
+            .get(&scsynth_addr)
+            .ok_or_else(|| anyhow!("scsynth socket missing — internal error"))?
             .clone();
 
         // Round-trip 1: /notify 1 → /done /notify <clientId>.
@@ -240,7 +248,7 @@ impl Session {
         let scope_mode = if force_osc_mode {
             ScopeMode::Osc
         } else {
-            let probe = scope::shm::probe(default_addr.port());
+            let probe = scope::shm::probe(scsynth_addr.port());
             if probe.available {
                 ScopeMode::Shm
             } else {
@@ -260,7 +268,7 @@ impl Session {
             client_id,
             parent_group_id,
             sample_rate,
-            scsynth = %default_addr,
+            scsynth = %scsynth_addr,
             scope_mode = ?scope_mode,
             "session created"
         );
@@ -270,7 +278,7 @@ impl Session {
             target_sockets,
             broadcast_senders,
             routes,
-            scsynth_addr: default_addr,
+            scsynth_addr,
             client_id,
             sample_rate,
             parent_group_id,

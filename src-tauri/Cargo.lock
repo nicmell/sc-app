@@ -3212,6 +3212,7 @@ dependencies = [
  "clap",
  "futures-util",
  "libc",
+ "regex",
  "rosc",
  "serde",
  "serde_json",

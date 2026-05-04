@@ -56,6 +56,14 @@ const TTL_SCAN_INTERVAL: Duration = Duration::from_secs(60);
 pub(crate) struct AppState {
     pub routes: Arc<RoutingTable>,
     pub sessions: SessionStore,
+    /// Phase 37: scsynth address used to pick the handshake socket
+    /// at `Session::create`. Pre-37 this came from
+    /// `routes.default_target()`; the routes table no longer has a
+    /// default, so the address is plumbed through explicitly. Also
+    /// used by `/api/scope/{probe,layout,debug,headers}` to pick
+    /// the SHM file path (which is platform-derived from the
+    /// scsynth port).
+    pub scsynth_addr: SocketAddr,
     /// Phase 36: when true, every new session unconditionally uses
     /// `ScopeMode::Osc` even if SHM is reachable. Set via the
     /// `bridge --no-shm` CLI flag for testing the OSC fallback path
@@ -96,11 +104,13 @@ pub async fn bind(port: u16) -> Result<(TcpListener, SocketAddr)> {
 pub async fn serve_on(
     listener: TcpListener,
     routes: RoutingTable,
+    scsynth_addr: SocketAddr,
     dist: Option<PathBuf>,
     session_ttl: Duration,
     force_osc_mode: bool,
 ) -> Result<()> {
     tracing::info!("  /ws routing table:\n{}", routes.describe());
+    tracing::info!(scsynth = %scsynth_addr, "  scsynth handshake address");
     tracing::info!(
         ttl_seconds = session_ttl.as_secs(),
         "  session TTL"
@@ -109,6 +119,7 @@ pub async fn serve_on(
     let state = AppState {
         routes: Arc::new(routes),
         sessions: SessionStore::new(),
+        scsynth_addr,
         force_osc_mode,
     };
 
@@ -153,13 +164,14 @@ pub async fn serve_on(
 pub async fn run_bridge(
     port: u16,
     routes: RoutingTable,
+    scsynth_addr: SocketAddr,
     dist: Option<PathBuf>,
     session_ttl: Duration,
     force_osc_mode: bool,
 ) -> Result<()> {
     let (listener, addr) = bind(port).await?;
     tracing::info!(addr = %addr, "sc-app listening on http://{addr}");
-    serve_on(listener, routes, dist, session_ttl, force_osc_mode).await
+    serve_on(listener, routes, scsynth_addr, dist, session_ttl, force_osc_mode).await
 }
 
 async fn ws_handler(

@@ -50,8 +50,12 @@ fn error_response(status: StatusCode, message: impl Into<String>) -> Response {
 /// info. Body is ignored (reserved for future fields like a
 /// returning client_id hint).
 pub async fn post_session(State(state): State<AppState>) -> Response {
-    let session = match Session::create(state.routes.clone(), state.force_osc_mode)
-        .await
+    let session = match Session::create(
+        state.routes.clone(),
+        state.scsynth_addr,
+        state.force_osc_mode,
+    )
+    .await
     {
         Ok(s) => Arc::new(s),
         Err(e) => {
@@ -123,7 +127,7 @@ pub async fn delete_session(
 /// findable inside the segment — that probe happens lazily on
 /// first scope acquire (see `scope_shm::find_scope_buffer_array`).
 pub async fn get_scope_probe(State(state): State<AppState>) -> Response {
-    let port = state.routes.default_target().port();
+    let port = state.scsynth_addr.port();
     let probe = scope_shm::probe(port);
     let mode = if state.force_osc_mode || !probe.available {
         "osc"
@@ -146,7 +150,7 @@ pub async fn get_scope_probe(State(state): State<AppState>) -> Response {
 /// `find_scope_buffer_array` internally; this endpoint just
 /// surfaces it for offline verification.
 pub async fn get_scope_layout(State(state): State<AppState>) -> Response {
-    let port = state.routes.default_target().port();
+    let port = state.scsynth_addr.port();
     let result = scope_shm::probe_layout(port);
     Json(result).into_response()
 }
@@ -157,7 +161,7 @@ pub async fn get_scope_layout(State(state): State<AppState>) -> Response {
 /// candidate stride, and a hex dump of the segment header.
 /// Disposable — remove or gate behind a flag once 31b is settled.
 pub async fn get_scope_debug(State(state): State<AppState>) -> Response {
-    let port = state.routes.default_target().port();
+    let port = state.scsynth_addr.port();
     let result = scope_shm::debug_dump(port);
     Json(result).into_response()
 }
@@ -166,7 +170,7 @@ pub async fn get_scope_debug(State(state): State<AppState>) -> Response {
 /// header fields after layout resolution. Confirms the
 /// vector-resolved offsets all point at valid scope_buffer structs.
 pub async fn get_scope_headers(State(state): State<AppState>) -> Response {
-    let port = state.routes.default_target().port();
+    let port = state.scsynth_addr.port();
     let result = scope_shm::dump_all_headers(port);
     Json(result).into_response()
 }

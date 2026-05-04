@@ -56,3 +56,9 @@ tracing-appender = "0.2"
 # munmap entry points used; no other libc surface.
 libc = "0.2"
 
+# Phase 37 — regex-based routing table. Each route is a
+# user-authored regex matched against the OSC address; the bridge
+# walks the table top-down, first match wins. Compiled once at
+# RoutingTable::build.
+regex = "1"
+

@@ -199,9 +199,29 @@ pub async fn handle_ws_session(ws: WebSocket, session: Arc<Session>) -> Result<(
                     }
                     _ => {
                         // OSC byte → existing forward path.
-                        let target = match peek_osc_address(bytes_slice) {
-                            Some(addr) => session.routes.route_for(addr),
-                            None => session.scsynth_addr,
+                        // Phase 37: routes.route_for returns
+                        // Option<SocketAddr> (no implicit default).
+                        // Orphan addresses drop with a warn! log.
+                        // The middleware layer (37b/37c) will hook
+                        // in BEFORE this point and reclaim addresses
+                        // like /scope/subscribe; for 37a the only
+                        // outbound traffic from the worker that
+                        // doesn't match a route is bug-territory.
+                        let address = peek_osc_address(bytes_slice);
+                        let Some(addr_str) = address else {
+                            tracing::warn!(
+                                session_id = %session.session_id,
+                                "outbound packet has no parseable OSC address; dropping"
+                            );
+                            continue;
+                        };
+                        let Some(target) = session.routes.route_for(addr_str) else {
+                            tracing::warn!(
+                                session_id = %session.session_id,
+                                address = addr_str,
+                                "orphan outbound address (no matching route); dropping"
+                            );
+                            continue;
                         };
                         let Some(sock) = session.target_sockets.get(&target) else {
                             tracing::warn!(

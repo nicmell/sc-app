@@ -58,7 +58,7 @@ pub fn run_blocking(
 
     let rt = tokio::runtime::Runtime::new().expect("failed to start tokio runtime");
     rt.block_on(async move {
-        let table = match RoutingTable::build(scsynth, &routes).await {
+        let table = match RoutingTable::build(&routes).await {
             Ok(t) => t,
             Err(e) => {
                 tracing::error!(error = %e, "failed to build routing table");
@@ -66,7 +66,7 @@ pub fn run_blocking(
             }
         };
         if let Err(e) =
-            server::run_bridge(port, table, dist, session_ttl, force_osc_mode).await
+            server::run_bridge(port, table, scsynth, dist, session_ttl, force_osc_mode).await
         {
             tracing::error!(error = %e, "bridge error");
             std::process::exit(1);

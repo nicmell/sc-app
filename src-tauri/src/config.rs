@@ -47,8 +47,10 @@ pub const LINUX_SYSTEM_PATH: &str = "/etc/sc-app/config.json";
 /// Built-in default port for the bridge HTTP listener.
 pub const DEFAULT_PORT: u16 = 3000;
 
-/// Built-in default scsynth address (the implicit catch-all route
-/// target).
+/// Built-in default scsynth address. Used as a hint for
+/// `Session::create`'s handshake socket when the user hasn't
+/// overridden it via the `scsynth` config field. NOT a routing
+/// fallback (Phase 37 retired the implicit catch-all).
 pub const DEFAULT_SCSYNTH: &str = "127.0.0.1:57110";
 
 /// Built-in default sclang+SuperDirt address. The starter config
@@ -70,10 +72,12 @@ pub struct Config {
     /// HTTP port to bind for the bridge.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub port: Option<u16>,
-    /// Default scsynth address (host:port). Treated as the implicit
-    /// catch-all route target — packets whose OSC address doesn't
-    /// match any prefix in `routes` are sent here. Per-WS overrides
-    /// via `?scsynth=` still work.
+    /// scsynth address (host:port). Used by `Session::create` to
+    /// pick the handshake socket (the one that runs `/notify 1` +
+    /// `/status` at session boot). Phase 37 dropped the
+    /// implicit-catch-all-route role this field had pre-Phase-37 —
+    /// the routes table now must enumerate scsynth's command
+    /// surface explicitly.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scsynth: Option<String>,
     /// Directory to write rotated NDJSON logs into. When `None` in
@@ -81,11 +85,11 @@ pub struct Config {
     /// the GUI falls back to `app.path().app_log_dir()`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub log_dir: Option<PathBuf>,
-    /// Optional OSC address-prefix routes. Walked top-to-bottom;
-    /// first `prefix` whose value is a `starts_with` match against
-    /// the packet's OSC address wins. Non-matching packets fall back
-    /// to `scsynth`. Empty / absent ⇒ single-target behaviour
-    /// identical to pre-Phase-26.
+    /// OSC address-pattern routes. Walked top-to-bottom; first
+    /// regex whose `pattern` matches the packet's OSC address
+    /// wins. Phase 37: there is **no implicit default** — packets
+    /// whose address matches no entry AND aren't claimed by a
+    /// middleware are dropped with a `warn!` log.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub routes: Vec<Route>,
     /// Phase 29d: how long an idle bridge-managed session lingers
@@ -98,12 +102,18 @@ pub struct Config {
     pub session_ttl_seconds: Option<u64>,
 }
 
-/// One entry in the bridge's routing table.
+/// One entry in the bridge's routing table. The `pattern` is a
+/// regex matched against the packet's OSC address; the `target`
+/// is the UDP destination. Patterns are compiled once in
+/// `RoutingTable::build` — a malformed pattern is a startup
+/// error.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Route {
-    /// OSC address prefix to match (e.g. `"/dirt"`, `"/midi/note"`).
-    pub prefix: String,
+    /// Regex matched against the OSC address. Common idioms:
+    /// `^/dirt(/|$)` (anchored prefix), `^/(s_|n_|g_|b_)`
+    /// (alternated prefix group), `^/notify$` (exact match).
+    pub pattern: String,
     /// `host:port` for the route's UDP target. Resolved at boot.
     pub target: String,
 }
@@ -123,23 +133,27 @@ pub fn starter() -> &'static Config {
         port: Some(DEFAULT_PORT),
         scsynth: Some(DEFAULT_SCSYNTH.to_string()),
         log_dir: None,
-        // Phase 26 seeded `/dirt`; Phase 30 added `/clock`; Phase 31
-        // adds `/scope`. All three prefixes route to DEFAULT_DIRT
-        // because the SuperDirt startup script owns the responders
-        // for each (`/dirt/listSamples`, `/clock/hello`,
-        // `/scope/{hello,allocate,free}`).
+        // Phase 37: the routes table is now an ORDERED list of
+        // regex entries with no implicit default. Two starter
+        // entries cover the deployed surface:
+        //  - `^/(dirt|clock|scope)(/|$)` → SuperDirt process
+        //    (Phase 26's /dirt, Phase 30's /clock, Phase 31's
+        //    /scope responders all live in
+        //    scripts/sc-app-superdirt-startup.scd).
+        //  - `^/([sngbcdpu]_|notify|status|sync|cmd|dumpOSC|
+        //    clearSched|error|quit)` → scsynth's command surface
+        //    (per the SuperCollider Server-Command-Reference).
+        // Anything outside these two regexes that isn't claimed
+        // by a middleware (e.g. /scope/subscribe) gets dropped
+        // with a warn! log.
         routes: vec![
             Route {
-                prefix: "/dirt".into(),
+                pattern: r"^/(dirt|clock|scope)(/|$)".into(),
                 target: DEFAULT_DIRT.into(),
             },
             Route {
-                prefix: "/clock".into(),
-                target: DEFAULT_DIRT.into(),
-            },
-            Route {
-                prefix: "/scope".into(),
-                target: DEFAULT_DIRT.into(),
+                pattern: r"^/([sngbcdpu]_|notify|status|sync|cmd|dumpOSC|clearSched|error|quit)".into(),
+                target: DEFAULT_SCSYNTH.into(),
             },
         ],
         session_ttl_seconds: None,
@@ -207,18 +221,14 @@ mod tests {
     #[test]
     fn starter_serializes_to_clean_json() {
         let body = serde_json::to_string_pretty(starter()).unwrap();
-        // Should have port, scsynth, and the three SuperDirt-process
-        // routes (`/dirt` from Phase 26, `/clock` from Phase 30,
-        // `/scope` from Phase 31 — all three OSCdef responders live
-        // in scripts/sc-app-superdirt-startup.scd so first-launch
-        // GUI / tauri-dev sessions route correctly without manual
-        // config editing). log_dir is None and serializes-skipped.
         assert!(body.contains("\"port\": 3000"));
         assert!(body.contains("\"scsynth\": \"127.0.0.1:57110\""));
-        assert!(body.contains("\"prefix\": \"/dirt\""));
-        assert!(body.contains("\"prefix\": \"/clock\""));
-        assert!(body.contains("\"prefix\": \"/scope\""));
+        // Phase 37 starter routes: sclang prefixes + scsynth
+        // command surface. Both regexes, no implicit default.
+        assert!(body.contains(r"^/(dirt|clock|scope)(/|$)"));
+        assert!(body.contains(r"^/([sngbcdpu]_|notify|status|sync|cmd|dumpOSC|clearSched|error|quit)"));
         assert!(body.contains("\"target\": \"127.0.0.1:57120\""));
+        assert!(body.contains("\"target\": \"127.0.0.1:57110\""));
         assert!(!body.contains("log_dir"));
     }
 
@@ -229,7 +239,7 @@ mod tests {
             scsynth: Some("127.0.0.1:57110".into()),
             log_dir: Some("./logs".into()),
             routes: vec![Route {
-                prefix: "/dirt".into(),
+                pattern: r"^/dirt(/|$)".into(),
                 target: "127.0.0.1:57120".into(),
             }],
             session_ttl_seconds: Some(900),
@@ -238,6 +248,27 @@ mod tests {
         let back: Config = serde_json::from_str(&json).unwrap();
         assert_eq!(back.port, Some(3000));
         assert_eq!(back.routes.len(), 1);
-        assert_eq!(back.routes[0].prefix, "/dirt");
+        assert_eq!(back.routes[0].pattern, r"^/dirt(/|$)");
+    }
+
+    #[test]
+    fn pre_phase_37_prefix_field_rejected_by_deny_unknown_fields() {
+        // A pre-Phase-37 config with `prefix` instead of `pattern`
+        // should fail to deserialize. `deny_unknown_fields` on the
+        // Route struct surfaces this loudly; the user gets an error
+        // pointing at the offending field name.
+        let json = r#"{
+            "routes": [{ "prefix": "/dirt", "target": "127.0.0.1:57120" }]
+        }"#;
+        let result: Result<Config, _> = serde_json::from_str(json);
+        assert!(
+            result.is_err(),
+            "expected pre-Phase-37 prefix field to be rejected"
+        );
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("prefix") || err_msg.contains("unknown field"),
+            "error should reference the legacy prefix field: {err_msg}"
+        );
     }
 }

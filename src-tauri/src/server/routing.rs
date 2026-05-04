@@ -1,15 +1,13 @@
-//! OSC address-prefix routing.
+//! OSC address-regex routing.
 //!
 //! [`RoutingTable`] is built once at boot from
-//! [`crate::config::Config::routes`] and the resolved default
-//! `scsynth` address. The bridge clones it per-WS, optionally
-//! overriding the default with the connection's `?scsynth=` query
-//! param, then opens one UDP socket per unique target.
+//! [`crate::config::Config::routes`]. Each route's regex is compiled
+//! at build time — a malformed pattern is a startup error.
 //!
-//! Routes are walked in user order — first `starts_with` match
-//! wins, no auto-sort. If multiple prefixes overlap (e.g. `/dirt`
-//! and `/dirt/play`), the user must list the more specific one
-//! first.
+//! Routes are walked in user order — first regex match wins. There
+//! is **no implicit default** (Phase 37 retired the catch-all). If
+//! a packet's address matches no route AND isn't claimed by a
+//! middleware, the bridge drops it with a `warn!` log.
 //!
 //! [`peek_osc_address`] is the cheap address extractor used per
 //! packet on the WS→UDP hot path. It walks `#bundle` envelopes to
@@ -21,79 +19,71 @@ use std::collections::HashSet;
 use std::net::SocketAddr;
 
 use anyhow::{anyhow, Result};
+use regex::Regex;
 use tokio::net::lookup_host;
 
 use crate::config::Route;
 
 #[derive(Debug, Clone)]
 pub struct RoutingTable {
-    /// User's order; first prefix-match wins.
-    routes: Vec<(String, SocketAddr)>,
-    /// Catch-all when no route matches.
-    default: SocketAddr,
+    /// User's order; first regex match wins. No implicit default
+    /// (Phase 37).
+    routes: Vec<(Regex, SocketAddr)>,
 }
 
 impl RoutingTable {
-    /// Build a table from the resolved default + config-side route
-    /// entries. Each `Route::target` is resolved (IP literal or
-    /// hostname) at boot via `tokio::net::lookup_host`. Empty
-    /// prefixes are rejected because they would shadow the default.
-    pub async fn build(default: SocketAddr, routes: &[Route]) -> Result<Self> {
-        let mut resolved: Vec<(String, SocketAddr)> = Vec::with_capacity(routes.len());
+    /// Build a table from the config-side route entries. Each
+    /// `Route::pattern` is compiled with the `regex` crate; each
+    /// `Route::target` is resolved (IP literal or hostname) at
+    /// boot via `tokio::net::lookup_host`. A malformed regex or
+    /// unresolvable target is a startup error.
+    pub async fn build(routes: &[Route]) -> Result<Self> {
+        let mut resolved: Vec<(Regex, SocketAddr)> = Vec::with_capacity(routes.len());
         for route in routes {
-            if route.prefix.is_empty() {
+            if route.pattern.is_empty() {
                 return Err(anyhow!(
-                    "config.routes: empty prefix is not allowed (would shadow the default)"
+                    "config.routes: empty pattern is not allowed (would match every address)"
                 ));
             }
-            let target = resolve_target(&route.target).await.map_err(|e| {
+            let regex = Regex::new(&route.pattern).map_err(|e| {
                 anyhow!(
-                    "config.routes: failed to resolve target {:?} for prefix {:?}: {e}",
-                    route.target,
-                    route.prefix
+                    "config.routes: invalid regex {:?} for target {:?}: {e}",
+                    route.pattern,
+                    route.target
                 )
             })?;
-            resolved.push((route.prefix.clone(), target));
+            let target = resolve_target(&route.target).await.map_err(|e| {
+                anyhow!(
+                    "config.routes: failed to resolve target {:?} for pattern {:?}: {e}",
+                    route.target,
+                    route.pattern
+                )
+            })?;
+            resolved.push((regex, target));
         }
-        Ok(Self {
-            routes: resolved,
-            default,
-        })
+        Ok(Self { routes: resolved })
     }
 
-    /// Pick the target for an OSC address. First user-order
-    /// `starts_with` match wins; otherwise fall back to default.
-    pub fn route_for(&self, address: &str) -> SocketAddr {
-        for (prefix, target) in &self.routes {
-            if address.starts_with(prefix.as_str()) {
-                return *target;
+    /// Pick the target for an OSC address. First user-order regex
+    /// match wins; returns `None` if no route matches. Caller
+    /// (the dispatcher) handles the no-match case (drop + warn).
+    pub fn route_for(&self, address: &str) -> Option<SocketAddr> {
+        for (regex, target) in &self.routes {
+            if regex.is_match(address) {
+                return Some(*target);
             }
         }
-        self.default
+        None
     }
 
-    /// Default route target. Used by the bridge to attach Phase 22
-    /// snoop / cleanup logic — those are scsynth-specific concerns.
-    pub fn default_target(&self) -> SocketAddr {
-        self.default
-    }
-
-    /// Replace the default route's target. Used by the WS handler
-    /// to honour `?scsynth=` per-connection overrides without
-    /// mutating the global table.
-    pub fn set_default(&mut self, target: SocketAddr) {
-        self.default = target;
-    }
-
-    /// Distinct UDP target addresses (default + each route's
-    /// target, deduplicated). The bridge binds one ephemeral UDP
-    /// socket per entry.
+    /// Distinct UDP target addresses (each route's target,
+    /// deduplicated). The bridge binds one ephemeral UDP socket
+    /// per entry plus one for the scsynth handshake address (which
+    /// `Session::create` opens explicitly outside the routes
+    /// table).
     pub fn unique_targets(&self) -> Vec<SocketAddr> {
         let mut seen: HashSet<SocketAddr> = HashSet::new();
         let mut out: Vec<SocketAddr> = Vec::new();
-        if seen.insert(self.default) {
-            out.push(self.default);
-        }
         for (_, target) in &self.routes {
             if seen.insert(*target) {
                 out.push(*target);
@@ -105,13 +95,13 @@ impl RoutingTable {
     /// Pretty-print for boot-time logging (no Debug noise).
     pub fn describe(&self) -> String {
         if self.routes.is_empty() {
-            return format!("default → {}", self.default);
+            return "(no routes)".to_string();
         }
         let mut s = String::new();
-        for (prefix, target) in &self.routes {
-            s.push_str(&format!("    {prefix} → {target}\n"));
+        for (regex, target) in &self.routes {
+            s.push_str(&format!("    {} → {target}\n", regex.as_str()));
         }
-        s.push_str(&format!("    (default) → {}", self.default));
+        s.push_str("    (no implicit default — orphan addresses drop+warn)");
         s
     }
 }
@@ -130,7 +120,7 @@ async fn resolve_target(s: &str) -> Result<SocketAddr> {
 /// Peek the OSC address from a UDP payload without full decode.
 /// For a `#bundle`, walks the envelope to the first inner message
 /// and returns its address. Returns `None` on parse failure or
-/// empty address — caller should fall back to the default route.
+/// empty address — caller drops the packet with a warning.
 ///
 /// The hot path: called per WS→UDP packet, including `/b_getn` at
 /// 48+ Hz. Allocation-free; just byte arithmetic + a UTF-8 check.
@@ -162,6 +152,14 @@ pub fn peek_osc_address(bytes: &[u8]) -> Option<&str> {
 mod tests {
     use super::*;
 
+    fn re(s: &str) -> Regex {
+        Regex::new(s).unwrap()
+    }
+
+    fn addr(s: &str) -> SocketAddr {
+        s.parse().unwrap()
+    }
+
     #[test]
     fn peek_address_bare_message() {
         // /done\0\0\0  (8 bytes, 4-byte aligned)
@@ -187,47 +185,105 @@ mod tests {
     }
 
     #[test]
-    fn route_for_matches_prefix() {
+    fn route_for_basic_match() {
         let table = RoutingTable {
-            routes: vec![
-                ("/dirt".into(), "127.0.0.1:57120".parse().unwrap()),
-            ],
-            default: "127.0.0.1:57110".parse().unwrap(),
+            routes: vec![(re(r"^/dirt(/|$)"), addr("127.0.0.1:57120"))],
         };
-        assert_eq!(table.route_for("/dirt/play"), "127.0.0.1:57120".parse().unwrap());
-        assert_eq!(table.route_for("/s_new"), "127.0.0.1:57110".parse().unwrap());
+        assert_eq!(table.route_for("/dirt/play"), Some(addr("127.0.0.1:57120")));
+        assert_eq!(table.route_for("/dirt"), Some(addr("127.0.0.1:57120")));
+    }
+
+    #[test]
+    fn route_for_no_match_returns_none() {
+        let table = RoutingTable {
+            routes: vec![(re(r"^/dirt(/|$)"), addr("127.0.0.1:57120"))],
+        };
+        // Phase 37: no implicit default. /s_new doesn't match the
+        // /dirt pattern, so no route.
+        assert_eq!(table.route_for("/s_new"), None);
     }
 
     #[test]
     fn route_first_match_wins() {
-        // /dirt/play comes before /dirt — more specific should be
-        // ordered first by the user.
+        // More-specific pattern listed first; less-specific second.
         let table = RoutingTable {
             routes: vec![
-                ("/dirt/play".into(), "127.0.0.1:1".parse().unwrap()),
-                ("/dirt".into(), "127.0.0.1:2".parse().unwrap()),
+                (re(r"^/dirt/play$"), addr("127.0.0.1:1")),
+                (re(r"^/dirt(/|$)"), addr("127.0.0.1:2")),
             ],
-            default: "127.0.0.1:3".parse().unwrap(),
         };
-        assert_eq!(table.route_for("/dirt/play"), "127.0.0.1:1".parse().unwrap());
-        assert_eq!(table.route_for("/dirt/hello"), "127.0.0.1:2".parse().unwrap());
-        assert_eq!(table.route_for("/g_new"), "127.0.0.1:3".parse().unwrap());
+        assert_eq!(table.route_for("/dirt/play"), Some(addr("127.0.0.1:1")));
+        assert_eq!(table.route_for("/dirt/hello"), Some(addr("127.0.0.1:2")));
+        assert_eq!(table.route_for("/g_new"), None);
+    }
+
+    #[test]
+    fn route_anchored_prefix_doesnt_overmatch() {
+        // The starter sclang regex must NOT match /dirts/something
+        // (a non-/dirt address that happens to start with /dirt).
+        // The `(/|$)` anchor on /dirt prevents this.
+        let table = RoutingTable {
+            routes: vec![(re(r"^/(dirt|clock|scope)(/|$)"), addr("127.0.0.1:57120"))],
+        };
+        assert_eq!(table.route_for("/dirt/play"), Some(addr("127.0.0.1:57120")));
+        assert_eq!(table.route_for("/dirt"), Some(addr("127.0.0.1:57120")));
+        assert_eq!(table.route_for("/dirts/extra"), None);
+        assert_eq!(table.route_for("/scope/allocate"), Some(addr("127.0.0.1:57120")));
+    }
+
+    #[test]
+    fn route_scsynth_command_surface_matches() {
+        // The starter scsynth regex covers the /[sngbcdpu]_*
+        // command families plus the named global commands.
+        // Reply-side addresses (`/done`, `/fail`, `/tr`,
+        // `/status.reply`, `/n_go`, `/n_end`, …) come INBOUND
+        // from scsynth and are never routed outbound, so it's
+        // fine that some of them happen to also match the
+        // outbound regex (`/n_go` ⊂ `/n_` family). The bridge
+        // never sends them.
+        let table = RoutingTable {
+            routes: vec![(
+                re(r"^/([sngbcdpu]_|notify|status|sync|cmd|dumpOSC|clearSched|error|quit)"),
+                addr("127.0.0.1:57110"),
+            )],
+        };
+        for addr_str in [
+            "/s_new", "/n_free", "/g_new", "/b_alloc", "/b_getn", "/c_set",
+            "/d_recv", "/p_new", "/u_cmd", "/notify", "/status", "/sync",
+            "/cmd", "/dumpOSC", "/clearSched", "/error", "/quit",
+        ] {
+            assert!(
+                table.route_for(addr_str).is_some(),
+                "expected scsynth regex to match {addr_str}"
+            );
+        }
+        // Addresses that DON'T match: /done, /fail, /tr (these
+        // don't share a prefix with any command-family letter).
+        // Plus addresses outside the scsynth surface entirely.
+        assert_eq!(table.route_for("/done"), None);
+        assert_eq!(table.route_for("/fail"), None);
+        assert_eq!(table.route_for("/dirt/play"), None);
+        assert_eq!(table.route_for("/scope/subscribe"), None);
+        // Reply addresses that DO accidentally match the regex
+        // (`/status.reply` shares the `/status` prefix; `/n_go`
+        // shares `/n_`). Harmless in practice — the worker never
+        // sends these outbound.
+        assert!(table.route_for("/status.reply").is_some());
+        assert!(table.route_for("/n_go").is_some());
     }
 
     #[test]
     fn unique_targets_deduplicates() {
         let table = RoutingTable {
             routes: vec![
-                ("/a".into(), "127.0.0.1:1".parse().unwrap()),
-                ("/b".into(), "127.0.0.1:1".parse().unwrap()), // same as /a
-                ("/c".into(), "127.0.0.1:2".parse().unwrap()),
+                (re(r"^/a"), addr("127.0.0.1:1")),
+                (re(r"^/b"), addr("127.0.0.1:1")), // same as /a
+                (re(r"^/c"), addr("127.0.0.1:2")),
             ],
-            default: "127.0.0.1:3".parse().unwrap(),
         };
         let targets = table.unique_targets();
-        assert_eq!(targets.len(), 3);
-        assert!(targets.contains(&"127.0.0.1:3".parse().unwrap()));
-        assert!(targets.contains(&"127.0.0.1:1".parse().unwrap()));
-        assert!(targets.contains(&"127.0.0.1:2".parse().unwrap()));
+        assert_eq!(targets.len(), 2);
+        assert!(targets.contains(&addr("127.0.0.1:1")));
+        assert!(targets.contains(&addr("127.0.0.1:2")));
     }
 }
