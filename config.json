@@ -4,16 +4,12 @@
   "log_dir": "./logs",
   "routes": [
     {
-      "prefix": "/dirt",
+      "pattern": "^/(dirt|clock|scope)(/|$)",
       "target": "127.0.0.1:57120"
     },
     {
-      "prefix": "/clock",
-      "target": "127.0.0.1:57120"
-    },
-    {
-      "prefix": "/scope",
-      "target": "127.0.0.1:57120"
+      "pattern": "^/([sngbcdpu]_|notify|status|sync|cmd|dumpOSC|clearSched|error|quit)",
+      "target": "127.0.0.1:57110"
     }
   ]
 }
