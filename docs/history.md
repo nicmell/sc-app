@@ -3858,3 +3858,345 @@ Frontend: `yarn tsc --noEmit` clean; `yarn test` 17/17;
   but constructed unconditionally — cheap. SHM mode never
   touches it.
 
+## Phase 37 — Regex Routing + Address-Keyed Middlewares
+
+**Goal.** Replace the prefix-based routing table + implicit
+catch-all with a regex-based routing table that explicitly
+enumerates scsynth's command surface. Add an address-keyed
+middleware dispatch layer that runs *before* routing on both
+directions (WS → bridge → UDP and UDP → bridge → WS). Middlewares
+can claim addresses that aren't in the routes table (e.g.,
+`/scope/subscribe`) or observe addresses that pass through
+(e.g., side-effect on `/clock/tick`). Sets the infrastructure
+for Phase 38, where the scope wire format goes pure OSC.
+
+Wire format on `/ws` is unchanged in 37 — the binary
+0x01/0x02/0x03 scope frames still flow byte-for-byte identically
+to pre-37. The change is internal architecture only.
+
+### What shipped
+
+Three sub-phases (`d70df46`, `ad500bd`, `067f25c`); plan + close
+commits bracket as usual.
+
+#### Routing config
+
+`Route { prefix: String }` → `Route { pattern: String }` in
+`src-tauri/src/config.rs`. The `pattern` is compiled with the
+`regex` crate at `RoutingTable::build` time; a malformed pattern
+is a startup error.
+
+The starter config seeds **two regex entries**, no `.*`
+catch-all:
+
+```jsonc
+{
+  "routes": [
+    { "pattern": "^/(dirt|clock|scope)(/|$)", "target": "127.0.0.1:57120" },
+    { "pattern": "^/([sngbcdpu]_|notify|status|sync|cmd|dumpOSC|clearSched|error|quit)",
+      "target": "127.0.0.1:57110" }
+  ]
+}
+```
+
+The first entry routes the SuperDirt-process responders
+(`/dirt`, `/clock`, `/scope` subtrees, anchored with `(/|$)` to
+avoid over-matching `/dirts/extra`). The second covers scsynth's
+command surface — the `[sngbcdpu]_` alternation matches the
+`/s_*`, `/n_*`, `/g_*`, `/b_*`, `/c_*`, `/d_*`, `/p_*`, `/u_*`
+families plus the named global commands (`/notify`, `/status`,
+`/sync`, etc.).
+
+If a packet's address matches no `routes` entry **and** no
+middleware claims it, the bridge drops it with a `warn!` log
+naming the address — no implicit fallback to scsynth. Pre-Phase-37
+configs with the legacy `prefix` field fail loudly at load via
+`deny_unknown_fields`; the user gets an explicit error, not a
+silent migration.
+
+`RoutingTable::route_for` returns `Option<SocketAddr>` — the
+no-match case is now in the type. `default_target()` and
+`set_default()` are gone.
+
+#### Middleware dispatch
+
+Two registries — outbound and inbound — each
+`Vec<(Regex, Middleware)>` walked top-down. Dispatch order on
+each direction:
+
+```
+Outbound (WS → bridge → UDP):
+  1. peek_osc_address(payload)
+  2. for (regex, mw) in outbound_middlewares:
+       if regex.matches(address): outcome = mw.handle(ctx, ...)
+         Consumed              → stop
+         ConsumedAndSend(b)    → route `b`; stop
+         PassThrough           → break, fall through
+  3. routes.route_for(address):
+       Some(target) → UDP send
+       None         → drop + warn
+
+Inbound (UDP → bridge → WS):
+  1. peek_osc_address(payload)
+  2. for (regex, mw) in inbound_middlewares: ...same shape...
+  3. ws_sink.send(payload)  (default: forward as-is)
+```
+
+`MiddlewareOutcome::PassThrough` IS the "call next()" semantics —
+the user's Express-style "callback accepting a next function"
+intent is honored via the return-value enum, dodging async + dyn
++ mutable-borrow gymnastics.
+
+The `MiddlewareRegistry` is generic over the variant enum
+(`OutboundMiddleware` / `InboundMiddleware`). The dispatcher's
+`invoke_*` functions match on the variant and call the body
+directly — function pointers, no boxing.
+
+`WsCtx<'_>` is the per-call context. Built by the dispatcher
+from already-acquired locks/borrows; the handler holds it for
+one packet only. Fields:
+- `session: &Arc<Session>`
+- `scope: &mut ScopeContext` (per-WS, locked at the dispatch site)
+- `direction: Direction` (Outbound | Inbound; currently unused
+  by handlers, kept for future)
+- `source_target: Option<SocketAddr>` (inbound only)
+- `ws_extras: Vec<Vec<u8>>` — side-channel: bytes the dispatcher
+  should send to the WS sink AFTER the middleware returns. Used
+  by middlewares that emit multiple frames per call (e.g.
+  one-chunk-per-active-sub on `/clock/tick`).
+- `udp_extras: Vec<(SocketAddr, Vec<u8>)>` — side-channel: UDP
+  packets to send AFTER the middleware returns. Used by
+  middlewares that fire UDP as a side effect (e.g. `/b_getn`
+  issuance on `/clock/tick`).
+
+The dispatcher drains both side-channels post-dispatch. The
+broadcast forwarder skips the lock acquisition entirely when
+`registry.iter_matching(address).next().is_none()` — most
+addresses (e.g. `/done`, `/dirt/listSamples.reply`) don't match
+any middleware regex and pass through without touching the scope
+context.
+
+#### Scope middleware bodies (37c)
+
+Pre-37 the scope dispatch logic lived inline in
+`server/ws_bridge.rs` (~440 lines: `ScopeContext`,
+`ShmScopeSubscription`, `handle_scope_subscribe`,
+`handle_scope_unsubscribe`, `forward_default_route`,
+`try_intercept_bsetn`, `issue_bgetn_for_subs`,
+`poll_scope_chunks`, `encode_chunk`). Phase 37c relocates the
+bodies into `src-tauri/src/scope/middleware.rs`.
+
+| Middleware variant | Direction | Address regex | Behavior |
+|---|---|---|---|
+| `ScopeChunkEmitOnTick` | inbound | `^/clock/tick$` | SHM mode only. Polls SHM for active subs; pushes 0x03 chunk frames to `ws_extras`. Returns `PassThrough` so the tick still reaches the WS. |
+| `ScopeBgetnIssueOnTick` | inbound | `^/clock/tick$` | OSC mode only. Pushes `/b_getn` bundles to `udp_extras`. Returns `PassThrough`. |
+| `ScopeInterceptBsetn` | inbound | `^/b_setn` | OSC mode only. Bufnum match → `ConsumedAndSend(chunk_bytes)`. No match → `PassThrough` (forwards as a normal OSC reply). Stale offsets → `Consumed` (drop). |
+
+The 0x01 / 0x02 binary subscribe/unsubscribe frames bypass the
+OSC-address-keyed middleware system (they're not OSC). The recv
+loop's first-byte branch calls into
+`scope::middleware::ws_scope_{subscribe,unsubscribe}_binary`
+directly — same handler bodies that Phase 38 will dispatch to
+via outbound middleware once they become OSC messages.
+
+`OutboundMiddleware` enum stays at the `_Phantom` placeholder in
+37c. Phase 38 adds `Scope` variants for `/scope/subscribe` and
+`/scope/unsubscribe`.
+
+#### scsynth_addr plumbing
+
+`Session::create` no longer derives the handshake socket from
+`routes.default_target()` (the routing table has no default).
+Instead it takes `scsynth_addr: SocketAddr` as a parameter.
+`AppState` gains a `scsynth_addr` field; `serve_on` /
+`run_bridge` plumb it through; `cli/bridge.rs` and `cli/gui.rs`
+read from `cfg.scsynth` (or the `SC_SCSYNTH_ADDR` env / built-in
+default). The address gets added to `unique_targets` if not
+already there so a UDP socket exists for the handshake.
+
+`/api/scope/{probe,layout,debug,headers}` previously read the
+SHM port from `state.routes.default_target().port()`; now they
+read from `state.scsynth_addr.port()`.
+
+#### ws_bridge.rs shape
+
+From ~800 lines down to ~370. The remaining content is pure WS
+plumbing:
+- `handle_ws_session`: split + lock the WS, build the per-WS
+  middleware registries (calling `scope::middleware::
+  register_inbound_middlewares` for the scope-mode-appropriate
+  inbound entries), spawn one forwarder per broadcast target,
+  run the recv loop.
+- `handle_outbound_osc`: peek address, dispatch outbound (skips
+  the lock if registry is empty), default-route via
+  `routes.route_for`, send UDP. Orphan addresses drop+warn.
+- `forward_with_dispatch` / `forward_one_payload`: per-target
+  broadcast forwarder. Dispatches inbound (locks only if a
+  matching middleware exists), drains `ws_extras` to the WS
+  sink, drains `udp_extras` to the right per-target socket.
+
+The pre-37 split between `forward_default_route` (scsynth
+forwarder, peeked for `/clock/tick` and `/b_setn`) and
+`forward_broadcast` (everything else, pass-through) collapses
+into the unified `forward_with_dispatch` — every forwarder runs
+the dispatcher uniformly.
+
+#### Tests
+
+- `routing::tests` rewritten for regex semantics. 7 tests:
+  - `peek_address_bare_message`, `peek_address_in_bundle`,
+    `peek_address_truncated_bundle_returns_none` (carried over).
+  - `route_for_basic_match`, `route_for_no_match_returns_none`,
+    `route_first_match_wins`,
+    `route_anchored_prefix_doesnt_overmatch` (regex-specific).
+  - `route_scsynth_command_surface_matches` (locks in the
+    starter scsynth regex's coverage).
+  - `unique_targets_deduplicates`.
+- `config::tests` gains
+  `pre_phase_37_prefix_field_rejected_by_deny_unknown_fields`.
+- `middleware::tests`: 4 new tests for the registry —
+  `iter_matching_first_match_wins`, `no_match_yields_empty`,
+  `empty_is_empty`, `panics_on_invalid_regex`.
+- The 3 binary chunk-frame layout tests
+  (`chunk_frame_layout`, `chunk_frame_is_gap_flag`,
+  `first_byte_dispatch_unambiguous_with_osc`) moved from
+  `server::ws_bridge::tests` to `scope::middleware::tests`
+  alongside the relocated `encode_chunk`.
+
+`cargo test --lib`: 43/43 (was 35; +8 from the new routing /
+middleware / config tests).
+
+### Decisions worth carrying forward
+
+- **Regex over prefix-trie for routing.** The user explicitly
+  asked for regex; the trade-off (more flexibility, slightly
+  higher per-packet cost) was acceptable. Compile once at
+  `build()`; per-packet cost is `Regex::is_match` per entry
+  until a hit, ~5 routes max in practice. Negligible.
+- **No implicit catch-all.** Pre-37 a stale starter config
+  routed `/dirt/hello` to scsynth and surfaced as `/fail` —
+  silent failure mode. Now an unmatched address is loud
+  (`warn!`). Forces the routes table to be complete; loud is
+  better than silent.
+- **Middleware-first, routing-second.** This shape lets
+  middlewares claim addresses that don't correspond to any
+  routing target (e.g. `/scope/subscribe` is consumed by the
+  bridge, not forwarded anywhere). Pre-37 we'd have had to add
+  `/scope/subscribe` to the routes table pointing at... what?
+  Middleware-first dodges the question.
+- **Side-channel `ws_extras` / `udp_extras` on `WsCtx`.**
+  `MiddlewareOutcome::ConsumedAndSend(Vec<u8>)` handles "swap
+  one byte buffer for another". The on-tick middlewares need
+  "emit N frames as a side effect, also keep the original
+  flowing" — that's where the side-channels come in. The
+  dispatcher drains them post-call.
+- **Lock-skip when registry is empty.** The forwarder's hot
+  path calls `iter_matching(address).next().is_some()` BEFORE
+  acquiring the scope lock. Most inbound payloads don't match
+  any middleware; skipping the lock keeps the per-packet cost
+  at one regex sweep + WS send.
+- **Enum dispatch over `dyn Trait`.** Five middlewares is a
+  fixed in-tree set. Enum + match avoids `Pin<Box<dyn Future>>`
+  on the hot path. If a third-party plugin surface ever
+  emerges, the enum can be promoted to a trait.
+- **`Scope(InboundScopeMiddleware)` enum nesting.** The server
+  middleware module (`server/middleware.rs`) is pure dispatch
+  infrastructure; it doesn't know about scope concerns. The
+  scope module (`scope/middleware.rs`) owns
+  `InboundScopeMiddleware` and the handler bodies; the bridge
+  hooks them in via the `InboundMiddleware::Scope(...)`
+  wrapper. Future modules adding their own middlewares would
+  add `InboundMiddleware::OtherDomain(...)` variants
+  similarly.
+- **Bypassing middleware for the binary 0x01/0x02 frames.**
+  These don't have OSC addresses, so the address-keyed
+  registry can't match them. The recv loop's first-byte
+  branch calls into the scope module's binary-decode entry
+  points directly — `ws_scope_{subscribe,unsubscribe}_binary`.
+  Phase 38 will turn the same handler bodies into outbound
+  middlewares once the wire format flips to OSC.
+
+### Gotchas
+
+- **Routes table now has no implicit default.** Pre-37 the
+  `scsynth` config field was both the handshake target AND
+  the implicit catch-all route. Phase 37 split these: the
+  field stays as the handshake hint (read by `Session::create`
+  for the `/notify` + `/status` round-trips), but routing is
+  driven by the explicit regex table. A starter config from
+  before Phase 37 (`prefix` field shape) fails loudly at load.
+  Migration: delete the file to regenerate, or rewrite
+  `prefix` → `pattern` with the appropriate regex shape.
+- **Middleware variants are scope-mode-conditional.**
+  `register_inbound_middlewares(reg, scope_mode)` registers
+  different middlewares per mode: SHM mode gets only
+  `ChunkEmitOnTick`; OSC mode gets `BgetnIssueOnTick` +
+  `InterceptBsetn`. The variant enums *contain* both modes'
+  variants, but the registry only ever holds the right ones
+  for the session's mode. Mid-session mode change isn't
+  supported (Session::scope_mode is frozen at create — Phase
+  36 invariant).
+- **Lock acquisition ordering.** The recv loop and the
+  broadcast forwarder both lock `scope_ctx` (per-WS). Within
+  one task the lock is held for the duration of the dispatch
+  call; across tasks they serialize on the mutex. Per-packet
+  contention is low (one task locks → one task waits → one
+  task locks). Don't hold the lock across an `.await` that
+  could take more than a few µs.
+- **`InboundScopeMiddleware::ChunkEmitOnTick` + `BgetnIssueOnTick`
+  share the same address regex (`^/clock/tick$`).** They're
+  distinguished by which one gets registered (mode-conditional).
+  If a future refactor accidentally registers BOTH for the
+  same WS, the dispatcher would invoke the first one, get
+  `PassThrough`, then invoke the second one, also get
+  `PassThrough`, then forward — both side-effects firing once.
+  Both are idempotent under `PassThrough` so this would silently
+  work but waste cycles. Keep `register_inbound_middlewares`
+  exclusive in the match arms.
+- **`/clock/tick` peek now matches a regex (`^/clock/tick$`)
+  instead of a string compare.** The regex is anchored, so
+  `/clock/ticks` (hypothetical) wouldn't match. The cost is
+  one `Regex::is_match` per inbound payload — same order of
+  magnitude as the pre-37 `address == Some("/clock/tick")`
+  check. Don't worry about it.
+- **`udp_extras` flushes via `session.target_sockets[target]`.**
+  The middleware passes `(SocketAddr, Vec<u8>)` pairs. If the
+  target isn't in `unique_targets`, `target_sockets[target]`
+  returns `None` and the bytes are dropped with a warn. The
+  scope middleware uses `session.scsynth_addr` for `/b_getn`
+  bundles — that address is guaranteed present (Session::create
+  adds it explicitly).
+- **Outbound dispatch returns PassThrough always in 37c.** The
+  outbound registry has no variants populated. The dispatcher
+  early-exits via `is_empty()` check — zero overhead vs the
+  pre-37 path. Phase 38 will populate the variants when scope
+  ops become OSC; the dispatcher's lock-skip fast path stays
+  intact (most outbound packets won't match the new regexes
+  either).
+- **`session` module visibility.** Promoted from `mod session`
+  to `pub(crate) mod session` so `scope::middleware` can reach
+  the `Session` and `ScopeShm` types. Crate-scoped only;
+  external crates still don't see the type.
+- **`axum::middleware` import collides with our new module.**
+  In `server/mod.rs` the import was `use axum::middleware;`,
+  used as `middleware::from_fn`. Renamed to
+  `use axum::middleware::from_fn as axum_middleware_from_fn;`
+  so our new `pub(crate) mod middleware;` doesn't shadow.
+
+### Phase 38 preview (not yet drafted)
+
+Phase 38 will:
+- Replace `encode_chunk` (binary 0x03) with `encode_scope_chunk`
+  (rosc-encoded `/scope/chunk` OSC message; blob arg, big-
+  endian floats).
+- Flip outbound regexes from binary peek to `^/scope/subscribe$`
+  / `^/scope/unsubscribe$`. Add `OutboundMiddleware::Scope(...)`
+  variants. Drop the first-byte peek in `ws_bridge.rs` recv
+  loop; every WS message becomes pure OSC.
+- Drop `scopeWire.ts` on the worker; add `parseScopeChunkReply` +
+  builders to `packages/server-commands/src/commands/scope.ts`.
+- Replace the worker's `handleInboundBytes` first-byte peek
+  with a regular OSC reply pump entry for `/scope/chunk`.
+
+
+
