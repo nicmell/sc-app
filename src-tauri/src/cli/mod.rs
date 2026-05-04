@@ -116,11 +116,16 @@ pub fn run() {
                 .unwrap_or_else(|| DEFAULT_SCSYNTH.to_string());
             let scsynth = parse_scsynth_or_die(&scsynth_str);
             // Phase 39b: optional sclang address for the bootstrap
-            // round-trip. Default starter config seeds it; if a
-            // user explicitly omits it, we run without sclang
-            // metadata (clock/scope/sequencer features may not
-            // work).
+            // round-trip. Default starter config seeds it.
             let sclang = cfg.sclang.as_deref().map(parse_scsynth_or_die);
+            // Phase 39d: clock chunkSize. Pre-39d this lived in
+            // sclang's SC_APP_CLOCK_CHUNK_SIZE env var; Phase 39d
+            // hoists it to bridge config.
+            let clock_chunk_size = std::env::var("SC_APP_CLOCK_CHUNK_SIZE")
+                .ok()
+                .and_then(|s| s.parse::<u32>().ok())
+                .or(cfg.clock_chunk_size)
+                .unwrap_or(crate::config::DEFAULT_CLOCK_CHUNK_SIZE);
             let log_dir = log_dir.or(cfg.log_dir);
             let routes = cfg.routes;
             let session_ttl = Duration::from_secs(
@@ -128,7 +133,15 @@ pub fn run() {
             );
 
             bridge::run_blocking(
-                port, scsynth, sclang, routes, dist, log_dir, session_ttl, no_shm,
+                port,
+                scsynth,
+                sclang,
+                clock_chunk_size,
+                routes,
+                dist,
+                log_dir,
+                session_ttl,
+                no_shm,
             );
         }
     }

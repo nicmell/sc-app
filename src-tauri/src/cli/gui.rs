@@ -97,6 +97,14 @@ pub fn run() {
                         .map_err(|e| format!("invalid sclang {s:?}: {e}"))
                 })
                 .transpose()?;
+            // Phase 39d: clock chunkSize from config (env override
+            // for back-compat with pre-39d SC_APP_CLOCK_CHUNK_SIZE
+            // deployments).
+            let clock_chunk_size = std::env::var("SC_APP_CLOCK_CHUNK_SIZE")
+                .ok()
+                .and_then(|s| s.parse::<u32>().ok())
+                .or(cfg.clock_chunk_size)
+                .unwrap_or(crate::config::DEFAULT_CLOCK_CHUNK_SIZE);
 
             let session_ttl = Duration::from_secs(
                 cfg.session_ttl_seconds.unwrap_or(DEFAULT_SESSION_TTL_SECONDS),
@@ -148,6 +156,7 @@ pub fn run() {
                     table,
                     scsynth,
                     sclang,
+                    clock_chunk_size,
                     dist,
                     session_ttl,
                     /* force_osc_mode = */ false,

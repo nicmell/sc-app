@@ -43,7 +43,7 @@ pub mod static_assets;
 pub mod ws_bridge;
 
 pub use routing::RoutingTable;
-use server::{Server, ServerRole};
+use server::{free_bridge_clock, instantiate_bridge_clock, Server, ServerRole};
 use session::{send_bridge_notify_off, SessionStore, SubClientIdAllocator};
 
 use crate::scope::middleware::{BridgeScopeAllocator, DEFAULT_NUM_SCOPE_BUFFERS};
@@ -106,6 +106,7 @@ pub async fn serve_on(
     routes: RoutingTable,
     scsynth_addr: SocketAddr,
     sclang_addr: Option<SocketAddr>,
+    clock_chunk_size: u32,
     dist: Option<PathBuf>,
     session_ttl: Duration,
     force_osc_mode: bool,
@@ -149,6 +150,33 @@ pub async fn serve_on(
         .expect("scsynth Server must be in the map (just inserted)")
         .clone();
     let sclang_server = sclang_addr.and_then(|addr| servers.get(&addr).cloned());
+
+    // Phase 39d: bridge instantiates the \scAppClock synth
+    // BEFORE accepting HTTP/WS, so sessions can rely on the
+    // clock being up. Reads clockBus + clockNodeId from
+    // SclangServer's bootstrap reply; reads sampleRate from
+    // ScsynthServer's /status reply; uses chunkSize from
+    // bridge config. Best-effort: if it fails, log + continue
+    // (sessions will see SessionInfo.clock = None and surface
+    // a clear error in the connect screen).
+    if let Some(sclang) = sclang_server.as_ref() {
+        match instantiate_bridge_clock(&scsynth_server, sclang, clock_chunk_size).await {
+            Ok(()) => {
+                tracing::info!(clock_chunk_size, "bridge clock /s_new succeeded");
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "bridge clock /s_new failed — clock-dependent features disabled \
+                     until the bridge is restarted with sclang reachable"
+                );
+            }
+        }
+    } else {
+        tracing::info!(
+            "no sclang server configured — skipping clock /s_new"
+        );
+    }
 
     // Phase 39c: size the bridge-owned scope-buffer allocator
     // from sclang's bootstrap reply. If sclang wasn't reachable
@@ -212,7 +240,7 @@ pub async fn serve_on(
         .with_state(state.clone());
 
     // Run the HTTP server, then on shutdown drain sessions and
-    // release the bridge's /notify slot.
+    // release the bridge's /notify slot + free the clock synth.
     let serve_result = axum::serve(listener, app).await.context("axum serve error");
 
     tracing::info!("HTTP server stopping; running bridge teardown");
@@ -221,6 +249,15 @@ pub async fn serve_on(
         session
             .cleanup(&state.scsynth_server, &state.sub_client_id_allocator)
             .await;
+    }
+    // Phase 39d: free the clock synth before /notify 0.
+    if let Some(sclang) = state.sclang_server.as_ref() {
+        let clock_node_id = sclang.metadata().await.clock_node_id;
+        if let Some(node_id) = clock_node_id {
+            if let Err(e) = free_bridge_clock(&state.scsynth_server, node_id).await {
+                tracing::warn!(error = %e, "free_bridge_clock failed at shutdown");
+            }
+        }
     }
     if let Err(e) = send_bridge_notify_off(&state.scsynth_server).await {
         tracing::warn!(error = %e, "bridge /notify 0 failed at shutdown");
@@ -236,6 +273,7 @@ pub async fn run_bridge(
     routes: RoutingTable,
     scsynth_addr: SocketAddr,
     sclang_addr: Option<SocketAddr>,
+    clock_chunk_size: u32,
     dist: Option<PathBuf>,
     session_ttl: Duration,
     force_osc_mode: bool,
@@ -247,6 +285,7 @@ pub async fn run_bridge(
         routes,
         scsynth_addr,
         sclang_addr,
+        clock_chunk_size,
         dist,
         session_ttl,
         force_osc_mode,

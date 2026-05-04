@@ -100,9 +100,21 @@ pub struct ServerMetadata {
     pub sample_rate: Option<u32>,
 
     // ── Sclang-side (populated by /sc-app/bootstrap/info) ──
-    /// Phase 39b clock metadata. None if sclang isn't reachable
-    /// at bridge boot OR if the clock SynthDef wasn't installed.
+    /// Phase 39d: full clock metadata, populated by the bridge
+    /// AFTER the clock /s_new succeeds. Sclang's bootstrap reports
+    /// only `clock_bus` + `clock_node_id`; the bridge synthesizes
+    /// the full struct from those + scsynth's sampleRate + bridge
+    /// config's chunkSize. `None` until the post-bootstrap /s_new
+    /// completes; `None` permanently if sclang or scsynth isn't
+    /// reachable.
     pub clock: Option<ClockMetadata>,
+    /// Phase 39d: audio bus index sclang allocated for the clock
+    /// synth. Reported in the bootstrap reply; the bridge uses
+    /// it as a /s_new arg.
+    pub clock_bus: Option<i32>,
+    /// Phase 39d: pinned nodeId for the clock synth (999 by
+    /// convention). Reported in the bootstrap reply.
+    pub clock_node_id: Option<i32>,
     /// Phase 39b scope-buffer pool size (sclang's
     /// `s.scopeBufferAllocator` range, 128).
     pub num_scope_buffers: Option<i32>,
@@ -198,15 +210,17 @@ impl Server {
             ServerRole::Sclang => {
                 match bootstrap_handshake(&socket).await {
                     Ok(parsed) => {
-                        metadata.clock = parsed.clock;
+                        metadata.clock_bus = parsed.clock_bus;
+                        metadata.clock_node_id = parsed.clock_node_id;
                         metadata.num_scope_buffers = parsed.num_scope_buffers;
                         metadata.dirt_samples = parsed.dirt_samples;
                         tracing::info!(
                             target = %target,
-                            clock = ?metadata.clock,
+                            clock_bus = ?metadata.clock_bus,
+                            clock_node_id = ?metadata.clock_node_id,
                             num_scope_buffers = ?metadata.num_scope_buffers,
                             dirt_sample_count = metadata.dirt_samples.len(),
-                            "sclang Server bootstrapped"
+                            "sclang Server bootstrapped (clock /s_new pending)"
                         );
                     }
                     Err(e) => {
@@ -264,6 +278,14 @@ impl Server {
     /// call this to populate `SessionInfo` etc.
     pub async fn metadata(&self) -> tokio::sync::RwLockReadGuard<'_, ServerMetadata> {
         self.metadata.read().await
+    }
+
+    /// Phase 39d: write the synthesized [`ClockMetadata`] after
+    /// the bridge's `/s_new` of `\scAppClock` completes. Called
+    /// by [`instantiate_bridge_clock`].
+    pub async fn set_clock_metadata(&self, clock: ClockMetadata) {
+        let mut m = self.metadata.write().await;
+        m.clock = Some(clock);
     }
 
     /// Lazily open the SHM scope-buffer pool for this scsynth
@@ -390,7 +412,8 @@ async fn status_handshake(sock: &UdpSocket) -> Result<u32> {
 
 #[derive(Debug, Default)]
 struct BootstrapParsed {
-    clock: Option<ClockMetadata>,
+    clock_bus: Option<i32>,
+    clock_node_id: Option<i32>,
     num_scope_buffers: Option<i32>,
     dirt_samples: Vec<DirtSample>,
 }
@@ -479,13 +502,13 @@ fn flatten_packet(pkt: OscPacket) -> Vec<OscMessage> {
 /// Apply kv pairs from `/sc-app/bootstrap/info` to a parsed
 /// metadata struct. Args alternate (string key, primitive
 /// value). Unknown keys are ignored.
+///
+/// Phase 39d: only `clockBus`, `clockNodeId`, and
+/// `numScopeBuffers` are required. `tickRate`/`chunkSize`/
+/// `sampleRate` come from elsewhere (bridge config + scsynth
+/// status); the bridge synthesizes the full ClockMetadata
+/// after /s_new.
 fn apply_info_args(out: &mut BootstrapParsed, args: &[OscType]) {
-    let mut clock_bus: Option<i32> = None;
-    let mut clock_node_id: Option<i32> = None;
-    let mut tick_rate: Option<f64> = None;
-    let mut chunk_size: Option<i32> = None;
-    let mut sample_rate: Option<f64> = None;
-
     let mut iter = args.iter();
     while let Some(key_arg) = iter.next() {
         let OscType::String(key) = key_arg else {
@@ -497,27 +520,17 @@ fn apply_info_args(out: &mut BootstrapParsed, args: &[OscType]) {
             break;
         };
         match key.as_str() {
-            "clockBus" => clock_bus = osc_int(value),
-            "clockNodeId" => clock_node_id = osc_int(value),
-            "tickRate" => tick_rate = osc_float(value),
-            "chunkSize" => chunk_size = osc_int(value),
-            "sampleRate" => sample_rate = osc_float(value),
+            "clockBus" => out.clock_bus = osc_int(value),
+            "clockNodeId" => out.clock_node_id = osc_int(value),
             "numScopeBuffers" => out.num_scope_buffers = osc_int(value),
+            // sclangChunkSizeHint, sampleRate, tickRate, chunkSize:
+            // legacy / informational; ignored. Bridge owns
+            // chunkSize (config) and gets sampleRate from scsynth's
+            // /status reply directly.
             _ => {
-                tracing::debug!(key, "bootstrap info: unknown key");
+                tracing::debug!(key, "bootstrap info: unknown / informational key");
             }
         }
-    }
-    if let (Some(b), Some(n), Some(t), Some(c), Some(s)) =
-        (clock_bus, clock_node_id, tick_rate, chunk_size, sample_rate)
-    {
-        out.clock = Some(ClockMetadata {
-            clock_bus: b,
-            clock_node_id: n,
-            tick_rate: t,
-            chunk_size: c,
-            sample_rate: s,
-        });
     }
 }
 
@@ -552,6 +565,7 @@ fn osc_int(v: &OscType) -> Option<i32> {
     }
 }
 
+#[allow(dead_code)] // future: bootstrap may carry float fields again
 fn osc_float(v: &OscType) -> Option<f64> {
     match v {
         OscType::Float(f) => Some(*f as f64),
@@ -612,6 +626,159 @@ fn parse_status_reply(bytes: &[u8]) -> Option<u32> {
         return None;
     }
     Some(sr.round() as u32)
+}
+
+// ===== Bridge-owned clock /s_new (Phase 39d) =====
+
+/// `/sync` await timeout for the clock /s_new round-trip.
+const CLOCK_SNEW_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Phase 39d: instantiate the `\scAppClock` synth on scsynth.
+/// Reads `clockBus` + `clockNodeId` from the SclangServer's
+/// metadata (populated by the bootstrap reply), reads
+/// `chunkSize` from bridge config, sends `/s_new` wrapped in
+/// `/sync`, and writes the synthesized [`ClockMetadata`] back
+/// onto the SclangServer's metadata cache so SessionInfo sees
+/// the full struct.
+pub async fn instantiate_bridge_clock(
+    scsynth_server: &Arc<Server>,
+    sclang_server: &Arc<Server>,
+    chunk_size: u32,
+) -> Result<()> {
+    let (clock_bus, clock_node_id) = {
+        let m = sclang_server.metadata().await;
+        (
+            m.clock_bus.ok_or_else(|| {
+                anyhow!("sclang bootstrap didn't report clockBus — clock /s_new aborted")
+            })?,
+            m.clock_node_id.ok_or_else(|| {
+                anyhow!("sclang bootstrap didn't report clockNodeId — clock /s_new aborted")
+            })?,
+        )
+    };
+    let sample_rate = {
+        let m = scsynth_server.metadata().await;
+        m.sample_rate.ok_or_else(|| {
+            anyhow!("scsynth handshake didn't report sample rate — clock /s_new aborted")
+        })?
+    };
+
+    // Subscribe to the scsynth broadcast BEFORE sending so we
+    // don't race the reply.
+    let mut rx = scsynth_server.subscribe();
+
+    // Sync id unlikely to collide with anything else (frontend
+    // syncs start at 0; we use a high constant).
+    const CLOCK_SYNC_ID: i32 = 0x5C_A1_C7_0C;
+
+    let bundle = OscPacket::Bundle(rosc::OscBundle {
+        timetag: rosc::OscTime {
+            seconds: 0,
+            fractional: 1,
+        },
+        content: vec![
+            OscPacket::Message(OscMessage {
+                addr: "/s_new".into(),
+                args: vec![
+                    OscType::String("scAppClock".into()),
+                    OscType::Int(clock_node_id),
+                    OscType::Int(0), // addAction = addToHead
+                    OscType::Int(0), // target = root group
+                    OscType::String("clockBus".into()),
+                    OscType::Int(clock_bus),
+                    OscType::String("chunkSize".into()),
+                    OscType::Int(chunk_size as i32),
+                ],
+            }),
+            OscPacket::Message(OscMessage {
+                addr: "/sync".into(),
+                args: vec![OscType::Int(CLOCK_SYNC_ID)],
+            }),
+        ],
+    });
+    let bytes = rosc::encoder::encode(&bundle).context("encode clock /s_new bundle")?;
+    scsynth_server
+        .send(&bytes)
+        .await
+        .context("send clock /s_new bundle")?;
+
+    // Await /synced <id> or /fail /s_new — first one wins.
+    let deadline = tokio::time::Instant::now() + CLOCK_SNEW_TIMEOUT;
+    loop {
+        let remaining = deadline
+            .checked_duration_since(tokio::time::Instant::now())
+            .ok_or_else(|| anyhow!("clock /s_new: /synced never arrived (timeout)"))?;
+        let payload = match timeout(remaining, rx.recv()).await {
+            Ok(Ok(p)) => p,
+            Ok(Err(_lagged_or_closed)) => continue,
+            Err(_) => {
+                anyhow::bail!("clock /s_new: /synced never arrived (timeout)");
+            }
+        };
+        let pkt = rosc::decoder::decode_udp(&payload).ok().map(|x| x.1);
+        if let Some(msg) = pkt.and_then(|p| match p {
+            OscPacket::Message(m) => Some(m),
+            _ => None,
+        }) {
+            if msg.addr == "/synced" {
+                if let Some(OscType::Int(id)) = msg.args.first() {
+                    if *id == CLOCK_SYNC_ID {
+                        break;
+                    }
+                }
+            } else if msg.addr == "/fail"
+                && matches!(msg.args.first(), Some(OscType::String(s)) if s == "/s_new")
+            {
+                anyhow::bail!(
+                    "scsynth refused /s_new scAppClock: {}",
+                    msg.args
+                        .iter()
+                        .skip(1)
+                        .map(|a| format!("{:?}", a))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                );
+            }
+        }
+    }
+
+    // Synthesize + write the full ClockMetadata.
+    let tick_rate = sample_rate as f64 / chunk_size as f64;
+    let metadata = ClockMetadata {
+        clock_bus,
+        clock_node_id,
+        tick_rate,
+        chunk_size: chunk_size as i32,
+        sample_rate: sample_rate as f64,
+    };
+    sclang_server.set_clock_metadata(metadata).await;
+    tracing::info!(
+        clock_bus,
+        clock_node_id,
+        tick_rate,
+        chunk_size,
+        sample_rate,
+        "scAppClock /s_new succeeded"
+    );
+    Ok(())
+}
+
+/// Phase 39d shutdown: free the clock synth.
+pub async fn free_bridge_clock(
+    scsynth_server: &Arc<Server>,
+    clock_node_id: i32,
+) -> Result<()> {
+    let pkt = OscPacket::Message(OscMessage {
+        addr: "/n_free".into(),
+        args: vec![OscType::Int(clock_node_id)],
+    });
+    let bytes = rosc::encoder::encode(&pkt).context("encode /n_free clock")?;
+    scsynth_server
+        .send(&bytes)
+        .await
+        .context("send /n_free clock")?;
+    tracing::info!(clock_node_id, "scAppClock /n_free sent");
+    Ok(())
 }
 
 #[cfg(test)]

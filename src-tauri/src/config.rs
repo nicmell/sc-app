@@ -66,6 +66,13 @@ pub const DEFAULT_DIRT: &str = "127.0.0.1:57120";
 /// default) doesn't fill up after a handful of orphaned tabs.
 pub const DEFAULT_SESSION_TTL_SECONDS: u64 = 1800;
 
+/// Built-in default clock chunkSize. Power-of-2; produces a
+/// ~21 ms tick at 48 kHz (47 Hz). Pre-Phase-39d this default
+/// lived in `scripts/lib/chunk-size.scd`'s
+/// `~scAppParseChunkSize` thunk; Phase 39d hoists it to bridge
+/// config.
+pub const DEFAULT_CLOCK_CHUNK_SIZE: u32 = 1024;
+
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
@@ -88,6 +95,14 @@ pub struct Config {
     /// Phase 39c+39d remove from sclang).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sclang: Option<String>,
+    /// Phase 39d: clock SynthDef chunkSize. Pre-39d this lived
+    /// in sclang as the `SC_APP_CLOCK_CHUNK_SIZE` env var; Phase
+    /// 39d hoists it to bridge config so the chunk size is
+    /// owned by whoever owns the bridge process. Power-of-2
+    /// values recommended (FFT-friendly, page-aligned recordings);
+    /// see the chunkSize × sampleRate table in CLAUDE.md.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clock_chunk_size: Option<u32>,
     /// Directory to write rotated NDJSON logs into. When `None` in
     /// both config + env + flag, the bridge stays stderr-only and
     /// the GUI falls back to `app.path().app_log_dir()`.
@@ -141,6 +156,7 @@ pub fn starter() -> &'static Config {
         port: Some(DEFAULT_PORT),
         scsynth: Some(DEFAULT_SCSYNTH.to_string()),
         sclang: Some(DEFAULT_DIRT.to_string()),
+        clock_chunk_size: Some(DEFAULT_CLOCK_CHUNK_SIZE),
         log_dir: None,
         // Phase 37: the routes table is now an ORDERED list of
         // regex entries with no implicit default. Two starter
@@ -233,6 +249,7 @@ mod tests {
         assert!(body.contains("\"port\": 3000"));
         assert!(body.contains("\"scsynth\": \"127.0.0.1:57110\""));
         assert!(body.contains("\"sclang\": \"127.0.0.1:57120\""));
+        assert!(body.contains("\"clock_chunk_size\": 1024"));
         // Phase 37 starter routes: sclang prefixes + scsynth
         // command surface. Both regexes, no implicit default.
         assert!(body.contains(r"^/(dirt|clock|scope)(/|$)"));
@@ -248,6 +265,7 @@ mod tests {
             port: Some(3000),
             scsynth: Some("127.0.0.1:57110".into()),
             sclang: Some("127.0.0.1:57120".into()),
+            clock_chunk_size: Some(1024),
             log_dir: Some("./logs".into()),
             routes: vec![Route {
                 pattern: r"^/dirt(/|$)".into(),
