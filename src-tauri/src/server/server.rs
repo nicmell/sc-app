@@ -61,12 +61,10 @@ const BROADCAST_CAPACITY: usize = 4096;
 const NOTIFY_TIMEOUT: Duration = Duration::from_secs(2);
 /// `/status` handshake timeout. Same shape.
 const STATUS_TIMEOUT: Duration = Duration::from_secs(2);
-/// `/version` handshake timeout. Phase 39 hotfix: bridge fetches
-/// scsynth's version once at boot; cached on metadata so
-/// frontend SessionInfo carries it (no per-session /version
-/// round-trip).
-const VERSION_TIMEOUT: Duration = Duration::from_secs(1);
 /// Phase 39b: `/sc-app/bootstrap/hello` round-trip per attempt.
+/// Phase 39 hotfix follow-up: also covers the new
+/// `/sc-app/bootstrap/scsynth-version` reply (third message), so
+/// the budget needs to span all three sclang -> bridge sends.
 const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(3);
 /// Phase 39b: how many bootstrap attempts before giving up
 /// (and continuing to serve HTTP/WS without sclang metadata).
@@ -103,14 +101,16 @@ pub struct ServerMetadata {
     /// Nominal sample rate from `/status.reply`. Used by
     /// `tickToTimetag` math + scope chunk geometry.
     pub sample_rate: Option<u32>,
-    /// Phase 39 hotfix: scsynth version from `/version.reply`,
-    /// captured at boot. Surfaced via SessionInfo so the
-    /// frontend's footer doesn't need a per-session OSC
-    /// round-trip. `None` if scsynth doesn't support /version
-    /// (rare; ancient forks).
-    pub scsynth_version: Option<ScsynthVersion>,
 
-    // ── Sclang-side (populated by /sc-app/bootstrap/info) ──
+    // ── Sclang-side (populated by /sc-app/bootstrap/*) ─────
+    /// Phase 39 hotfix follow-up: scsynth `/version.reply` snapshot,
+    /// captured by sclang at its own boot (lib/version.scd) and
+    /// echoed back to the bridge in the `/sc-app/bootstrap/scsynth-
+    /// version` message. Lives on the sclang Server's metadata
+    /// because that's where the bridge received it from; the field
+    /// describes scsynth, but the chain of custody runs through
+    /// sclang. `None` if sclang's /version capture timed out.
+    pub scsynth_version: Option<ScsynthVersion>,
     /// Phase 39d: full clock metadata, populated by the bridge
     /// AFTER the clock /s_new succeeds. Sclang's bootstrap reports
     /// only `clock_bus` + `clock_node_id`; the bridge synthesizes
@@ -218,34 +218,17 @@ impl Server {
         let mut metadata = ServerMetadata::default();
         match role {
             ServerRole::Scsynth => {
-                // /notify + /status + /version BEFORE the recv
-                // task starts. The handshake reads replies
-                // directly from the socket; spawning the recv
-                // task afterward avoids the broadcast race.
+                // /notify + /status BEFORE the recv task starts.
+                // The handshake reads replies directly from the
+                // socket; spawning the recv task afterward avoids
+                // the broadcast race. /version is fetched by sclang
+                // (lib/version.scd) and echoed back via the
+                // bootstrap reply, so the bridge doesn't probe
+                // scsynth for it directly.
                 let client_id = notify_handshake(&socket).await?;
                 let sample_rate = status_handshake(&socket).await?;
                 metadata.scsynth_client_id = Some(client_id);
                 metadata.sample_rate = Some(sample_rate);
-                // /version is non-fatal — old/exotic scsynth
-                // forks may not respond. Log + continue without
-                // version metadata.
-                match version_handshake(&socket).await {
-                    Ok(v) => {
-                        tracing::info!(
-                            target = %target,
-                            version = %format!("{} {}.{}{}", v.prog_name, v.major, v.minor, v.patch),
-                            "scsynth /version.reply"
-                        );
-                        metadata.scsynth_version = Some(v);
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            target = %target,
-                            error = %e,
-                            "scsynth /version probe failed (non-fatal)"
-                        );
-                    }
-                }
                 tracing::info!(
                     target = %target,
                     client_id,
@@ -260,12 +243,14 @@ impl Server {
                         metadata.clock_node_id = parsed.clock_node_id;
                         metadata.num_scope_buffers = parsed.num_scope_buffers;
                         metadata.dirt_samples = parsed.dirt_samples;
+                        metadata.scsynth_version = parsed.scsynth_version.clone();
                         tracing::info!(
                             target = %target,
                             clock_bus = ?metadata.clock_bus,
                             clock_node_id = ?metadata.clock_node_id,
                             num_scope_buffers = ?metadata.num_scope_buffers,
                             dirt_sample_count = metadata.dirt_samples.len(),
+                            scsynth_version = ?parsed.scsynth_version.as_ref().map(|v| format!("{} {}.{}{}", v.prog_name, v.major, v.minor, v.patch)),
                             "sclang Server bootstrapped (clock /s_new pending)"
                         );
                     }
@@ -345,12 +330,14 @@ impl Server {
         clock_node_id: Option<i32>,
         num_scope_buffers: Option<i32>,
         dirt_samples: Vec<DirtSample>,
+        scsynth_version: Option<ScsynthVersion>,
     ) {
         let mut m = self.metadata.write().await;
         m.clock_bus = clock_bus;
         m.clock_node_id = clock_node_id;
         m.num_scope_buffers = num_scope_buffers;
         m.dirt_samples = dirt_samples;
+        m.scsynth_version = scsynth_version;
     }
 
     /// Lazily open the SHM scope-buffer pool for this scsynth
@@ -481,11 +468,17 @@ struct BootstrapParsed {
     clock_node_id: Option<i32>,
     num_scope_buffers: Option<i32>,
     dirt_samples: Vec<DirtSample>,
+    /// Phase 39 hotfix follow-up: scsynth /version snapshot, captured
+    /// by sclang at its own boot and forwarded as a third bootstrap
+    /// reply message. `None` if sclang's /version capture timed out
+    /// (empty args on the wire).
+    scsynth_version: Option<ScsynthVersion>,
 }
 
-/// Send `/sc-app/bootstrap/hello` and await
-/// `/sc-app/bootstrap/info` + `/sc-app/bootstrap/samples`
-/// replies. Retries `BOOTSTRAP_RETRIES` times before giving up.
+/// Send `/sc-app/bootstrap/hello` and await three reply messages:
+/// `/sc-app/bootstrap/info`, `/sc-app/bootstrap/samples`,
+/// `/sc-app/bootstrap/scsynth-version`. Retries `BOOTSTRAP_RETRIES`
+/// times before giving up.
 async fn bootstrap_handshake(sock: &UdpSocket) -> Result<BootstrapParsed> {
     for attempt in 0..BOOTSTRAP_RETRIES {
         match try_bootstrap(sock).await {
@@ -512,16 +505,18 @@ async fn try_bootstrap(sock: &UdpSocket) -> Result<BootstrapParsed> {
     let bytes = rosc::encoder::encode(&pkt).context("encode /sc-app/bootstrap/hello")?;
     sock.send(&bytes).await.context("send /sc-app/bootstrap/hello")?;
 
-    // Sclang sends back two messages: /sc-app/bootstrap/info and
-    // /sc-app/bootstrap/samples. Wait for both within the
-    // timeout. They may arrive as separate UDP datagrams or
-    // (less commonly) as a single bundle.
+    // Sclang sends back three messages: /sc-app/bootstrap/info,
+    // /sc-app/bootstrap/samples, and /sc-app/bootstrap/scsynth-
+    // version. Wait for all three within the timeout. They may
+    // arrive as separate UDP datagrams or (less commonly) as a
+    // single bundle.
     let mut parsed = BootstrapParsed::default();
     let mut got_info = false;
     let mut got_samples = false;
+    let mut got_version = false;
     let mut buf = vec![0u8; 65_536];
     let deadline = tokio::time::Instant::now() + BOOTSTRAP_TIMEOUT;
-    while !got_info || !got_samples {
+    while !got_info || !got_samples || !got_version {
         let remaining = deadline
             .checked_duration_since(tokio::time::Instant::now())
             .ok_or_else(|| anyhow!("bootstrap timed out (no reply from sclang)"))?;
@@ -542,6 +537,10 @@ async fn try_bootstrap(sock: &UdpSocket) -> Result<BootstrapParsed> {
                 "/sc-app/bootstrap/samples" => {
                     parsed.dirt_samples = parse_samples_args(&msg.args);
                     got_samples = true;
+                }
+                "/sc-app/bootstrap/scsynth-version" => {
+                    parsed.scsynth_version = parse_scsynth_version_args(&msg.args);
+                    got_version = true;
                 }
                 _ => {
                     // Some other reply on this socket (rare).
@@ -641,60 +640,31 @@ fn osc_float(v: &OscType) -> Option<f64> {
     }
 }
 
-/// Send `/version` and await `/version.reply
-/// progName major minor patch branch commitHash`. Same shape
-/// as `notify_handshake` — synchronous read from the socket
-/// before the recv task starts.
-async fn version_handshake(sock: &UdpSocket) -> Result<ScsynthVersion> {
-    let pkt = OscPacket::Message(OscMessage {
-        addr: "/version".into(),
-        args: vec![],
-    });
-    let bytes = rosc::encoder::encode(&pkt).context("encode /version")?;
-    sock.send(&bytes).await.context("send /version")?;
-
-    let mut buf = vec![0u8; 65_536];
-    let deadline = tokio::time::Instant::now() + VERSION_TIMEOUT;
-    loop {
-        let remaining = deadline
-            .checked_duration_since(tokio::time::Instant::now())
-            .ok_or_else(|| anyhow!("/version timed out"))?;
-        let n = match timeout(remaining, sock.recv(&mut buf)).await {
-            Ok(Ok(n)) => n,
-            Ok(Err(e)) => return Err(anyhow!("recv during /version handshake: {e}")),
-            Err(_) => return Err(anyhow!("/version timed out")),
-        };
-        if let Some(v) = parse_version_reply(&buf[..n]) {
-            return Ok(v);
-        }
-        // Other reply on this socket; ignore + keep waiting.
-    }
-}
-
-fn parse_version_reply(bytes: &[u8]) -> Option<ScsynthVersion> {
-    let packet = rosc::decoder::decode_udp(bytes).ok()?.1;
-    let msg = match packet {
-        OscPacket::Message(m) => m,
-        _ => return None,
-    };
-    if msg.addr != "/version.reply" {
+/// Parse the args of a `/sc-app/bootstrap/scsynth-version` reply.
+/// Args layout: `progName major minor patch branch commitHash`.
+/// Empty args = sclang's /version capture timed out at its own
+/// boot; returns `None` so the bridge surfaces version=null on
+/// SessionInfo. Partial / malformed args defensively return
+/// `None` rather than throwing.
+fn parse_scsynth_version_args(args: &[OscType]) -> Option<ScsynthVersion> {
+    if args.is_empty() {
         return None;
     }
-    let prog_name = match msg.args.first() {
+    let prog_name = match args.first() {
         Some(OscType::String(s)) => s.clone(),
         _ => "scsynth".to_string(),
     };
-    let major = osc_int(msg.args.get(1)?)?;
-    let minor = osc_int(msg.args.get(2)?)?;
-    let patch = match msg.args.get(3) {
+    let major = osc_int(args.get(1)?)?;
+    let minor = osc_int(args.get(2)?)?;
+    let patch = match args.get(3) {
         Some(OscType::String(s)) => s.clone(),
         _ => String::new(),
     };
-    let branch = match msg.args.get(4) {
+    let branch = match args.get(4) {
         Some(OscType::String(s)) => s.clone(),
         _ => String::new(),
     };
-    let commit_hash = match msg.args.get(5) {
+    let commit_hash = match args.get(5) {
         Some(OscType::String(s)) => s.clone(),
         _ => String::new(),
     };
@@ -802,8 +772,9 @@ pub async fn ensure_sclang_bootstrapped(
     let mut parsed = BootstrapParsed::default();
     let mut got_info = false;
     let mut got_samples = false;
+    let mut got_version = false;
     let deadline = tokio::time::Instant::now() + LAZY_BOOTSTRAP_TIMEOUT;
-    while !got_info || !got_samples {
+    while !got_info || !got_samples || !got_version {
         let remaining = deadline
             .checked_duration_since(tokio::time::Instant::now())
             .ok_or_else(|| {
@@ -830,6 +801,10 @@ pub async fn ensure_sclang_bootstrapped(
                     parsed.dirt_samples = parse_samples_args(&msg.args);
                     got_samples = true;
                 }
+                "/sc-app/bootstrap/scsynth-version" => {
+                    parsed.scsynth_version = parse_scsynth_version_args(&msg.args);
+                    got_version = true;
+                }
                 _ => {}
             }
         }
@@ -841,6 +816,7 @@ pub async fn ensure_sclang_bootstrapped(
             parsed.clock_node_id,
             parsed.num_scope_buffers,
             parsed.dirt_samples,
+            parsed.scsynth_version,
         )
         .await;
 

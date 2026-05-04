@@ -49,6 +49,7 @@
 //   - lib/bootstrap.scd           /sc-app/bootstrap/hello responder
 //   - lib/clock.scd               Phase 30 shared clock SynthDef
 //   - lib/superdirt.scd           SuperDirt boot
+//   - lib/version.scd             scsynth /version capture
 //
 // (Pre-39 lib/chunk-size.scd, lib/dirt-list-samples.scd, and
 // lib/scope.scd were retired during Phase 39's "bridge takes
@@ -81,7 +82,8 @@ var libDir = PathName(thisProcess.nowExecutingPath).pathOnly +/+ "lib";
 [
     "bootstrap.scd",
     "clock.scd",
-    "superdirt.scd"
+    "superdirt.scd",
+    "version.scd"
 ].do { |f|
     (libDir +/+ f).load;
 };
@@ -121,6 +123,13 @@ s.doWhenBooted({
     // /scope/{allocate,free,subscribe,unsubscribe} OSC handling.
     // Sclang reports the pool size via the bootstrap reply.
     ~scAppBootstrapCtx[\scope] = (numScopeBuffers: 128);
+    // Phase 39 hotfix follow-up: capture scsynth /version via
+    // the already-open scsynth connection so the bridge doesn't
+    // need its own /version handshake. Must run after s.notify
+    // (so scsynth replies are routed back to sclang) and before
+    // ~scAppInstallBootstrap (so the responder sees the captured
+    // value).
+    ~scAppInstallVersion.();
     ~scAppInstallBootstrap.();
 }, 50, {
     "[sc-app] scsynth not reachable on 127.0.0.1:57110 after 10s.\n  Start it first: yarn scsynth-only (dev) or your systemd unit (prod).".error;

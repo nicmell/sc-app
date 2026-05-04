@@ -280,26 +280,33 @@ pub async fn session_info(
     scsynth_server: &Arc<Server>,
     sclang_server: Option<&Arc<Server>>,
 ) -> Result<SessionInfo> {
-    let scsynth_version = {
-        let scsynth_metadata = scsynth_server.metadata().await;
-        let scsynth_client_id = scsynth_metadata
+    let (scsynth_client_id, sample_rate) = {
+        let m = scsynth_server.metadata().await;
+        let scsynth_client_id = m
             .scsynth_client_id
             .ok_or_else(|| anyhow!("scsynth Server has no clientId — bridge not bootstrapped"))?;
-        let sample_rate = scsynth_metadata
+        let sample_rate = m
             .sample_rate
             .ok_or_else(|| anyhow!("scsynth Server has no sample rate — bridge not bootstrapped"))?;
-        let scsynth_version = scsynth_metadata.scsynth_version.clone();
-        // Bind the values we need before dropping the guard.
-        (scsynth_client_id, sample_rate, scsynth_version)
+        (scsynth_client_id, sample_rate)
     };
-    let (scsynth_client_id, sample_rate, scsynth_version) = scsynth_version;
 
-    let (clock, num_scope_buffers, dirt_samples) = if let Some(sclang) = sclang_server {
-        let m = sclang.metadata().await;
-        (m.clock, m.num_scope_buffers, m.dirt_samples.clone())
-    } else {
-        (None, None, Vec::new())
-    };
+    // Phase 39 hotfix follow-up: scsynth_version moved off scsynth's
+    // metadata onto sclang's. sclang captures it at its own boot and
+    // forwards to the bridge in /sc-app/bootstrap/scsynth-version;
+    // the bridge has no direct /version handshake anymore.
+    let (clock, num_scope_buffers, dirt_samples, scsynth_version) =
+        if let Some(sclang) = sclang_server {
+            let m = sclang.metadata().await;
+            (
+                m.clock,
+                m.num_scope_buffers,
+                m.dirt_samples.clone(),
+                m.scsynth_version.clone(),
+            )
+        } else {
+            (None, None, Vec::new(), None)
+        };
 
     Ok(SessionInfo {
         session_id: session.session_id,

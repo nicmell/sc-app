@@ -3,7 +3,7 @@
 // Replaces the per-session /clock/hello + /scope/hello +
 // /dirt/listSamples round-trips with a single bridge-to-sclang
 // handshake at bridge boot. Bridge sends
-// `/sc-app/bootstrap/hello`; sclang responds with a bundle:
+// `/sc-app/bootstrap/hello`; sclang responds with three messages:
 //
 //   /sc-app/bootstrap/info
 //     "clockBus", <int>,
@@ -15,6 +15,11 @@
 //
 //   /sc-app/bootstrap/samples
 //     name1, count1, name2, count2, ...
+//
+//   /sc-app/bootstrap/scsynth-version
+//     progName, major, minor, patch, branch, commitHash
+//     (or empty args if /version timed out at sclang boot —
+//      bridge tolerates and reports version=null)
 //
 // Each install function (`~scAppInstallX(bootstrapCtx)`)
 // contributes its keys to `bootstrapCtx` at install time;
@@ -37,6 +42,7 @@
         var ctx = ~scAppBootstrapCtx;
         var infoArgs = List.new;
         var samplesArgs = List.new;
+        var versionArgs = List.new;
 
         // Clock metadata. Some keys may be missing if the clock
         // wasn't installed (e.g., scsynth wasn't reachable);
@@ -59,14 +65,29 @@
             };
         };
 
+        // scsynth /version snapshot captured by ~scAppInstallVersion
+        // (lib/version.scd). Sent unconditionally so the bridge's
+        // bootstrap waiter has a deterministic third message; empty
+        // args = timed out at sclang boot, bridge falls back to None.
+        ctx[\scsynthVersion] !? { |v|
+            versionArgs.add(v[\progName]);
+            versionArgs.add(v[\major]);
+            versionArgs.add(v[\minor]);
+            versionArgs.add(v[\patch]);
+            versionArgs.add(v[\branch]);
+            versionArgs.add(v[\commitHash]);
+        };
+
         addr.sendMsg('/sc-app/bootstrap/info', *infoArgs);
         addr.sendMsg('/sc-app/bootstrap/samples', *samplesArgs);
+        addr.sendMsg('/sc-app/bootstrap/scsynth-version', *versionArgs);
     }, '/sc-app/bootstrap/hello');
 
-    "[sc-app] /sc-app/bootstrap/hello responder installed (% clock keys, % scope keys, % dirt samples)".format(
+    "[sc-app] /sc-app/bootstrap/hello responder installed (% clock keys, % scope keys, % dirt samples, version=%)".format(
         ~scAppBootstrapCtx[\clock].size,
         ~scAppBootstrapCtx[\scope].size,
-        if(~dirt.notNil) { ~dirt.buffers.size } { 0 }
+        if(~dirt.notNil) { ~dirt.buffers.size } { 0 },
+        ~scAppBootstrapCtx[\scsynthVersion].notNil
     ).postln;
 };
 )
