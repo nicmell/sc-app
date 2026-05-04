@@ -128,12 +128,18 @@ src-tauri backend (Rust)
   ├── config.rs                 `config.json` schema + load helpers +
   │                              starter-config OnceLock
   ├── logging.rs                tracing init (stderr + daily-rotated file)
-  ├── scope_shm.rs              Phase 31: mmap RAII +
-  │                              find_scope_buffer_array (heuristic
-  │                              vector finder, see history.md) +
-  │                              read_scope_slot (non-mutating
-  │                              triple-buffer pull from scsynth's
-  │                              shared memory)
+  ├── scope/                    scope-data ingestion (dual-mode)
+  │   ├── mod.rs                 ScopeMode enum (Shm | Osc)
+  │   ├── shm.rs                 Phase 31: mmap RAII +
+  │   │                           find_scope_buffer_array (heuristic
+  │   │                           vector finder, see history.md) +
+  │   │                           read_scope_slot (non-mutating
+  │   │                           triple-buffer pull from scsynth's
+  │   │                           shared memory)
+  │   └── osc.rs                 Phase 36: OSC /b_getn fallback —
+  │                               per-WS subscription map, bundle
+  │                               encode (NTP timetag), /b_setn parse,
+  │                               chunk encode (matches SHM byte layout)
   ├── server/
   │   ├── mod.rs                axum router, bind/serve_on/run_bridge,
   │   │                          /ws + /api/session* + /api/scope/*

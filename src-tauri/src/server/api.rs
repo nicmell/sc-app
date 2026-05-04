@@ -27,7 +27,7 @@ use uuid::Uuid;
 
 use super::session::{Session, SessionInfo};
 use super::AppState;
-use crate::scope_shm;
+use crate::scope::shm as scope_shm;
 
 /// JSON error envelope. One field, one shape — the frontend
 /// reads `error` and renders it inline.

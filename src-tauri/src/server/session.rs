@@ -54,6 +54,7 @@ use tokio::time::timeout;
 use uuid::Uuid;
 
 use super::routing::RoutingTable;
+use crate::scope::{self, ScopeMode};
 
 /// Capacity of each per-socket broadcast channel — how many UDP
 /// payloads we'll queue when no WS is currently subscribed (or a
@@ -116,12 +117,12 @@ pub struct Session {
     /// /fail replies it provokes don't get fanned out to
     /// (now-detached) WS connections.
     recv_tasks: Vec<JoinHandle<()>>,
-    /// Phase 31 (per-scope WS variant): lazily-opened SHM mmap +
-    /// scope_buffer layout, shared across every WS on this
-    /// Session. Initialized on the first scope subscribe in SHM
-    /// mode; reused for every subsequent one. `OnceCell` because
-    /// we only need to populate it once and can race losers wait
-    /// on the winner. Stays empty in OSC mode.
+    /// Phase 31: lazily-opened SHM mmap + scope_buffer layout,
+    /// shared across every WS attached to this Session.
+    /// Initialized on the first scope subscribe in SHM mode;
+    /// reused for every subsequent one. `OnceCell` because we
+    /// only need to populate it once and race losers wait on the
+    /// winner. Stays empty in OSC mode.
     pub scope_shm: tokio::sync::OnceCell<Arc<ScopeShm>>,
     /// Phase 36: which scope-data path this session uses. Probed
     /// once at `Session::create` (or forced via `--no-shm`) and
@@ -132,30 +133,12 @@ pub struct Session {
     pub scope_mode: ScopeMode,
 }
 
-/// Phase 36: which scope-data ingestion path is in use for a
-/// session. Frozen at `Session::create` time. Frontend mirrors
-/// this choice when picking SynthDef + buffer allocation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ScopeMode {
-    /// Bridge mmaps scsynth's SHM scope_buffer pool, reads slots
-    /// non-mutating on each observed `/clock/tick`. Tap synth
-    /// uses `ScopeOut2.ar`; frontend allocates via `/scope/allocate`.
-    Shm,
-    /// Bridge polls scsynth via OSC `/b_getn` on each observed
-    /// `/clock/tick`, intercepts the matching `/b_setn` replies
-    /// from the broadcast stream. Tap synth uses `BufWr.ar` with
-    /// a `clockBus`-driven writeIdx; frontend allocates via
-    /// `/b_alloc`.
-    Osc,
-}
-
 /// SHM mmap + resolved scope_buffer layout. Held in
-/// `Session.scope_shm` so multiple `/ws/scope` connections on the
-/// same session share one mapping.
+/// `Session.scope_shm` so every WS attached to the same session
+/// shares one mapping.
 pub struct ScopeShm {
-    pub region: crate::scope_shm::MmapRegion,
-    pub layout: crate::scope_shm::ScopeBufferLayout,
+    pub region: scope::shm::MmapRegion,
+    pub layout: scope::shm::ScopeBufferLayout,
 }
 
 impl Session {
@@ -257,7 +240,7 @@ impl Session {
         let scope_mode = if force_osc_mode {
             ScopeMode::Osc
         } else {
-            let probe = crate::scope_shm::probe(default_addr.port());
+            let probe = scope::shm::probe(default_addr.port());
             if probe.available {
                 ScopeMode::Shm
             } else {
@@ -302,18 +285,18 @@ impl Session {
     /// Lazily open the SHM scope-buffer pool for this session.
     /// First caller pays the mmap + `find_scope_buffer_array` scan;
     /// subsequent callers wait on the `OnceCell` and get the
-    /// already-resolved layout. Used by `/ws/scope` handlers
-    /// before they start polling — each scope WS shares the same
-    /// underlying mapping.
+    /// already-resolved layout. Used by `ws_bridge`'s scope
+    /// subscribe handler in SHM mode — every WS on the session
+    /// shares the same underlying mapping.
     pub async fn ensure_scope_shm(&self) -> Result<Arc<ScopeShm>> {
         let port = self.scsynth_addr.port();
         self.scope_shm
             .get_or_try_init(|| async move {
-                let path = crate::scope_shm::shm_path(port);
+                let path = scope::shm::shm_path(port);
                 let path_str = path.to_string_lossy().into_owned();
-                let region = crate::scope_shm::MmapRegion::open(&path_str)
+                let region = scope::shm::MmapRegion::open(&path_str)
                     .map_err(|e| anyhow!("scope SHM mmap: {e}"))?;
-                let layout = crate::scope_shm::find_scope_buffer_array(&region)
+                let layout = scope::shm::find_scope_buffer_array(&region)
                     .map_err(|e| anyhow!("scope_buffer layout scan: {e}"))?;
                 tracing::info!(
                     scsynth_port = port,

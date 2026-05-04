@@ -1,8 +1,7 @@
 mod cli;
 mod config;
 mod logging;
-pub mod scope_osc;
-pub mod scope_shm;
+pub mod scope;
 pub mod server;
 
 /// Library entry point invoked by `src/main.rs`. Dispatches to the CLI,

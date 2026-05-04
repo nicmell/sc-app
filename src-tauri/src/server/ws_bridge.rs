@@ -49,9 +49,10 @@ use tokio::sync::Mutex as TokioMutex;
 use tokio::task::JoinHandle;
 
 use super::routing::peek_osc_address;
-use super::session::{ScopeMode, Session};
-use crate::scope_osc::{self, OscPollState, OscScopeSubscription};
-use crate::scope_shm::{self, ScopeReadResult};
+use super::session::Session;
+use crate::scope::osc::{self as scope_osc, OscPollState, OscScopeSubscription};
+use crate::scope::shm::{self as scope_shm, ScopeReadResult};
+use crate::scope::ScopeMode;
 
 const SCOPE_OP_SUBSCRIBE: u8 = 0x01;
 const SCOPE_OP_UNSUBSCRIBE: u8 = 0x02;

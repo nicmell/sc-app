@@ -456,12 +456,15 @@ src-tauri/src/
 │   └── bridge.rs                headless `bridge` subcommand entry
 ├── config.rs                   Config struct + load + starter
 ├── logging.rs                  tracing init (stderr + daily-rotated file)
-├── scope_shm.rs                Phase 31: mmap RAII + scope_buffer
-│                                vector finder + read_scope_slot
-├── scope_osc.rs                Phase 36: OSC /b_getn fallback —
-│                                per-WS subscription map, bundle
-│                                encode (NTP timetag), /b_setn parse,
-│                                chunk encode (matches SHM byte layout)
+├── scope/                      scope-data ingestion (dual-mode)
+│   ├── mod.rs                   ScopeMode enum (Shm | Osc) +
+│   │                             module docs
+│   ├── shm.rs                   Phase 31: mmap RAII + scope_buffer
+│   │                             vector finder + read_scope_slot
+│   └── osc.rs                   Phase 36: OSC /b_getn fallback —
+│                                 per-WS subscription map, bundle
+│                                 encode (NTP timetag), /b_setn parse,
+│                                 chunk encode (matches SHM byte layout)
 └── server/
     ├── mod.rs                   axum router, bind/serve_on, /ws handler.
     │                             AppState carries force_osc_mode (--no-shm)
@@ -627,7 +630,7 @@ bridge — just echoed back on chunk frames. Worker maintains a
 `Map<sub_id, bufferId>` to dispatch chunks to main-thread
 listeners.
 
-#### SHM mode (`scope_shm.rs`)
+#### SHM mode (`scope::shm`)
 
 mmaps scsynth's POSIX shared memory segment
 (`/tmp/boost_interprocess/SuperColliderServer_<port>` on macOS;
@@ -651,7 +654,7 @@ writer just completed), then the data slot at
 detects "writer advanced" by tracking the previous `_stage` per
 subscription.
 
-#### OSC mode (`scope_osc.rs`)
+#### OSC mode (`scope::osc`)
 
 Hand-rolled OSC `/b_getn` poll engine. Triggered when
 `Session::scope_mode == Osc`. The frontend `/s_new`s a
