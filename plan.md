@@ -10,10 +10,309 @@ chunkSize × sampleRate practical table all live in
 [`CLAUDE.md`](./CLAUDE.md) — don't duplicate them here.
 
 **No phase currently in flight.** Phases 0–37 are in
-[`docs/history.md`](./docs/history.md). The next planned piece
-of work is **Phase 38 — Drop binary scope wire format; scope ops
-become OSC messages** (`/scope/{subscribe,unsubscribe,chunk}`).
-Spec for 38 not yet drafted; will follow when Phase 37 settles.
+[`docs/history.md`](./docs/history.md). Two phases queued:
+
+- **Phase 38 — Drop binary scope wire format**
+  (`/scope/{subscribe,unsubscribe,chunk}` become real OSC).
+  Spec not yet drafted; cleanup of Phase 37 first.
+- **Phase 39 — Server abstraction + bridge-owned boot
+  sequence** — see spec below.
+
+The two phases are largely independent and can land in either
+order, but Phase 38 first keeps the progression "wire format →
+runtime architecture" clean.
+
+---
+
+## Phase 39 — Server Abstraction + Bridge-Owned Boot Sequence
+
+**Goal.** Hoist UDP sockets, broadcast channels, the scsynth
+`/notify` registration, runtime metadata, and shared-instance
+creation up from per-Session into bridge-level **Server**
+objects (one per route target). Strip sclang's lib files down
+to declarations: SynthDef registration + OSCdef installation +
+a single bootstrap reply. The bridge takes over `/notify`,
+`/s_new`-of-shared-synths, scope-buffer allocation, and
+metadata caching. Sessions become lightweight per-tab WS-state
+holders.
+
+The high-level shift:
+
+```
+Pre-39: each Session opens N UDP sockets, runs /notify 1, runs
+         /clock/hello, holds clientId + parent_group_id +
+         sample_rate + scope_mode + broadcast channels.
+         sclang owns: clock instance, scope-buffer allocator,
+         /clock/hello + /scope/* responders.
+
+Post-39: bridge opens N UDP sockets at boot (one per route
+          target), runs /notify 1 ONCE, fetches a single
+          bootstrap blob from sclang, /s_new's the clock with
+          chunk_size from bridge config. Sessions hold just
+          session_id + sub_client_id + parent_group_id +
+          scope_mode (no sockets, no broadcast channels).
+          sclang strips to: define SynthDefs (.add), install
+          OSCdefs, respond to /sc-app/bootstrap/hello with one
+          metadata blob, install SuperDirt. No more /clock/hello,
+          /scope/{allocate,free} responders, or /s_new at boot.
+```
+
+### Architecture
+
+```
+Bridge boot:
+  1. Build RoutingTable.
+  2. For each unique route target, construct a Server:
+       Server { socket, broadcast: Sender<Vec<u8>>, metadata,
+                _recv_task }
+     The recv task fans inbound UDP to broadcast AND peeks
+     known reply addresses to populate metadata.
+  3. ScsynthServer: send /notify 1, await /done /notify <cid>.
+                    Send /status, await /status.reply <sr>.
+                    Populate metadata { client_id, sample_rate }.
+  4. SclangServer: send /sc-app/bootstrap/hello (with retries +
+                   timeout). Await /sc-app/bootstrap/info reply
+                   with all sclang-side metadata.
+                   Populate metadata { clock_bus, num_scope_buffers,
+                   dirt_buffers, ... }.
+  5. Bridge → scsynth: /s_new scAppClock <clock_node_id> 0 0
+                       'clockBus' <clock_bus> 'chunkSize' <cfg>.
+                       Pin clock_node_id = 999 (reserved).
+  6. Initialize bridge-owned scope-buffer allocator (StackAllocator
+                       of 0..num_scope_buffers).
+  7. Bridge "ready" — sessions can attach.
+
+Bridge shutdown:
+  - Free clock synth (/n_free 999).
+  - /g_freeAll on every active session's parent group.
+  - /notify 0 to scsynth.
+  - Drop sockets.
+
+Session attach (POST /api/session):
+  - Bridge mints a sub_client_id (monotonic per bridge lifetime).
+  - parent_group_id = SESSION_GROUP_BASE + sub_client_id.
+  - SessionInfo response includes:
+      { session_id, sub_client_id, parent_group_id, scope_mode,
+        clock_info: { clock_bus, clock_node_id, tick_rate,
+                      chunk_size, sample_rate },
+        scsynth_client_id  // bridge-level, for IdAllocator base
+      }
+  - No /notify, no /clock/hello, no socket bind. Pure bookkeeping.
+
+Session cleanup (DELETE / TTL eviction):
+  - /g_freeAll(parent_group_id) + /n_free(parent_group_id).
+  - Mark sub_client_id free.
+  - No /notify 0 — bridge keeps that for its own lifetime.
+```
+
+### Bootstrap protocol
+
+New OSC round-trip between bridge and sclang. Replaces
+per-session `/clock/hello` + `/scope/hello` + (lazy)
+`/dirt/listSamples`. Single message, single reply, fetched
+once at bridge boot.
+
+```
+bridge → sclang:  /sc-app/bootstrap/hello
+sclang → bridge:  /sc-app/bootstrap/info
+                    "clockBus", <bus_index>,
+                    "clockNodeId", 999,
+                    "tickRate", <derived>,
+                    "chunkSize", <from cfg passed at sclang boot>,
+                    "sampleRate", <s.sampleRate>,
+                    "numScopeBuffers", 128,
+                    "dirtSamples", "kick", 4, "snare", 8, ...,
+                    "scAppSynthDefs", "scAppClock", "scAppOther", ...
+```
+
+Wire format mirrors `/clock/info` (interleaved key-value pairs,
+mixing strings and numbers — `OscType` fan-in works fine in
+rosc and osc-js). Easy to extend with new keys without breaking
+old bridges.
+
+`chunkSize` and `clockBus`: sclang allocates `clockBus` via
+`Bus.audio(s, 1)` (server-side allocator picks a free index).
+`chunkSize` is owned by the bridge config from this point
+forward — sclang receives it via `SC_APP_CLOCK_CHUNK_SIZE` env
+(unchanged) only because bridge → sclang config flow doesn't
+exist yet; the env var becomes a back-channel until 39e moves
+the chunkSize-baked-in tickRate to a control arg.
+
+If sclang isn't reachable at bridge boot: retry with backoff,
+log "sclang not reachable; clock + scope + sequencer features
+disabled" after timeout, and continue serving HTTP/WS. Sessions
+that try to use those features get a clean error.
+
+### sub_client_id allocation
+
+Bridge runs `/notify 1` once → captures `bridge_client_id`.
+Sessions get a `sub_client_id`: a small integer (0, 1, 2, ...)
+allocated by the bridge from a pool. `parent_group_id`
+becomes a unique group-id per session: `SESSION_GROUP_BASE +
+sub_client_id`, with `SESSION_GROUP_BASE = 1000` so every
+session's group sits well above the clock's node 999 + sclang's
+defaultGroup at 1.
+
+Frontend's `IdAllocator` base computation (in `AppShell.tsx`)
+shifts:
+  Pre-39:  `clientId * 1_000_000 + 1000`
+  Post-39: `bridge_client_id * 1_000_000 + sub_client_id * 100_000 + 1000`
+
+100_000 IDs per session ÷ ~10 IDs per typical synth = ~10_000
+synths/buffers per session before space contention with the
+next sub_client_id. Cap sub_client_id at 9 (leaves headroom)
+to keep the partition clean. Hard cap on concurrent sessions
+becomes ~9, replacing scsynth's `maxLogins=8` as the binding
+constraint.
+
+### Bridge-owned scope-buffer allocator
+
+`StackNumberAllocator(0, num_scope_buffers)` becomes a
+`BridgeScopeAllocator` (Rust): a `Mutex<Vec<u32>>` free-list,
+populated 0..num_scope_buffers at bootstrap completion. Phase
+38's outbound middleware on `^/scope/subscribe$` picks an index
+from the allocator, builds the subscription state, and emits a
+synthetic reply via `WsCtx::ws_extras` (`/scope/allocated <idx>`
+in OSC form). On unsubscribe, return the index to the
+allocator.
+
+Today's sclang `/scope/{allocate,free}` responders go away. The
+sclang lib's `scope.scd` shrinks to "/scope/hello → /scope/info"
+… or disappears entirely if that responder isn't useful
+post-bootstrap (the bootstrap blob carries `numScopeBuffers`).
+
+### Bridge-owned clock instance creation
+
+Today: `scripts/lib/clock.scd` does `.add()` of `\scAppClock`
+SynthDef AND `s.sendMsg('/s_new', ...)` to spawn the synth.
+
+Post-39: clock.scd does `.add()` only. The bootstrap reply
+includes `"scAppSynthDefs"` listing what's available. The
+bridge `/s_new`s the clock with:
+  - `node_id = 999` (pinned)
+  - `addAction = 0` (addToHead), `target = 0` (root group)
+  - `clockBus = <from bootstrap>`
+  - `chunkSize = <from bridge config>`
+
+For the SynthDef to accept `chunkSize` as a synth arg, it needs
+a small change:
+
+```sclang
+SynthDef(\scAppClock, { |clockBus = 0, chunkSize = 1024|
+    var tickRate = SampleRate.ir / chunkSize;
+    var tick = Impulse.kr(tickRate);
+    var count = PulseCount.kr(tick);
+    var samplePhase = Phasor.ar(0, 1, 0, 2 * chunkSize);
+    SendReply.kr(tick, '/clock/tick', count);
+    Out.ar(clockBus, samplePhase);
+}).add;
+```
+
+`SC_APP_CLOCK_CHUNK_SIZE` env var goes away. Bridge config gains:
+
+```jsonc
+{
+  "clock": {
+    "chunk_size": 1024
+  }
+}
+```
+
+The orchestrator script (`sc-app-superdirt-startup.scd`) drops
+its `chunk-size.scd` load + `~scAppParseChunkSize` call.
+
+### Sclang lib generalization
+
+Each install function takes a server-supplied context object so
+the bridge can pass through any future runtime config. Today's
+`~scAppInstallClock = { |chunkSize| ... }` becomes:
+
+```sclang
+~scAppInstallClock = { |bootstrapCtx|
+    // bootstrapCtx is a Dictionary populated by the orchestrator;
+    // for now just .add() the SynthDef. Bridge will /s_new it.
+    SynthDef(\scAppClock, { ... }).add;
+    bootstrapCtx[\scAppSynthDefs].add(\scAppClock);
+};
+```
+
+The orchestrator builds a `bootstrapCtx` dictionary, calls each
+install function, then sends the dict back to the bridge as the
+bootstrap reply. The pattern is open for future synths: if we
+add `scAppRecorder` later, its install function `.add()`s the
+SynthDef and registers itself in `bootstrapCtx[\scAppSynthDefs]`;
+no other change required, the bridge sees it on next boot.
+
+### Files
+
+**Bridge (Rust):**
+
+| File | Change |
+|---|---|
+| `src-tauri/src/server/server.rs` (new) | `Server { socket, broadcast, metadata, _recv_task }`. Per-target boot. Eager metadata fetch (ScsynthServer-specific: `/notify`, `/status`; SclangServer-specific: `/sc-app/bootstrap/hello`). |
+| `src-tauri/src/server/server.rs` | `ServerMetadata` struct: scsynth_client_id, sample_rate, clock_bus, clock_node_id, tick_rate, chunk_size, num_scope_buffers, dirt_buffers, scAppSynthDefs. |
+| `src-tauri/src/server/mod.rs` | `AppState` gains `servers: Arc<HashMap<SocketAddr, Arc<Server>>>` + drops `scsynth_addr` (resolved via routing table from a known route entry, e.g. the one matching `/notify`). `serve_on` builds Servers at boot before spawning the TTL task. |
+| `src-tauri/src/server/session.rs` | `Session` shrinks: drops `target_sockets`, `broadcast_senders`, `recv_tasks`, `scsynth_socket`, `client_id`, `sample_rate`, `scope_shm`. Keeps `session_id`, `sub_client_id`, `parent_group_id`, `scope_mode`, `last_active`. `Session::create` becomes pure bookkeeping (no UDP). `Session::cleanup` becomes `/g_freeAll(parent_group_id)` + `/n_free(parent_group_id)` — no `/notify 0`. |
+| `src-tauri/src/server/session.rs` | New `SubClientIdAllocator` (Mutex<Vec<u8>> free-list, 0..MAX_SESSIONS). |
+| `src-tauri/src/scope/middleware.rs` | New `BridgeScopeAllocator` for scope-buffer indices. Outbound middleware on `^/scope/subscribe$` (Phase 38's variant) picks from this allocator + emits synthetic `/scope/allocated` reply via `ws_extras`. |
+| `src-tauri/src/scope/middleware.rs` | `inbound_bgetn_issue_on_tick` updates: `scsynth_socket` lookup via `Server` instead of `Session`. Same for the SHM-mode path (now reads `Server.metadata.scsynth_addr` to derive the SHM port). |
+| `src-tauri/src/server/ws_bridge.rs` | Forwarders subscribe to `Server.broadcast` instead of `Session.broadcast_senders`. Per-session per-target `forward_with_dispatch` becomes per-server per-WS. `WsCtx` gains `&Server` references where needed. |
+| `src-tauri/src/server/api.rs` | `SessionInfo` shape extended: includes `clock_info` (read from `SclangServer.metadata`), `scsynth_client_id` (read from `ScsynthServer.metadata`). `/api/scope/probe` reads `num_scope_buffers` from server metadata. |
+| `src-tauri/src/config.rs` | New `clock: { chunk_size: u32 }` config field. `SC_APP_CLOCK_CHUNK_SIZE` env var still respected as override at sclang boot until 39e fully completes the move. |
+
+**sclang scripts:**
+
+| File | Change |
+|---|---|
+| `scripts/lib/clock.scd` | Drop `s.sendMsg('/s_new', ...)`. Keep only `SynthDef(\scAppClock, { \|clockBus, chunkSize\| ... }).add;`. SynthDef takes `chunkSize` as a control arg. Drop `~scAppClockNodeId = 999` literal — bridge pins the nodeId. Drop `/clock/hello` responder (replaced by bootstrap). |
+| `scripts/lib/scope.scd` | Drop `/scope/{hello,allocate,free}` responders. Bridge owns the allocator now. File can be removed entirely. |
+| `scripts/lib/dirt-list-samples.scd` | Convert `/dirt/listSamples` responder to a "fetch buffers from `~dirt.buffers` once" call invoked from the bootstrap responder. Drop the OSCdef. |
+| `scripts/lib/bootstrap.scd` (new) | Owns the `bootstrapCtx` dictionary builder + the `/sc-app/bootstrap/hello → /sc-app/bootstrap/info` responder. Each install function appends to the dict; bootstrap responder serializes it. |
+| `scripts/lib/chunk-size.scd` | Removed. chunkSize lives in bridge config. |
+| `scripts/sc-app-superdirt-startup.scd` | Orchestrator simplifies: load libs, install SuperDirt, install `bootstrap` (which calls each `~scAppInstallX` to populate `bootstrapCtx`). No more `~scAppParseChunkSize` call; no `/s_new scAppClock` (bridge does it). |
+
+**Frontend:**
+
+| File | Change |
+|---|---|
+| `src/AppShell.tsx` | `IdAllocator` bases use `bridge_client_id * 1_000_000 + sub_client_id * 100_000 + 1000` (from extended SessionInfo). Drop `clock.attach()` round-trip — read clock metadata directly from SessionInfo. |
+| `src/clock/ClockController.ts` | `attach()` no longer sends `/clock/hello`. Just registers tick listeners + records `tick0Ms` on first tick. ClockInfo populated from SessionInfo at construction. |
+| `src/session/sessionBootstrap.ts` | `SessionInfo` type extended with `clockInfo`, `scsynthClientId`, `subClientId` (or rename `clientId` → `subClientId` for clarity). |
+| `src/scope/scopeClient.ts` | `/scope/allocate` ↔ `/scope/allocated` round-trip flows through Phase 38's OSC scope-subscribe path; the bridge's middleware synthesizes the reply. No worker-side change required (the wire is already OSC by Phase 38). |
+
+### Sub-phases
+
+- **39a — `Server` class + shared sockets, sessions still own `/notify`.** New `server.rs` with the `Server` struct + per-target boot. Sessions stop binding their own UDP sockets — they get an `Arc<Server>` per target via `AppState.servers`. The `/notify 1` handshake stays per-session for now (each session sends `/notify 1` via the shared scsynth socket; scsynth still issues a distinct clientId based on... actually it can't, source port is shared — so this sub-phase has a transition wrinkle). **Or**: 39a does both the Server extraction AND the bridge-owned `/notify` together. Cleaner.
+- **39b — Bootstrap protocol + metadata caching.** `/sc-app/bootstrap/hello` ↔ `/sc-app/bootstrap/info`. New `scripts/lib/bootstrap.scd`. `SclangServer.metadata` populated. Sessions read clock info from server metadata. Per-session `/clock/hello` removed; `ClockController.attach()` shrinks. `dirt-list-samples.scd` migrates: `~dirt.buffers` snapshot included in bootstrap reply.
+- **39c — Bridge owns scope-buffer allocator.** `BridgeScopeAllocator` in Rust. Phase 38's `^/scope/subscribe$` outbound middleware uses it directly + synthesizes `/scope/allocated` reply. sclang's `scope.scd` deleted. Frontend's flow unchanged (it talks OSC; bridge handles in-process).
+- **39d — Bridge owns clock instance creation.** `\scAppClock` SynthDef gains `chunkSize` control arg. `chunkSize` moves from `SC_APP_CLOCK_CHUNK_SIZE` env to bridge config. Bridge `/s_new`s the clock at boot (after bootstrap completes). sclang's `clock.scd` reduces to `.add()` + bootstrap registration. `chunk-size.scd` deleted.
+- **39e — sclang lib generalization (cleanup).** Refactor remaining install functions to take a `bootstrapCtx` arg; document the "sclang declares, bridge instantiates" pattern. No new behavior; reorganization to make future shared synths follow the same shape.
+
+### Acceptance criteria
+
+- `cargo test --lib` green; new tests for `Server` boot, bootstrap parsing, sub_client_id allocation, bridge-owned scope allocator.
+- `yarn test`, `yarn tsc`, `yarn build` clean.
+- Manual smoke: launch bridge + sclang + scsynth; observe single `/notify 1` registration on scsynth; open 3 tabs concurrently, verify each gets a distinct `sub_client_id` and `parent_group_id`; take a scope on each, verify chunks flow; close 2 tabs, verify only those parent groups freed (clock + others survive); shut down bridge, verify single `/notify 0` and clock/synth teardown.
+- `scsynth -V`'s `/notify` log shows ONE registration per bridge process across the entire bridge lifetime.
+
+### Cross-cutting risks
+
+- **Reply correlation for shared sockets** (covered in design discussion). `/done /sync` is already self-correlating by sync-id; `/scope/allocate` is gone (bridge owns the allocator); `/clock/hello` is gone (bootstrap replaces it). The remaining shared-socket replies are scsynth multicasts (`/n_go`, `/n_end`, `/clock/tick`) which are intentionally fan-out anyway.
+- **sub_client_id range exhaustion.** Cap at 9; if the cap is hit, `POST /api/session` returns 503 with a clear error. Practical workload is 1–2 tabs; the cap is a safety net.
+- **Bootstrap race.** Bridge boots → tries `/sc-app/bootstrap/hello` → sclang isn't up yet → retries. Need a sane retry policy (3-second timeout, 5 retries; total 15 seconds) and a clear "sclang not reachable" path that lets the bridge serve HTTP/WS without sclang-dependent features. Mirror's the existing scsynth attach-mode pattern.
+- **SC_APP_CLOCK_CHUNK_SIZE env var migration.** Pre-39 deployments have it set in their systemd unit / launch script. Post-39 it's a config field. Plan: keep env var honoured for one release as a back-compat alias; warn-log if it's set; CLAUDE.md migration note.
+- **Synth-creation error handling on the bridge side.** `/s_new` doesn't have a synchronous reply; if scsynth refuses (duplicate node ID, missing SynthDef), the failure surfaces as `/fail`. Bridge needs to listen for `/fail` matching the `scAppClock` `/s_new` and surface it as a boot error. Wrap the `/s_new` in a `/sync` to make this synchronous.
+- **Stripping sclang's `/clock/hello` is observable.** Anyone who connects directly to sclang and sends `/clock/hello` (e.g. a debug script) gets nothing back. Document the migration; the bootstrap wire format is the new way.
+
+### Phase 39 ordering vs Phase 38
+
+Phase 38 (drop binary scope wire format) is largely independent
+of Phase 39. The reasonable ordering is:
+
+1. **Phase 38 first** — `/scope/{subscribe,unsubscribe,chunk}` become real OSC. Phase 39's "bridge owns scope allocator" then plugs naturally into the OSC outbound middleware (no binary-frame branch left to worry about).
+2. **Phase 39 second** — Server abstraction + bootstrap + sclang lib refactor. Already assumes scope ops are OSC.
+
+Could also do 39 first, then 38, but 38 → 39 is the cleaner dependency direction.
 
 ---
 
