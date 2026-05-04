@@ -31,7 +31,7 @@ use crate::server::middleware::{
     InboundMiddleware, MiddlewareOutcome, MiddlewareRegistry, OutboundMiddleware,
     WsCtx,
 };
-use crate::server::session::ScopeShm;
+use crate::server::server::ScopeShm;
 
 pub const SCOPE_SUBSCRIBE_ADDRESS: &str = "/scope/subscribe";
 pub const SCOPE_UNSUBSCRIBE_ADDRESS: &str = "/scope/unsubscribe";
@@ -207,7 +207,8 @@ async fn install_subscription<'a>(
     match session.scope_mode {
         ScopeMode::Shm => {
             if ctx.scope.shm.is_none() {
-                let shm = session
+                let shm = ctx
+                    .scsynth_server
                     .ensure_scope_shm()
                     .await
                     .map_err(|e| anyhow::anyhow!("ensure_scope_shm failed: {e}"))?;
@@ -330,8 +331,8 @@ fn inbound_chunk_emit_on_tick(ctx: &mut WsCtx<'_>) -> MiddlewareOutcome {
 /// proceed. The bundles are pushed onto `ctx.udp_extras` for the
 /// dispatcher to flush via the session's scsynth socket.
 fn inbound_bgetn_issue_on_tick(ctx: &mut WsCtx<'_>) -> MiddlewareOutcome {
+    let scsynth_addr = ctx.scsynth_server.target();
     let scope = &mut *ctx.scope;
-    let scsynth_addr = ctx.session.scsynth_addr;
     for sub in scope.osc.subs.values_mut() {
         if sub.pending_offset.is_some() {
             // Previous read still in flight; mark a gap and start

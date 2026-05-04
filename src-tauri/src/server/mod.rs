@@ -2,24 +2,21 @@
 //!
 //! Three responsibilities:
 //! 1. `GET /ws` — upgrade to a WebSocket and attach it to a
-//!    bridge-managed Session (`?session=<uuid>`). The Session
-//!    owns the UDP sockets to scsynth + any other route target;
-//!    the WS is a forwarder. Phase 29 collapsed the pre-26
-//!    per-WS-socket model — there's no `?scsynth=` legacy path
-//!    anymore.
+//!    bridge-managed Session (`?session=<uuid>`).
 //! 2. `/api/session*` — REST endpoints for minting / reading /
 //!    deleting sessions (delegated to [`api`]).
 //! 3. *Optionally* serve the Vite `dist/` directory as static
-//!    files with a SPA fallback to `index.html` (delegated to
-//!    [`static_assets`]). In dev the frontend is served by
-//!    Vite, so the static fallback is `None` and any non-API,
-//!    non-`/ws` request 404s.
+//!    files with a SPA fallback to `index.html`.
 //!
-//! A background TTL task (Phase 29d) scans the SessionStore once
-//! per minute and evicts sessions whose `last_active` is older
-//! than the configured TTL. Each evicted session runs its
-//! cleanup bundle (/g_freeAll + /n_free + /notify 0).
+//! Phase 39a: UDP sockets, broadcast channels, and the scsynth
+//! `/notify` registration live on bridge-level [`server::Server`]
+//! instances (one per route target), not per-Session. Sessions
+//! become per-tab bookkeeping (sub_client_id, parent_group_id,
+//! scope_mode). The TTL eviction job sweeps stale sessions and
+//! runs `Session::cleanup` against the shared scsynth Server;
+//! `/notify 0` only runs at bridge shutdown.
 
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -40,50 +37,45 @@ mod api;
 pub(crate) mod middleware;
 mod routing;
 mod security;
+pub(crate) mod server;
 pub(crate) mod session;
 pub mod static_assets;
 pub mod ws_bridge;
 
 pub use routing::RoutingTable;
-use session::SessionStore;
+use server::{Server, ServerRole};
+use session::{send_bridge_notify_off, SessionStore, SubClientIdAllocator};
 
 /// How often the TTL eviction task scans the session store.
-/// One minute is well under the typical 30-minute TTL so a
-/// session that just expired won't linger more than a minute
-/// past its deadline.
 const TTL_SCAN_INTERVAL: Duration = Duration::from_secs(60);
 
 #[derive(Clone)]
 pub(crate) struct AppState {
     pub routes: Arc<RoutingTable>,
+    /// Phase 39a: bridge-level Server pool, one per unique route
+    /// target. Sessions never own UDP sockets; they look up
+    /// servers via this map.
+    pub servers: Arc<HashMap<SocketAddr, Arc<Server>>>,
+    /// Convenience strong-ref to the scsynth Server. Same Arc as
+    /// `servers[scsynth_addr]`. Avoids a HashMap lookup on the
+    /// hot paths (cleanup, scope SHM probe, /b_getn issuance).
+    pub scsynth_server: Arc<Server>,
     pub sessions: SessionStore,
-    /// Phase 37: scsynth address used to pick the handshake socket
-    /// at `Session::create`. Pre-37 this came from
-    /// `routes.default_target()`; the routes table no longer has a
-    /// default, so the address is plumbed through explicitly. Also
-    /// used by `/api/scope/{probe,layout,debug,headers}` to pick
-    /// the SHM file path (which is platform-derived from the
-    /// scsynth port).
-    pub scsynth_addr: SocketAddr,
-    /// Phase 36: when true, every new session unconditionally uses
-    /// `ScopeMode::Osc` even if SHM is reachable. Set via the
-    /// `bridge --no-shm` CLI flag for testing the OSC fallback path
-    /// without disabling SHM at the OS layer.
+    pub sub_client_id_allocator: Arc<SubClientIdAllocator>,
+    /// Phase 36: when true, every new session uses
+    /// `ScopeMode::Osc` regardless of SHM availability. Set via
+    /// the `bridge --no-shm` CLI flag.
     pub force_osc_mode: bool,
 }
 
 #[derive(Deserialize)]
 struct WsQuery {
     /// Identifier for a bridge-managed Session minted via
-    /// `POST /api/session`. The WS attaches to that Session's
-    /// pre-bound UDP sockets and broadcast channels. Required —
-    /// the pre-29 `?scsynth=` legacy path is gone.
+    /// `POST /api/session`.
     session: Option<Uuid>,
 }
 
-/// Bind the TCP listener loopback-only on `port`. Returns the listener
-/// + the resolved local address (useful for callers that want to log
-/// or navigate to it before the server starts accepting).
+/// Bind the TCP listener loopback-only on `port`.
 pub async fn bind(port: u16) -> Result<(TcpListener, SocketAddr)> {
     let addr: SocketAddr = ([127, 0, 0, 1], port).into();
     let listener = TcpListener::bind(addr)
@@ -93,15 +85,11 @@ pub async fn bind(port: u16) -> Result<(TcpListener, SocketAddr)> {
     Ok((listener, local))
 }
 
-/// Run the HTTP+WS server on a pre-bound listener. `dist = None`
-/// disables the static fallback — anything that's not `/ws` or
-/// `/api/*` returns 404. The two-step `bind` + `serve_on` split
-/// lets GUI mode learn the port early so it can navigate the
-/// webview at the right URL before the event loop opens it.
-///
-/// Spawns a background TTL eviction task on the same runtime;
-/// no JoinHandle returned, the task lives until the bridge
-/// process exits.
+/// Run the HTTP+WS server on a pre-bound listener. Builds one
+/// [`Server`] per unique route target (plus `scsynth_addr` if
+/// not already a route target) at boot, runs the scsynth
+/// handshake (`/notify` + `/status`) once, then accepts HTTP
+/// connections.
 pub async fn serve_on(
     listener: TcpListener,
     routes: RoutingTable,
@@ -117,14 +105,44 @@ pub async fn serve_on(
         "  session TTL"
     );
 
+    // Build Servers for every unique route target + the scsynth
+    // address (which may not be a route target).
+    let mut targets: HashSet<SocketAddr> = routes.unique_targets().into_iter().collect();
+    targets.insert(scsynth_addr);
+
+    let mut servers: HashMap<SocketAddr, Arc<Server>> = HashMap::new();
+    for target in targets {
+        let role = if target == scsynth_addr {
+            ServerRole::Scsynth
+        } else {
+            // Phase 39a doesn't yet distinguish sclang from
+            // generic targets — Phase 39b will (so the bootstrap
+            // round-trip can run on the SclangServer).
+            ServerRole::Generic
+        };
+        let server = Server::build(target, role).await?;
+        servers.insert(target, server);
+    }
+    let scsynth_server = servers
+        .get(&scsynth_addr)
+        .expect("scsynth Server must be in the map (just inserted)")
+        .clone();
+
     let state = AppState {
         routes: Arc::new(routes),
+        servers: Arc::new(servers),
+        scsynth_server: scsynth_server.clone(),
         sessions: SessionStore::new(),
-        scsynth_addr,
+        sub_client_id_allocator: Arc::new(SubClientIdAllocator::new()),
         force_osc_mode,
     };
 
-    spawn_ttl_task(state.sessions.clone(), session_ttl);
+    spawn_ttl_task(
+        state.sessions.clone(),
+        state.scsynth_server.clone(),
+        state.sub_client_id_allocator.clone(),
+        session_ttl,
+    );
 
     let mut app = Router::new()
         .route("/ws", get(ws_handler))
@@ -149,19 +167,30 @@ pub async fn serve_on(
         app = app.fallback(no_static_fallback);
     }
 
-    // Phase 34: enforce loopback Host on every HTTP request to
-    // defend against DNS rebinding. Layered before `with_state`
-    // so it sees every route — `/ws`, `/api/*`, the static
-    // fallback, all of it.
     let app = app
         .layer(axum_middleware_from_fn(security::enforce_host))
-        .with_state(state);
-    axum::serve(listener, app).await.context("axum serve error")?;
-    Ok(())
+        .with_state(state.clone());
+
+    // Run the HTTP server, then on shutdown drain sessions and
+    // release the bridge's /notify slot.
+    let serve_result = axum::serve(listener, app).await.context("axum serve error");
+
+    tracing::info!("HTTP server stopping; running bridge teardown");
+    let active = state.sessions.drain_all().await;
+    for session in active {
+        session
+            .cleanup(&state.scsynth_server, &state.sub_client_id_allocator)
+            .await;
+    }
+    if let Err(e) = send_bridge_notify_off(&state.scsynth_server).await {
+        tracing::warn!(error = %e, "bridge /notify 0 failed at shutdown");
+    }
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    serve_result
 }
 
-/// Convenience wrapper for the `bridge` subcommand: bind + serve in
-/// one call, with an info log on the listening address.
+/// Convenience wrapper for the `bridge` subcommand: bind + serve.
 pub async fn run_bridge(
     port: u16,
     routes: RoutingTable,
@@ -181,13 +210,7 @@ async fn ws_handler(
     Query(query): Query<WsQuery>,
     headers: HeaderMap,
 ) -> Result<Response, (StatusCode, String)> {
-    // Phase 34: WebSocket upgrades aren't subject to SOP the way
-    // `fetch` is. Reject any upgrade whose Origin (when present)
-    // doesn't name a loopback origin.
     security::check_ws_origin(&headers)?;
-    // Phase 29: only the `?session=<uuid>` path is supported.
-    // The Session owns the UDP sockets, broadcast channels, and
-    // scsynth /notify subscription; the WS is purely a forwarder.
     let Some(session_id) = query.session else {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -201,26 +224,27 @@ async fn ws_handler(
         ));
     };
     Ok(ws.on_upgrade(move |socket| async move {
-        if let Err(e) = ws_bridge::handle_ws_session(socket, session).await {
+        if let Err(e) = ws_bridge::handle_ws_session(socket, session, state).await {
             tracing::warn!(error = %e, "ws_bridge session error");
         }
     }))
 }
 
-/// Spawn the once-a-minute TTL eviction loop. Detached — runs
-/// until the bridge process exits. The first tick fires after
-/// `TTL_SCAN_INTERVAL` (not immediately) so a freshly-bootstrapped
-/// frontend isn't racing with eviction during its first attach.
-fn spawn_ttl_task(sessions: SessionStore, ttl: Duration) {
+/// Spawn the once-a-minute TTL eviction loop.
+fn spawn_ttl_task(
+    sessions: SessionStore,
+    scsynth_server: Arc<Server>,
+    sub_client_id_allocator: Arc<SubClientIdAllocator>,
+    ttl: Duration,
+) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(TTL_SCAN_INTERVAL);
-        // tokio's first tick fires immediately by default; advance
-        // past it so we don't sweep before any session has even
-        // had a chance to be created.
-        interval.tick().await;
+        interval.tick().await; // skip the immediate first tick
         loop {
             interval.tick().await;
-            sessions.evict_idle(ttl).await;
+            sessions
+                .evict_idle(&scsynth_server, &sub_client_id_allocator, ttl)
+                .await;
         }
     });
 }

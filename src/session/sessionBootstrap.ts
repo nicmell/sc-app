@@ -20,13 +20,22 @@
 const STORAGE_KEY = 'sc.session';
 
 /** Mirror of the Rust [`server::session::SessionInfo`] JSON
- *  shape (camelCase via `#[serde(rename_all)]`). */
+ *  shape (camelCase via `#[serde(rename_all)]`).
+ *
+ *  Phase 39a: `clientId` was renamed to `scsynthClientId` (the
+ *  bridge-level scsynth `/notify` clientId, shared across all
+ *  sessions). New `subClientId` partitions the bridge's node-ID
+ *  space across concurrent sessions. The frontend's IdAllocator
+ *  base is `scsynthClientId * 1_000_000 + subClientId * 100_000
+ *  + 1000`. */
 export interface SessionInfo {
   sessionId: string;
-  clientId: number;
+  scsynthClientId: number;
+  subClientId: number;
   scsynth: string;
   sampleRate: number;
   parentGroupId: number;
+  scopeMode?: 'shm' | 'osc';
 }
 
 /** Read-or-create. If `sessionStorage` has an id, try to read it

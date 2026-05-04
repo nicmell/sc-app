@@ -56,6 +56,7 @@ import {
  *  ID_ALLOCATOR_START`; clientId=0 falls back to the pre-Phase-26
  *  base (1000) so single-client setups stay byte-identical. */
 const PER_CLIENT_ID_OFFSET = 1_000_000;
+const PER_SUB_CLIENT_ID_OFFSET = 100_000;
 const ID_ALLOCATOR_START = 1000;
 
 interface DashboardResources {
@@ -93,14 +94,17 @@ interface DashboardResources {
    *  in `sessionStorage`). Used by handleDisconnect to fire
    *  `DELETE /api/session/:id` and by the WS URL builder. */
   sessionId: string;
-  /** scsynth-assigned clientId. Phase 29: minted by the bridge
-   *  at `POST /api/session` time and supplied to the frontend
-   *  via `SessionInfo`. Stashed here so the re-init flow keeps
-   *  the same IdAllocator scoping. Non-zero when scsynth is
-   *  shared with sclang+SuperDirt at clientId=0. */
-  clientId: number;
-  /** Phase 29: derived bridge-side from `clientId` (× 100, with
-   *  the 0 → 100 fallback). */
+  /** scsynth's bridge-level clientId. Phase 39a: shared across
+   *  all sessions (the bridge runs `/notify 1` once at boot).
+   *  Used as the high-order base for IdAllocator partitioning. */
+  scsynthClientId: number;
+  /** Phase 39a: per-session sub-allocation index (0..MAX_SESSIONS).
+   *  Combined with `scsynthClientId` to compute a unique node-ID
+   *  range per session: `scsynthClientId * 1_000_000 + subClientId
+   *  * 100_000 + 1000`. */
+  subClientId: number;
+  /** Phase 39a: bridge-allocated unique group id per session
+   *  (`SESSION_GROUP_BASE + subClientId`). */
   parentGroupId: number;
   /** Phase 29: bridge-supplied via `SessionInfo` (read from
    *  scsynth's `/status.reply` at session creation). Round to
@@ -298,30 +302,21 @@ function wsUrlFor(sessionId: string): string {
 async function setupDashboard(
   client: WorkerClient,
   sessionId: string,
-  clientId: number,
+  scsynthClientId: number,
+  subClientId: number,
   parentGroupId: number,
   sampleRate: number,
   bank: PatternBank,
 ): Promise<DashboardResources> {
-  // Phase 26 — scope node/buffer IDs by clientId so we don't collide
-  // with sclang+SuperDirt at clientId=0. Bus allocator stays at 32
-  // (skips hardware-reserved); SuperDirt's bus usage doesn't overlap
-  // sc-app's allocations in practice. Phase 30: bus allocator is
-  // synth-only — no other component allocates buses on the
-  // frontend side post-Phase-31 (the clock previously published a
-  // `clockBus`; that was retired in a post-34 tidy).
-  const idBase = clientId * PER_CLIENT_ID_OFFSET + ID_ALLOCATOR_START;
-  // Phase 36: the `buffer` IdAllocator is back. SHM mode
-  // (Phase 31) still uses sclang's `s.scopeBufferAllocator`
-  // (0..127) — `BufferController.startShm()` does
-  // `/scope/allocate`, no client-side bufnum needed. OSC
-  // fallback mode (Phase 36) revives `/b_alloc` for the
-  // BufWr-based tap synth, which needs a client-side bufnum
-  // allocator. Base offset +5000 leaves room below for nodes;
-  // scsynth doesn't enforce per-client bufnum ranges (unlike
-  // node IDs that error on duplicate) but keeping them in our
-  // own per-clientId range avoids collisions with SuperDirt's
-  // own buffer usage.
+  // Phase 39a — IdAllocator base partitions across both the
+  // scsynth-level clientId AND the bridge-allocated subClientId.
+  // The bridge runs /notify 1 once and gets a single clientId;
+  // sessions sub-partition that 1M-id slice into 100K-id slices
+  // via subClientId. Buffer base sits +5000 above node base.
+  const idBase =
+    scsynthClientId * PER_CLIENT_ID_OFFSET +
+    subClientId * PER_SUB_CLIENT_ID_OFFSET +
+    ID_ALLOCATOR_START;
   const ids = {
     node: new IdAllocator(idBase),
     bus: new IdAllocator(32),
@@ -329,7 +324,8 @@ async function setupDashboard(
   };
 
   console.log(
-    `[sc:app] setupDashboard clientId=${clientId} parentGroupId=${parentGroupId} ` +
+    `[sc:app] setupDashboard scsynthClientId=${scsynthClientId} ` +
+      `subClientId=${subClientId} parentGroupId=${parentGroupId} ` +
       `idBase=${idBase} (node allocator start)`,
   );
 
@@ -460,7 +456,8 @@ async function setupDashboard(
     scopeManager,
     recordingManager,
     sessionId,
-    clientId,
+    scsynthClientId,
+    subClientId,
     parentGroupId,
     sampleRate,
     status: createStore<ScsynthStatus | null>(null),
@@ -668,7 +665,8 @@ export function AppShell() {
       built = await setupDashboard(
         next,
         info.sessionId,
-        info.clientId,
+        info.scsynthClientId,
+        info.subClientId,
         info.parentGroupId,
         info.sampleRate,
         bank,

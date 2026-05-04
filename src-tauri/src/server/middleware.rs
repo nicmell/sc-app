@@ -39,6 +39,7 @@ use std::sync::Arc;
 
 use regex::Regex;
 
+use super::server::Server;
 use super::session::Session;
 use crate::scope::middleware::{
     InboundScopeMiddleware, OutboundScopeMiddleware, ScopeContext,
@@ -74,44 +75,40 @@ pub enum Direction {
 /// for one packet only.
 pub(crate) struct WsCtx<'a> {
     pub session: &'a Arc<Session>,
+    /// Phase 39a: shared scsynth Server. Used by middlewares that
+    /// need to talk to scsynth (`ensure_scope_shm`, future
+    /// `/b_getn` issuance via UDP-extras).
+    pub scsynth_server: &'a Arc<Server>,
     /// Scope state. Already locked by the dispatcher; the handler
     /// gets exclusive mutable access for the duration of the
     /// callback.
     pub scope: &'a mut ScopeContext,
-    /// Which leg of the OSC pipe is dispatching. Currently
-    /// unused by the handler bodies (each variant is registered
-    /// for one direction so the redundancy is implicit), but
-    /// kept on the context for future use.
+    /// Which leg of the OSC pipe is dispatching.
     #[allow(dead_code)]
     pub direction: Direction,
-    /// Inbound only: which UDP target this payload arrived from
-    /// (the broadcast forwarder knows). `None` for outbound.
-    /// Currently unused; kept for future inbound middlewares
-    /// that want to disambiguate by source target.
+    /// Inbound only: which UDP target this payload arrived from.
     #[allow(dead_code)]
     pub source_target: Option<SocketAddr>,
     /// Side channel: bytes the dispatcher should send to the WS
-    /// sink AFTER the middleware returns. Used by the SHM-mode
-    /// chunk-emit-on-tick middleware (one tick can produce N chunk
-    /// frames, one per active subscription). The dispatcher
-    /// drains this before returning.
+    /// sink AFTER the middleware returns.
     pub ws_extras: Vec<Vec<u8>>,
     /// Side channel: UDP packets the dispatcher should send AFTER
-    /// the middleware returns. Used by the OSC-mode bgetn-issue-
-    /// on-tick middleware (each tick fires one /b_getn per active
-    /// subscription). The dispatcher drains this before returning.
+    /// the middleware returns. Keyed by target address; the
+    /// dispatcher resolves to a Server via `AppState.servers`.
     pub udp_extras: Vec<(SocketAddr, Vec<u8>)>,
 }
 
 impl<'a> WsCtx<'a> {
     pub fn new(
         session: &'a Arc<Session>,
+        scsynth_server: &'a Arc<Server>,
         scope: &'a mut ScopeContext,
         direction: Direction,
         source_target: Option<SocketAddr>,
     ) -> Self {
         Self {
             session,
+            scsynth_server,
             scope,
             direction,
             source_target,
