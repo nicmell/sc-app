@@ -524,7 +524,32 @@ When working on a phase:
    the "Current phase progress" line below.
 
 Current phase progress: **No phase currently in flight.** The
-last nine landed (most recent first):
+last ten landed (most recent first):
+
+**Phase 39 shipped — Server abstraction + bridge-owned boot
+sequence.** Hoisted UDP sockets, broadcast channels, and the
+scsynth `/notify` registration up from per-Session into
+bridge-level `Server` instances (one per route target).
+Sessions become per-tab bookkeeping (`sub_client_id`,
+`parent_group_id`, `scope_mode`); bridge runs `/notify 1` once
+at boot — `maxLogins=8` is no longer a session ceiling.
+SessionInfo carries cached `clock` / `numScopeBuffers` /
+`dirtSamples` from a single `/sc-app/bootstrap/hello` round-trip
+to sclang at boot — frontend's setup path makes ZERO sclang
+OSC round-trips. Bridge owns the scope-buffer allocator
+(`/scope/{allocate,free}` are outbound middlewares synthesizing
+their replies via `ws_extras`, no UDP) and the `\scAppClock`
+`/s_new` (`chunkSize` moves from `SC_APP_CLOCK_CHUNK_SIZE` env
+to `config.clock_chunk_size`). sclang's role strips down to
+"declare" — `.add()` SynthDefs, allocate buses, contribute to
+`~scAppBootstrapCtx`. Cost: shared sockets mean every WS sees
+every `/fail` (cross-session reply visibility); documented as
+a known gotcha. Files: new `src-tauri/src/server/server.rs`
+(~640 lines: Server class + bootstrap handshake + clock
+/s_new); session.rs rewritten; new
+`scripts/lib/bootstrap.scd`; `scripts/lib/{chunk-size,
+dirt-list-samples,scope}.scd` deleted. See `docs/history.md`
+Phase 39 for the full write-up.
 
 **Phase 38 shipped — Pure-OSC Scope Wire Format.** Retired the
 binary 0x01 / 0x02 / 0x03 op-tag mux on `/ws` introduced by
