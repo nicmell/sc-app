@@ -10,7 +10,7 @@ chunkSize × sampleRate practical table all live in
 [`CLAUDE.md`](./CLAUDE.md) — don't duplicate them here.
 
 **Phase 39 — Server abstraction + bridge-owned boot sequence**
-is queued; spec below. Phases 0–38 are in
+is in flight; spec below. Phases 0–38 are in
 [`docs/history.md`](./docs/history.md).
 
 ---
