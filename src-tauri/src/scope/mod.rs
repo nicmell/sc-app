@@ -14,6 +14,7 @@
 //! Both modes emit identical 0x03 chunk frames on the main `/ws`
 //! — see `server::ws_bridge` for the dispatch glue.
 
+pub mod middleware;
 pub mod osc;
 pub mod shm;
 

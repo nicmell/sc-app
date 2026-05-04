@@ -25,6 +25,31 @@
 //! See `src/workers/scopeWire.ts` for the worker-side encoder /
 //! decoder.
 //!
+//! Phase 37c: the scope-related dispatch logic moved out of this
+//! module into [`crate::scope::middleware`]. ws_bridge now owns:
+//!
+//! 1. The recv loop (WS → bridge):
+//!    - 0x01 / 0x02 binary frames call into
+//!      [`crate::scope::middleware::ws_scope_subscribe_binary`] /
+//!      [`crate::scope::middleware::ws_scope_unsubscribe_binary`]
+//!      directly.
+//!    - OSC payloads run through [`super::middleware::dispatch_outbound`]
+//!      first (no variants registered in 37c — Phase 38 adds
+//!      `/scope/{subscribe,unsubscribe}`), then fall through to
+//!      [`super::routing::RoutingTable::route_for`] + UDP send.
+//!      Orphan addresses (no route + no middleware) drop with a
+//!      `warn!` log.
+//! 2. The forwarder loop (bridge → WS):
+//!    - Each broadcast payload is run through
+//!      [`super::middleware::dispatch_inbound`]. The scope
+//!      module registers handlers for `^/clock/tick$` (chunk
+//!      emission in SHM mode, `/b_getn` issuance in OSC mode)
+//!      and `^/b_setn` (intercept matching bufnums in OSC mode).
+//!      Side-effect bytes (per-tick chunks, per-tick `/b_getn`
+//!      bundles) flow through `WsCtx::ws_extras` and
+//!      `WsCtx::udp_extras`; the forwarder drains them post-
+//!      dispatch.
+//!
 //! ## WS-close cleanup
 //!
 //! `ScopeContext` lives in `handle_ws_session`'s scope and drops
@@ -36,7 +61,6 @@
 //! on the same session reuse it; it drops only when the Session
 //! itself drops (TTL eviction or DELETE).
 
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -48,68 +72,15 @@ use tokio::sync::broadcast;
 use tokio::sync::Mutex as TokioMutex;
 use tokio::task::JoinHandle;
 
+use super::middleware::{
+    self, Direction, InboundMiddleware, MiddlewareOutcome, MiddlewareRegistry,
+    OutboundMiddleware, WsCtx,
+};
 use super::routing::peek_osc_address;
 use super::session::Session;
-use crate::scope::osc::{self as scope_osc, OscPollState, OscScopeSubscription};
-use crate::scope::shm::{self as scope_shm, ScopeReadResult};
-use crate::scope::ScopeMode;
-
-const SCOPE_OP_SUBSCRIBE: u8 = 0x01;
-const SCOPE_OP_UNSUBSCRIBE: u8 = 0x02;
-const SCOPE_OP_CHUNK: u8 = 0x03;
-
-/// Per-WS scope subscription state. Keyed by the worker-minted
-/// `sub_id` (`u32`). The bridge never interprets that id beyond
-/// echoing it back on chunk frames; we use it as a HashMap key
-/// because it's small and unique-per-WS.
-#[derive(Debug)]
-struct ShmScopeSubscription {
-    sub_id: u32,
-    scope_idx: u32,
-    last_seen_stage: i32,
-    /// Tick counter local to this subscription. Bumped on each
-    /// emitted chunk; the worker uses it for diagnostics + as a
-    /// monotonic ordering signal.
-    tick_index: u32,
-}
-
-/// Per-WS scope context. Owned by `handle_ws_session`'s scope;
-/// drops when the WS closes (and with it, every subscription —
-/// see module docs for the cleanup invariant).
-///
-/// Phase 36: dual-mode. The session's `ScopeMode` decides which
-/// branch is populated. Both arms are always allocated (zero-cost
-/// when unused — `HashMap::new()` doesn't allocate); only the
-/// active path's storage gets entries. A handoff between modes
-/// mid-session is unsupported (Session::scope_mode is frozen at
-/// create).
-pub(crate) struct ScopeContext {
-    /// SHM mode: lazily-populated session-level mmap. Multiple
-    /// WSs on the same session share one mapping (lives on
-    /// `Session::scope_shm`).
-    shm: Option<Arc<crate::server::session::ScopeShm>>,
-    /// SHM mode: active subscriptions, keyed by `sub_id`.
-    shm_subs: HashMap<u32, ShmScopeSubscription>,
-    /// OSC fallback mode: active subscriptions + ring-half
-    /// tracking. Empty in SHM mode.
-    osc: OscPollState,
-}
-
-impl ScopeContext {
-    fn new() -> Self {
-        Self {
-            shm: None,
-            shm_subs: HashMap::new(),
-            osc: OscPollState::default(),
-        }
-    }
-
-    /// Total subscription count across both modes — used for the
-    /// WS-close cleanup log line.
-    fn total_subs(&self) -> usize {
-        self.shm_subs.len() + self.osc.subs.len()
-    }
-}
+use crate::scope::middleware::{
+    self as scope_mw, ScopeContext, SCOPE_OP_SUBSCRIBE, SCOPE_OP_UNSUBSCRIBE,
+};
 
 /// Bridge a WebSocket against an existing [`Session`]'s pre-bound
 /// UDP sockets. Inbound replies fan out via `broadcast::Sender`
@@ -124,41 +95,51 @@ pub async fn handle_ws_session(ws: WebSocket, session: Arc<Session>) -> Result<(
 
     // Phase 35: per-WS scope subscriptions. Wrapped in a Mutex so
     // the recv loop (handles 0x01/0x02 from main) and the
-    // default-route forwarder (polls SHM on /clock/tick) can both
-    // mutate it.
+    // broadcast forwarder (runs the inbound middleware on every
+    // payload) can both mutate it.
     let scope_ctx = Arc::new(TokioMutex::new(ScopeContext::new()));
 
-    // Subscribe to each target's broadcast channel and spawn a
-    // forwarder task per channel. The default-route forwarder
-    // also peeks for /clock/tick and drives the SHM polling
-    // loop for this WS's scope subscriptions.
+    // Phase 37c: build the per-WS middleware registries. Outbound
+    // is empty in 37c (binary 0x01/0x02 frames bypass middleware;
+    // Phase 38 adds OSC variants). Inbound gets the scope-owned
+    // handlers appropriate for this session's ScopeMode.
+    let outbound_registry: Arc<MiddlewareRegistry<OutboundMiddleware>> =
+        Arc::new(MiddlewareRegistry::new());
+    let inbound_registry: Arc<MiddlewareRegistry<InboundMiddleware>> = {
+        let mut reg = MiddlewareRegistry::new();
+        scope_mw::register_inbound_middlewares(&mut reg, session.scope_mode);
+        Arc::new(reg)
+    };
+
+    // Subscribe to each target's broadcast channel and spawn one
+    // forwarder per channel. Every forwarder runs the inbound
+    // dispatcher; the registry decides per-address whether to do
+    // anything (most addresses pass through trivially).
     let mut forwarder_tasks: Vec<JoinHandle<()>> = Vec::new();
     for (target, sender) in session.broadcast_senders.iter() {
         let receiver = sender.subscribe();
         let target = *target;
         let tx_clone = tx.clone();
-        let task = if target == session.scsynth_addr {
-            // Default-route forwarder also drives scope polling.
-            let scope_ctx_clone = scope_ctx.clone();
-            let session_clone = session.clone();
-            tokio::spawn(forward_default_route(
-                receiver,
-                tx_clone,
-                target,
-                scope_ctx_clone,
-                session_clone,
-            ))
-        } else {
-            tokio::spawn(forward_broadcast(receiver, tx_clone, target))
-        };
+        let scope_ctx_clone = scope_ctx.clone();
+        let session_clone = session.clone();
+        let inbound_clone = inbound_registry.clone();
+        let task = tokio::spawn(forward_with_dispatch(
+            receiver,
+            tx_clone,
+            target,
+            scope_ctx_clone,
+            session_clone,
+            inbound_clone,
+        ));
         forwarder_tasks.push(task);
     }
 
     // WS → UDP loop. Per binary frame:
-    //   1. Peek the first byte. 0x01/0x02 → scope subprotocol
-    //      (see `handle_scope_*`).
-    //   2. Otherwise → OSC: peek the address, route via
-    //      session.routes, send on the matching socket.
+    //   1. Peek the first byte. 0x01/0x02 → binary scope
+    //      subprotocol (delegates to scope::middleware).
+    //   2. Otherwise → OSC: dispatch_outbound first; if PassThrough
+    //      (always in 37c), fall through to routes.route_for + UDP
+    //      send. Orphan addresses drop+warn.
     while let Some(msg) = rx.next().await {
         match msg {
             Ok(Message::Binary(bytes)) => {
@@ -168,9 +149,9 @@ pub async fn handle_ws_session(ws: WebSocket, session: Arc<Session>) -> Result<(
                 }
                 match bytes_slice[0] {
                     SCOPE_OP_SUBSCRIBE => {
-                        if let Err(e) = handle_scope_subscribe(
+                        if let Err(e) = scope_mw::ws_scope_subscribe_binary(
                             bytes_slice,
-                            &scope_ctx,
+                            scope_ctx.as_ref(),
                             &session,
                         )
                         .await
@@ -183,9 +164,9 @@ pub async fn handle_ws_session(ws: WebSocket, session: Arc<Session>) -> Result<(
                         }
                     }
                     SCOPE_OP_UNSUBSCRIBE => {
-                        if let Err(e) = handle_scope_unsubscribe(
+                        if let Err(e) = scope_mw::ws_scope_unsubscribe_binary(
                             bytes_slice,
-                            &scope_ctx,
+                            scope_ctx.as_ref(),
                             &session,
                         )
                         .await
@@ -198,45 +179,18 @@ pub async fn handle_ws_session(ws: WebSocket, session: Arc<Session>) -> Result<(
                         }
                     }
                     _ => {
-                        // OSC byte → existing forward path.
-                        // Phase 37: routes.route_for returns
-                        // Option<SocketAddr> (no implicit default).
-                        // Orphan addresses drop with a warn! log.
-                        // The middleware layer (37b/37c) will hook
-                        // in BEFORE this point and reclaim addresses
-                        // like /scope/subscribe; for 37a the only
-                        // outbound traffic from the worker that
-                        // doesn't match a route is bug-territory.
-                        let address = peek_osc_address(bytes_slice);
-                        let Some(addr_str) = address else {
-                            tracing::warn!(
-                                session_id = %session.session_id,
-                                "outbound packet has no parseable OSC address; dropping"
-                            );
-                            continue;
-                        };
-                        let Some(target) = session.routes.route_for(addr_str) else {
-                            tracing::warn!(
-                                session_id = %session.session_id,
-                                address = addr_str,
-                                "orphan outbound address (no matching route); dropping"
-                            );
-                            continue;
-                        };
-                        let Some(sock) = session.target_sockets.get(&target) else {
-                            tracing::warn!(
-                                ?target,
-                                session_id = %session.session_id,
-                                "no socket for routed target on session; dropping packet"
-                            );
-                            continue;
-                        };
-                        if let Err(e) = sock.send(bytes_slice).await {
+                        if let Err(e) = handle_outbound_osc(
+                            bytes_slice,
+                            &scope_ctx,
+                            &session,
+                            &outbound_registry,
+                        )
+                        .await
+                        {
                             tracing::warn!(
                                 error = %e,
-                                ?target,
                                 session_id = %session.session_id,
-                                "udp send error on session socket"
+                                "outbound dispatch error"
                             );
                             break;
                         }
@@ -252,7 +206,7 @@ pub async fn handle_ws_session(ws: WebSocket, session: Arc<Session>) -> Result<(
         }
     }
 
-    // Abort forwarders so they don't keep the broadcast
+    // Stop the per-target forwarders so they don't keep the
     // subscriptions alive after the WS sink closes.
     for task in &forwarder_tasks {
         task.abort();
@@ -281,137 +235,113 @@ pub async fn handle_ws_session(ws: WebSocket, session: Arc<Session>) -> Result<(
     Ok(())
 }
 
-async fn handle_scope_subscribe(
+/// Outbound dispatch for one OSC payload from the WS recv loop.
+/// 37c always returns PassThrough from `dispatch_outbound`
+/// (registry empty); the routing path runs every time. Phase 38
+/// will add `/scope/{subscribe,unsubscribe}` variants that may
+/// claim before routing.
+async fn handle_outbound_osc(
     bytes: &[u8],
     scope_ctx: &Arc<TokioMutex<ScopeContext>>,
     session: &Arc<Session>,
+    outbound_registry: &Arc<MiddlewareRegistry<OutboundMiddleware>>,
 ) -> Result<()> {
-    // Frame: [op:u8 | sub_id:u32 | scope:u32 | channels:u32 | chunk:u32]
-    // The `scope` field is interpreted as scope_idx in SHM mode
-    // and as bufnum in OSC mode (frontend picks accordingly).
-    if bytes.len() < 17 {
-        anyhow::bail!("subscribe frame too short ({} < 17)", bytes.len());
-    }
-    let sub_id = u32::from_le_bytes(bytes[1..5].try_into().unwrap());
-    let scope_or_bufnum = u32::from_le_bytes(bytes[5..9].try_into().unwrap());
-    let channels = u32::from_le_bytes(bytes[9..13].try_into().unwrap());
-    let chunk_size = u32::from_le_bytes(bytes[13..17].try_into().unwrap());
-
-    match session.scope_mode {
-        ScopeMode::Shm => {
-            let mut ctx = scope_ctx.lock().await;
-            if ctx.shm.is_none() {
-                let shm = session
-                    .ensure_scope_shm()
-                    .await
-                    .map_err(|e| anyhow::anyhow!("ensure_scope_shm failed: {e}"))?;
-                ctx.shm = Some(shm);
-            }
-            let shm = ctx.shm.as_ref().expect("shm just set above");
-            if (scope_or_bufnum as usize) >= shm.layout.count {
-                anyhow::bail!(
-                    "scope index {} out of range (layout count {})",
-                    scope_or_bufnum,
-                    shm.layout.count
-                );
-            }
-            if let Some(prev) = ctx.shm_subs.insert(
-                sub_id,
-                ShmScopeSubscription {
-                    sub_id,
-                    scope_idx: scope_or_bufnum,
-                    last_seen_stage: -1,
-                    tick_index: 0,
-                },
-            ) {
-                tracing::warn!(
-                    session_id = %session.session_id,
-                    sub_id,
-                    prev_scope_idx = prev.scope_idx,
-                    new_scope_idx = scope_or_bufnum,
-                    "scope subscribe replaced existing SHM subscription with same sub_id"
-                );
-            }
-            tracing::debug!(
-                session_id = %session.session_id,
-                sub_id,
-                scope_idx = scope_or_bufnum,
-                channels,
-                chunk_size,
-                "shm scope subscription installed"
-            );
-        }
-        ScopeMode::Osc => {
-            let mut ctx = scope_ctx.lock().await;
-            if let Some(prev) = ctx.osc.subs.insert(
-                sub_id,
-                OscScopeSubscription::new(
-                    sub_id,
-                    scope_or_bufnum,
-                    channels,
-                    chunk_size,
-                ),
-            ) {
-                tracing::warn!(
-                    session_id = %session.session_id,
-                    sub_id,
-                    prev_bufnum = prev.bufnum,
-                    new_bufnum = scope_or_bufnum,
-                    "scope subscribe replaced existing OSC subscription with same sub_id"
-                );
-            }
-            tracing::debug!(
-                session_id = %session.session_id,
-                sub_id,
-                bufnum = scope_or_bufnum,
-                channels,
-                chunk_size,
-                "osc scope subscription installed"
-            );
-        }
-    }
-    Ok(())
-}
-
-async fn handle_scope_unsubscribe(
-    bytes: &[u8],
-    scope_ctx: &Arc<TokioMutex<ScopeContext>>,
-    session: &Arc<Session>,
-) -> Result<()> {
-    if bytes.len() < 5 {
-        anyhow::bail!("unsubscribe frame too short ({} < 5)", bytes.len());
-    }
-    let sub_id = u32::from_le_bytes(bytes[1..5].try_into().unwrap());
-    let mut ctx = scope_ctx.lock().await;
-    let removed = match session.scope_mode {
-        ScopeMode::Shm => ctx.shm_subs.remove(&sub_id).is_some(),
-        ScopeMode::Osc => ctx.osc.subs.remove(&sub_id).is_some(),
+    let address = peek_osc_address(bytes);
+    let Some(addr_str) = address else {
+        tracing::warn!(
+            session_id = %session.session_id,
+            "outbound packet has no parseable OSC address; dropping"
+        );
+        return Ok(());
     };
-    if !removed {
-        tracing::debug!(sub_id, "scope unsubscribe for unknown sub_id");
+
+    // Outbound dispatch. Skip the lock acquisition entirely if
+    // the registry is empty (37c default).
+    let outcome = if outbound_registry.is_empty() {
+        MiddlewareOutcome::PassThrough
+    } else {
+        let mut scope = scope_ctx.lock().await;
+        let mut ctx = WsCtx::new(session, &mut scope, Direction::Outbound, None);
+        let outcome = middleware::dispatch_outbound(
+            outbound_registry,
+            &mut ctx,
+            addr_str,
+            bytes,
+        )
+        .await;
+        // Drain side-channels even on outbound (handlers may
+        // emit additional UDP packets — none do today, but the
+        // shape is preserved for future use).
+        let WsCtx { ws_extras, udp_extras, .. } = ctx;
+        flush_udp_extras(session, udp_extras).await;
+        // ws_extras on outbound: route via routing table just
+        // like the original payload would. Empty in 37c.
+        for extra in ws_extras {
+            tracing::warn!(
+                session_id = %session.session_id,
+                bytes = extra.len(),
+                "outbound middleware emitted ws_extras — Phase 37c expected this empty"
+            );
+        }
+        outcome
+    };
+
+    let payload = match outcome {
+        MiddlewareOutcome::Consumed => return Ok(()),
+        MiddlewareOutcome::ConsumedAndSend(bytes) => bytes,
+        MiddlewareOutcome::PassThrough => bytes.to_vec(),
+    };
+
+    // Default routing path: regex match → UDP send.
+    let route_addr = peek_osc_address(&payload).unwrap_or(addr_str);
+    let Some(target) = session.routes.route_for(route_addr) else {
+        tracing::warn!(
+            session_id = %session.session_id,
+            address = route_addr,
+            "orphan outbound address (no matching route); dropping"
+        );
+        return Ok(());
+    };
+    let Some(sock) = session.target_sockets.get(&target) else {
+        tracing::warn!(
+            ?target,
+            session_id = %session.session_id,
+            "no socket for routed target on session; dropping packet"
+        );
+        return Ok(());
+    };
+    if let Err(e) = sock.send(&payload).await {
+        anyhow::bail!("udp send to {target}: {e}");
     }
     Ok(())
 }
 
-/// Per-target forwarder task body. Pulls payloads off the
-/// session's broadcast channel and pushes each to the WS sink.
-/// `Lagged` warns + continues; `Closed` (sender gone — Session
-/// dropped) breaks cleanly.
-async fn forward_broadcast(
+/// Per-target broadcast forwarder. Peels payloads off the
+/// session's broadcast channel; runs each through the inbound
+/// dispatcher; sends the result (original, swapped bytes, or
+/// nothing) to the WS sink; then drains the side-channel extras
+/// (chunk frames to the WS, /b_getn bundles to UDP).
+async fn forward_with_dispatch(
     mut receiver: broadcast::Receiver<Vec<u8>>,
     tx: Arc<TokioMutex<SplitSink<WebSocket, Message>>>,
     target: SocketAddr,
+    scope_ctx: Arc<TokioMutex<ScopeContext>>,
+    session: Arc<Session>,
+    inbound_registry: Arc<MiddlewareRegistry<InboundMiddleware>>,
 ) {
     loop {
         match receiver.recv().await {
             Ok(payload) => {
-                let mut tx_guard = tx.lock().await;
-                if let Err(e) = tx_guard.send(Message::Binary(payload.into())).await {
-                    tracing::debug!(
-                        error = %e,
-                        ?target,
-                        "ws send error from session forwarder (probably closed)"
-                    );
+                if let Err(()) = forward_one_payload(
+                    &payload,
+                    &tx,
+                    target,
+                    &scope_ctx,
+                    &session,
+                    &inbound_registry,
+                )
+                .await
+                {
                     break;
                 }
             }
@@ -421,370 +351,124 @@ async fn forward_broadcast(
                     ?target,
                     "session forwarder lagged; some replies dropped"
                 );
-                // Continue — broadcast::Receiver auto-recovers.
-            }
-            Err(broadcast::error::RecvError::Closed) => {
-                // Session dropped; the recv-broadcast task already
-                // exited, no more bytes coming.
-                break;
-            }
-        }
-    }
-}
-
-/// Default-route forwarder. Mode-aware (Phase 36):
-///
-/// - **SHM mode**: peek `/clock/tick`; on hit, poll SHM for every
-///   subscription on this WS and emit 0x03 frames for those whose
-///   `_stage` advanced. Other payloads forward as plain OSC.
-/// - **OSC mode**: peek `/b_setn` first — if its bufnum matches
-///   one of our active subscriptions, intercept (encode 0x03
-///   frame, don't forward to WS). Other payloads forward as
-///   plain OSC. Peek `/clock/tick`; on hit, issue `/b_getn` for
-///   each subscription whose previous read has settled (one
-///   outstanding read per sub).
-///
-/// Both modes forward the original OSC payload to the WS unless
-/// it's a chunk we intercepted.
-async fn forward_default_route(
-    mut receiver: broadcast::Receiver<Vec<u8>>,
-    tx: Arc<TokioMutex<SplitSink<WebSocket, Message>>>,
-    target: SocketAddr,
-    scope_ctx: Arc<TokioMutex<ScopeContext>>,
-    session: Arc<Session>,
-) {
-    loop {
-        match receiver.recv().await {
-            Ok(payload) => {
-                let address = peek_osc_address(&payload);
-                let is_tick = address == Some("/clock/tick");
-
-                // Phase 36: in OSC mode, /b_setn replies for our
-                // own /b_getn requests get intercepted as chunk
-                // frames; everything else (including /b_setn for
-                // bufnums we don't own) forwards normally.
-                let mut intercepted_chunks: Vec<Vec<u8>> = Vec::new();
-                let mut forward_payload = true;
-                if session.scope_mode == ScopeMode::Osc
-                    && address == Some("/b_setn")
-                {
-                    match try_intercept_bsetn(&payload, &scope_ctx).await {
-                        Some(frame) => {
-                            intercepted_chunks.push(frame);
-                            forward_payload = false;
-                        }
-                        None => {
-                            // /b_setn for some bufnum we don't own
-                            // (or a parse failure). Let it through.
-                        }
-                    }
-                }
-
-                if forward_payload {
-                    let mut tx_guard = tx.lock().await;
-                    if let Err(e) = tx_guard
-                        .send(Message::Binary(payload.into()))
-                        .await
-                    {
-                        tracing::debug!(
-                            error = %e,
-                            ?target,
-                            "ws send error from default-route forwarder (probably closed)"
-                        );
-                        break;
-                    }
-                }
-
-                // /clock/tick drives the scope poll regardless of
-                // mode — but the actual work is mode-dependent.
-                if is_tick {
-                    let mut chunk_frames = match session.scope_mode {
-                        ScopeMode::Shm => {
-                            poll_scope_chunks(&scope_ctx, &session).await
-                        }
-                        ScopeMode::Osc => {
-                            // OSC mode: parse the tick index from
-                            // the broadcast payload, issue
-                            // /b_getn for each subscription whose
-                            // previous read has settled. Chunks
-                            // arrive later as /b_setn replies and
-                            // are intercepted above.
-                            issue_bgetn_for_subs(
-                                &scope_ctx, &session,
-                            )
-                            .await;
-                            // OSC mode also gets to emit any
-                            // pending gap-marker chunks
-                            // accumulated since last tick (e.g.
-                            // for subs whose previous read timed
-                            // out). For now return empty — gap
-                            // emission is a follow-up.
-                            Vec::new()
-                        }
-                    };
-                    chunk_frames.append(&mut intercepted_chunks);
-                    if !chunk_frames.is_empty() {
-                        let mut tx_guard = tx.lock().await;
-                        for frame in chunk_frames {
-                            if let Err(e) = tx_guard
-                                .send(Message::Binary(frame.into()))
-                                .await
-                            {
-                                tracing::debug!(
-                                    error = %e,
-                                    "ws send error sending scope chunk (probably closed)"
-                                );
-                                return;
-                            }
-                        }
-                    }
-                } else if !intercepted_chunks.is_empty() {
-                    // Non-tick payload but we intercepted a /b_setn
-                    // chunk — flush it to the WS.
-                    let mut tx_guard = tx.lock().await;
-                    for frame in intercepted_chunks {
-                        if let Err(e) = tx_guard
-                            .send(Message::Binary(frame.into()))
-                            .await
-                        {
-                            tracing::debug!(
-                                error = %e,
-                                "ws send error sending scope chunk (probably closed)"
-                            );
-                            return;
-                        }
-                    }
-                }
-            }
-            Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                tracing::warn!(
-                    skipped,
-                    ?target,
-                    "session default-route forwarder lagged; some replies dropped"
-                );
             }
             Err(broadcast::error::RecvError::Closed) => break,
         }
     }
 }
 
-/// OSC mode: try to intercept a `/b_setn` broadcast payload. If
-/// its bufnum matches one of this WS's active subscriptions,
-/// returns an encoded 0x03 chunk frame; the caller suppresses
-/// forwarding the original payload to the WS. If no subscription
-/// matches (different bufnum, or parse failure), returns `None`
-/// and the caller forwards the payload as a normal OSC reply.
-async fn try_intercept_bsetn(
+/// Run inbound dispatch + WS send for a single broadcast payload.
+/// Returns `Err(())` to signal the caller to break the loop (WS
+/// sink closed). Returns `Ok(())` on either successful forward or
+/// successful "middleware consumed it, nothing to send".
+async fn forward_one_payload(
     payload: &[u8],
-    scope_ctx: &Arc<TokioMutex<ScopeContext>>,
-) -> Option<Vec<u8>> {
-    let parsed = scope_osc::parse_bsetn(payload)?;
-    let mut ctx = scope_ctx.lock().await;
-    let sub = ctx.osc.find_by_bufnum_mut(parsed.bufnum)?;
-    // Only emit if the offset matches the outstanding read.
-    // Stale replies (we issued a new /b_getn meanwhile) get
-    // discarded — they'd produce a half we already moved past.
-    let pending = sub.pending_offset?;
-    if pending != parsed.offset as u32 {
-        return None;
-    }
-    let floats = scope_osc::decode_bsetn_floats(parsed.raw_floats)?;
-    let frame_count = sub.chunk_size;
-    let channels = sub.channels.min(255) as u8;
-    let is_gap = sub.last_was_gap;
-    sub.pending_offset = None;
-    sub.last_was_gap = false;
-    sub.tick_index = sub.tick_index.wrapping_add(1);
-    Some(scope_osc::encode_chunk(
-        sub.sub_id,
-        sub.tick_index,
-        is_gap,
-        channels,
-        frame_count,
-        &floats,
-    ))
-}
-
-/// OSC mode: on each `/clock/tick`, issue a fresh `/b_getn` for
-/// every subscription whose previous read has settled. Subs with
-/// a still-pending read get a gap marker (their next emitted
-/// chunk will set `is_gap: true`); we drop the in-flight read so
-/// the next tick's read can proceed.
-async fn issue_bgetn_for_subs(
+    tx: &Arc<TokioMutex<SplitSink<WebSocket, Message>>>,
+    target: SocketAddr,
     scope_ctx: &Arc<TokioMutex<ScopeContext>>,
     session: &Arc<Session>,
-) {
-    // Collect the work under the lock, then issue UDP sends after
-    // releasing it (so a slow /b_getn doesn't block the recv loop
-    // serializing on this Mutex).
-    let mut to_send: Vec<Vec<u8>> = Vec::new();
-    {
-        let mut ctx = scope_ctx.lock().await;
-        // We don't have a server tick index in the per-WS state
-        // yet — bump a per-sub counter and use it as the tick
-        // proxy for `compute_read_window`. Each subscription
-        // tracks its own progression independently of the server
-        // tick (acceptable for this fallback path; the worker
-        // doesn't rely on tick alignment across subscriptions).
-        for sub in ctx.osc.subs.values_mut() {
-            if sub.pending_offset.is_some() {
-                // Previous read still in flight; mark a gap and
-                // start fresh this tick.
-                sub.last_was_gap = true;
-                sub.pending_offset = None;
+    inbound_registry: &Arc<MiddlewareRegistry<InboundMiddleware>>,
+) -> std::result::Result<(), ()> {
+    let address = peek_osc_address(payload);
+
+    // Avoid the lock acquisition entirely when the registry has
+    // no matching middleware. Most addresses on most forwarders
+    // (e.g. /done from scsynth, /dirt/listSamples.reply from
+    // sclang) pass through without touching the scope context.
+    let needs_dispatch = address
+        .map(|a| inbound_registry.iter_matching(a).next().is_some())
+        .unwrap_or(false);
+
+    let (outcome, ws_extras, udp_extras) = if needs_dispatch {
+        let mut scope = scope_ctx.lock().await;
+        let mut ctx = WsCtx::new(
+            session,
+            &mut scope,
+            Direction::Inbound,
+            Some(target),
+        );
+        let outcome = middleware::dispatch_inbound(
+            inbound_registry,
+            &mut ctx,
+            address.expect("needs_dispatch implies Some"),
+            payload,
+        )
+        .await;
+        let WsCtx {
+            ws_extras,
+            udp_extras,
+            ..
+        } = ctx;
+        (outcome, ws_extras, udp_extras)
+    } else {
+        (MiddlewareOutcome::PassThrough, Vec::new(), Vec::new())
+    };
+
+    // Flush WS-bound bytes from the outcome + ws_extras side
+    // channel. Order matters: if a middleware on /b_setn returned
+    // ConsumedAndSend(chunk), we send the chunk INSTEAD of the
+    // /b_setn. If it returned PassThrough, we send the original.
+    // ws_extras (chunks emitted on /clock/tick in SHM mode) go
+    // out alongside.
+    let primary_bytes = match outcome {
+        MiddlewareOutcome::Consumed => None,
+        MiddlewareOutcome::ConsumedAndSend(bytes) => Some(bytes),
+        MiddlewareOutcome::PassThrough => Some(payload.to_vec()),
+    };
+
+    if primary_bytes.is_some() || !ws_extras.is_empty() {
+        let mut tx_guard = tx.lock().await;
+        if let Some(bytes) = primary_bytes {
+            if let Err(e) = tx_guard.send(Message::Binary(bytes.into())).await {
+                tracing::debug!(
+                    error = %e,
+                    ?target,
+                    "ws send error from forwarder (probably closed)"
+                );
+                return Err(());
             }
-            // tick_index here is the chunk-counter; we use it as
-            // a stand-in for "ticks since this subscription
-            // started" to drive ring-half parity. The first call
-            // returns 0 → compute_read_window returns None (skip).
-            // Real-world this means the first OSC chunk per
-            // subscription is dropped — acceptable; the worker
-            // synthesises the leading zero as silence in any
-            // recording.
-            let server_tick_proxy = (sub.tick_index as i64) + 2;
-            let Some((offset, count)) =
-                scope_osc::compute_read_window(sub, server_tick_proxy)
-            else {
-                continue;
-            };
-            sub.pending_offset = Some(offset);
-            to_send.push(scope_osc::encode_bgetn_bundle(
-                sub.bufnum, offset, count,
-            ));
+        }
+        for extra in ws_extras {
+            if let Err(e) = tx_guard.send(Message::Binary(extra.into())).await {
+                tracing::debug!(
+                    error = %e,
+                    ?target,
+                    "ws send error sending scope chunk extra (probably closed)"
+                );
+                return Err(());
+            }
         }
     }
-    // Fire all the bundles. Order doesn't matter — they're
-    // independent.
-    for bundle in to_send {
-        if let Err(e) = session.scsynth_socket.send(&bundle).await {
+
+    // Flush UDP-bound bytes (e.g. /b_getn bundles in OSC mode).
+    flush_udp_extras(session, udp_extras).await;
+
+    Ok(())
+}
+
+/// Send each (target, bytes) pair via the session's pre-bound
+/// socket for that target. Errors are logged + the loop
+/// continues (one bad send shouldn't tear down a forwarder).
+async fn flush_udp_extras(
+    session: &Arc<Session>,
+    udp_extras: Vec<(SocketAddr, Vec<u8>)>,
+) {
+    for (target, bytes) in udp_extras {
+        let Some(sock) = session.target_sockets.get(&target) else {
+            tracing::warn!(
+                ?target,
+                session_id = %session.session_id,
+                "no socket for udp_extras target on session; dropping"
+            );
+            continue;
+        };
+        if let Err(e) = sock.send(&bytes).await {
             tracing::warn!(
                 error = %e,
+                ?target,
                 session_id = %session.session_id,
-                "udp send error issuing /b_getn for OSC fallback"
+                "udp send error from middleware extras"
             );
-            break;
-        }
-    }
-}
-
-/// Walk the per-WS subscription map; for each sub whose
-/// scope_buffer `_stage` has advanced since last poll, encode a
-/// 0x03 chunk frame. Returns the encoded frames.
-async fn poll_scope_chunks(
-    scope_ctx: &Arc<TokioMutex<ScopeContext>>,
-    session: &Arc<Session>,
-) -> Vec<Vec<u8>> {
-    let mut out = Vec::new();
-    let mut ctx = scope_ctx.lock().await;
-    let Some(shm) = ctx.shm.clone() else {
-        return out; // No subscribes yet on this WS.
-    };
-    for sub in ctx.shm_subs.values_mut() {
-        match scope_shm::read_scope_slot(&shm.region, &shm.layout, sub.scope_idx as usize) {
-            Ok(ScopeReadResult::Data {
-                floats,
-                channels,
-                frames,
-                stage,
-            }) => {
-                if stage as i32 == sub.last_seen_stage {
-                    continue; // writer hasn't advanced
-                }
-                sub.last_seen_stage = stage as i32;
-                sub.tick_index = sub.tick_index.wrapping_add(1);
-                out.push(encode_chunk(
-                    sub.sub_id,
-                    sub.tick_index,
-                    false,
-                    channels.min(255) as u8,
-                    frames as u32,
-                    &floats,
-                ));
-            }
-            Ok(_) => {} // Not yet initialized, etc.
-            Err(e) => {
-                tracing::debug!(
-                    sub_id = sub.sub_id,
-                    scope_idx = sub.scope_idx,
-                    error = %e,
-                    session_id = %session.session_id,
-                    "scope slot read failed"
-                );
-            }
-        }
-    }
-    out
-}
-
-/// Encode one 0x03 chunk frame. See module docs for layout.
-fn encode_chunk(
-    sub_id: u32,
-    tick_index: u32,
-    is_gap: bool,
-    channels: u8,
-    frame_count: u32,
-    interleaved_floats: &[f32],
-) -> Vec<u8> {
-    // Header: op + sub_id + tick + is_gap + channels + frames
-    //         1     4       4      1        1          4    = 15 bytes
-    let mut out = Vec::with_capacity(15 + interleaved_floats.len() * 4);
-    out.push(SCOPE_OP_CHUNK);
-    out.extend_from_slice(&sub_id.to_le_bytes());
-    out.extend_from_slice(&tick_index.to_le_bytes());
-    out.push(if is_gap { 1 } else { 0 });
-    out.push(channels);
-    out.extend_from_slice(&frame_count.to_le_bytes());
-    for &f in interleaved_floats {
-        out.extend_from_slice(&f.to_le_bytes());
-    }
-    out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Wire-format round-trip: encode a chunk, manually decode the
-    /// header bytes (mirrors the worker-side `decodeChunk` in
-    /// `src/workers/scopeWire.ts`). Catches accidental layout
-    /// changes between bridge and worker.
-    #[test]
-    fn chunk_frame_layout() {
-        let payload = [0.5_f32, -0.25_f32, 1.0_f32, -1.0_f32];
-        let frame = encode_chunk(7, 42, false, 2, 2, &payload);
-
-        // Header check.
-        assert_eq!(frame[0], SCOPE_OP_CHUNK);
-        assert_eq!(u32::from_le_bytes(frame[1..5].try_into().unwrap()), 7);
-        assert_eq!(u32::from_le_bytes(frame[5..9].try_into().unwrap()), 42);
-        assert_eq!(frame[9], 0); // is_gap
-        assert_eq!(frame[10], 2); // channels
-        assert_eq!(u32::from_le_bytes(frame[11..15].try_into().unwrap()), 2); // frames
-        // Payload check.
-        for (i, &f) in payload.iter().enumerate() {
-            let off = 15 + i * 4;
-            assert_eq!(
-                f32::from_le_bytes(frame[off..off + 4].try_into().unwrap()),
-                f
-            );
-        }
-        // Total length.
-        assert_eq!(frame.len(), 15 + payload.len() * 4);
-    }
-
-    #[test]
-    fn chunk_frame_is_gap_flag() {
-        let frame = encode_chunk(0, 0, true, 1, 0, &[]);
-        assert_eq!(frame[9], 1);
-    }
-
-    #[test]
-    fn first_byte_dispatch_unambiguous_with_osc() {
-        // OSC always starts with `/` (0x2F) for messages or `#`
-        // (0x23) for bundles. 0x01..0x03 must not collide.
-        for op in [SCOPE_OP_SUBSCRIBE, SCOPE_OP_UNSUBSCRIBE, SCOPE_OP_CHUNK] {
-            assert_ne!(op, b'/');
-            assert_ne!(op, b'#');
         }
     }
 }

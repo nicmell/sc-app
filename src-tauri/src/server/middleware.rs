@@ -40,6 +40,7 @@ use std::sync::Arc;
 use regex::Regex;
 
 use super::session::Session;
+use crate::scope::middleware::{InboundScopeMiddleware, ScopeContext};
 
 /// Outcome of a middleware invocation.
 #[derive(Debug)]
@@ -69,47 +70,80 @@ pub enum Direction {
 /// Per-call middleware context. The dispatcher constructs this
 /// from already-acquired locks/borrows; the handler body holds it
 /// for one packet only.
-///
-/// Phase 37b: fields are unused (no middleware variants yet);
-/// 37c populates them.
-#[allow(dead_code)]
 pub(crate) struct WsCtx<'a> {
     pub session: &'a Arc<Session>,
-    /// Scope state. Already locked by the dispatcher; handler
+    /// Scope state. Already locked by the dispatcher; the handler
     /// gets exclusive mutable access for the duration of the
-    /// callback. Phase 37b leaves the concrete type to
-    /// [`super::ws_bridge::ScopeContext`]; 37c will reshape this
-    /// as the scope middlewares move.
-    pub scope: &'a mut super::ws_bridge::ScopeContext,
+    /// callback.
+    pub scope: &'a mut ScopeContext,
+    /// Which leg of the OSC pipe is dispatching. Currently
+    /// unused by the handler bodies (each variant is registered
+    /// for one direction so the redundancy is implicit), but
+    /// kept on the context for future use.
+    #[allow(dead_code)]
     pub direction: Direction,
     /// Inbound only: which UDP target this payload arrived from
     /// (the broadcast forwarder knows). `None` for outbound.
+    /// Currently unused; kept for future inbound middlewares
+    /// that want to disambiguate by source target.
+    #[allow(dead_code)]
     pub source_target: Option<SocketAddr>,
+    /// Side channel: bytes the dispatcher should send to the WS
+    /// sink AFTER the middleware returns. Used by the SHM-mode
+    /// chunk-emit-on-tick middleware (one tick can produce N chunk
+    /// frames, one per active subscription). The dispatcher
+    /// drains this before returning.
+    pub ws_extras: Vec<Vec<u8>>,
+    /// Side channel: UDP packets the dispatcher should send AFTER
+    /// the middleware returns. Used by the OSC-mode bgetn-issue-
+    /// on-tick middleware (each tick fires one /b_getn per active
+    /// subscription). The dispatcher drains this before returning.
+    pub udp_extras: Vec<(SocketAddr, Vec<u8>)>,
+}
+
+impl<'a> WsCtx<'a> {
+    pub fn new(
+        session: &'a Arc<Session>,
+        scope: &'a mut ScopeContext,
+        direction: Direction,
+        source_target: Option<SocketAddr>,
+    ) -> Self {
+        Self {
+            session,
+            scope,
+            direction,
+            source_target,
+            ws_extras: Vec::new(),
+            udp_extras: Vec::new(),
+        }
+    }
 }
 
 /// Outbound middlewares (claim addresses heading WS → bridge →
-/// UDP). Phase 37c populates the variants for scope subscribe /
-/// unsubscribe.
+/// UDP). Phase 37c leaves this empty — the binary 0x01/0x02
+/// scope subscribe/unsubscribe frames bypass the OSC-address-
+/// keyed middleware system. Phase 38 will add `Scope` variants
+/// for `/scope/subscribe` and `/scope/unsubscribe` once those
+/// addresses become real OSC messages.
 #[derive(Clone, Copy, Debug)]
 pub enum OutboundMiddleware {
-    /// Phase 37c will add the scope variants. Empty enum (no
-    /// variants) is intentional — the registry can hold a
-    /// `Vec<(Regex, OutboundMiddleware)>` but it's always empty
-    /// in 37b. The dispatcher's `match` over `*mw` is then
-    /// trivially exhaustive (matching on an uninhabited type).
+    /// Empty-enum placeholder. The dispatcher's `match *mw`
+    /// stays exhaustive in 37c by matching this single variant
+    /// (and never registering any). Phase 38 replaces this with
+    /// real variants.
     #[doc(hidden)]
     _Phantom,
 }
 
 /// Inbound middlewares (claim addresses heading UDP → bridge →
-/// WS). Phase 37c populates the variants for scope chunk
-/// emission, `/b_getn` issuance, and `/b_setn` interception.
+/// WS). Each variant is a thin tag; the actual handler body
+/// lives in the owning module (e.g. `Scope` → `crate::scope::
+/// middleware::run_inbound`).
 #[derive(Clone, Copy, Debug)]
 pub enum InboundMiddleware {
-    /// Same shape as `OutboundMiddleware::_Phantom`. Phase 37c
-    /// adds real variants.
-    #[doc(hidden)]
-    _Phantom,
+    /// Scope-owned inbound middleware (chunk emission on tick,
+    /// `/b_getn` issuance on tick, `/b_setn` interception).
+    Scope(InboundScopeMiddleware),
 }
 
 /// Address-pattern → middleware registry. Walked top-down on
@@ -165,7 +199,6 @@ impl<M> Default for MiddlewareRegistry<M> {
 ///
 /// Async because middleware bodies (37c) may need to call
 /// `target_sockets[..].send().await` etc.
-#[allow(dead_code)] // Phase 37b: wired in 37c.
 pub(crate) async fn dispatch_outbound<'a>(
     registry: &MiddlewareRegistry<OutboundMiddleware>,
     ctx: &mut WsCtx<'a>,
@@ -185,7 +218,6 @@ pub(crate) async fn dispatch_outbound<'a>(
 /// Dispatch an inbound payload through the registry. Same shape
 /// as [`dispatch_outbound`]; default action on `PassThrough` is
 /// "forward to WS sink".
-#[allow(dead_code)] // Phase 37b: wired in 37c.
 pub(crate) async fn dispatch_inbound<'a>(
     registry: &MiddlewareRegistry<InboundMiddleware>,
     ctx: &mut WsCtx<'a>,
@@ -202,9 +234,9 @@ pub(crate) async fn dispatch_inbound<'a>(
     MiddlewareOutcome::PassThrough
 }
 
-/// Outbound dispatch table. Phase 37c implements the variants;
-/// 37b matches on the empty `_Phantom` placeholder, which never
-/// gets constructed (the registry is always empty in 37b).
+/// Outbound dispatch table. Phase 38 will add real variants.
+/// 37c keeps the empty `_Phantom` placeholder; the registry is
+/// always empty so this match arm never executes.
 async fn invoke_outbound<'a>(
     mw: OutboundMiddleware,
     _ctx: &mut WsCtx<'a>,
@@ -216,15 +248,20 @@ async fn invoke_outbound<'a>(
     }
 }
 
-/// Inbound dispatch table. Same shape as [`invoke_outbound`].
+/// Inbound dispatch table. Each variant delegates to the owning
+/// module's `run_inbound` function — keeps domain logic out of
+/// `server::middleware` while still letting the dispatcher avoid
+/// `dyn Future` boxing.
 async fn invoke_inbound<'a>(
     mw: InboundMiddleware,
-    _ctx: &mut WsCtx<'a>,
+    ctx: &mut WsCtx<'a>,
     _address: &str,
-    _payload: &[u8],
+    payload: &[u8],
 ) -> MiddlewareOutcome {
     match mw {
-        InboundMiddleware::_Phantom => MiddlewareOutcome::PassThrough,
+        InboundMiddleware::Scope(variant) => {
+            crate::scope::middleware::run_inbound(variant, ctx, payload)
+        }
     }
 }
 

@@ -40,7 +40,7 @@ mod api;
 pub(crate) mod middleware;
 mod routing;
 mod security;
-mod session;
+pub(crate) mod session;
 pub mod static_assets;
 pub mod ws_bridge;
 
