@@ -243,14 +243,14 @@ mod tests {
         // never sends them.
         let table = RoutingTable {
             routes: vec![(
-                re(r"^/([sngbcdpu]_|notify|status|sync|cmd|dumpOSC|clearSched|error|quit)"),
+                re(r"^/([sngbcdpu]_|notify|status|sync|cmd|dumpOSC|clearSched|error|quit|version)"),
                 addr("127.0.0.1:57110"),
             )],
         };
         for addr_str in [
             "/s_new", "/n_free", "/g_new", "/b_alloc", "/b_getn", "/c_set",
             "/d_recv", "/p_new", "/u_cmd", "/notify", "/status", "/sync",
-            "/cmd", "/dumpOSC", "/clearSched", "/error", "/quit",
+            "/cmd", "/dumpOSC", "/clearSched", "/error", "/quit", "/version",
         ] {
             assert!(
                 table.route_for(addr_str).is_some(),

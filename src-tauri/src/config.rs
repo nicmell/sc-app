@@ -166,8 +166,11 @@ pub fn starter() -> &'static Config {
         //    /scope responders all live in
         //    scripts/sc-app-superdirt-startup.scd).
         //  - `^/([sngbcdpu]_|notify|status|sync|cmd|dumpOSC|
-        //    clearSched|error|quit)` → scsynth's command surface
-        //    (per the SuperCollider Server-Command-Reference).
+        //    clearSched|error|quit|version)` → scsynth's command
+        //    surface (per the SuperCollider Server-Command-Reference;
+        //    `/version` is included so any future caller reaches
+        //    scsynth — the bridge itself probes /version at boot
+        //    over its own UDP socket, not via the route table).
         // Anything outside these two regexes that isn't claimed
         // by a middleware (e.g. /scope/subscribe) gets dropped
         // with a warn! log.
@@ -177,7 +180,7 @@ pub fn starter() -> &'static Config {
                 target: DEFAULT_DIRT.into(),
             },
             Route {
-                pattern: r"^/([sngbcdpu]_|notify|status|sync|cmd|dumpOSC|clearSched|error|quit)".into(),
+                pattern: r"^/([sngbcdpu]_|notify|status|sync|cmd|dumpOSC|clearSched|error|quit|version)".into(),
                 target: DEFAULT_SCSYNTH.into(),
             },
         ],
@@ -253,7 +256,7 @@ mod tests {
         // Phase 37 starter routes: sclang prefixes + scsynth
         // command surface. Both regexes, no implicit default.
         assert!(body.contains(r"^/(dirt|clock|scope)(/|$)"));
-        assert!(body.contains(r"^/([sngbcdpu]_|notify|status|sync|cmd|dumpOSC|clearSched|error|quit)"));
+        assert!(body.contains(r"^/([sngbcdpu]_|notify|status|sync|cmd|dumpOSC|clearSched|error|quit|version)"));
         assert!(body.contains("\"target\": \"127.0.0.1:57120\""));
         assert!(body.contains("\"target\": \"127.0.0.1:57110\""));
         assert!(!body.contains("log_dir"));
