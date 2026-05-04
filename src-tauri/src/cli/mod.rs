@@ -32,7 +32,8 @@ use clap::{Parser, Subcommand};
 use std::time::Duration;
 
 use crate::config::{
-    self, Config, DEFAULT_PORT, DEFAULT_SCSYNTH, DEFAULT_SESSION_TTL_SECONDS,
+    self, Config, DEFAULT_DIRT, DEFAULT_PORT, DEFAULT_SCSYNTH,
+    DEFAULT_SESSION_TTL_SECONDS,
 };
 
 #[derive(Parser)]
@@ -115,9 +116,16 @@ pub fn run() {
                 .or(cfg.scsynth)
                 .unwrap_or_else(|| DEFAULT_SCSYNTH.to_string());
             let scsynth = parse_scsynth_or_die(&scsynth_str);
-            // Phase 39b: optional sclang address for the bootstrap
-            // round-trip. Default starter config seeds it.
-            let sclang = cfg.sclang.as_deref().map(parse_scsynth_or_die);
+            // Phase 39b: sclang address for the bootstrap round-trip.
+            // Defaults to DEFAULT_DIRT so a stale starter config
+            // (written before Phase 39 added the field) still gets a
+            // working bootstrap. Always Some(_) — if sclang isn't
+            // actually reachable, `try_lazy_sclang_bootstrap` retries
+            // on every GET /api/session.
+            let sclang_str = cfg
+                .sclang
+                .unwrap_or_else(|| DEFAULT_DIRT.to_string());
+            let sclang = Some(parse_scsynth_or_die(&sclang_str));
             // Phase 39d: clock chunkSize. Pre-39d this lived in
             // sclang's SC_APP_CLOCK_CHUNK_SIZE env var; Phase 39d
             // hoists it to bridge config.

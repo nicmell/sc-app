@@ -28,7 +28,7 @@ use tauri::Manager;
 use std::time::Duration;
 
 use crate::config::{
-    Config, DEFAULT_PORT, DEFAULT_SCSYNTH, DEFAULT_SESSION_TTL_SECONDS,
+    Config, DEFAULT_DIRT, DEFAULT_PORT, DEFAULT_SCSYNTH, DEFAULT_SESSION_TTL_SECONDS,
 };
 use crate::logging;
 use crate::server::{self, RoutingTable};
@@ -88,15 +88,18 @@ pub fn run() {
             let scsynth: SocketAddr = scsynth_str
                 .parse()
                 .map_err(|e| format!("invalid scsynth {scsynth_str:?}: {e}"))?;
-            // Phase 39b: optional sclang bootstrap target.
-            let sclang = cfg
-                .sclang
-                .as_deref()
-                .map(|s| {
-                    s.parse::<SocketAddr>()
-                        .map_err(|e| format!("invalid sclang {s:?}: {e}"))
-                })
-                .transpose()?;
+            // Phase 39b: sclang bootstrap target. Defaults to
+            // DEFAULT_DIRT so a stale starter config (written before
+            // Phase 39 added the field) still gets a working
+            // bootstrap. Pass `Some(_)` always — if sclang isn't
+            // actually reachable, the lazy retry in
+            // `try_lazy_sclang_bootstrap` handles it.
+            let sclang_str = cfg.sclang.unwrap_or_else(|| DEFAULT_DIRT.to_string());
+            let sclang: Option<SocketAddr> = Some(
+                sclang_str
+                    .parse()
+                    .map_err(|e| format!("invalid sclang {sclang_str:?}: {e}"))?,
+            );
             // Phase 39d: clock chunkSize from config (env override
             // for back-compat with pre-39d SC_APP_CLOCK_CHUNK_SIZE
             // deployments).
