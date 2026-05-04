@@ -16,25 +16,43 @@
 // Sample path comes from SC_APP_DIRT_SAMPLES (set by the launch
 // script to superdirt-deps/Dirt-Samples/*).
 //
+// ── Pattern: "sclang declares, bridge instantiates" (Phase 39) ──
+//
+// As of Phase 39, sclang owns the DECLARATIONS — SynthDef.add(),
+// allocator state, OSCdef responders — while the bridge owns
+// INSTANCE creation (clock /s_new, scope-buffer allocation) and
+// runtime config (chunkSize, num scope buffers, sample rate).
+// Each install function contributes its keys to
+// `~scAppBootstrapCtx`; the bootstrap responder serializes the
+// dict on demand. The bridge fetches once at boot via
+// `/sc-app/bootstrap/hello` and surfaces the values via
+// SessionInfo + uses them to drive its own /s_new of any shared
+// synths.
+//
+// To add a new shared synth following this pattern:
+//   1. Create lib/<name>.scd that defines `~scAppInstall<Name>`
+//      = { ... }`. Inside: SynthDef.add() the def, allocate any
+//      needed buses, contribute (name, value) keys to
+//      `~scAppBootstrapCtx[\<name>]`. DON'T /s_new — that's the
+//      bridge's job.
+//   2. Add the file to the load list below.
+//   3. Add a call in `s.doWhenBooted` BEFORE
+//      `~scAppInstallBootstrap.()` so the new keys are available
+//      when the responder serializes.
+//   4. On the bridge side (`src-tauri/src/server/server.rs`),
+//      extend `apply_info_args` to parse the new keys and
+//      `instantiate_bridge_clock`-style helper to /s_new + write
+//      back to `ServerMetadata`.
+//
 // ── Sub-modules under lib/ ───────────────────────────────────────────
 //
-//   - lib/chunk-size.scd          parses SC_APP_CLOCK_CHUNK_SIZE
-//   - lib/clock.scd               Phase 30 shared clock + /clock/hello
+//   - lib/bootstrap.scd           /sc-app/bootstrap/hello responder
+//   - lib/clock.scd               Phase 30 shared clock SynthDef
 //   - lib/superdirt.scd           SuperDirt boot
-//   - lib/dirt-list-samples.scd   Phase 27a /dirt/listSamples responder
-//   - lib/scope.scd               Phase 31 /scope/* responders
 //
-// Each sub-file defines exactly one `~scAppInstallX = { ... }`
-// (or `~scAppParseX`) function in the global env via `.load`. This
-// orchestrator loads them all at pre-boot, then calls them in
-// sequence inside `s.doWhenBooted`.
-//
-// Why functions, not inline `executeFile` at point-of-need: the
-// install steps need to run inside the doWhenBooted callback (so
-// scsynth is alive + /notify has gone through), but the file
-// loading itself happens earlier when we're in the pre-boot
-// orchestrator scope. Defining functions then calling them later
-// keeps the load-time vs run-time separation explicit.
+// (Pre-39 lib/chunk-size.scd, lib/dirt-list-samples.scd, and
+// lib/scope.scd were retired during Phase 39's "bridge takes
+// ownership" sweeps. See docs/history.md.)
 //
 // ── Two structural points (read CLAUDE.md's "SuperDirt launch
 //    gotchas" section for full context) ──────────────────────────────
@@ -57,16 +75,13 @@
 var libDir = PathName(thisProcess.nowExecutingPath).pathOnly +/+ "lib";
 
 // Load sub-module definitions. Each file just sets a
-// `~scAppInstallX` (or `~scAppParseX`) function in the global
-// env; nothing runs yet. `.load` evaluates the file in the
-// current interpreter context, so the env-var assignments land
-// in the same `currentEnvironment` this orchestrator uses below.
+// `~scAppInstall<Name>` function in the global env via `.load`.
+// Nothing runs yet — the install functions are called inside
+// `s.doWhenBooted` once scsynth is reachable.
 [
-    "chunk-size.scd",
     "bootstrap.scd",
     "clock.scd",
-    "superdirt.scd",
-    "dirt-list-samples.scd"
+    "superdirt.scd"
 ].do { |f|
     (libDir +/+ f).load;
 };
@@ -91,19 +106,20 @@ s.startAliveThread;
 // positional: (onComplete, limit=100, onFailure). 100 = 20 s
 // default; 50 keeps the original 10 s window.
 s.doWhenBooted({
-    var clockChunkSize = ~scAppParseChunkSize.();
-
     // Register for async notifications (/n_go, /n_end, /done, …)
-    // and wait for /done /notify via a /sync round-trip.
+    // and wait for /done /notify via a /sync round-trip. Sclang
+    // takes one /notify slot; the bridge takes another (Phase 39a:
+    // bridge runs /notify 1 once at its own boot for ALL its
+    // sessions, instead of one per session).
     s.notify;
     s.sync;
 
-    ~scAppInstallClock.(clockChunkSize);
+    ~scAppInstallClock.();
     ~scAppInstallSuperDirt.();
-    ~scAppInstallDirtListSamples.();
-    // Phase 39c: scope responders moved to the bridge.
-    // ~scAppBootstrapCtx[\scope][\numScopeBuffers] is set by
-    // bootstrap.scd as the canonical default (128).
+    // Phase 39c: scope responders moved to the bridge. The
+    // bridge owns the 0..127 scope-buffer allocator + the
+    // /scope/{allocate,free,subscribe,unsubscribe} OSC handling.
+    // Sclang reports the pool size via the bootstrap reply.
     ~scAppBootstrapCtx[\scope] = (numScopeBuffers: 128);
     ~scAppInstallBootstrap.();
 }, 50, {

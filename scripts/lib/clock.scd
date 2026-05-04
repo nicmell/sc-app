@@ -24,7 +24,7 @@
 // client; the bridge sees them on its single /notify slot and
 // fans to all attached WSs.
 (
-~scAppInstallClock = { |clockChunkSize|
+~scAppInstallClock = {
     SynthDef(\scAppClock, { |clockBus = 0, chunkSize = 1024|
         var tickRate = SampleRate.ir / chunkSize;
         var tick = Impulse.kr(tickRate);
@@ -45,25 +45,18 @@
     ~scAppClockBus = Bus.audio(s, 1);
     ~scAppClockNodeId = 999;
 
-    "[sc-app] clock SynthDef added on bus % (nodeId %, chunkSize %)".format(
+    "[sc-app] clock SynthDef added on bus % (nodeId % — bridge will /s_new)".format(
         ~scAppClockBus.index,
-        ~scAppClockNodeId,
-        clockChunkSize
+        ~scAppClockNodeId
     ).postln;
 
-    // Phase 39d: sclang only DECLARES the clock; the bridge
-    // INSTANTIATES it via /s_new at boot. The bootstrap reply
-    // carries clockBus + clockNodeId; the bridge supplies its
-    // own chunkSize from config (not from sclang's env var).
-    // We still echo `chunkSize` and `tickRate` from the
-    // sclang-side env (if set) to help operators sanity-check;
-    // the bridge overwrites these post-/s_new with its own
-    // values.
+    // Phase 39d: sclang DECLARES; bridge INSTANTIATES.
+    // bootstrapCtx carries clockBus + clockNodeId; the bridge
+    // supplies chunkSize from config and synthesizes the rest
+    // (tickRate, sampleRate) post-/s_new.
     ~scAppBootstrapCtx[\clock] = (
         clockBus: ~scAppClockBus.index,
-        clockNodeId: ~scAppClockNodeId,
-        sclangChunkSizeHint: clockChunkSize,
-        sampleRate: s.sampleRate
+        clockNodeId: ~scAppClockNodeId
     );
 };
 )
