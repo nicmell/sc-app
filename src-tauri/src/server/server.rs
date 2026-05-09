@@ -76,7 +76,7 @@ const BOOTSTRAP_RETRIES: u32 = 5;
 pub enum ServerRole {
     /// scsynth — runs `/notify 1` + `/status` at boot. Phase 39a
     /// also commits to this server's `clientId` for the bridge's
-    /// node-ID space; sub_client_id allocation partitions further.
+    /// node-ID space; session_slot allocation partitions further.
     Scsynth,
     /// sclang+SuperDirt — Phase 39b will run
     /// `/bootstrap/hello` here. Phase 39a treats it as
@@ -95,7 +95,7 @@ pub struct ServerMetadata {
     // ── Scsynth-side (populated by /notify + /status) ──────
     /// scsynth's assigned `clientId` from `/done /notify`. Bridge
     /// runs `/notify 1` once at boot; this is the bridge-wide
-    /// `clientId`. Sessions get a `sub_client_id` that partitions
+    /// `clientId`. Sessions get a `session_slot` that partitions
     /// the node-ID space within this `clientId`.
     pub scsynth_client_id: Option<i32>,
     /// Nominal sample rate from `/status.reply`. Used by

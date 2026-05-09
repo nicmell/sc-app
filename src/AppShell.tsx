@@ -38,25 +38,24 @@ import { WorkerClient } from '@/server/WorkerClient';
 import { createStore, type Store } from '@/util/reactiveStore';
 import { parseStatus, type ScsynthStatus } from '@/server/serverInfo';
 
-/** Per-client offset for node + buffer ID allocators.
+/** Offset from `parentGroupId` to the synth-ID allocator base.
+ *
+ *  The bridge mints `parentGroupId = bridgeClientId × 1_000_000 +
+ *  sessionSlot × 100_000 + 100` (see Rust `Session::create`). Synths
+ *  must (a) avoid colliding with the parent group's own node ID and
+ *  (b) stay inside this session's 100K-id slice. Picking `+900`
+ *  lands the synth allocator at `…+1000`, well clear of the group
+ *  at `…+100` and giving 99K IDs of headroom before the next
+ *  session's slice. Buffer IDs sit `+5000` further up
+ *  (`parentGroupId + 5900`).
  *
  *  scsynth doesn't enforce per-client ID ranges — it just rejects
- *  `/s_new` with a duplicate ID. Phase 26 makes this matter: when
- *  sclang+SuperDirt is hosted on the same scsynth (Phase 26
- *  deployment), sclang lives at clientId=0 and allocates synth IDs
- *  starting at 1000+. If sc-app (clientId≥1) also starts at 1000,
- *  the very first `/s_new` for the global clock collides → the
- *  clock never starts, the dashboard sits dead.
- *
- *  Solution: scope sc-app's allocator base by clientId. 1M per
- *  client is generous (scsynth's default `-n 32768` caps concurrent
- *  nodes well below that, and SuperDirt allocates a few hundred at
- *  init + a few per event). Final start = `clientId * 1_000_000 +
- *  ID_ALLOCATOR_START`; clientId=0 falls back to the pre-Phase-26
- *  base (1000) so single-client setups stay byte-identical. */
-const PER_CLIENT_ID_OFFSET = 1_000_000;
-const PER_SUB_CLIENT_ID_OFFSET = 100_000;
-const ID_ALLOCATOR_START = 1000;
+ *  `/s_new` with a duplicate ID. The bridge-side partitioning
+ *  formula is the only thing keeping sc-app's IDs clear of
+ *  sclang+SuperDirt's allocations (sclang at clientId=0 starts at
+ *  1000+; SuperDirt orbits land 1000–1999). */
+const NODE_BASE_OFFSET = 900;
+const BUFFER_BASE_OFFSET_FROM_NODE = 5000;
 
 interface DashboardResources {
   client: WorkerClient;
@@ -95,15 +94,13 @@ interface DashboardResources {
   sessionId: string;
   /** scsynth's bridge-level clientId. Phase 39a: shared across
    *  all sessions (the bridge runs `/notify 1` once at boot).
-   *  Used as the high-order base for IdAllocator partitioning. */
+   *  Informational — the IdAllocator base is derived from
+   *  `parentGroupId`, not from this. */
   scsynthClientId: number;
-  /** Phase 39a: per-session sub-allocation index (0..MAX_SESSIONS).
-   *  Combined with `scsynthClientId` to compute a unique node-ID
-   *  range per session: `scsynthClientId * 1_000_000 + subClientId
-   *  * 100_000 + 1000`. */
-  subClientId: number;
-  /** Phase 39a: bridge-allocated unique group id per session
-   *  (`SESSION_GROUP_BASE + subClientId`). */
+  /** Phase 39a: bridge-allocated unique group id per session.
+   *  Encodes the bridge clientId AND a session slot in `[0,
+   *  MAX_SESSIONS)`. The frontend's IdAllocator base is
+   *  `parentGroupId + NODE_BASE_OFFSET`. */
   parentGroupId: number;
   /** Phase 29: bridge-supplied via `SessionInfo` (read from
    *  scsynth's `/status.reply` at session creation). Round to
@@ -304,7 +301,6 @@ async function setupDashboard(
   client: WorkerClient,
   sessionId: string,
   scsynthClientId: number,
-  subClientId: number,
   parentGroupId: number,
   sampleRate: number,
   clockInfo: ClockInfo,
@@ -312,25 +308,20 @@ async function setupDashboard(
   scsynthVersion: ScsynthVersion | null,
   bank: PatternBank,
 ): Promise<DashboardResources> {
-  // Phase 39a — IdAllocator base partitions across both the
-  // scsynth-level clientId AND the bridge-allocated subClientId.
-  // The bridge runs /notify 1 once and gets a single clientId;
-  // sessions sub-partition that 1M-id slice into 100K-id slices
-  // via subClientId. Buffer base sits +5000 above node base.
-  const idBase =
-    scsynthClientId * PER_CLIENT_ID_OFFSET +
-    subClientId * PER_SUB_CLIENT_ID_OFFSET +
-    ID_ALLOCATOR_START;
+  // Phase 39a — the bridge owns the partitioning. parentGroupId
+  // already encodes the bridge clientId AND session slot; synth
+  // IDs sit +900 above it, buffer IDs +5000 further up.
+  const idBase = parentGroupId + NODE_BASE_OFFSET;
   const ids = {
     node: new IdAllocator(idBase),
     bus: new IdAllocator(32),
-    buffer: new IdAllocator(idBase + 5000),
+    buffer: new IdAllocator(idBase + BUFFER_BASE_OFFSET_FROM_NODE),
   };
 
   console.log(
     `[sc:app] setupDashboard scsynthClientId=${scsynthClientId} ` +
-      `subClientId=${subClientId} parentGroupId=${parentGroupId} ` +
-      `idBase=${idBase} (node allocator start)`,
+      `parentGroupId=${parentGroupId} idBase=${idBase} ` +
+      `(node allocator start)`,
   );
 
   // Phase 24: subscribe to /fail replies BEFORE any /s_new fires.
@@ -449,7 +440,6 @@ async function setupDashboard(
     recordingManager,
     sessionId,
     scsynthClientId,
-    subClientId,
     parentGroupId,
     sampleRate,
     status: createStore<ScsynthStatus | null>(null),
@@ -685,7 +675,6 @@ export function AppShell() {
         next,
         resolvedInfo.sessionId,
         resolvedInfo.scsynthClientId,
-        resolvedInfo.subClientId,
         resolvedInfo.parentGroupId,
         resolvedInfo.sampleRate,
         clockInfo,

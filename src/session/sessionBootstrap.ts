@@ -57,9 +57,11 @@ export interface SessionClockInfo {
  *
  *  Phase 39a: `clientId` was renamed to `scsynthClientId` (the
  *  bridge-level scsynth `/notify` clientId, shared across all
- *  sessions). New `subClientId` partitions the bridge's node-ID
- *  space across concurrent sessions. IdAllocator base is
- *  `scsynthClientId * 1_000_000 + subClientId * 100_000 + 1000`.
+ *  sessions). The bridge partitions its node-ID space across
+ *  concurrent sessions internally; the wire only carries
+ *  `parentGroupId`, and the frontend's IdAllocator base is
+ *  `parentGroupId + 900` (synth nodes) / `parentGroupId + 5900`
+ *  (buffers).
  *
  *  Phase 39b: `clock`, `numScopeBuffers`, `dirtSamples` carry
  *  cached sclang metadata so the frontend's
@@ -69,7 +71,6 @@ export interface SessionClockInfo {
 export interface SessionInfo {
   sessionId: string;
   scsynthClientId: number;
-  subClientId: number;
   scsynth: string;
   sampleRate: number;
   parentGroupId: number;

@@ -11,7 +11,7 @@
 //! Phase 39a: UDP sockets, broadcast channels, and the scsynth
 //! `/notify` registration live on bridge-level [`server::Server`]
 //! instances (one per route target), not per-Session. Sessions
-//! become per-tab bookkeeping (sub_client_id, parent_group_id,
+//! become per-tab bookkeeping (session_slot, parent_group_id,
 //! scope_mode). The TTL eviction job sweeps stale sessions and
 //! runs `Session::cleanup` against the shared scsynth Server;
 //! `/notify 0` only runs at bridge shutdown.
@@ -44,7 +44,7 @@ pub mod ws_bridge;
 
 pub use routing::RoutingTable;
 use server::{free_bridge_clock, instantiate_bridge_clock, Server, ServerRole};
-use session::{send_bridge_notify_off, SessionStore, SubClientIdAllocator};
+use session::{send_bridge_notify_off, SessionSlotAllocator, SessionStore};
 
 use crate::scope::middleware::{BridgeScopeAllocator, DEFAULT_NUM_SCOPE_BUFFERS};
 
@@ -76,7 +76,7 @@ pub(crate) struct AppState {
     /// when the boot-time bootstrap missed sclang.
     pub clock_chunk_size: u32,
     pub sessions: SessionStore,
-    pub sub_client_id_allocator: Arc<SubClientIdAllocator>,
+    pub session_slot_allocator: Arc<SessionSlotAllocator>,
     /// Phase 36: when true, every new session uses
     /// `ScopeMode::Osc` regardless of SHM availability. Set via
     /// the `bridge --no-shm` CLI flag.
@@ -214,14 +214,14 @@ pub async fn serve_on(
         scope_allocator,
         clock_chunk_size,
         sessions: SessionStore::new(),
-        sub_client_id_allocator: Arc::new(SubClientIdAllocator::new()),
+        session_slot_allocator: Arc::new(SessionSlotAllocator::new()),
         force_osc_mode,
     };
 
     spawn_ttl_task(
         state.sessions.clone(),
         state.scsynth_server.clone(),
-        state.sub_client_id_allocator.clone(),
+        state.session_slot_allocator.clone(),
         session_ttl,
     );
 
@@ -260,7 +260,7 @@ pub async fn serve_on(
     let active = state.sessions.drain_all().await;
     for session in active {
         session
-            .cleanup(&state.scsynth_server, &state.sub_client_id_allocator)
+            .cleanup(&state.scsynth_server, &state.session_slot_allocator)
             .await;
     }
     // Phase 39d: free the clock synth before /notify 0.
@@ -332,7 +332,7 @@ async fn ws_handler(
 fn spawn_ttl_task(
     sessions: SessionStore,
     scsynth_server: Arc<Server>,
-    sub_client_id_allocator: Arc<SubClientIdAllocator>,
+    session_slot_allocator: Arc<SessionSlotAllocator>,
     ttl: Duration,
 ) {
     tokio::spawn(async move {
@@ -341,7 +341,7 @@ fn spawn_ttl_task(
         loop {
             interval.tick().await;
             sessions
-                .evict_idle(&scsynth_server, &sub_client_id_allocator, ttl)
+                .evict_idle(&scsynth_server, &session_slot_allocator, ttl)
                 .await;
         }
     });

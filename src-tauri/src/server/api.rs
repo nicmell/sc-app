@@ -68,7 +68,7 @@ pub async fn post_session(State(state): State<AppState>) -> Response {
     try_lazy_sclang_bootstrap(&state).await;
 
     let session = match Session::create(
-        &state.sub_client_id_allocator,
+        &state.session_slot_allocator,
         &state.scsynth_server,
         state.force_osc_mode,
     )
@@ -131,7 +131,7 @@ pub async fn delete_session(State(state): State<AppState>, Path(id): Path<Uuid>)
         return error_response(StatusCode::NOT_FOUND, format!("session {id} not found"));
     };
     session
-        .cleanup(&state.scsynth_server, &state.sub_client_id_allocator)
+        .cleanup(&state.scsynth_server, &state.session_slot_allocator)
         .await;
     match session_info(
         &session,

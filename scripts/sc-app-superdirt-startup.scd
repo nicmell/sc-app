@@ -117,17 +117,7 @@ s.doWhenBooted({
 
     ~installClock.();
     ~installSuperDirt.();
-    // Phase 39c: scope responders moved to the bridge. The
-    // bridge owns the 0..127 scope-buffer allocator + the
-    // /scope/{allocate,free,subscribe,unsubscribe} OSC handling.
-    // Sclang reports the pool size via the bootstrap reply.
     ~bootstrapCtx[\scope] = (numScopeBuffers: 128);
-    // Phase 39 hotfix follow-up: capture scsynth /version via
-    // the already-open scsynth connection so the bridge doesn't
-    // need its own /version handshake. Must run after s.notify
-    // (so scsynth replies are routed back to sclang) and before
-    // ~installBootstrap (so the responder sees the captured
-    // value).
     ~installVersion.();
     ~installBootstrap.();
 }, 50, {

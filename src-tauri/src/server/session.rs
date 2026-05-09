@@ -7,11 +7,13 @@
 //! lightweight per-tab bookkeeping:
 //!
 //! - `session_id` — UUID in the tab's `sessionStorage`.
-//! - `sub_client_id` — bridge-allocated (0..MAX_SESSIONS),
+//! - `session_slot` — bridge-allocated (0..MAX_SESSIONS),
 //!   partitions the node-ID space within the bridge's single
-//!   `clientId` (see [`SubClientIdAllocator`]).
-//! - `parent_group_id` — `SESSION_GROUP_BASE + sub_client_id`,
-//!   unique per session.
+//!   `clientId` (see [`SessionSlotAllocator`]). Bridge-internal;
+//!   not exposed on the wire — frontend derives its
+//!   [`IdAllocator`] base from `parent_group_id` directly.
+//! - `parent_group_id` — `bridge_client_id * 1_000_000 +
+//!   session_slot * 100_000 + 100`, unique per session.
 //! - `scope_mode` — Phase 36 SHM/OSC choice, frozen at create.
 //!
 //! No UDP sockets, no broadcast channels, no recv tasks — those
@@ -33,39 +35,38 @@ use uuid::Uuid;
 use super::server::{ClockMetadata, DirtSample, ScsynthVersion, Server};
 use crate::scope::ScopeMode;
 
-/// scsynth's `clientId = 0` is the single-client default; using
-/// `0 * 100 = 0` would clash with the root group. Fall back to
-/// `100`. Mirrors the same fallback in `src/AppShell.tsx`.
-const FALLBACK_PARENT_GROUP_ID: i32 = 100;
-
-/// Phase 39a hotfix: parent_group_id is partitioned by both the
-/// bridge's clientId AND the sub_client_id to avoid colliding
-/// with sclang+SuperDirt's node-ID range (sclang at clientId=0
-/// allocates synths from 1000+; SuperDirt orbits land in
-/// 1000–1999). The formula mirrors the frontend's IdAllocator
-/// partition: `bridge_client_id × 1M + sub_client_id × 100K +
-/// 100`. Single-client (`bridge_client_id=0`, `sub_client_id=0`)
-/// keeps the legacy 100 group id for back-compat.
-const PARENT_GROUP_OFFSET_PER_CLIENT_ID: i32 = 1_000_000;
-const PARENT_GROUP_OFFSET_PER_SUB_CLIENT_ID: i32 = 100_000;
-const PARENT_GROUP_OFFSET_WITHIN_SLICE: i32 = 100;
+/// `parent_group_id` partitioning constants. The bridge runs one
+/// `/notify 1` and gets a single `clientId`; sessions further
+/// partition that 1M-id slice into 100K-id chunks. The 100 offset
+/// keeps the group ID clear of scsynth's root group (id 0) and
+/// sclang's defaultGroup (id 1) when `bridge_client_id=0` and
+/// `session_slot=0`.
+///
+/// `bridge_client_id × 1_000_000` clears sclang+SuperDirt's
+/// node-ID range when sharing scsynth (sclang at clientId=0
+/// allocates from 1000+; SuperDirt orbits land 1000–1999).
+const BRIDGE_CLIENT_STRIDE: i32 = 1_000_000;
+const SESSION_SLOT_STRIDE: i32 = 100_000;
+const PARENT_GROUP_OFFSET: i32 = 100;
 
 /// Maximum concurrent sessions. Each session owns a
-/// `sub_client_id` in `[0, MAX_SESSIONS)`. The bridge-level
+/// `session_slot` in `[0, MAX_SESSIONS)`. The bridge-level
 /// `clientId * 1_000_000` space is partitioned into N
 /// 100_000-id slices; MAX_SESSIONS=10 keeps the slices clean
 /// without overflowing into the next clientId range.
 pub const MAX_SESSIONS: u8 = 10;
 
-/// Allocator for session-scoped `sub_client_id`s. Free-list
-/// based; sessions allocate on `Session::create` and free on
-/// cleanup. Hard cap at [`MAX_SESSIONS`] — over-cap returns
-/// `None`, which the API layer renders as 503.
-pub struct SubClientIdAllocator {
+/// Allocator for session-scoped `session_slot`s. Free-list based;
+/// sessions allocate on `Session::create` and free on cleanup.
+/// Hard cap at [`MAX_SESSIONS`] — over-cap returns `None`, which
+/// the API layer renders as 503. Bridge-internal: the slot itself
+/// never crosses the wire — the frontend reads `parent_group_id`
+/// and derives its `IdAllocator` base from there.
+pub struct SessionSlotAllocator {
     free_list: Mutex<Vec<u8>>,
 }
 
-impl SubClientIdAllocator {
+impl SessionSlotAllocator {
     pub fn new() -> Self {
         // Initialize with all IDs free, in reverse so `pop()`
         // hands out 0, 1, 2, … in order (cosmetic).
@@ -88,7 +89,7 @@ impl SubClientIdAllocator {
     }
 }
 
-impl Default for SubClientIdAllocator {
+impl Default for SessionSlotAllocator {
     fn default() -> Self {
         Self::new()
     }
@@ -99,13 +100,14 @@ impl Default for SubClientIdAllocator {
 /// routing-relevant metadata.
 pub struct Session {
     pub session_id: Uuid,
-    /// Phase 39a: bridge-allocated id in `[0, MAX_SESSIONS)`.
+    /// Phase 39a: bridge-allocated slot in `[0, MAX_SESSIONS)`.
     /// Partitions the bridge's node-ID space across sessions.
-    pub sub_client_id: u8,
-    /// `SESSION_GROUP_BASE + sub_client_id`, or
-    /// `FALLBACK_PARENT_GROUP_ID` if scsynth assigned
-    /// `clientId = 0` (rare; only when scsynth is launched with
-    /// `-l 1`).
+    /// Bridge-internal — the wire only carries `parent_group_id`
+    /// (which encodes the slot via the partitioning formula).
+    pub session_slot: u8,
+    /// `bridge_client_id × 1_000_000 + session_slot × 100_000 +
+    /// 100`. Unique per session; the frontend's `IdAllocator`
+    /// base is `parent_group_id + 900`.
     pub parent_group_id: i32,
     #[allow(dead_code)] // 29d uses this for the TTL job's cold-start log line.
     pub created_at: Instant,
@@ -117,16 +119,16 @@ pub struct Session {
 }
 
 impl Session {
-    /// Mint a new session: allocate a `sub_client_id`, derive
+    /// Mint a new session: allocate a `session_slot`, derive
     /// the `parent_group_id`, capture `scope_mode`. Pure
     /// bookkeeping — no UDP, no handshake (the bridge ran
     /// `/notify` once at boot via the scsynth Server).
     pub async fn create(
-        sub_client_id_allocator: &SubClientIdAllocator,
+        session_slot_allocator: &SessionSlotAllocator,
         scsynth_server: &Arc<Server>,
         force_osc_mode: bool,
     ) -> Result<Self> {
-        let sub_client_id = sub_client_id_allocator.alloc().await.ok_or_else(|| {
+        let session_slot = session_slot_allocator.alloc().await.ok_or_else(|| {
             anyhow!(
                 "session limit reached ({} concurrent sessions); close a tab and retry",
                 MAX_SESSIONS
@@ -137,19 +139,14 @@ impl Session {
             .await
             .scsynth_client_id
             .ok_or_else(|| anyhow!("scsynth Server has no clientId — bridge not bootstrapped"))?;
-        let parent_group_id = if bridge_client_id == 0 && sub_client_id == 0 {
-            tracing::warn!(
-                "scsynth returned clientId=0 and sub_client_id=0; using fallback parent group {FALLBACK_PARENT_GROUP_ID}"
-            );
-            FALLBACK_PARENT_GROUP_ID
-        } else {
-            // Bridge-clientId-scoped partition to stay clear of
-            // sclang+SuperDirt's node range (clientId=0 allocator
-            // starts at 1000; SuperDirt orbits land 1000–1999).
-            bridge_client_id * PARENT_GROUP_OFFSET_PER_CLIENT_ID
-                + (sub_client_id as i32) * PARENT_GROUP_OFFSET_PER_SUB_CLIENT_ID
-                + PARENT_GROUP_OFFSET_WITHIN_SLICE
-        };
+        // Bridge-clientId-scoped partition stays clear of
+        // sclang+SuperDirt's node range (clientId=0 allocator
+        // starts at 1000; SuperDirt orbits land 1000–1999). The
+        // +100 offset keeps slot=0 on bridge clientId=0 from
+        // colliding with the root group (id 0).
+        let parent_group_id = bridge_client_id * BRIDGE_CLIENT_STRIDE
+            + (session_slot as i32) * SESSION_SLOT_STRIDE
+            + PARENT_GROUP_OFFSET;
 
         // Phase 36: probe SHM availability for this session. The
         // probe is cheap; running it per-session lets a future
@@ -176,14 +173,14 @@ impl Session {
         tracing::info!(
             session_id = %session_id,
             bridge_client_id,
-            sub_client_id,
+            session_slot,
             parent_group_id,
             scope_mode = ?scope_mode,
             "session created"
         );
         Ok(Self {
             session_id,
-            sub_client_id,
+            session_slot,
             parent_group_id,
             created_at: now,
             last_active: RwLock::new(now),
@@ -201,12 +198,12 @@ impl Session {
     /// `/g_freeAll(parent_group_id) + /n_free(parent_group_id)`
     /// via the shared scsynth Server. Phase 39a: NO `/notify 0`
     /// (the bridge owns the single registration, dropped at
-    /// bridge shutdown). Returns `sub_client_id` to the
+    /// bridge shutdown). Returns `session_slot` to the
     /// allocator.
     pub async fn cleanup(
         &self,
         scsynth_server: &Arc<Server>,
-        sub_client_id_allocator: &SubClientIdAllocator,
+        session_slot_allocator: &SessionSlotAllocator,
     ) {
         if let Err(e) = send_session_cleanup(scsynth_server, self.parent_group_id).await {
             tracing::warn!(
@@ -224,7 +221,7 @@ impl Session {
         // Brief flush window so kernel-queued datagrams reach
         // scsynth before we move on.
         tokio::time::sleep(Duration::from_millis(50)).await;
-        sub_client_id_allocator.free(self.sub_client_id).await;
+        session_slot_allocator.free(self.session_slot).await;
     }
 }
 
@@ -236,19 +233,18 @@ pub struct SessionInfo {
     pub session_id: Uuid,
     /// scsynth's bridge-level `clientId` (Phase 39a: shared
     /// across all sessions; the bridge's single `/notify`
-    /// registration). Used by the frontend's `IdAllocator` base
-    /// computation.
+    /// registration). Informational — the frontend derives its
+    /// `IdAllocator` base from `parent_group_id` directly.
     pub scsynth_client_id: i32,
-    /// Phase 39a: per-session id in `[0, MAX_SESSIONS)`. Combined
-    /// with `scsynth_client_id` to compute the frontend's
-    /// `IdAllocator` base:
-    /// `scsynth_client_id * 1_000_000 + sub_client_id * 100_000 + 1000`.
-    pub sub_client_id: u8,
     /// scsynth's address (host:port). Frontend uses the port to
     /// derive the SHM file path.
     pub scsynth: String,
     /// Nominal sample rate from `/status.reply`.
     pub sample_rate: u32,
+    /// Bridge-allocated unique parent group node ID for this
+    /// session. Frontend derives `IdAllocator` base as
+    /// `parent_group_id + 900` (synth nodes) and
+    /// `parent_group_id + 5900` (buffers).
     pub parent_group_id: i32,
     /// Phase 36: SHM vs OSC fallback.
     pub scope_mode: ScopeMode,
@@ -311,7 +307,6 @@ pub async fn session_info(
     Ok(SessionInfo {
         session_id: session.session_id,
         scsynth_client_id,
-        sub_client_id: session.sub_client_id,
         scsynth: scsynth_server.target().to_string(),
         sample_rate,
         parent_group_id: session.parent_group_id,
@@ -368,7 +363,7 @@ impl SessionStore {
     pub async fn evict_idle(
         &self,
         scsynth_server: &Arc<Server>,
-        sub_client_id_allocator: &SubClientIdAllocator,
+        session_slot_allocator: &SessionSlotAllocator,
         ttl: Duration,
     ) {
         let now = Instant::now();
@@ -400,7 +395,7 @@ impl SessionStore {
                 session_id = %session.session_id,
                 "evicting idle session (TTL expired)"
             );
-            session.cleanup(scsynth_server, sub_client_id_allocator).await;
+            session.cleanup(scsynth_server, session_slot_allocator).await;
         }
     }
 }
