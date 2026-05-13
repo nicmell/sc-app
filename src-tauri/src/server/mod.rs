@@ -43,10 +43,10 @@ pub mod static_assets;
 pub mod ws_bridge;
 
 pub use routing::RoutingTable;
-use server::{free_bridge_clock, instantiate_bridge_clock, Server, ServerRole};
+use server::{free_bridge_clock, instantiate_bridge_clock, scan_dirt_samples, Server, ServerRole};
 use session::{send_bridge_notify_off, SessionSlotAllocator, SessionStore};
 
-use crate::scope::middleware::{BridgeScopeAllocator, DEFAULT_NUM_SCOPE_BUFFERS};
+use crate::scope::middleware::BridgeScopeAllocator;
 
 /// How often the TTL eviction task scans the session store.
 const TTL_SCAN_INTERVAL: Duration = Duration::from_secs(60);
@@ -75,6 +75,13 @@ pub(crate) struct AppState {
     /// lazy bootstrap path to call `instantiate_bridge_clock`
     /// when the boot-time bootstrap missed sclang.
     pub clock_chunk_size: u32,
+    /// Phase 40: clock nodeId from config. Used by the lazy
+    /// bootstrap path's `instantiate_bridge_clock` call and by
+    /// the bridge-shutdown `free_bridge_clock` call.
+    pub clock_node_id: i32,
+    /// Phase 40: clock audio-bus index from config. /s_new arg
+    /// for the `\scAppClock` synth.
+    pub clock_audio_bus: i32,
     pub sessions: SessionStore,
     pub session_slot_allocator: Arc<SessionSlotAllocator>,
     /// Phase 36: when true, every new session uses
@@ -105,17 +112,21 @@ pub async fn bind(port: u16) -> Result<(TcpListener, SocketAddr)> {
 /// handshake (`/notify` + `/status`) once, then accepts HTTP
 /// connections.
 ///
-/// Phase 39 hotfix follow-up: `scsynth_addr` and `sclang_addr` are
-/// no longer separate parameters — they're derived from the routes
-/// table by walking it for known probe addresses (`/notify` for
-/// scsynth, `/bootstrap/hello` for sclang). Returns an error if no
-/// route matches `/notify` (the bridge can't function without a
-/// scsynth handshake target); a missing sclang route just disables
+/// scsynth and sclang targets are derived from the routes table
+/// by walking it for known probe addresses (`/notify` for
+/// scsynth, `/dirt` for sclang in Phase 40 — pre-40 the sclang
+/// probe was `/bootstrap/hello`, which is no longer routed since
+/// the bootstrap responder is gone). Returns an error if no route
+/// matches `/notify` (the bridge can't function without a scsynth
+/// handshake target); a missing sclang route just disables
 /// clock/scope/sequencer features.
 pub async fn serve_on(
     listener: TcpListener,
     routes: RoutingTable,
     clock_chunk_size: u32,
+    clock_node_id: i32,
+    clock_audio_bus: i32,
+    num_scope_buffers: i32,
     dist: Option<PathBuf>,
     session_ttl: Duration,
     force_osc_mode: bool,
@@ -128,12 +139,12 @@ pub async fn serve_on(
              needs a scsynth target. Check config.json's routes table."
         )
     })?;
-    let sclang_addr = routes.route_for("/bootstrap/hello");
+    let sclang_addr = routes.route_for("/dirt");
     tracing::info!(scsynth = %scsynth_addr, "  scsynth target (derived from routes via /notify)");
     if let Some(addr) = sclang_addr {
-        tracing::info!(sclang = %addr, "  sclang target (derived from routes via /bootstrap/hello)");
+        tracing::info!(sclang = %addr, "  sclang target (derived from routes via /dirt)");
     } else {
-        tracing::info!("  sclang: no /bootstrap/hello route — clock/scope/sequencer features will not work");
+        tracing::info!("  sclang: no /dirt route — clock/scope/sequencer features will not work");
     }
     tracing::info!(
         ttl_seconds = session_ttl.as_secs(),
@@ -171,38 +182,88 @@ pub async fn serve_on(
     // bridge config. Best-effort: if it fails, log + continue
     // (sessions will see SessionInfo.clock = None and surface
     // a clear error in the connect screen).
+    // Phase 40: write the sclang Server's bridge-owned metadata
+    // (scope-pool size + dirt-samples scan from disk). Both pre-40
+    // came via /bootstrap/hello; Phase 40 sources them from config
+    // + the SC_APP_DIRT_SAMPLES env var directly.
     if let Some(sclang) = sclang_server.as_ref() {
-        match instantiate_bridge_clock(&scsynth_server, sclang, clock_chunk_size).await {
+        // Phase 40: dirt samples come from a disk walk. Source path
+        // precedence:
+        //   1. SC_APP_DIRT_SAMPLES env var (matches what
+        //      start-superdirt-only.sh exports for sclang).
+        //   2. "./superdirt-deps/Dirt-Samples" relative to CWD —
+        //      auto-discovery for `yarn bridge` / `yarn dev:full`
+        //      from the repo root, so users don't need to export
+        //      the env var twice (once for sclang, once for the
+        //      bridge shell).
+        //   3. Empty list — sequencer panel autocomplete just
+        //      stays empty.
+        let dirt_samples_source = std::env::var("SC_APP_DIRT_SAMPLES")
+            .ok()
+            .or_else(|| {
+                let p = std::path::Path::new("./superdirt-deps/Dirt-Samples");
+                p.is_dir().then(|| p.display().to_string())
+            });
+        let dirt_samples = dirt_samples_source
+            .as_deref()
+            .map(scan_dirt_samples)
+            .unwrap_or_default();
+        if dirt_samples.is_empty() {
+            tracing::info!(
+                "  dirt samples: 0 banks (no SC_APP_DIRT_SAMPLES and no \
+                 ./superdirt-deps/Dirt-Samples in CWD)"
+            );
+        } else {
+            tracing::info!(
+                bank_count = dirt_samples.len(),
+                source = ?dirt_samples_source,
+                "  dirt samples scanned from disk"
+            );
+        }
+        sclang
+            .set_sclang_metadata(Some(num_scope_buffers), dirt_samples)
+            .await;
+
+        // Phase 40: clock /s_new. Failure is non-fatal — sclang
+        // may not have .add()-ed the SynthDef yet (bridge boots
+        // before sclang). The api.rs lazy-bootstrap path retries
+        // on every session create until success.
+        match instantiate_bridge_clock(
+            &scsynth_server,
+            sclang,
+            clock_chunk_size,
+            clock_node_id,
+            clock_audio_bus,
+        )
+        .await
+        {
             Ok(()) => {
-                tracing::info!(clock_chunk_size, "bridge clock /s_new succeeded");
+                tracing::info!(
+                    clock_chunk_size,
+                    clock_node_id,
+                    clock_audio_bus,
+                    "bridge clock /s_new succeeded"
+                );
             }
             Err(e) => {
                 tracing::warn!(
                     error = %e,
-                    "bridge clock /s_new failed — clock-dependent features disabled \
-                     until the bridge is restarted with sclang reachable"
+                    "bridge clock /s_new failed at boot — will retry on first \
+                     session create (typical when bridge starts before sclang)"
                 );
             }
         }
     } else {
         tracing::info!(
-            "no sclang server configured — skipping clock /s_new"
+            "no sclang server configured — skipping clock /s_new + samples scan"
         );
     }
 
-    // Phase 39c: size the bridge-owned scope-buffer allocator
-    // from sclang's bootstrap reply. If sclang wasn't reachable
-    // (or its bootstrap missed `numScopeBuffers`), fall back to
-    // the scsynth default (128 SHM scope buffer slots).
-    let scope_pool_size: u32 = match &sclang_server {
-        Some(s) => s
-            .metadata()
-            .await
-            .num_scope_buffers
-            .map(|n| n.max(0) as u32)
-            .unwrap_or(DEFAULT_NUM_SCOPE_BUFFERS),
-        None => DEFAULT_NUM_SCOPE_BUFFERS,
-    };
+    // Phase 40: scope-buffer allocator pool size comes from config
+    // directly (pre-40 it came from sclang's bootstrap reply). The
+    // value pins to scsynth's 128-slot SHM pool unless the user has
+    // overridden it for a custom scsynth fork.
+    let scope_pool_size: u32 = num_scope_buffers.max(0) as u32;
     tracing::info!(scope_pool_size, "  scope-buffer allocator pool sized");
     let scope_allocator = Arc::new(BridgeScopeAllocator::new(scope_pool_size));
 
@@ -213,6 +274,8 @@ pub async fn serve_on(
         sclang_server,
         scope_allocator,
         clock_chunk_size,
+        clock_node_id,
+        clock_audio_bus,
         sessions: SessionStore::new(),
         session_slot_allocator: Arc::new(SessionSlotAllocator::new()),
         force_osc_mode,
@@ -263,13 +326,14 @@ pub async fn serve_on(
             .cleanup(&state.scsynth_server, &state.session_slot_allocator)
             .await;
     }
-    // Phase 39d: free the clock synth before /notify 0.
-    if let Some(sclang) = state.sclang_server.as_ref() {
-        let clock_node_id = sclang.metadata().await.clock_node_id;
-        if let Some(node_id) = clock_node_id {
-            if let Err(e) = free_bridge_clock(&state.scsynth_server, node_id).await {
-                tracing::warn!(error = %e, "free_bridge_clock failed at shutdown");
-            }
+    // Phase 40: free the clock synth before /notify 0. nodeId
+    // comes from config (AppState) — pre-40 it came from
+    // sclang's bootstrap reply.
+    if state.sclang_server.is_some() {
+        if let Err(e) =
+            free_bridge_clock(&state.scsynth_server, state.clock_node_id).await
+        {
+            tracing::warn!(error = %e, "free_bridge_clock failed at shutdown");
         }
     }
     if let Err(e) = send_bridge_notify_off(&state.scsynth_server).await {
@@ -285,6 +349,9 @@ pub async fn run_bridge(
     port: u16,
     routes: RoutingTable,
     clock_chunk_size: u32,
+    clock_node_id: i32,
+    clock_audio_bus: i32,
+    num_scope_buffers: i32,
     dist: Option<PathBuf>,
     session_ttl: Duration,
     force_osc_mode: bool,
@@ -295,6 +362,9 @@ pub async fn run_bridge(
         listener,
         routes,
         clock_chunk_size,
+        clock_node_id,
+        clock_audio_bus,
+        num_scope_buffers,
         dist,
         session_ttl,
         force_osc_mode,

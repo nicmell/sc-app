@@ -53,11 +53,12 @@ export function dirtSetControlBus(idx: number, value: number): OSC.Message {
   return new OSC.Message('/dirt/setControlBus', idx, value);
 }
 
-/** `/dirt/listSamples` — sc-app extension (Phase 27). Custom OSCdef
- *  in `scripts/sc-app-superdirt-startup.scd` replies with
- *  `/dirt/samples bank1 count1 bank2 count2 …`. Used by the
- *  SequencerPanel's TrackRow to populate a sample-name autocomplete
- *  datalist. */
+/** `/dirt/listSamples` — sc-app extension (Phase 27). The sample
+ *  list is now bridge-owned (Phase 40 — bridge walks
+ *  `SC_APP_DIRT_SAMPLES` from disk and surfaces via
+ *  `SessionInfo.dirtSamples`); this builder is kept for callers
+ *  that explicitly want to send the OSC message, but the frontend
+ *  no longer does so on the autocomplete path. */
 export function dirtListSamples(): OSC.Message {
   return new OSC.Message('/dirt/listSamples');
 }

@@ -1,9 +1,9 @@
 /**
  * Typed builders + reply parsers for the Phase 30 shared-clock OSC
- * surface. The clock lives in sclang (see
- * `scripts/sc-app-superdirt-startup.scd`'s `\scAppClock` SynthDef
- * + `\scAppClockHello` OSCdef); this module is the matching
- * frontend wire format.
+ * surface. The clock SynthDef is declared in sclang (see
+ * `scripts/sc-startup.scd`'s `\scAppClock`) and instantiated by
+ * the bridge at boot (Phase 40); this module is the matching
+ * frontend wire format for the cached `ClockInfo` shape.
  *
  * Two addresses:
  *

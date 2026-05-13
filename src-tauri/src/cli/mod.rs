@@ -16,8 +16,9 @@
 //! Phase 39 hotfix follow-up: scsynth + sclang targets are no
 //! longer config fields / env vars / CLI flags; they're derived
 //! from the routes table by walking it for `/notify` (scsynth) and
-//! `/bootstrap/hello` (sclang). To override, edit the route entry
-//! in `config.json`.
+//! `/dirt` (sclang in Phase 40 — pre-40 the sclang probe was
+//! `/bootstrap/hello`). To override, edit the route entry in
+//! `config.json`.
 //!
 //! GUI mode does the same precedence inside `gui::run` (no CLI
 //! flags; reads env + `app_config_dir/config.json`).
@@ -113,10 +114,24 @@ pub fn run() {
                 .and_then(|s| s.parse::<u32>().ok())
                 .or(cfg.clock_chunk_size)
                 .unwrap_or(crate::config::DEFAULT_CLOCK_CHUNK_SIZE);
+            // Phase 40: clock nodeId / clock audio bus / num scope
+            // buffers — bridge-owned. Pre-40 these came from sclang
+            // (Bus.audio + ~clockNodeId + ~scopeBufferAllocator
+            // range). Config + built-in defaults are now the single
+            // source of truth; no env-var overrides.
+            let clock_node_id = cfg
+                .clock_node_id
+                .unwrap_or(crate::config::DEFAULT_CLOCK_NODE_ID);
+            let clock_audio_bus = cfg
+                .clock_audio_bus
+                .unwrap_or(crate::config::DEFAULT_CLOCK_AUDIO_BUS);
+            let num_scope_buffers = cfg
+                .num_scope_buffers
+                .unwrap_or(crate::config::DEFAULT_NUM_SCOPE_BUFFERS);
             let log_dir = log_dir.or(cfg.log_dir);
             // Phase 39 hotfix follow-up: scsynth + sclang targets
             // come from the routes table now (derived in serve_on
-            // via route_for("/notify") + route_for("/bootstrap/hello")).
+            // via route_for("/notify") + route_for("/dirt")).
             // If the user hasn't supplied any routes, fall back to
             // the starter routes — they cover both targets.
             let routes = if cfg.routes.is_empty() {
@@ -131,6 +146,9 @@ pub fn run() {
             bridge::run_blocking(
                 port,
                 clock_chunk_size,
+                clock_node_id,
+                clock_audio_bus,
+                num_scope_buffers,
                 routes,
                 dist,
                 log_dir,

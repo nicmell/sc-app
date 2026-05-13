@@ -81,9 +81,9 @@ export function compileBufferTapOscSynthDef(
     // Read clockBus's sample-counting Phasor; derive writeIdx
     // by wrapping at 2×chunkSize. The clockBus value is
     // monotonically advancing audio-rate sample count modulo
-    // (2 × chunkSize) — see scripts/lib/clock.scd's
-    // Phasor.ar(0, 1, 0, wrap) where wrap = 2/tickRate sample
-    // periods. So `clockPhase % (2*chunkSize)` is exactly the
+    // (2 × chunkSize) — see scripts/sc-startup.scd's
+    // Phasor.ar(0, 1, 0, 2 * chunkSize) inside the \scAppClock
+    // SynthDef. So `clockPhase % (2*chunkSize)` is exactly the
     // ring writeIdx aligned with global tick parity.
     const clockPhase = g.In.ar(clockBus, 1);
     const writeIdx = g.mod(clockPhase, chunkSize * 2);

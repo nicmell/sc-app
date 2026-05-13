@@ -9,7 +9,7 @@ audio config schema, file layout, workspace packages, and the
 chunkSize × sampleRate practical table all live in
 [`CLAUDE.md`](./CLAUDE.md) — don't duplicate them here.
 
-**No phase currently in flight.** Phases 0–39 are in
+**No phase currently in flight.** Phases 0–40 are in
 [`docs/history.md`](./docs/history.md). The next planned piece
 of work picks from the [Future Improvements](#future-improvements)
 list below.
@@ -22,12 +22,12 @@ list below.
    to `100` when scsynth assigns `clientId = 0`. The fallback
    warns in the debug log. Promotion to a configurable allocator
    has not been needed.
-2. **Clock bus ID.** Allocated by sclang via `Bus.audio(s, 1)` at
-   server boot (Phase 30). Index reported in `/clock/info`;
-   typically <32 in practice. Frontend's `IdAllocator(bus)` starts
-   at 32 to avoid hardware-reserved buses. Confirm against scsynth
-   boot config if a deployment uses a non-default
-   `numAudioBusChannels`.
+2. **Clock bus ID.** Bridge-owned in Phase 40 via
+   `config.clock_audio_bus` (default 1023 — top of scsynth's
+   default 1024-bus audio range). Pre-40 sclang allocated
+   dynamically via `Bus.audio(s, 1)`. Frontend's `IdAllocator(bus)`
+   starts at 32 to avoid hardware-reserved buses. Lower the
+   default only if `numAudioBusChannels` is shrunk below 1024.
 3. **Recording memory ceiling.** Float32 stereo at 48 kHz =
    ~23 MB/min. Practical comfortable ceiling ~10–15 min before
    RAM pressure. Streaming-to-disk (Future Improvement #2)
@@ -171,7 +171,7 @@ in `/clock/info` either way (sclang's clock SynthDef has to
 publish its wrap point), so (a) → (b) is a straightforward
 later evolution.
 
-**Touch points (either flavour):** `scripts/sc-app-superdirt-startup.scd`
+**Touch points (either flavour):** `scripts/sc-startup.scd`
 (clock SynthDef wrap + `/clock/info` reply field),
 `src/clock/clockClient.ts` (parse `ringHalves`),
 `src/synthdefs/bufferTapSynthDef.ts` (cache key + ring math),

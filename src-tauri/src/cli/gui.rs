@@ -88,6 +88,18 @@ pub fn run() {
                 .and_then(|s| s.parse::<u32>().ok())
                 .or(cfg.clock_chunk_size)
                 .unwrap_or(crate::config::DEFAULT_CLOCK_CHUNK_SIZE);
+            // Phase 40: clock + scope ownership moves from sclang
+            // (Bus.audio + ~clockNodeId + scopeBufferAllocator) to
+            // bridge config. No env-var overrides.
+            let clock_node_id = cfg
+                .clock_node_id
+                .unwrap_or(crate::config::DEFAULT_CLOCK_NODE_ID);
+            let clock_audio_bus = cfg
+                .clock_audio_bus
+                .unwrap_or(crate::config::DEFAULT_CLOCK_AUDIO_BUS);
+            let num_scope_buffers = cfg
+                .num_scope_buffers
+                .unwrap_or(crate::config::DEFAULT_NUM_SCOPE_BUFFERS);
 
             let session_ttl = Duration::from_secs(
                 cfg.session_ttl_seconds.unwrap_or(DEFAULT_SESSION_TTL_SECONDS),
@@ -100,7 +112,7 @@ pub fn run() {
             //     half-broken route map. Phase 39 hotfix follow-up:
             //     `serve_on` derives the scsynth + sclang handshake
             //     targets from this table (route_for("/notify") +
-            //     route_for("/bootstrap/hello")).
+            //     route_for("/dirt") in Phase 40).
             let routes_cfg = if cfg.routes.is_empty() {
                 crate::config::starter().routes.clone()
             } else {
@@ -138,6 +150,9 @@ pub fn run() {
                     listener,
                     table,
                     clock_chunk_size,
+                    clock_node_id,
+                    clock_audio_bus,
+                    num_scope_buffers,
                     dist,
                     session_ttl,
                     /* force_osc_mode = */ false,

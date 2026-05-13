@@ -276,7 +276,7 @@ pub async fn session_info(
     scsynth_server: &Arc<Server>,
     sclang_server: Option<&Arc<Server>>,
 ) -> Result<SessionInfo> {
-    let (scsynth_client_id, sample_rate) = {
+    let (scsynth_client_id, sample_rate, scsynth_version) = {
         let m = scsynth_server.metadata().await;
         let scsynth_client_id = m
             .scsynth_client_id
@@ -284,25 +284,30 @@ pub async fn session_info(
         let sample_rate = m
             .sample_rate
             .ok_or_else(|| anyhow!("scsynth Server has no sample rate — bridge not bootstrapped"))?;
-        (scsynth_client_id, sample_rate)
+        // Phase 40: scsynth_version moved back onto scsynth's
+        // metadata. Pre-40 sclang captured it at its own boot and
+        // echoed via the bootstrap reply; Phase 40 has the bridge
+        // probe /version directly during the scsynth handshake.
+        let scsynth_version = m.scsynth_version.clone();
+        (scsynth_client_id, sample_rate, scsynth_version)
     };
 
-    // Phase 39 hotfix follow-up: scsynth_version moved off scsynth's
-    // metadata onto sclang's. sclang captures it at its own boot and
-    // forwards to the bridge in /bootstrap/scsynth-version;
-    // the bridge has no direct /version handshake anymore.
-    let (clock, num_scope_buffers, dirt_samples, scsynth_version) =
-        if let Some(sclang) = sclang_server {
-            let m = sclang.metadata().await;
-            (
-                m.clock,
-                m.num_scope_buffers,
-                m.dirt_samples.clone(),
-                m.scsynth_version.clone(),
-            )
-        } else {
-            (None, None, Vec::new(), None)
-        };
+    // Phase 40: clock + num_scope_buffers are bridge-owned (read
+    // from config; surfaced via the sclang Server's metadata only
+    // because that's where the clock metadata cache lives — the
+    // values themselves come from `AppState`, written in serve_on
+    // after the clock /s_new). dirt_samples are scanned from disk
+    // in serve_on and written to sclang_server metadata.
+    let (clock, num_scope_buffers, dirt_samples) = if let Some(sclang) = sclang_server {
+        let m = sclang.metadata().await;
+        (
+            m.clock,
+            m.num_scope_buffers,
+            m.dirt_samples.clone(),
+        )
+    } else {
+        (None, None, Vec::new())
+    };
 
     Ok(SessionInfo {
         session_id: session.session_id,

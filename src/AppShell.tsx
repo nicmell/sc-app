@@ -334,7 +334,7 @@ async function setupDashboard(
   const registry = new SynthDefRegistry(client);
   const group = new GroupController(client, parentGroupId);
   // Phase 39b: ClockController takes ClockInfo at construction
-  // (cached by the bridge at boot via /sc-app/bootstrap/hello).
+  // (synthesized by the bridge after its own /s_new \scAppClock).
   // No per-session /clock/hello round-trip.
   const clock = new ClockController({ client, group, info: clockInfo });
 

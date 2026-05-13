@@ -9,37 +9,41 @@ use axum::Json;
 use serde::Serialize;
 use uuid::Uuid;
 
-use super::server::{ensure_sclang_bootstrapped, instantiate_bridge_clock};
+use super::server::instantiate_bridge_clock;
 use super::session::{session_info, Session};
 use super::AppState;
 use crate::scope::shm as scope_shm;
 
-/// Phase 39 hotfix: if sclang's bootstrap missed at bridge boot
-/// (bridge started before sclang), retry now. Both `post_session`
-/// and `get_session` call this so the frontend can poll until
-/// sclang comes up. Best-effort — failures are logged at debug.
-async fn try_lazy_sclang_bootstrap(state: &AppState) {
+/// Phase 40: if the boot-time clock /s_new missed sclang (bridge
+/// started before sclang `.add()`-ed the SynthDef), retry now.
+/// Both `post_session` and `get_session` call this so the
+/// frontend can poll until sclang comes up. Best-effort — failures
+/// are logged at debug.
+///
+/// Pre-40 this also re-ran the `/bootstrap/hello` round-trip; Phase
+/// 40 has no bootstrap handshake (clock/scope/version values are
+/// bridge-owned, dirt samples are scanned from disk at boot), so
+/// only the /s_new step retries.
+async fn try_lazy_clock_snew(state: &AppState) {
     let Some(sclang) = state.sclang_server.as_ref() else {
         return;
     };
-    if sclang.metadata().await.clock_bus.is_some() {
-        return; // already populated
-    }
-    if let Err(e) = ensure_sclang_bootstrapped(sclang).await {
-        tracing::debug!(
-            error = %e,
-            "lazy sclang bootstrap still failing (sclang not yet reachable)"
-        );
-        return;
+    if sclang.metadata().await.clock.is_some() {
+        return; // already up
     }
     if let Err(e) = instantiate_bridge_clock(
         &state.scsynth_server,
         sclang,
         state.clock_chunk_size,
+        state.clock_node_id,
+        state.clock_audio_bus,
     )
     .await
     {
-        tracing::warn!(error = %e, "lazy clock /s_new failed after bootstrap");
+        tracing::debug!(
+            error = %e,
+            "lazy clock /s_new still failing (sclang's \\scAppClock SynthDef likely not yet .add()-ed)"
+        );
     }
 }
 
@@ -59,13 +63,13 @@ fn error_response(status: StatusCode, message: impl Into<String>) -> Response {
 }
 
 /// `POST /api/session` — mint a new session. Phase 39a: pure
-/// bookkeeping (no UDP). Phase 39 hotfix: if sclang's bootstrap
-/// missed at bridge boot (bridge started before sclang), retry
-/// here. The user-facing flow becomes "start the bridge, start
-/// sclang, open a tab" — the order between bridge + sclang
-/// stops mattering.
+/// bookkeeping (no UDP). Phase 40: if the boot-time clock
+/// /s_new missed sclang (bridge started before sclang's
+/// SynthDef `.add()`-ed), retry here. The user-facing flow
+/// stays "start the bridge, start sclang, open a tab" — the
+/// order between bridge + sclang doesn't matter.
 pub async fn post_session(State(state): State<AppState>) -> Response {
-    try_lazy_sclang_bootstrap(&state).await;
+    try_lazy_clock_snew(&state).await;
 
     let session = match Session::create(
         &state.session_slot_allocator,
@@ -101,9 +105,9 @@ pub async fn post_session(State(state): State<AppState>) -> Response {
 /// `last_active` as a side effect so an idle frontend hitting
 /// this on a timer counts as a TTL keep-alive.
 ///
-/// Phase 39 hotfix: also opportunistically retries the sclang
-/// bootstrap if it's still missing. Frontend polls this when
-/// `clock` is null waiting for sclang to come up.
+/// Phase 40: also opportunistically retries the clock /s_new if
+/// it's still missing. Frontend polls this when `clock` is null
+/// waiting for sclang to come up.
 pub async fn get_session(State(state): State<AppState>, Path(id): Path<Uuid>) -> Response {
     let Some(session) = state.sessions.get_and_touch(&id).await else {
         return error_response(
@@ -111,7 +115,7 @@ pub async fn get_session(State(state): State<AppState>, Path(id): Path<Uuid>) ->
             format!("session {id} not found (expired or never existed)"),
         );
     };
-    try_lazy_sclang_bootstrap(&state).await;
+    try_lazy_clock_snew(&state).await;
     match session_info(
         &session,
         &state.scsynth_server,

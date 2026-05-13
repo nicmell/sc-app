@@ -21,11 +21,15 @@
 //! ## Metadata cache
 //!
 //! [`ServerMetadata`] is populated synchronously by the
-//! role-specific handshake. Phase 39a fills only
-//! `scsynth_client_id` + `sample_rate` (from the scsynth
-//! handshake). Phase 39b will add sclang-side fields
-//! (`clock_bus`, `clock_node_id`, …) populated by the bootstrap
-//! protocol.
+//! role-specific handshake. The scsynth Server fills
+//! `scsynth_client_id` + `sample_rate` + `scsynth_version` from
+//! its `/notify` + `/status` + `/version` handshakes. The sclang
+//! Server's `dirt_samples` is populated by [`serve_on`] from a
+//! disk scan (Phase 40: pre-40 a `/bootstrap/hello` round-trip
+//! also carried clock + scope-pool metadata, but those are now
+//! bridge-owned via config). The synthesized [`ClockMetadata`]
+//! is written to the sclang Server's metadata after the bridge's
+//! `\scAppClock` `/s_new` succeeds.
 //!
 //! ## Cost of shared sockets vs per-session sockets
 //!
@@ -61,14 +65,9 @@ const BROADCAST_CAPACITY: usize = 4096;
 const NOTIFY_TIMEOUT: Duration = Duration::from_secs(2);
 /// `/status` handshake timeout. Same shape.
 const STATUS_TIMEOUT: Duration = Duration::from_secs(2);
-/// Phase 39b: `/bootstrap/hello` round-trip per attempt.
-/// Phase 39 hotfix follow-up: also covers the new
-/// `/bootstrap/scsynth-version` reply (third message), so
-/// the budget needs to span all three sclang -> bridge sends.
-const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(3);
-/// Phase 39b: how many bootstrap attempts before giving up
-/// (and continuing to serve HTTP/WS without sclang metadata).
-const BOOTSTRAP_RETRIES: u32 = 5;
+/// Phase 40: `/version` handshake timeout. Bridge probes scsynth
+/// directly instead of routing the round-trip through sclang.
+const VERSION_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// What kind of server this is. Drives the boot-time handshake +
 /// what fields of [`ServerMetadata`] get populated.
@@ -78,10 +77,12 @@ pub enum ServerRole {
     /// also commits to this server's `clientId` for the bridge's
     /// node-ID space; session_slot allocation partitions further.
     Scsynth,
-    /// sclang+SuperDirt — Phase 39b will run
-    /// `/bootstrap/hello` here. Phase 39a treats it as
-    /// generic (no handshake).
-    #[allow(dead_code)] // 39b uses this.
+    /// sclang+SuperDirt. Phase 40: no boot handshake — the
+    /// scripts just declare a SynthDef + boot SuperDirt; the
+    /// bridge writes scope-pool size + dirt-samples-from-disk to
+    /// this Server's metadata in `serve_on`. (Pre-40 a
+    /// `/bootstrap/hello` round-trip carried clock + scope-pool
+    /// metadata; Phase 40 makes those bridge-owned via config.)
     Sclang,
     /// Any other route target (future MIDI bridge, analyzer, …).
     /// No boot handshake; metadata stays default.
@@ -102,41 +103,39 @@ pub struct ServerMetadata {
     /// `tickToTimetag` math + scope chunk geometry.
     pub sample_rate: Option<u32>,
 
-    // ── Sclang-side (populated by /bootstrap/*) ─────
-    /// Phase 39 hotfix follow-up: scsynth `/version.reply` snapshot,
-    /// captured by sclang at its own boot (lib/version.scd) and
-    /// echoed back to the bridge in the `/bootstrap/scsynth-
-    /// version` message. Lives on the sclang Server's metadata
-    /// because that's where the bridge received it from; the field
-    /// describes scsynth, but the chain of custody runs through
-    /// sclang. `None` if sclang's /version capture timed out.
+    /// Phase 40: scsynth `/version.reply` snapshot, captured by
+    /// the bridge directly during the scsynth boot handshake.
+    /// Pre-40 sclang captured it and forwarded via the bootstrap
+    /// reply; Phase 40 puts the round-trip back on the bridge.
+    /// `None` if the `/version` probe timed out.
     pub scsynth_version: Option<ScsynthVersion>,
-    /// Phase 39d: full clock metadata, populated by the bridge
-    /// AFTER the clock /s_new succeeds. Sclang's bootstrap reports
-    /// only `clock_bus` + `clock_node_id`; the bridge synthesizes
-    /// the full struct from those + scsynth's sampleRate + bridge
-    /// config's chunkSize. `None` until the post-bootstrap /s_new
-    /// completes; `None` permanently if sclang or scsynth isn't
-    /// reachable.
+
+    // ── Sclang-side (populated by serve_on) ─────
+    /// Phase 39d: full clock metadata, written by the bridge AFTER
+    /// the `/s_new \scAppClock` succeeds. Phase 40: the source
+    /// values (clockBus + clockNodeId) come from bridge config,
+    /// not the bootstrap reply. `None` until the /s_new completes
+    /// (or permanently if sclang isn't reachable + retry
+    /// exhausted).
     pub clock: Option<ClockMetadata>,
-    /// Phase 39d: audio bus index sclang allocated for the clock
-    /// synth. Reported in the bootstrap reply; the bridge uses
-    /// it as a /s_new arg.
-    pub clock_bus: Option<i32>,
-    /// Phase 39d: pinned nodeId for the clock synth (999 by
-    /// convention). Reported in the bootstrap reply.
-    pub clock_node_id: Option<i32>,
-    /// Phase 39b scope-buffer pool size (sclang's
-    /// `s.scopeBufferAllocator` range, 128).
+    /// Phase 40: scope-buffer pool size, from bridge config.
+    /// Surfaced via [`SessionInfo`] for the frontend's scope-
+    /// buffer allocator wrap-around. Default 128 (scsynth's
+    /// hardcoded SHM pool).
     pub num_scope_buffers: Option<i32>,
-    /// Phase 39b dirt sample bank — `(name, count)` pairs from
-    /// `~dirt.buffers`. Empty if SuperDirt didn't install or no
-    /// samples were loaded.
+    /// Phase 40: dirt sample bank — `(name, count)` pairs walked
+    /// from the `SC_APP_DIRT_SAMPLES` directory on disk. Pre-40
+    /// this came via the bootstrap reply; Phase 40 has the
+    /// bridge read the same directory SuperDirt loads from.
+    /// Empty if the env var is unset, the path doesn't exist, or
+    /// the directory has no subdirectories.
     pub dirt_samples: Vec<DirtSample>,
 }
 
-/// Clock metadata from sclang's `\scAppClock` synth + the
-/// `~bootstrapCtx[\clock]` dictionary.
+/// Clock metadata for the bridge-owned `\scAppClock` synth.
+/// Synthesized in [`instantiate_bridge_clock`] from config
+/// (clock_audio_bus + clock_node_id + chunk_size) + scsynth's
+/// reported sample rate.
 #[derive(Debug, Clone, Copy, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClockMetadata {
@@ -218,52 +217,43 @@ impl Server {
         let mut metadata = ServerMetadata::default();
         match role {
             ServerRole::Scsynth => {
-                // /notify + /status BEFORE the recv task starts.
-                // The handshake reads replies directly from the
-                // socket; spawning the recv task afterward avoids
-                // the broadcast race. /version is fetched by sclang
-                // (lib/version.scd) and echoed back via the
-                // bootstrap reply, so the bridge doesn't probe
-                // scsynth for it directly.
+                // /notify + /status + /version BEFORE the recv task
+                // starts. The handshakes read replies directly from
+                // the socket; spawning the recv task afterward avoids
+                // the broadcast race. Phase 40: /version probed
+                // directly here — pre-40 sclang captured it and
+                // echoed via the bootstrap reply.
                 let client_id = notify_handshake(&socket).await?;
                 let sample_rate = status_handshake(&socket).await?;
-                metadata.scsynth_client_id = Some(client_id);
-                metadata.sample_rate = Some(sample_rate);
-                tracing::info!(
-                    target = %target,
-                    client_id,
-                    sample_rate,
-                    "scsynth Server bootstrapped"
-                );
-            }
-            ServerRole::Sclang => {
-                match bootstrap_handshake(&socket).await {
-                    Ok(parsed) => {
-                        metadata.clock_bus = parsed.clock_bus;
-                        metadata.clock_node_id = parsed.clock_node_id;
-                        metadata.num_scope_buffers = parsed.num_scope_buffers;
-                        metadata.dirt_samples = parsed.dirt_samples;
-                        metadata.scsynth_version = parsed.scsynth_version.clone();
-                        tracing::info!(
-                            target = %target,
-                            clock_bus = ?metadata.clock_bus,
-                            clock_node_id = ?metadata.clock_node_id,
-                            num_scope_buffers = ?metadata.num_scope_buffers,
-                            dirt_sample_count = metadata.dirt_samples.len(),
-                            scsynth_version = ?parsed.scsynth_version.as_ref().map(|v| format!("{} {}.{}{}", v.prog_name, v.major, v.minor, v.patch)),
-                            "sclang Server bootstrapped (clock /s_new pending)"
-                        );
-                    }
+                let scsynth_version = match version_handshake(&socket).await {
+                    Ok(v) => Some(v),
                     Err(e) => {
                         tracing::warn!(
                             target = %target,
                             error = %e,
-                            "sclang bootstrap failed — continuing without sclang metadata. \
-                             Clock + scope + sequencer features may not work until sclang \
-                             is reachable + the bridge is restarted."
+                            "/version probe failed — dashboard footer will read \"version unknown\""
                         );
+                        None
                     }
-                }
+                };
+                metadata.scsynth_client_id = Some(client_id);
+                metadata.sample_rate = Some(sample_rate);
+                metadata.scsynth_version = scsynth_version.clone();
+                tracing::info!(
+                    target = %target,
+                    client_id,
+                    sample_rate,
+                    scsynth_version = ?scsynth_version.as_ref().map(|v| format!("{} {}.{}{}", v.prog_name, v.major, v.minor, v.patch)),
+                    "scsynth Server bootstrapped"
+                );
+            }
+            ServerRole::Sclang => {
+                // Phase 40: sclang Server has no boot handshake. The
+                // scripts only declare a SynthDef + boot SuperDirt;
+                // the bridge instantiates the clock via /s_new
+                // (with retry) once sclang is reachable. Dirt
+                // samples are scanned from disk in `serve_on`.
+                tracing::info!(target = %target, "sclang Server bootstrapped (no handshake)");
             }
             ServerRole::Generic => {
                 tracing::info!(target = %target, ?role, "Server bootstrapped (no handshake)");
@@ -319,25 +309,18 @@ impl Server {
         m.clock = Some(clock);
     }
 
-    /// Phase 39 hotfix: write the parsed bootstrap reply into
-    /// metadata. Used by [`ensure_sclang_bootstrapped`] for the
-    /// runtime re-bootstrap path (when the boot-time bootstrap
-    /// missed sclang because the bridge started before sclang
-    /// was up).
-    async fn set_bootstrap_metadata(
+    /// Phase 40: write the sclang Server's bridge-owned metadata
+    /// (scope-pool size + dirt-samples scan) once at boot. Pre-40
+    /// these values arrived via `/bootstrap/hello`; Phase 40 they
+    /// come from config + a disk walk respectively.
+    pub async fn set_sclang_metadata(
         &self,
-        clock_bus: Option<i32>,
-        clock_node_id: Option<i32>,
         num_scope_buffers: Option<i32>,
         dirt_samples: Vec<DirtSample>,
-        scsynth_version: Option<ScsynthVersion>,
     ) {
         let mut m = self.metadata.write().await;
-        m.clock_bus = clock_bus;
-        m.clock_node_id = clock_node_id;
         m.num_scope_buffers = num_scope_buffers;
         m.dirt_samples = dirt_samples;
-        m.scsynth_version = scsynth_version;
     }
 
     /// Lazily open the SHM scope-buffer pool for this scsynth
@@ -431,6 +414,39 @@ async fn notify_handshake(sock: &UdpSocket) -> Result<i32> {
     }
 }
 
+/// Phase 40: send `/version` and await `/version.reply`. Pre-40
+/// sclang owned this round-trip (lib/version.scd) and echoed the
+/// result back via the bootstrap reply; Phase 40 puts it on the
+/// bridge's scsynth handshake directly. Same shape as the other
+/// handshakes — runs before the recv task starts.
+async fn version_handshake(sock: &UdpSocket) -> Result<ScsynthVersion> {
+    let pkt = OscPacket::Message(OscMessage {
+        addr: "/version".into(),
+        args: vec![],
+    });
+    let bytes = rosc::encoder::encode(&pkt).context("encode /version")?;
+    sock.send(&bytes).await.context("send /version")?;
+
+    let mut buf = vec![0u8; 65_536];
+    let deadline = tokio::time::Instant::now() + VERSION_TIMEOUT;
+    loop {
+        let remaining = deadline
+            .checked_duration_since(tokio::time::Instant::now())
+            .ok_or_else(|| anyhow!("/version timed out (no /version.reply from scsynth)"))?;
+        let n = match timeout(remaining, sock.recv(&mut buf)).await {
+            Ok(Ok(n)) => n,
+            Ok(Err(e)) => return Err(anyhow!("recv during /version handshake: {e}")),
+            Err(_) => {
+                return Err(anyhow!("/version timed out (no /version.reply from scsynth)"))
+            }
+        };
+        if let Some(v) = parse_version_reply(&buf[..n]) {
+            return Ok(v);
+        }
+        // Some other reply on this socket. Ignore + keep waiting.
+    }
+}
+
 /// Send `/status` and await `/status.reply` to capture
 /// `nominalSampleRate`. Same shape as `notify_handshake`.
 async fn status_handshake(sock: &UdpSocket) -> Result<u32> {
@@ -460,163 +476,95 @@ async fn status_handshake(sock: &UdpSocket) -> Result<u32> {
     }
 }
 
-// ===== Sclang bootstrap (Phase 39b) =====
+// ===== Dirt samples disk scan (Phase 40) =====
 
-#[derive(Debug, Default)]
-struct BootstrapParsed {
-    clock_bus: Option<i32>,
-    clock_node_id: Option<i32>,
-    num_scope_buffers: Option<i32>,
-    dirt_samples: Vec<DirtSample>,
-    /// Phase 39 hotfix follow-up: scsynth /version snapshot, captured
-    /// by sclang at its own boot and forwarded as a third bootstrap
-    /// reply message. `None` if sclang's /version capture timed out
-    /// (empty args on the wire).
-    scsynth_version: Option<ScsynthVersion>,
-}
-
-/// Send `/bootstrap/hello` and await three reply messages:
-/// `/bootstrap/info`, `/bootstrap/samples`,
-/// `/bootstrap/scsynth-version`. Retries `BOOTSTRAP_RETRIES`
-/// times before giving up.
-async fn bootstrap_handshake(sock: &UdpSocket) -> Result<BootstrapParsed> {
-    for attempt in 0..BOOTSTRAP_RETRIES {
-        match try_bootstrap(sock).await {
-            Ok(parsed) => return Ok(parsed),
-            Err(e) if attempt + 1 < BOOTSTRAP_RETRIES => {
-                tracing::debug!(
-                    attempt = attempt + 1,
-                    retries = BOOTSTRAP_RETRIES,
-                    error = %e,
-                    "sclang bootstrap attempt failed; retrying"
-                );
-            }
-            Err(e) => return Err(e),
-        }
-    }
-    unreachable!("loop exits via Ok or final Err")
-}
-
-async fn try_bootstrap(sock: &UdpSocket) -> Result<BootstrapParsed> {
-    let pkt = OscPacket::Message(OscMessage {
-        addr: "/bootstrap/hello".into(),
-        args: vec![],
-    });
-    let bytes = rosc::encoder::encode(&pkt).context("encode /bootstrap/hello")?;
-    sock.send(&bytes).await.context("send /bootstrap/hello")?;
-
-    // Sclang sends back three messages: /bootstrap/info,
-    // /bootstrap/samples, and /bootstrap/scsynth-
-    // version. Wait for all three within the timeout. They may
-    // arrive as separate UDP datagrams or (less commonly) as a
-    // single bundle.
-    let mut parsed = BootstrapParsed::default();
-    let mut got_info = false;
-    let mut got_samples = false;
-    let mut got_version = false;
-    let mut buf = vec![0u8; 65_536];
-    let deadline = tokio::time::Instant::now() + BOOTSTRAP_TIMEOUT;
-    while !got_info || !got_samples || !got_version {
-        let remaining = deadline
-            .checked_duration_since(tokio::time::Instant::now())
-            .ok_or_else(|| anyhow!("bootstrap timed out (no reply from sclang)"))?;
-        let n = match timeout(remaining, sock.recv(&mut buf)).await {
-            Ok(Ok(n)) => n,
-            Ok(Err(e)) => return Err(anyhow!("recv during bootstrap: {e}")),
-            Err(_) => return Err(anyhow!("bootstrap timed out (no reply from sclang)")),
-        };
-        let packet = rosc::decoder::decode_udp(&buf[..n])
-            .map_err(|e| anyhow!("bootstrap decode: {e:?}"))?
-            .1;
-        for msg in flatten_packet(packet) {
-            match msg.addr.as_str() {
-                "/bootstrap/info" => {
-                    apply_info_args(&mut parsed, &msg.args);
-                    got_info = true;
-                }
-                "/bootstrap/samples" => {
-                    parsed.dirt_samples = parse_samples_args(&msg.args);
-                    got_samples = true;
-                }
-                "/bootstrap/scsynth-version" => {
-                    parsed.scsynth_version = parse_scsynth_version_args(&msg.args);
-                    got_version = true;
-                }
-                _ => {
-                    // Some other reply on this socket (rare).
-                    // Ignore + keep waiting.
-                }
-            }
-        }
-    }
-    Ok(parsed)
-}
-
-fn flatten_packet(pkt: OscPacket) -> Vec<OscMessage> {
-    match pkt {
-        OscPacket::Message(m) => vec![m],
-        OscPacket::Bundle(b) => b
-            .content
-            .into_iter()
-            .flat_map(flatten_packet)
-            .collect(),
-    }
-}
-
-/// Apply kv pairs from `/bootstrap/info` to a parsed
-/// metadata struct. Args alternate (string key, primitive
-/// value). Unknown keys are ignored.
+/// Walk the SuperDirt samples directory (typically
+/// `superdirt-deps/Dirt-Samples`) and return one entry per
+/// subdirectory: `(bank_name, audio_file_count)`. Replicates the
+/// shape SuperDirt's `loadSoundFiles` reports back via
+/// `~dirt.buffers` — pre-40 we read that dict over OSC; Phase 40
+/// the bridge reads the same directory SuperDirt is pointed at.
 ///
-/// Phase 39d: only `clockBus`, `clockNodeId`, and
-/// `numScopeBuffers` are required. `tickRate`/`chunkSize`/
-/// `sampleRate` come from elsewhere (bridge config + scsynth
-/// status); the bridge synthesizes the full ClockMetadata
-/// after /s_new.
-fn apply_info_args(out: &mut BootstrapParsed, args: &[OscType]) {
-    let mut iter = args.iter();
-    while let Some(key_arg) = iter.next() {
-        let OscType::String(key) = key_arg else {
-            tracing::debug!(?key_arg, "bootstrap info: non-string key, skipping");
+/// Input is the value of the `SC_APP_DIRT_SAMPLES` env var (the
+/// launch script's `start-superdirt-only.sh` sets it). Accepts
+/// either a bare directory path or a trailing-`/*` glob — the
+/// glob form is what SuperDirt's `loadSoundFiles` wants and what
+/// the launch script writes. Anything else returns an empty list
+/// rather than erroring (the bridge tolerates "samples not
+/// configured" gracefully — the sequencer panel just gets no
+/// autocomplete).
+pub(crate) fn scan_dirt_samples(env_value: &str) -> Vec<DirtSample> {
+    let trimmed = env_value.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    let dir_path: std::path::PathBuf = if let Some(stripped) = trimmed.strip_suffix("/*") {
+        stripped.into()
+    } else {
+        trimmed.into()
+    };
+    let read_dir = match std::fs::read_dir(&dir_path) {
+        Ok(it) => it,
+        Err(e) => {
+            tracing::warn!(
+                path = %dir_path.display(),
+                error = %e,
+                "scan_dirt_samples: read_dir failed; reporting empty sample list"
+            );
+            return Vec::new();
+        }
+    };
+
+    let mut out: Vec<DirtSample> = Vec::new();
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|s| s.to_str()).map(str::to_owned) else {
             continue;
         };
-        let Some(value) = iter.next() else {
-            tracing::debug!(key, "bootstrap info: dangling key with no value");
-            break;
-        };
-        match key.as_str() {
-            "clockBus" => out.clock_bus = osc_int(value),
-            "clockNodeId" => out.clock_node_id = osc_int(value),
-            "numScopeBuffers" => out.num_scope_buffers = osc_int(value),
-            // sclangChunkSizeHint, sampleRate, tickRate, chunkSize:
-            // legacy / informational; ignored. Bridge owns
-            // chunkSize (config) and gets sampleRate from scsynth's
-            // /status reply directly.
-            _ => {
-                tracing::debug!(key, "bootstrap info: unknown / informational key");
-            }
+        // Skip quark-meta directories that ship inside
+        // Dirt-Samples (e.g. the `.git` subdir, or the
+        // `Dirt-Samples.quark` quark-meta entry).
+        if name.starts_with('.') || name.ends_with(".quark") {
+            continue;
+        }
+        let count = count_audio_files(&path);
+        if count > 0 {
+            out.push(DirtSample {
+                name,
+                count: count as i32,
+            });
         }
     }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
 }
 
-fn parse_samples_args(args: &[OscType]) -> Vec<DirtSample> {
-    let mut out = Vec::with_capacity(args.len() / 2);
-    let mut iter = args.iter();
-    while let Some(name_arg) = iter.next() {
-        let OscType::String(name) = name_arg else {
+/// Count files inside a sample-bank directory whose extension
+/// suggests an audio file. Cheap (no header probing). SuperDirt
+/// accepts the same set, give or take case-insensitive variants.
+fn count_audio_files(dir: &std::path::Path) -> usize {
+    const AUDIO_EXTS: &[&str] = &["wav", "aif", "aiff", "flac", "ogg", "mp3"];
+    let Ok(read_dir) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    let mut n = 0usize;
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(ext) = path.extension().and_then(|s| s.to_str()) else {
             continue;
         };
-        let Some(count_arg) = iter.next() else {
-            break;
-        };
-        let Some(count) = osc_int(count_arg) else {
-            continue;
-        };
-        out.push(DirtSample {
-            name: name.clone(),
-            count,
-        });
+        let ext_lc = ext.to_ascii_lowercase();
+        if AUDIO_EXTS.iter().any(|e| *e == ext_lc) {
+            n += 1;
+        }
     }
-    out
+    n
 }
 
 fn osc_int(v: &OscType) -> Option<i32> {
@@ -629,27 +577,21 @@ fn osc_int(v: &OscType) -> Option<i32> {
     }
 }
 
-#[allow(dead_code)] // future: bootstrap may carry float fields again
-fn osc_float(v: &OscType) -> Option<f64> {
-    match v {
-        OscType::Float(f) => Some(*f as f64),
-        OscType::Double(f) => Some(*f),
-        OscType::Int(n) => Some(*n as f64),
-        OscType::Long(n) => Some(*n as f64),
-        _ => None,
-    }
-}
-
-/// Parse the args of a `/bootstrap/scsynth-version` reply.
-/// Args layout: `progName major minor patch branch commitHash`.
-/// Empty args = sclang's /version capture timed out at its own
-/// boot; returns `None` so the bridge surfaces version=null on
-/// SessionInfo. Partial / malformed args defensively return
-/// `None` rather than throwing.
-fn parse_scsynth_version_args(args: &[OscType]) -> Option<ScsynthVersion> {
-    if args.is_empty() {
+/// Parse `/version.reply progName major minor patch branch commitHash`.
+/// Phase 40: bridge probes /version directly; this is the wire
+/// parser for that response. Returns `None` for bytes that don't
+/// decode or don't match the expected /version.reply shape (caller
+/// keeps waiting on the same socket).
+fn parse_version_reply(bytes: &[u8]) -> Option<ScsynthVersion> {
+    let packet = rosc::decoder::decode_udp(bytes).ok()?.1;
+    let msg = match packet {
+        OscPacket::Message(m) => m,
+        _ => return None,
+    };
+    if msg.addr != "/version.reply" {
         return None;
     }
+    let args = &msg.args;
     let prog_name = match args.first() {
         Some(OscType::String(s)) => s.clone(),
         _ => "scsynth".to_string(),
@@ -730,132 +672,33 @@ fn parse_status_reply(bytes: &[u8]) -> Option<u32> {
     Some(sr.round() as u32)
 }
 
-// ===== Lazy re-bootstrap (Phase 39 hotfix) =====
-
-/// Re-bootstrap timeout for runtime re-attempts. Shorter than
-/// the boot-time per-attempt timeout because the recv task is
-/// already running and broadcasting; sclang's reply lands as
-/// soon as it's processed.
-const LAZY_BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(2);
-
-/// Run the sclang bootstrap handshake AGAIN, this time reading
-/// the reply via the Server's broadcast channel (the recv task
-/// is already running). Used by `post_session` when the
-/// boot-time bootstrap missed sclang (e.g. bridge started
-/// before sclang). Idempotent: if metadata is already populated,
-/// returns Ok(()) immediately.
-///
-/// Concurrency: serialized via [`Server`]'s internal lock so two
-/// concurrent session creates don't both attempt to bootstrap.
-pub async fn ensure_sclang_bootstrapped(
-    sclang_server: &Arc<Server>,
-) -> Result<()> {
-    // Fast path: metadata already populated.
-    if sclang_server.metadata().await.clock_bus.is_some() {
-        return Ok(());
-    }
-
-    // Subscribe BEFORE sending so we don't race the broadcast.
-    let mut rx = sclang_server.subscribe();
-
-    let pkt = OscPacket::Message(OscMessage {
-        addr: "/bootstrap/hello".into(),
-        args: vec![],
-    });
-    let bytes =
-        rosc::encoder::encode(&pkt).context("encode /bootstrap/hello")?;
-    sclang_server
-        .send(&bytes)
-        .await
-        .context("send /bootstrap/hello")?;
-
-    let mut parsed = BootstrapParsed::default();
-    let mut got_info = false;
-    let mut got_samples = false;
-    let mut got_version = false;
-    let deadline = tokio::time::Instant::now() + LAZY_BOOTSTRAP_TIMEOUT;
-    while !got_info || !got_samples || !got_version {
-        let remaining = deadline
-            .checked_duration_since(tokio::time::Instant::now())
-            .ok_or_else(|| {
-                anyhow!("lazy bootstrap timed out (no reply from sclang)")
-            })?;
-        let payload = match timeout(remaining, rx.recv()).await {
-            Ok(Ok(p)) => p,
-            Ok(Err(_lagged_or_closed)) => continue,
-            Err(_) => {
-                anyhow::bail!("lazy bootstrap timed out (no reply from sclang)")
-            }
-        };
-        let pkt = match rosc::decoder::decode_udp(&payload) {
-            Ok((_, p)) => p,
-            Err(_) => continue,
-        };
-        for msg in flatten_packet(pkt) {
-            match msg.addr.as_str() {
-                "/bootstrap/info" => {
-                    apply_info_args(&mut parsed, &msg.args);
-                    got_info = true;
-                }
-                "/bootstrap/samples" => {
-                    parsed.dirt_samples = parse_samples_args(&msg.args);
-                    got_samples = true;
-                }
-                "/bootstrap/scsynth-version" => {
-                    parsed.scsynth_version = parse_scsynth_version_args(&msg.args);
-                    got_version = true;
-                }
-                _ => {}
-            }
-        }
-    }
-
-    sclang_server
-        .set_bootstrap_metadata(
-            parsed.clock_bus,
-            parsed.clock_node_id,
-            parsed.num_scope_buffers,
-            parsed.dirt_samples,
-            parsed.scsynth_version,
-        )
-        .await;
-
-    tracing::info!(
-        target = %sclang_server.target(),
-        "sclang lazy bootstrap succeeded"
-    );
-
-    Ok(())
-}
-
-// ===== Bridge-owned clock /s_new (Phase 39d) =====
+// ===== Bridge-owned clock /s_new (Phase 39d, retooled in 40) =====
 
 /// `/sync` await timeout for the clock /s_new round-trip.
 const CLOCK_SNEW_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// Phase 39d: instantiate the `\scAppClock` synth on scsynth.
-/// Reads `clockBus` + `clockNodeId` from the SclangServer's
-/// metadata (populated by the bootstrap reply), reads
-/// `chunkSize` from bridge config, sends `/s_new` wrapped in
+/// Phase 40: instantiate the `\scAppClock` synth on scsynth.
+/// Reads `clock_bus` + `clock_node_id` from bridge config (pre-40
+/// they came from sclang's bootstrap reply), reads `sample_rate`
+/// from scsynth's `/status` reply, sends `/s_new` wrapped in
 /// `/sync`, and writes the synthesized [`ClockMetadata`] back
-/// onto the SclangServer's metadata cache so SessionInfo sees
-/// the full struct.
+/// onto the SclangServer's metadata cache so SessionInfo sees the
+/// full struct. Idempotent at the caller — re-running after a
+/// previous /fail is safe.
+///
+/// Failure modes:
+/// - `/fail /s_new` from scsynth — most commonly because sclang
+///   hasn't `.add()`-ed the `\scAppClock` SynthDef yet (bridge
+///   started before sclang booted). Caller (lazy bootstrap in
+///   api.rs) retries on every session create until this succeeds.
+/// - `/sync` timeout — scsynth unreachable or wedged.
 pub async fn instantiate_bridge_clock(
     scsynth_server: &Arc<Server>,
     sclang_server: &Arc<Server>,
     chunk_size: u32,
+    clock_node_id: i32,
+    clock_audio_bus: i32,
 ) -> Result<()> {
-    let (clock_bus, clock_node_id) = {
-        let m = sclang_server.metadata().await;
-        (
-            m.clock_bus.ok_or_else(|| {
-                anyhow!("sclang bootstrap didn't report clockBus — clock /s_new aborted")
-            })?,
-            m.clock_node_id.ok_or_else(|| {
-                anyhow!("sclang bootstrap didn't report clockNodeId — clock /s_new aborted")
-            })?,
-        )
-    };
     let sample_rate = {
         let m = scsynth_server.metadata().await;
         m.sample_rate.ok_or_else(|| {
@@ -885,7 +728,7 @@ pub async fn instantiate_bridge_clock(
                     OscType::Int(0), // addAction = addToHead
                     OscType::Int(0), // target = root group
                     OscType::String("clockBus".into()),
-                    OscType::Int(clock_bus),
+                    OscType::Int(clock_audio_bus),
                     OscType::String("chunkSize".into()),
                     OscType::Int(chunk_size as i32),
                 ],
@@ -945,7 +788,7 @@ pub async fn instantiate_bridge_clock(
     // Synthesize + write the full ClockMetadata.
     let tick_rate = sample_rate as f64 / chunk_size as f64;
     let metadata = ClockMetadata {
-        clock_bus,
+        clock_bus: clock_audio_bus,
         clock_node_id,
         tick_rate,
         chunk_size: chunk_size as i32,
@@ -953,7 +796,7 @@ pub async fn instantiate_bridge_clock(
     };
     sclang_server.set_clock_metadata(metadata).await;
     tracing::info!(
-        clock_bus,
+        clock_audio_bus,
         clock_node_id,
         tick_rate,
         chunk_size,
@@ -1034,5 +877,102 @@ mod tests {
         });
         let bytes = encode(pkt);
         assert_eq!(parse_status_reply(&bytes), Some(44100));
+    }
+
+    #[test]
+    fn parse_version_reply_extracts_fields() {
+        let pkt = OscPacket::Message(OscMessage {
+            addr: "/version.reply".into(),
+            args: vec![
+                OscType::String("scsynth".into()),
+                OscType::Int(3),
+                OscType::Int(13),
+                OscType::String(".0".into()),
+                OscType::String("HEAD".into()),
+                OscType::String("abc1234".into()),
+            ],
+        });
+        let v = parse_version_reply(&encode(pkt)).expect("version parses");
+        assert_eq!(v.prog_name, "scsynth");
+        assert_eq!(v.major, 3);
+        assert_eq!(v.minor, 13);
+        assert_eq!(v.patch, ".0");
+        assert_eq!(v.branch, "HEAD");
+        assert_eq!(v.commit_hash, "abc1234");
+    }
+
+    #[test]
+    fn parse_version_reply_rejects_unrelated_address() {
+        let pkt = OscPacket::Message(OscMessage {
+            addr: "/done".into(),
+            args: vec![OscType::String("/version".into())],
+        });
+        assert!(parse_version_reply(&encode(pkt)).is_none());
+    }
+
+    #[test]
+    fn scan_dirt_samples_walks_subdirs_and_counts_audio_files() {
+        let tmp = tempdir();
+        // Two banks: bd (2 .wav), sn (1 .aif). One non-bank
+        // (Dirt-Samples.quark) should be skipped. One hidden
+        // (.git) should be skipped. One file at top level
+        // should be skipped (not a directory).
+        std::fs::create_dir_all(tmp.path().join("bd")).unwrap();
+        std::fs::write(tmp.path().join("bd/a.wav"), b"x").unwrap();
+        std::fs::write(tmp.path().join("bd/b.WAV"), b"x").unwrap();
+        std::fs::create_dir_all(tmp.path().join("sn")).unwrap();
+        std::fs::write(tmp.path().join("sn/k.aif"), b"x").unwrap();
+        std::fs::create_dir_all(tmp.path().join("Dirt-Samples.quark")).unwrap();
+        std::fs::write(tmp.path().join("Dirt-Samples.quark/meta.txt"), b"x").unwrap();
+        std::fs::create_dir_all(tmp.path().join(".git")).unwrap();
+        std::fs::write(tmp.path().join("README.md"), b"x").unwrap();
+
+        // Test both the trailing-/* glob form and the bare-dir form.
+        let glob = format!("{}/*", tmp.path().display());
+        let out = scan_dirt_samples(&glob);
+        assert_eq!(out.len(), 2, "got: {out:?}");
+        assert_eq!(out[0].name, "bd");
+        assert_eq!(out[0].count, 2);
+        assert_eq!(out[1].name, "sn");
+        assert_eq!(out[1].count, 1);
+
+        let out2 = scan_dirt_samples(&tmp.path().display().to_string());
+        assert_eq!(out2.len(), 2);
+    }
+
+    #[test]
+    fn scan_dirt_samples_empty_or_missing_returns_empty() {
+        assert!(scan_dirt_samples("").is_empty());
+        assert!(scan_dirt_samples("   ").is_empty());
+        assert!(scan_dirt_samples("/this/path/should/not/exist/anywhere").is_empty());
+    }
+
+    /// Tiny tempdir helper to avoid pulling in the `tempfile` crate
+    /// just for two tests. Returns a guard whose Drop removes the
+    /// directory recursively.
+    fn tempdir() -> TempDir {
+        let mut p = std::env::temp_dir();
+        let name = format!(
+            "sc-app-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        p.push(name);
+        std::fs::create_dir_all(&p).expect("create tempdir");
+        TempDir(p)
+    }
+    struct TempDir(std::path::PathBuf);
+    impl TempDir {
+        fn path(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
     }
 }

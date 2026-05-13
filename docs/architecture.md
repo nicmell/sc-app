@@ -906,34 +906,23 @@ sclang acts as the long-running coordinator process:
 - Hosts the `/clock/hello` responder that replies on
   `/clock/info` with `[tickRate, value, chunkSize, value,
   sampleRate, value, clockNodeId, value]`.
-- Hosts the `/scope/{hello,allocate,free}` responders backed by
-  `s.scopeBufferAllocator` (a `StackNumberAllocator(0, 127)` —
-  128 slots).
-- Forwards `/dirt/play` etc. to SuperDirt.
+- Hosts SuperDirt (12 orbits, listening on UDP 57120) and
+  forwards `/dirt/play` etc. to it.
 
-`scripts/sc-app-superdirt-startup.scd` is the canonical sclang
-entry point. `yarn osc` / the Pi systemd unit boot sclang via
-this script. The script is a thin orchestrator: it parses
-options, kicks off the alive thread, and inside `s.doWhenBooted`
-calls a sequence of `~scAppInstallX` functions sourced from
-`scripts/lib/`:
+Scope buffer allocation moved off sclang in Phase 39c
+(now bridge-owned via `BridgeScopeAllocator` in
+`src-tauri/src/scope/middleware.rs`). scsynth's `/version`
+capture moved to the bridge's direct probe in Phase 40, and
+the dirt-samples list is now a bridge-side disk walk of
+`SC_APP_DIRT_SAMPLES`.
 
-```
-scripts/
-├── sc-app-superdirt-startup.scd        orchestrator (~110 lines)
-└── lib/
-    ├── chunk-size.scd                   ~scAppParseChunkSize
-    ├── clock.scd                        ~scAppInstallClock + /clock/hello
-    ├── superdirt.scd                    ~scAppInstallSuperDirt
-    ├── dirt-list-samples.scd            ~scAppInstallDirtListSamples
-    └── scope.scd                        ~scAppInstallScopeResponders
-```
-
-Each sub-file defines exactly one `~scAppInstallX` function via
-`.load` at pre-boot; the orchestrator calls them in order inside
-`s.doWhenBooted`. Path resolution uses
-`PathName(thisProcess.nowExecutingPath).pathOnly +/+ "lib"` so
-the script works regardless of cwd.
+`scripts/sc-startup.scd` is the canonical sclang entry point.
+`yarn osc` / the Pi systemd unit boot sclang via this script.
+It's a single self-contained file (~100 lines, Phase 40
+follow-up flattened pre-existing `scripts/lib/`): sets
+`s.options.*`, runs `s.newAllocators`, kicks off the alive
+thread, and inside `s.doWhenBooted` does just `s.notify; s.sync;
+SynthDef(\scAppClock, ...).add; SuperDirt(2, s).loadSoundFiles(...).start(...)`.
 
 ### 6.3. The shared clock (Phase 30)
 

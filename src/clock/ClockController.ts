@@ -1,13 +1,14 @@
 /**
  * Phase 30: passive observer of the shared clock.
  *
- * The clock synth lives in sclang (see
- * `scripts/sc-app-superdirt-startup.scd` — `\scAppClock` SynthDef
- * + `OSCdef(\scAppClockHello)`) at scsynth's root group, **outside**
+ * The clock synth's SynthDef is declared by sclang (see
+ * `scripts/sc-startup.scd` — the `\scAppClock` SynthDef) and the
+ * bridge `/s_new`s it at scsynth's root group at boot, **outside**
  * any client's parent group. This controller no longer owns the
- * synth's lifecycle — it just attaches, fetches the running clock's
- * configuration via `/clock/hello`, and observes the `/clock/tick` stream
- * scsynth multicasts to every `/notify`'d session.
+ * synth's lifecycle — it just attaches, consumes the cached
+ * `ClockInfo` from `SessionInfo.clock`, and observes the
+ * `/clock/tick` stream scsynth multicasts to every `/notify`'d
+ * session.
  *
  * Pause/resume is **local** to the parent group: clicking Pause in
  * the UI calls `group.pause()` (`/n_run groupId 0`), which freezes
@@ -60,9 +61,9 @@ interface ClockControllerOptions {
   group: GroupController;
   /** Phase 39b: `ClockInfo` from cached SessionInfo metadata.
    *  Pre-39 the controller did its own `/clock/hello` round-trip
-   *  in `attach()`; post-39 the bridge fetches once at boot via
-   *  `/sc-app/bootstrap/hello` and surfaces it via `SessionInfo.clock`.
-   *  No more per-session OSC round-trip. */
+   *  in `attach()`; post-39 the bridge synthesizes the info from
+   *  config + its own `/s_new \scAppClock` and surfaces it via
+   *  `SessionInfo.clock`. No more per-session OSC round-trip. */
   info: ClockInfo;
 }
 

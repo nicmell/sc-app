@@ -373,16 +373,30 @@ fall through. Fields:
   bottom; first regex match wins. **No implicit default** —
   packets whose address matches no entry AND aren't claimed by
   a middleware drop with a `warn!` log. Starter seeds:
-  - `^/(dirt|clock|scope|bootstrap)(/|$)` → `127.0.0.1:57120`
-    (sclang+SuperDirt; `/dirt`, `/clock`, `/scope`, `/bootstrap`
-    responder subtrees).
+  - `^/(dirt|clock|scope)(/|$)` → `127.0.0.1:57120`
+    (sclang+SuperDirt; `/dirt` for SuperDirt orbits, `/clock`
+    for the shared-clock SendReply address, `/scope` for the
+    scope-buffer subscribe/unsubscribe/chunk OSC frames).
   - `^/([sngbcdpu]_|notify|status|sync|cmd|dumpOSC|clearSched|error|quit|version)`
     → `127.0.0.1:57110` (scsynth's command surface).
-  Phase 39 hotfix follow-up: the bridge derives the boot-handshake
-  targets from this table — `route_for("/notify")` picks scsynth,
-  `route_for("/bootstrap/hello")` picks sclang. There are no
-  separate `scsynth` / `sclang` config fields anymore; to point
-  at a different process, edit the relevant route's `target`.
+  The bridge derives the boot-handshake targets from this table —
+  `route_for("/notify")` picks scsynth, `route_for("/dirt")` picks
+  sclang (Phase 40 — pre-40 the sclang probe was
+  `/bootstrap/hello`). There are no separate `scsynth` / `sclang`
+  config fields anymore; to point at a different process, edit
+  the relevant route's `target`.
+- `clock_node_id` — pinned nodeId for the bridge's
+  `/s_new \scAppClock`. Default 999. Phase 40; pre-40 sclang
+  declared this constant.
+- `clock_audio_bus` — audio bus index the clock SynthDef writes
+  its sample-counting Phasor to. Default 1023 (top of scsynth's
+  default 1024-bus audio range, clear of SuperDirt's allocator).
+  Phase 40; pre-40 sclang allocated dynamically via
+  `Bus.audio(s, 1)`.
+- `num_scope_buffers` — scope-buffer pool size, surfaced via
+  `SessionInfo.numScopeBuffers`. Default 128 (scsynth's
+  hardcoded SHM pool). Phase 40; pre-40 sclang reported this
+  via the bootstrap reply.
 - `session_ttl_seconds` — how long an idle bridge-managed
   session lingers before TTL eviction runs `Session::cleanup`
   (`/g_freeAll` + `/n_free` + `/notify 0`). Default 1800
@@ -391,18 +405,20 @@ fall through. Fields:
 Discovery:
 
 - **GUI mode** reads `app.path().app_config_dir()/config.json` and
-  writes a starter file (port + clock_chunk_size + the two
-  starter routes) on first launch via
-  `Config::write_default_if_missing`. Subsequent launches never
-  overwrite the user's edits. **Stale-config gotcha**: because
-  `Config` uses `deny_unknown_fields`, a starter file written
-  before a field was renamed/removed (e.g. the pre-Phase-39
-  `scsynth`/`sclang` keys) fails to deserialize loudly — the
-  user must delete the file to regenerate, or hand-edit to drop
-  the offending field. Routing-shape stale-configs (e.g. a
-  starter from before `/bootstrap` was added to the sclang regex)
-  surface as `Could not attach to the shared clock` or similar
-  bootstrap-timeout symptoms; same fix.
+  writes a starter file (port + clock_chunk_size + clock_node_id +
+  clock_audio_bus + num_scope_buffers + the two starter routes)
+  on first launch via `Config::write_default_if_missing`.
+  Subsequent launches never overwrite the user's edits. **Stale-
+  config gotcha**: because `Config` uses `deny_unknown_fields`,
+  a starter file written before a field was renamed/removed
+  (e.g. the pre-Phase-39 `scsynth`/`sclang` keys) fails to
+  deserialize loudly — the user must delete the file to
+  regenerate, or hand-edit to drop the offending field.
+  Routing-shape stale-configs from earlier phases (e.g. a
+  pre-Phase-40 starter with `bootstrap` in the sclang regex)
+  parse fine since the regex is just a string; symptom is
+  benign (the bridge still picks the right target). Delete the
+  file to regenerate if you want the up-to-date regex.
 - **Bridge mode** uses `--config <path>` if explicitly passed (must
   exist; fails loudly otherwise), else auto-discovers
   `./config.json` (CWD-relative, for `yarn bridge` / `yarn
@@ -530,6 +546,27 @@ When working on a phase:
 
 Current phase progress: **No phase currently in flight.** The
 last ten landed (most recent first):
+
+**Phase 40 shipped — Bridge-owned clock + scope + version.**
+Collapsed the sclang side to a single ~100-line file
+(`scripts/sc-startup.scd`) by hoisting everything else into
+bridge config / direct handshakes / a disk walk. New `Config`
+fields: `clock_node_id` (default 999), `clock_audio_bus` (default
+1023), `num_scope_buffers` (default 128). Bridge probes scsynth
+`/version` directly during the boot handshake (pre-40 sclang
+captured it and echoed via `/bootstrap/scsynth-version`).
+`scan_dirt_samples` walks `SC_APP_DIRT_SAMPLES` (or
+`./superdirt-deps/Dirt-Samples` as repo-relative fallback) from
+disk, replacing `/bootstrap/samples`. `instantiate_bridge_clock`
+takes nodeId + bus as args from `AppState` rather than reading
+from sclang metadata; the lazy-retry path in api.rs is now just
+"retry clock /s_new" since there's no bootstrap handshake to
+retry. Sclang-discriminator probe switched from `/bootstrap/hello`
+to `/dirt`; starter sclang-route regex trimmed accordingly.
+Deleted: `scripts/lib/` (4 files: bootstrap, version, clock,
+superdirt — the last two inlined into the renamed
+`sc-startup.scd`) plus ~250 lines of bootstrap/parsing code in
+`server.rs`. See `docs/history.md` Phase 40 for the full write-up.
 
 **Phase 39 shipped — Server abstraction + bridge-owned boot
 sequence.** Hoisted UDP sockets, broadcast channels, and the
@@ -795,8 +832,9 @@ sclang restart, which all attached sessions then re-attach to via
   default single-client case, where `0 × 100 = 0` would clash
   with the root group). The fallback path warns in the debug log.
 - **Group ordering invariant** (Phase 30): the shared clock lives
-  at the **root group's head** (added by sclang at startup, see
-  `scripts/sc-app-superdirt-startup.scd`). Every sc-app session's
+  at the **root group's head** (the SynthDef is declared in
+  `scripts/sc-startup.scd`; the bridge `/s_new`s it at boot per
+  Phase 40). Every sc-app session's
   parent group sits at the root's tail (`AddToTail`, so it lands
   AFTER sclang's defaultGroup); **inside** the parent group, every
   tap synth (scopes, recorders, the dev probe) MUST be `/s_new`'d
@@ -897,21 +935,22 @@ sclang restart, which all attached sessions then re-attach to via
   sample-accurate scheduling, use
   `tickToTimetag(clock.tick0Ms!, targetTick,
   clock.derived.tickRate)` in an `OSC.Bundle`.
-- **Shared clock (Phase 30)**: one `\scAppClock` synth runs at
-  scsynth's root group, owned by sclang
-  (`scripts/sc-app-superdirt-startup.scd`). Every sc-app session
-  is a passive observer: `clock.attach()` round-trips
-  `/clock/hello → /clock/info` to read `tickRate / chunkSize /
-  sampleRate / clockNodeId` from the running clock;
-  the `/clock/tick` stream (emitted via `SendReply.kr`) fans to
-  all `/notify`'d sessions for free (no per-session synth
-  `/s_new`). Pause/resume drives the
-  parent group; the shared clock keeps ticking unaffected by any
-  client's pause. **chunkSize is server-side**: configured via
-  `SC_APP_CLOCK_CHUNK_SIZE` env var (default 1024) at sclang
-  startup. Changing it requires restarting sclang. The frontend
-  has no UI for it — every connected session re-attaches via
-  `/clock/hello` after the restart.
+- **Shared clock (Phase 30 / 40)**: one `\scAppClock` synth runs
+  at scsynth's root group. Sclang `.add()`s the SynthDef
+  (`scripts/sc-startup.scd`); the **bridge** `/s_new`s it at boot
+  (Phase 40 — pre-40 sclang also owned the bus + nodeId via
+  `Bus.audio` + `~clockNodeId`). Every sc-app session is a
+  passive observer: `clock.attach()` reads `ClockMetadata` from
+  the cached `SessionInfo.clock` (synthesized by the bridge
+  after its own /s_new); the `/clock/tick` stream (emitted via
+  `SendReply.kr`) fans to all `/notify`'d sessions for free.
+  Pause/resume drives the parent group; the shared clock keeps
+  ticking unaffected by any client's pause. **Clock config is
+  bridge-side** (Phase 40): `chunk_size` / `clock_node_id` /
+  `clock_audio_bus` all live in `config.json`. Changing
+  `chunk_size` requires restarting the bridge AND sclang (the
+  SynthDef's wrap is sample-aligned to chunkSize at synth-
+  construction time); the other two only need a bridge restart.
 
 ### chunkSize × sampleRate practical reference
 
@@ -942,9 +981,10 @@ ceiling until ~1–2 kHz where postMessage/main-thread cost
 becomes the bottleneck. See `docs/history.md` Phase 36 for the
 full mode comparison.
 
-Phase 30 moved chunkSize ownership to sclang
-(`SC_APP_CLOCK_CHUNK_SIZE` env var); pick a power-of-2 value
-that stays comfortable for your deployment. The frontend's
+Phase 30 moved chunkSize ownership to sclang; Phase 39d hoisted
+it to bridge `config.clock_chunk_size` (with `SC_APP_CLOCK_CHUNK_SIZE`
+as an env override). Pick a power-of-2 value that stays
+comfortable for your deployment. The frontend's
 `practicalChunkSizes(sampleRate)` filter still exists but is no
 longer wired to any UI.
 
@@ -1130,22 +1170,25 @@ Observations:
   with the process.
 - **scsynth `maxLogins=8` is the per-bridge session ceiling.**
   Each session holds one `/notify` slot for its TTL window
-  (not just for a WS lifetime). `scripts/sc-app-superdirt-startup.scd`
+  (not just for a WS lifetime). `scripts/sc-startup.scd`
   + the systemd unit + `start-scsynth-only.sh` all set it to
   8; bumping requires editing all three together. 8
   simultaneous sc-app tabs is well above realistic use.
-- **The sclang startup is split across `scripts/lib/`.** The main
-  `sc-app-superdirt-startup.scd` is a thin orchestrator (~110
-  lines): it sets `s.options.*`, runs `s.newAllocators`, kicks
-  off the alive thread, and inside `s.doWhenBooted` calls
-  `~installClock.()`, `~installSuperDirt.()`,
-  `~installDirtListSamples.()`, `~installScopeResponders.()`
-  in order. Each function lives in its own file under
-  `scripts/lib/` (clock.scd, superdirt.scd, dirt-list-samples.scd,
-  scope.scd), loaded at pre-boot via `.load`. When adding a new
-  responder family, drop a new `lib/<name>.scd` defining
-  `~installX = { ... }`, then add the filename to the
-  orchestrator's load array AND a call inside doWhenBooted.
+- **The sclang startup is intentionally thin (Phase 40).**
+  A single file — `scripts/sc-startup.scd` — sets `s.options.*`,
+  runs `s.newAllocators`, kicks off the alive thread, and inside
+  `s.doWhenBooted` does just `s.notify; s.sync;
+  SynthDef(\scAppClock, ...).add; SuperDirt(2, s)
+  .loadSoundFiles(SC_APP_DIRT_SAMPLES).start(57120, 0 ! 12)`.
+  Pre-Phase-40 there were four files under `scripts/lib/`
+  (bootstrap, version, clock, superdirt); all retired because
+  the bridge now reads scope-pool size + clock nodeId/bus from
+  config, scsynth /version directly, and the dirt-samples list
+  from disk. A Phase 40 follow-up flattened the remaining two
+  install functions back into the orchestrator. When adding new
+  sclang state (rare — most runtime knobs belong in
+  `config.json`), add a new block inside `s.doWhenBooted` rather
+  than a separate file.
 - **`tauri dev` reads `app_config_dir/config.json`, NOT the
   project's `./config.json`.** On macOS that's
   `~/Library/Application Support/com.sc-app.dev/`. A stale

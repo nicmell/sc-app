@@ -4758,3 +4758,267 @@ future shared synths.
 
 
 
+
+---
+
+## Phase 40 — Bridge-Owned Clock + Scope + Version
+
+### Goal
+
+Shrink the sclang scripts under `scripts/lib/` to the bare minimum
+(SuperDirt boot + the `\scAppClock` SynthDef declaration) by
+hoisting everything else into bridge code paths. Pre-40 sclang
+owned: clock audio-bus allocation, clock nodeId convention, scope-
+buffer pool size announcement, scsynth `/version` capture, and the
+dirt-samples list. Post-40 all of those are bridge-owned via
+`config.json` + direct scsynth handshakes + a disk walk.
+
+### What shipped
+
+#### Config schema (`src-tauri/src/config.rs`)
+
+Three new optional fields, each with a public `DEFAULT_*` constant:
+
+- `clock_node_id: Option<i32>` — default 999. Pre-40 declared by
+  sclang as `~clockNodeId = 999` and echoed via the bootstrap
+  reply.
+- `clock_audio_bus: Option<i32>` — default 1023. Pre-40 sclang
+  allocated dynamically via `Bus.audio(s, 1)` and echoed via the
+  bootstrap reply. The static default sits at the top of scsynth's
+  default 1024-bus audio range to stay clear of SuperDirt's audio-
+  bus allocator footprint.
+- `num_scope_buffers: Option<i32>` — default 128 (scsynth's
+  hardcoded SHM pool size). Pre-40 sclang reported this via the
+  bootstrap reply.
+
+Starter config + tests + module doc updated; `config_with_routes_
+roundtrips` test updated. Sclang-discriminator probe address moved
+from `/bootstrap/hello` to `/dirt` since no `/bootstrap/*` OSC
+addresses flow anymore; starter sclang-route regex trimmed from
+`^/(dirt|clock|scope|bootstrap)(/|$)` to `^/(dirt|clock|scope)(/|$)`.
+
+#### Server boot (`src-tauri/src/server/server.rs`)
+
+- New `version_handshake` function next to `notify_handshake` /
+  `status_handshake`. The scsynth `ServerRole::Scsynth` boot now
+  runs `/notify` → `/status` → `/version` synchronously off the
+  raw socket, before the recv-broadcast task starts. Failure
+  surfaces as `scsynth_version = None` (dashboard footer reads
+  "version unknown") rather than a fatal error.
+- `ServerRole::Sclang` boot becomes a no-op. The Server still
+  exists (it's the UDP target for `/dirt/play`, `/clock/tick`
+  subscriptions etc.); just no handshake.
+- `instantiate_bridge_clock` signature changes — `clock_node_id`
+  and `clock_audio_bus` are now arguments (read from
+  `AppState`/config) rather than read from the sclang Server's
+  metadata. Boot-time clock /s_new failure is non-fatal; the api.rs
+  lazy bootstrap path retries on every session create.
+- Removed entirely: `bootstrap_handshake`, `try_bootstrap`,
+  `BootstrapParsed`, `apply_info_args`, `parse_samples_args`,
+  `parse_scsynth_version_args`, `flatten_packet`, `osc_float`,
+  `ensure_sclang_bootstrapped`, `set_bootstrap_metadata`,
+  `BOOTSTRAP_TIMEOUT`, `BOOTSTRAP_RETRIES`,
+  `LAZY_BOOTSTRAP_TIMEOUT`. New parser: `parse_version_reply`.
+- New `scan_dirt_samples(env_value: &str) -> Vec<DirtSample>` —
+  walks a SuperDirt samples directory (handles trailing `/*` glob
+  form), returns one entry per subdirectory with an audio-file
+  count. Audio extensions: `wav`, `aif`, `aiff`, `flac`, `ogg`,
+  `mp3` (case-insensitive). Skips dotted dirs + `.quark`
+  subdirectories. New unit tests cover the round-trip + the
+  missing-path graceful-empty case.
+- New setter `Server::set_sclang_metadata(num_scope_buffers,
+  dirt_samples)` — single call site in `serve_on`.
+- `ServerMetadata` shape: removed `clock_bus` and `clock_node_id`
+  top-level fields (now in `AppState`). `clock` (the synthesized
+  `ClockMetadata`) stays. `scsynth_version` moves from sclang's
+  metadata back to scsynth's metadata (matches the new chain of
+  custody).
+
+#### Wire-up (`src-tauri/src/server/mod.rs` + `src-tauri/src/cli/*`)
+
+- `AppState` grows `clock_node_id: i32` + `clock_audio_bus: i32`
+  fields. CLI (both `bridge` and `gui` modes) resolves them from
+  config with built-in fallbacks, then passes through to
+  `serve_on`.
+- `serve_on` writes the sclang Server's bridge-owned metadata
+  (scope pool size + dirt-samples scan) before attempting the
+  clock /s_new. Dirt samples source precedence: (1)
+  `SC_APP_DIRT_SAMPLES` env var, (2) `./superdirt-deps/Dirt-
+  Samples` relative to CWD, (3) empty list. The CWD fallback
+  auto-discovers samples for `yarn bridge` / `yarn dev:full` from
+  the repo root, so users don't need to export the env var in the
+  bridge's shell separately from sclang's.
+- `session_info` (`src-tauri/src/server/session.rs`) reads
+  `scsynth_version` from the scsynth Server's metadata, not the
+  sclang Server's.
+- Bridge-shutdown `free_bridge_clock` reads `clock_node_id` from
+  `AppState` rather than the sclang Server's metadata.
+- `try_lazy_sclang_bootstrap` renamed to `try_lazy_clock_snew`;
+  no longer re-runs a `/bootstrap/hello` handshake (there isn't
+  one). Just retries `instantiate_bridge_clock` until `metadata.
+  clock` is `Some`. Triggered on every `POST /api/session` +
+  `GET /api/session/:id` like pre-40.
+
+#### Sclang scripts (`scripts/`)
+
+The sclang side collapsed to a single self-contained file in two
+moves within Phase 40:
+
+1. **First pass:** Deleted `scripts/lib/bootstrap.scd` +
+   `scripts/lib/version.scd`; trimmed `scripts/lib/clock.scd` to
+   just the `SynthDef.add` + `s.sync` (no `Bus.audio`, no
+   `~clockNodeId`, no `~bootstrapCtx`); trimmed the orchestrator's
+   `doWhenBooted` to `s.notify; s.sync; ~installClock.();
+   ~installSuperDirt.()`. Load list shrunk from 4 files to 2.
+2. **Second pass (follow-up):** Inlined the remaining two install
+   functions back into the orchestrator and renamed the script:
+   - Deleted `scripts/lib/clock.scd` + `scripts/lib/superdirt.scd`.
+   - Removed the now-empty `scripts/lib/` directory.
+   - Renamed `scripts/sc-app-superdirt-startup.scd` →
+     `scripts/sc-startup.scd`.
+   - Final `doWhenBooted` body is literally `s.notify; s.sync;
+     SynthDef(\scAppClock, ...).add; s.sync; SuperDirt(2, s)
+     .loadSoundFiles(env).start(57120, 0 ! 12)`.
+- `start-superdirt-only.sh` drops the dead
+  `SC_APP_CLOCK_CHUNK_SIZE` export (sclang stopped reading it in
+  Phase 39d; setting it in sclang's environment doesn't affect
+  the bridge) AND updates its `STARTUP` path to the renamed
+  file.
+
+#### Frontend (`src/`)
+
+No code changes — `SessionInfo` shape stays bit-identical; only
+the *source* on the bridge changes. Two doc-comments updated
+(`src/AppShell.tsx`, `src/clock/ClockController.ts`) to drop
+stale references to `/sc-app/bootstrap/hello`.
+
+### Why this is shaped the way it is
+
+#### Where `clock_audio_bus = 1023` came from
+
+Pre-40 sclang's `Bus.audio(s, 1)` picked dynamically — the first
+free index after SuperDirt's allocations. Moving the choice to
+config means we hardcode an index that SuperDirt's allocator won't
+bump into. SuperDirt's audio-bus allocator climbs from the bottom
+(starting at `numInputBusChannels + numOutputBusChannels = 4`); 12
+orbits × 2 channels plus internal effect chains uses ~50–100
+buses. `1023` sits at the top of scsynth's default 1024-bus range,
+maximally clear of SuperDirt. Document the constraint: bumping
+this value below the default 1024 audio buses requires bumping
+`numAudioBusChannels` together (otherwise `/s_new` errors with
+"audio bus out of range").
+
+#### Why `/version` moved back to the bridge
+
+Phase 39 hotfix (`5352f0a`) moved /version capture into sclang
+because routing the round-trip through sclang felt like fewer
+handshakes — sclang was already connected to scsynth via
+`s.notify`. Phase 40 reverses that decision because:
+- The bridge has its OWN scsynth connection (Phase 39a `/notify
+  1`), so "fewer handshakes" wasn't a real win.
+- Direct probe removes one sclang dependency (the `/version`
+  round-trip + the bootstrap-reply field carrying it).
+- Bridge-side error handling is simpler — a `/version` probe
+  failure can be a warning instead of an empty-args sentinel on
+  the bootstrap reply.
+
+#### Why disk walking dirt samples is fine
+
+Sclang's `~dirt.buffers` dict is the source of truth for what
+SuperDirt *actually loaded*. The bridge's disk walk could
+theoretically drift (a sample file with the right extension that
+SuperDirt couldn't decode would be counted by the bridge but not
+loaded into the orbit). In practice: SuperDirt loads everything
+with a valid audio extension, so drift is rare; when it happens
+the sequencer's autocomplete shows a sample name that doesn't
+play, which is a graceful failure mode (the user just picks a
+different one). Worth the one less OSC responder.
+
+### Files
+
+- `src-tauri/src/config.rs` — 3 new fields + constants; starter +
+  tests updated; sclang-route regex trimmed.
+- `src-tauri/src/cli/mod.rs`, `src-tauri/src/cli/bridge.rs`,
+  `src-tauri/src/cli/gui.rs` — thread new config values through.
+- `src-tauri/src/server/mod.rs` — `AppState` grows two fields;
+  `serve_on` signature gains three params; dirt-samples scan +
+  metadata write in `serve_on`; shutdown reads nodeId from
+  `AppState`; sclang probe switched to `/dirt`.
+- `src-tauri/src/server/server.rs` — `version_handshake` +
+  `parse_version_reply` added; `scan_dirt_samples` +
+  `count_audio_files` added; bootstrap section + lazy-bootstrap
+  section deleted; `instantiate_bridge_clock` gains nodeId + bus
+  args.
+- `src-tauri/src/server/api.rs` — `try_lazy_sclang_bootstrap`
+  renamed to `try_lazy_clock_snew`; no bootstrap retry.
+- `src-tauri/src/server/session.rs` — `session_info` reads
+  `scsynth_version` from scsynth metadata.
+- `scripts/lib/` — directory removed entirely (4 files deleted
+  across the phase: bootstrap, version, clock, superdirt).
+- `scripts/sc-startup.scd` — new single-file orchestrator
+  (renamed from `sc-app-superdirt-startup.scd`, with the two
+  remaining install function bodies inlined).
+- `scripts/start-superdirt-only.sh` — dead env var dropped;
+  `STARTUP` path updated to the renamed file.
+- `scripts/start-osc.sh` — comment reference updated.
+- `src/AppShell.tsx`, `src/clock/ClockController.ts`,
+  `src/clock/clockClient.ts`, `src/scope/scopeClient.ts`,
+  `src/dirt/dirtCommands.ts`, `src/synthdefs/
+  bufferTapOscSynthDef.ts` — doc comments updated to reflect
+  the new path + Phase 40 ownership shifts.
+- `docs/architecture.md` — sclang-section rewritten to describe
+  the single-file layout.
+
+### Gotchas
+
+- **`clock_audio_bus = 1023` collides with scsynth's last audio
+  bus if the user shrinks `numAudioBusChannels` below the default
+  1024.** Document the constraint on the config field; the
+  fallback is to override the field. SuperDirt with 12 orbits
+  never uses more than ~100 audio buses, so the practical risk is
+  zero unless a user actively configures both sides.
+- **No sclang-side reservation of `clock_audio_bus`.** Pre-40 the
+  `Bus.audio(s, 1)` call registered the bus in sclang's
+  allocator, so later `Bus.audio` calls (e.g. user-added SuperDirt
+  extensions) wouldn't pick the same index. Post-40 the bridge's
+  choice is invisible to sclang's allocator. A user adding ~500
+  SuperDirt orbits could see the allocator climb past 1023 and
+  collide. Practical risk: zero for normal SuperDirt usage. If a
+  collision did happen, the symptom would be the clock's Phasor
+  fighting another writer on the same bus — visible as a
+  garbled OSC-mode scope, harmless in SHM mode.
+- **The `/dirt` probe is a sentinel, not an active address.** The
+  bridge never sends `/dirt` itself — `route_for("/dirt")` is
+  used as a discriminator to identify the sclang Server in the
+  routes table. The address still has to match the sclang regex
+  for the discriminator to work; if a future config rewrites the
+  sclang regex to exclude `/dirt`, the bridge will think there's
+  no sclang server. Documented in `config.rs`'s starter comment.
+- **`SC_APP_DIRT_SAMPLES` lives in sclang's process environment.**
+  The bridge running in a separate shell doesn't see it. The
+  CWD-relative fallback to `./superdirt-deps/Dirt-Samples` covers
+  development (the user typically launches both from the repo
+  root); production deployments either export the env var
+  alongside the bridge or live with an empty sample list.
+- **`Server::set_sclang_metadata` is called from `serve_on`, NOT
+  from `Server::build`.** Pre-40 the sclang handshake populated
+  the metadata at Server-build time; Phase 40 the bridge writes
+  it after building both Servers but before clock /s_new. If a
+  future refactor moves the call earlier (or pushes it into
+  `Server::build`), make sure `AppState.num_scope_buffers` is
+  available at that point.
+- **Clock /s_new race on cold start.** If the bridge boots before
+  sclang has `.add()`-ed the `\scAppClock` SynthDef, the boot-
+  time /s_new fails with `/fail /s_new — SynthDef not found`.
+  The lazy-retry path in `api.rs::try_lazy_clock_snew` then
+  retries on every session create until success. User
+  experience: opening a browser tab a few seconds after starting
+  sclang Just Works; the dashboard shows "clock attaching" until
+  the retry succeeds.
+- **`scsynth_version` field on `ServerMetadata` is now populated
+  by the scsynth Server, not the sclang Server.** Existing
+  `set_clock_metadata` setter (on sclang Server) still writes
+  `clock`. There's no orthogonal scsynth setter — the boot
+  handshake writes directly into the `&mut metadata` local in
+  `Server::build`. If a future feature needs to update
+  `scsynth_version` post-boot, add a setter.

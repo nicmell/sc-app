@@ -28,7 +28,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SUPERDIRT="$REPO_ROOT/superdirt"
 DEPS="$REPO_ROOT/superdirt-deps"
-STARTUP="$REPO_ROOT/scripts/sc-app-superdirt-startup.scd"
+STARTUP="$REPO_ROOT/scripts/sc-startup.scd"
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
@@ -95,16 +95,13 @@ echo "  attaching to scsynth at 127.0.0.1:57110 (must already be running)"
 echo "  SuperDirt → 127.0.0.1:57120 (12 orbits)"
 echo "  Ctrl-C to stop sclang+SuperDirt (scsynth survives)."
 
-# Sample path consumed by the .scd. scsynth's plugin path (-U flag)
-# is scsynth's concern — set when launching scsynth, not here.
+# Sample path consumed by the .scd's `~dirt.loadSoundFiles`. The
+# bridge ALSO reads this env var (or falls back to
+# ./superdirt-deps/Dirt-Samples relative to its CWD) to populate
+# SessionInfo.dirtSamples via a disk walk — pre-40 sclang reported
+# the list back via OSC, but Phase 40 has the bridge read the
+# same directory directly. scsynth's plugin path (-U flag) is
+# scsynth's concern — set when launching scsynth, not here.
 export SC_APP_DIRT_SAMPLES="$DEPS/Dirt-Samples/*"
-
-# Phase 30: shared global clock's chunkSize. Default 1024 mirrors
-# the pre-30 frontend default. Override at launch:
-#   SC_APP_CLOCK_CHUNK_SIZE=512 yarn osc
-# Power of 2 strongly recommended (FFT-friendly, page-aligned
-# recordings). The .scd validates and falls back to 1024 if unset
-# or invalid.
-export SC_APP_CLOCK_CHUNK_SIZE="${SC_APP_CLOCK_CHUNK_SIZE:-1024}"
 
 exec sclang -l "$CONF" "$STARTUP"

@@ -1,8 +1,9 @@
 /**
  * Typed builders + reply parsers for the Phase 31 SHM scope-buffer
- * OSC surface. The scope buffer index allocator lives in sclang
- * (see `scripts/sc-app-superdirt-startup.scd`'s `\scAppScope*`
- * OSCdefs); this module is the matching frontend wire format.
+ * OSC surface. The scope buffer index allocator is bridge-owned
+ * (Phase 39c onwards — see `src-tauri/src/scope/middleware.rs`'s
+ * `BridgeScopeAllocator`); this module is the matching frontend
+ * wire format.
  *
  * Despite the name "scope", this module is also used by the
  * recording path — recordings consume the same SHM-fed

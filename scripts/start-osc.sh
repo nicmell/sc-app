@@ -87,7 +87,7 @@ scsynth "${SCSYNTH_OPTS[@]}" "${SCSYNTH_PLUGIN_ARGS[@]}" &
 scsynth_pid=$!
 
 # Give scsynth a moment to bind before sclang tries to attach.
-# sc-app-superdirt-startup.scd has its own retry loop too, but
+# sc-startup.scd has its own retry loop too, but
 # starting it after a brief gap keeps the post-window readable.
 sleep 1
 
