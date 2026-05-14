@@ -918,11 +918,33 @@ the dirt-samples list is now a bridge-side disk walk of
 
 `scripts/sc-startup.scd` is the canonical sclang entry point.
 `yarn osc` / the Pi systemd unit boot sclang via this script.
-It's a single self-contained file (~100 lines, Phase 40
-follow-up flattened pre-existing `scripts/lib/`): sets
-`s.options.*`, runs `s.newAllocators`, kicks off the alive
-thread, and inside `s.doWhenBooted` does just `s.notify; s.sync;
-SynthDef(\scAppClock, ...).add; SuperDirt(2, s).loadSoundFiles(...).start(...)`.
+It sets `s.options.*`, runs `s.newAllocators`, kicks off the
+alive thread, and inside `s.doWhenBooted` does just `s.notify;
+s.sync; load(sc-clock.scd); SuperDirt(2, s).loadSoundFiles(...).start(...)`.
+The `\scAppClock` SynthDef body sits in `scripts/sc-clock.scd`
+(loaded by the orchestrator) so the per-flavor launchers don't
+need to duplicate it.
+
+**Two Dirt flavors share this script.** SuperDirt (vendored at
+`superdirt/`, from <codeberg.org/musikinformatik/SuperDirt>) and
+StrudelDirt (vendored at `strudeldirt/`, from
+<github.com/daslyfe/StrudelDirt>) both define a class literally
+named `SuperDirt` with the same constructor signature
+(`SuperDirt(numChannels = 2, server)`) and the same `/dirt/*`
+OSC surface (port 57120, 12 orbits, bus 0). Because the class
+names collide, only one fork can be on sclang's `includePaths`
+at a time — the launcher picks which submodule mounts:
+
+- `scripts/start-superdirt-only.sh` → `superdirt/` on includePaths
+- `scripts/start-strudeldirt-only.sh` → `strudeldirt/` on includePaths
+- `scripts/start-osc.sh --flavor superdirt|strudeldirt` (or
+  `SC_APP_DIRT_FLAVOR=…`, or interactive `select` prompt) wraps
+  both for the dev supervisor flow
+
+The bridge has zero flavor awareness — it talks to whatever's
+listening on UDP 57120. The runtime dependency set
+(`Vowel + sc3-plugins + Dirt-Samples`) is identical for both
+forks and fetched once by `scripts/setup-superdirt-deps.sh`.
 
 ### 6.3. The shared clock (Phase 30)
 

@@ -18,6 +18,7 @@
     "osc": "./scripts/start-osc.sh",
     "scsynth-only": "./scripts/start-scsynth-only.sh",
     "superdirt-only": "./scripts/start-superdirt-only.sh",
+    "strudeldirt-only": "./scripts/start-strudeldirt-only.sh",
     "superdirt-setup": "./scripts/setup-superdirt-deps.sh",
     "cleanup": "./scripts/cleanup.sh"
   },

@@ -1175,20 +1175,35 @@ Observations:
   8; bumping requires editing all three together. 8
   simultaneous sc-app tabs is well above realistic use.
 - **The sclang startup is intentionally thin (Phase 40).**
-  A single file — `scripts/sc-startup.scd` — sets `s.options.*`,
-  runs `s.newAllocators`, kicks off the alive thread, and inside
+  `scripts/sc-startup.scd` sets `s.options.*`, runs
+  `s.newAllocators`, kicks off the alive thread, and inside
   `s.doWhenBooted` does just `s.notify; s.sync;
-  SynthDef(\scAppClock, ...).add; SuperDirt(2, s)
+  (scriptDir +/+ "sc-clock.scd").load; SuperDirt(2, s)
   .loadSoundFiles(SC_APP_DIRT_SAMPLES).start(57120, 0 ! 12)`.
-  Pre-Phase-40 there were four files under `scripts/lib/`
+  The `\scAppClock` SynthDef sits in its own
+  `scripts/sc-clock.scd` (loaded as shown) so both flavors share
+  it. Pre-Phase-40 there were four files under `scripts/lib/`
   (bootstrap, version, clock, superdirt); all retired because
   the bridge now reads scope-pool size + clock nodeId/bus from
   config, scsynth /version directly, and the dirt-samples list
-  from disk. A Phase 40 follow-up flattened the remaining two
-  install functions back into the orchestrator. When adding new
-  sclang state (rare — most runtime knobs belong in
-  `config.json`), add a new block inside `s.doWhenBooted` rather
-  than a separate file.
+  from disk. When adding new sclang state (rare — most runtime
+  knobs belong in `config.json`), add a new block inside
+  `s.doWhenBooted` rather than a separate file.
+- **Two Dirt flavors share `sc-startup.scd`.** SuperDirt
+  (vendored at `superdirt/`) and StrudelDirt (vendored at
+  `strudeldirt/`) both define a class literally named
+  `SuperDirt` with the same constructor + OSC surface, so the
+  `.scd` body is byte-identical between flavors. The launcher
+  picks which submodule's classes go on sclang's `includePaths`:
+  `start-superdirt-only.sh` mounts `superdirt/`,
+  `start-strudeldirt-only.sh` mounts `strudeldirt/`. They cannot
+  coexist on the same `includePaths` (class-redefinition error).
+  `start-osc.sh` accepts `--flavor superdirt|strudeldirt`, an
+  `SC_APP_DIRT_FLAVOR` env var, or prompts via a `select` menu.
+  The launchers also export `SC_APP_DIRT_FLAVOR` so the
+  `.scd`'s post-boot `postln` reads "SuperDirt ready on UDP
+  57120 (superdirt)" or "(strudeldirt)" — distinguishes the
+  fork in logs since the class name alone is ambiguous.
 - **`tauri dev` reads `app_config_dir/config.json`, NOT the
   project's `./config.json`.** On macOS that's
   `~/Library/Application Support/com.sc-app.dev/`. A stale

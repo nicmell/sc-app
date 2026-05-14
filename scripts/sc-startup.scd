@@ -20,21 +20,28 @@
 // SessionInfo.dirtSamples — sclang no longer reports the list
 // back over OSC (Phase 40).
 //
+// ── Flavor selection ────────────────────────────────────────────
+//
+// This file is flavor-agnostic. The launcher (start-superdirt-only.sh
+// or start-strudeldirt-only.sh) decides which `SuperDirt`-class
+// fork goes on sclang's `includePaths`. Both forks expose the
+// same `SuperDirt` class with the same constructor signature, so
+// `~dirt = SuperDirt(2, s)` works for either. SC_APP_DIRT_FLAVOR
+// (set by the launcher) is purely cosmetic here — it tags the
+// post-boot log line so the user can tell which fork loaded.
+//
 // ── Pattern: "sclang declares, bridge instantiates" (Phase 40) ──
 //
 // Sclang's role is intentionally minimal: declare the
-// `\scAppClock` SynthDef and boot SuperDirt. Everything else
+// `\scAppClock` SynthDef (loaded from sc-clock.scd — shared
+// between flavors) and boot SuperDirt. Everything else
 // — clock /s_new, clock audio-bus index, clock nodeId, scope
 // buffer pool size, scsynth /version, dirt-samples list — is
 // owned by the bridge via `config.json` + direct scsynth
 // handshakes + a disk walk of `SC_APP_DIRT_SAMPLES`.
 //
 // To override a runtime value, edit `config.json` (the bridge's
-// config file). Pre-40 a `scripts/lib/` directory held separate
-// install functions (bootstrap.scd, version.scd, clock.scd,
-// superdirt.scd); Phase 40 retired the bootstrap + version
-// scripts, and a follow-up inlined the remaining two into this
-// single file. See docs/history.md.
+// config file).
 //
 // ── Two structural points (read CLAUDE.md's "SuperDirt launch
 //    gotchas" section for full context) ──────────────────────────────
@@ -54,6 +61,11 @@
 //      newAllocators rebuilds them with the current option values.
 
 (
+// Resolve the directory this script lives in so we can `.load`
+// sibling files (sc-clock.scd) regardless of CWD.
+var scriptDir = PathName(thisProcess.nowExecutingPath).pathOnly;
+var flavorLabel = "SC_APP_DIRT_FLAVOR".getenv ? "superdirt";
+
 // scsynth options + sclang allocators. Mirror the flags scsynth
 // is launched with (start-scsynth-only.sh / systemd unit); the
 // values must match.
@@ -82,39 +94,11 @@ s.doWhenBooted({
 
     // ── Shared global clock SynthDef ─────────────────────────────────
     //
-    // Pattern: "sclang declares, bridge instantiates". Sclang just
-    // `.add()`s the def; the bridge picks the audio bus + nodeId
-    // from config and runs `/s_new \scAppClock <nodeId> 0 0
-    // clockBus <bus> chunkSize <cs>` itself.
-    //
-    // SynthDef args (all bridge-supplied via /s_new):
-    //   - clockBus: audio bus the sample-counting Phasor writes to.
-    //     OSC-fallback tap SynthDefs read it via In.ar(clockBus) to
-    //     derive a sample-aligned ring-buffer writeIdx. SHM mode
-    //     ignores the bus.
-    //   - chunkSize: audio frames per tick. tickRate derives from
-    //     SampleRate.ir / chunkSize at synth-construction time.
-    //
-    // `scApp` namespace prefix on the def name is deliberate:
-    // SynthDefs share scsynth's global in-memory dict across every
-    // client on the same scsynth, so a bare `\clock` would collide
-    // with anything else (current or future) registering a clock def.
-    //
-    // SendReply.kr emits `/clock/tick <nodeID> <replyID> <count>`
-    // (replyID = -1 by default). scsynth multicasts to every
-    // /notify'd client; the bridge sees them on its single /notify
-    // slot and fans to all attached WSs.
-    SynthDef(\scAppClock, { |clockBus = 0, chunkSize = 1024|
-        var tickRate = SampleRate.ir / chunkSize;
-        var tick = Impulse.kr(tickRate);
-        var count = PulseCount.kr(tick);
-        // Sample-counting phasor wrapping every 2 × chunkSize
-        // samples — gives the OSC-fallback tap SynthDef a
-        // writeIdx aligned with global tick parity.
-        var samplePhase = Phasor.ar(0, 1, 0, 2 * chunkSize);
-        SendReply.kr(tick, '/clock/tick', count);
-        Out.ar(clockBus, samplePhase);
-    }).add;
+    // Loaded from sc-clock.scd (sibling to this file). Extracted
+    // out so both the SuperDirt and StrudelDirt launchers share
+    // the same declaration. See sc-clock.scd for SynthDef body +
+    // design notes.
+    (scriptDir +/+ "sc-clock.scd").load;
     s.sync;
     "scAppClock SynthDef added (bridge will /s_new)".postln;
 
@@ -125,10 +109,15 @@ s.doWhenBooted({
     // superdirt-deps/Dirt-Samples/*). Listens on UDP 57120 — the
     // bridge's `/dirt/* → 127.0.0.1:57120` route forwards
     // `/dirt/play` and friends here.
+    //
+    // The `SuperDirt` class name is identical between the
+    // upstream SuperDirt fork and the StrudelDirt fork — the
+    // launcher's `includePaths` choice decides which one this
+    // resolves to. flavorLabel (env-supplied) just tags the log.
     ~dirt = SuperDirt(2, s);
     ~dirt.loadSoundFiles("SC_APP_DIRT_SAMPLES".getenv);
     ~dirt.start(57120, 0 ! 12);
-    "SuperDirt ready on UDP 57120".postln;
+    ("SuperDirt ready on UDP 57120 (" ++ flavorLabel ++ ")").postln;
 }, 50, {
     "scsynth not reachable on 127.0.0.1:57110 after 10s.\n  Start it first: yarn scsynth-only (dev) or your systemd unit (prod).".error;
 });

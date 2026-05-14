@@ -65,6 +65,31 @@ on `:3000` concurrently. Vite's `/ws` proxy forwards the WebSocket
 upgrade to the bridge so the frontend uses same-origin URLs.
 Open `http://127.0.0.1:1420/`.
 
+## Sample playback (SuperDirt / StrudelDirt)
+
+Optional. Drive scsynth's sample-playback layer from sc-app's
+sequencer. Two vendored forks are available; pick one at launch.
+
+```bash
+yarn superdirt-setup      # one-time: fetches Dirt-Samples + Vowel + sc3-plugins
+yarn osc                  # boots scsynth + sclang+<fork>; prompts for flavor
+```
+
+`yarn osc` accepts an explicit `--flavor` flag (or
+`SC_APP_DIRT_FLAVOR` env var) to skip the interactive picker:
+
+```bash
+yarn osc --flavor superdirt
+yarn osc --flavor strudeldirt
+```
+
+Both flavors expose the same `SuperDirt` class with the same OSC
+surface (`/dirt/play`, port 57120), so the bridge needs no
+configuration to switch between them — it just talks to whichever
+fork is currently mounted. Standalone launchers are also wired:
+`yarn superdirt-only` and `yarn strudeldirt-only`, both expect an
+externally-running `scsynth`.
+
 ## Deployment
 
 - **Raspberry Pi 5 (headless)** — see

@@ -1,3 +1,6 @@
 [submodule "superdirt"]
 	path = superdirt
 	url = https://codeberg.org/musikinformatik/SuperDirt.git
+[submodule "strudeldirt"]
+	path = strudeldirt
+	url = https://github.com/daslyfe/StrudelDirt.git

@@ -1,21 +1,27 @@
 #!/usr/bin/env bash
 # Unified OSC supervisor for the dev workflow.
 #
-# Spawns scsynth + sclang+SuperDirt as background children; the
-# script itself stays in the foreground as the dev console.
-# Ctrl-C cleans up both children via the EXIT trap.
+# Spawns scsynth + sclang+(SuperDirt|StrudelDirt) as background
+# children; the script itself stays in the foreground as the dev
+# console. Ctrl-C cleans up both children via the EXIT trap.
 #
 # Pre-flight refuses to start if either UDP port is occupied; the
 # usual cause is a leftover process from a previous session.
 #
+# Flavor selection:
+#   --flavor superdirt|strudeldirt   CLI flag (highest precedence).
+#   SC_APP_DIRT_FLAVOR=…             env var (second).
+#   interactive select menu          when neither is set.
+#
 # Wire: `yarn osc`. Pre-reqs:
 #   - `yarn superdirt-setup` (one-time, fetches Dirt-Samples + Vowel
-#     + sc3-plugins on macOS — Linux installs sc3-plugins via apt).
+#     + sc3-plugins on macOS — Linux installs sc3-plugins via apt;
+#     both flavors share these deps).
 #
 # Debug variants if you want to run components separately:
-#   - `yarn scsynth-only`   — boots only scsynth
-#   - `yarn superdirt-only` — attaches sclang+SuperDirt to a running
-#     scsynth (must be started elsewhere first)
+#   - `yarn scsynth-only`      — boots only scsynth
+#   - `yarn superdirt-only`    — attaches sclang+SuperDirt to a running scsynth
+#   - `yarn strudeldirt-only`  — attaches sclang+StrudelDirt to a running scsynth
 #
 # Pi prod uses systemd units (sc-app-scsynth.service, plus a
 # matching sc-app-superdirt.service template — see Phase 26b
@@ -26,6 +32,71 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEPS="$REPO_ROOT/superdirt-deps"
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+
+# ── Flavor selection ─────────────────────────────────────────────────
+# Precedence: CLI flag > env var > interactive menu.
+FLAVOR="${SC_APP_DIRT_FLAVOR:-}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --flavor)
+      shift
+      [ $# -gt 0 ] || die "--flavor requires an argument (superdirt|strudeldirt)"
+      FLAVOR="$1"
+      shift
+      ;;
+    --flavor=*)
+      FLAVOR="${1#--flavor=}"
+      shift
+      ;;
+    -h|--help)
+      cat <<EOF
+usage: $0 [--flavor superdirt|strudeldirt]
+
+Boots scsynth + sclang with the chosen Dirt fork. With no flag
+and no SC_APP_DIRT_FLAVOR env var set, prompts interactively.
+EOF
+      exit 0
+      ;;
+    *)
+      die "unknown argument: $1 (try --help)"
+      ;;
+  esac
+done
+
+if [ -z "$FLAVOR" ]; then
+  echo "Which Dirt flavor should we boot?"
+  PS3="#? "
+  select choice in superdirt strudeldirt; do
+    case "$choice" in
+      superdirt|strudeldirt)
+        FLAVOR="$choice"
+        break
+        ;;
+      *)
+        echo "  pick 1 or 2 (Ctrl-C to abort)" >&2
+        ;;
+    esac
+  done
+  # If the user EOF'd (Ctrl-D) without a valid pick, bail.
+  [ -n "$FLAVOR" ] || die "no flavor selected"
+fi
+
+case "$FLAVOR" in
+  superdirt|strudeldirt) ;;
+  *) die "invalid flavor: $FLAVOR (expected: superdirt | strudeldirt)" ;;
+esac
+
+# Verify the chosen flavor's submodule is initialised.
+case "$FLAVOR" in
+  superdirt)
+    [ -d "$REPO_ROOT/superdirt/classes" ] \
+      || die "superdirt/ submodule not initialised — run: git submodule update --init superdirt"
+    ;;
+  strudeldirt)
+    [ -d "$REPO_ROOT/strudeldirt/classes" ] \
+      || die "strudeldirt/ submodule not initialised — run: git submodule update --init strudeldirt"
+    ;;
+esac
 
 # ── Pre-flight ───────────────────────────────────────────────────────
 command -v scsynth >/dev/null 2>&1 || die "scsynth not found in PATH"
@@ -91,13 +162,21 @@ scsynth_pid=$!
 # starting it after a brief gap keeps the post-window readable.
 sleep 1
 
-echo "[osc] starting sclang+SuperDirt (attaches to scsynth)…"
-"$REPO_ROOT/scripts/start-superdirt-only.sh" &
+case "$FLAVOR" in
+  superdirt)
+    echo "[osc] starting sclang+SuperDirt (attaches to scsynth)…"
+    "$REPO_ROOT/scripts/start-superdirt-only.sh" &
+    ;;
+  strudeldirt)
+    echo "[osc] starting sclang+StrudelDirt (attaches to scsynth)…"
+    "$REPO_ROOT/scripts/start-strudeldirt-only.sh" &
+    ;;
+esac
 sclang_pid=$!
 
 echo "[osc] both running. Ctrl-C to stop."
 echo "  scsynth   pid=$scsynth_pid (UDP 57110)"
-echo "  sclang    pid=$sclang_pid  (UDP 57120, SuperDirt mounted)"
+echo "  sclang    pid=$sclang_pid  (UDP 57120, $FLAVOR mounted)"
 
 # Wait for either child to exit. If one dies the trap cleans up the
 # other; the script itself exits with the dead child's status.
