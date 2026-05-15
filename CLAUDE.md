@@ -41,6 +41,19 @@ Browser (React, main thread)
   ├── GroupController           parent group lifecycle (/g_new /n_run).
   │                             Pause/resume on this group is what the
   │                             "Pause" button drives now (Phase 30).
+  ├── MetronomeController +     Centralized app-wide BPM. Single source
+  │   MetronomePanel             of truth for tempo — sequencer pump
+  │                              + Strudel REPL Cyclist both subscribe
+  │                              and follow. Long-lived (constructed
+  │                              in handleConnect, persisted to its
+  │                              own localStorage key 'sc.metronome',
+  │                              disposed on handleDisconnect with a
+  │                              save flush). MetronomePanel renders
+  │                              below ClockPanel — a single BPM
+  │                              <input> bound to the controller. The
+  │                              old per-pattern bpm field was retired;
+  │                              PatternBank's sanitiser ignores any
+  │                              residual bpm field in old saved data.
   ├── SynthDefRegistry          idempotent /d_recv tracker
   ├── SynthManager + Synth-     producers: tone synths writing sines
   │   Controller                 onto auto-allocated bus blocks; live
@@ -67,10 +80,69 @@ Browser (React, main thread)
   │   SequencerPanel             owns transport + bank-mutation API;
   │                              the timing-critical pump runs in
   │                              the OSC worker (Phase 32). Subscribes
-  │                              to bank/clock/group changes and
-  │                              forwards snapshots; `stepFired` events
-  │                              from the worker drive playhead UI +
-  │                              chain auto-advance at cycle boundaries.
+  │                              to bank/clock/metronome/group changes
+  │                              and forwards snapshots; `stepFired`
+  │                              events from the worker drive playhead
+  │                              UI + chain auto-advance at cycle
+  │                              boundaries. BPM is read from the
+  │                              centralized MetronomeController (not
+  │                              the pattern), shipped to the worker
+  │                              as `SequencerMetronomeSnapshot`.
+  │                              On Play, `nextStepTick` is quantized
+  │                              to the next *beat* boundary in audio
+  │                              time (multiples of beatTicks =
+  │                              intervalTicks × subdivision since
+  │                              tick 0) so a Strudel REPL and one or
+  │                              more sequencer sessions started in
+  │                              the same ~beat window end up phase-
+  │                              aligned. Max wait is 60/bpm s (≈ 500
+  │                              ms @ 120 BPM, 1 s @ 60 BPM) — beat-
+  │                              level was chosen over pattern-level
+  │                              for responsiveness. Resume-after-
+  │                              pause is NOT quantized; it just re-
+  │                              anchors to now + INITIAL_LOOKAHEAD_
+  │                              TICKS preserving nextStepIndex.
+  ├── StrudelController +       Strudel live-coding REPL (AGPL-3.0).
+  │   StrudelPanel               Alternative /dirt/play driver that
+  │                              piggybacks on DirtClient. Controller
+  │                              holds (a) a custom defaultOutput that
+  │                              converts each Strudel Hap to
+  │                              dirtClient.playAtTimetag() and (b) a
+  │                              getTime function anchored at the shared
+  │                              clock's tick0Ms (audio-clock seconds).
+  │                              StrudelMirror's Cyclist runs in those
+  │                              units, so the timetag = tick0Ms +
+  │                              absTimeSecs*1000 + 200ms safety.
+  │                              defaultOutput also gates on group.state
+  │                              — emissions drop when the parent group
+  │                              is paused (same contract as the
+  │                              sequencer's worker pump). BPM input on
+  │                              the panel calls mirror.repl.setCps(bpm
+  │                              /60/4) (Tidal's 4-beats-per-cycle
+  │                              convention). StrudelPanel wraps
+  │                              `mirror.repl.scheduler.setCps` so a
+  │                              top-level `setcps(x)` in user code
+  │                              propagates back to MetronomeController
+  │                              (and through it, the sequencer pump).
+  │                              Hap-based cps modulation (`cpm("a b")`)
+  │                              bypasses setCps in the Cyclist, so
+  │                              fast modulation doesn't fight the
+  │                              sequencer. Run quantizes evaluate()
+  │                              to the next *beat* boundary in audio
+  │                              time — same grid as the sequencer's
+  │                              quantization (max wait 1/(cps*4) s).
+  │                              Capped at MAX_QUEUE_WAIT_MS so a
+  │                              very-slow setcps override doesn't
+  │                              make Play feel unresponsive; panel
+  │                              shows a "queued" pill while waiting. Re-eval while
+  │                              playing is immediate (Cyclist swaps
+  │                              the pattern in place). StrudelPanel
+  │                              is lazy-loaded (React.lazy) — the
+  │                              @strudel/* chunk loads only on first
+  │                              panel mount. Scheduler runs on the
+  │                              main thread via Cyclist (setInterval,
+  │                              subject to tab throttling like the
+  │                              pre-Phase-32 sequencer).
   ├── ServerErrorBus            decoded /fail ring, surfaced via
   │                              DebugLog header badge.
   ├── ToastContainer +          bottom-right toast stack for runtime

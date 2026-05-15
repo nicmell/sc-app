@@ -1,0 +1,25 @@
+.strudel-panel .strudel-toolbar {
+  margin-bottom: var(--space-xs);
+}
+
+.strudel-panel .strudel-editor-root {
+  min-height: 8rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+/* CodeMirror ships its own dark/light colours; let it own the editor
+   background. We only reset the outer wrapper's background so it
+   blends into our panel rather than showing a double border. */
+.strudel-panel .strudel-editor-root .cm-editor {
+  height: 100%;
+}
+
+.strudel-panel .strudel-error {
+  margin-top: var(--space-xs);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  white-space: pre-wrap;
+  word-break: break-all;
+}

@@ -45,11 +45,13 @@
  * the user manually selected via Play.
  */
 
+import type { MetronomeController } from '@/metronome/MetronomeController';
 import type { GroupState } from '@/server/GroupController';
 import type { WorkerClient } from '@/server/WorkerClient';
 import type {
   SequencerBankSnapshot,
   SequencerClockSnapshot,
+  SequencerMetronomeSnapshot,
   StepFired,
 } from '@/server/workerProtocol';
 import { createStore, type ReadonlyStore } from '@/util/reactiveStore';
@@ -85,6 +87,10 @@ export interface SequencerControllerOptions {
    *  `slots` / `activeIndex` / `chain` keep the worker's
    *  snapshot fresh. */
   bank: PatternBank;
+  /** Centralized app-wide BPM. The controller subscribes to
+   *  `metronome.bpm` while playing and forwards changes to the
+   *  worker via `updateSequencerMetronome`. */
+  metronome: MetronomeController;
   /** Phase 30: parent-group pause flag. The worker pump skips
    *  `/dirt/play` emission while paused (shared clock keeps
    *  ticking; pause is local to this client). The controller
@@ -96,6 +102,7 @@ export class SequencerController {
   private readonly client: WorkerClient;
   private readonly clock: ClockLike;
   private readonly bank: PatternBank;
+  private readonly metronome: MetronomeController;
   private readonly groupState: ReadonlyStore<GroupState>;
 
   private readonly _transport;
@@ -110,6 +117,7 @@ export class SequencerController {
   private offSlots: (() => void) | null = null;
   private offIndex: (() => void) | null = null;
   private offChain: (() => void) | null = null;
+  private offMetronome: (() => void) | null = null;
   private offGroupState: (() => void) | null = null;
   private offStepFired: (() => void) | null = null;
 
@@ -126,6 +134,7 @@ export class SequencerController {
     this.client = opts.client;
     this.clock = opts.clock;
     this.bank = opts.bank;
+    this.metronome = opts.metronome;
     this.groupState = opts.groupState;
     this._transport = createStore<TransportState>(STOPPED_TRANSPORT);
     this._chainPlaybackIndex = createStore<number | null>(null);
@@ -298,15 +307,6 @@ export class SequencerController {
     }));
   }
 
-  setBpm(bpm: number): void {
-    if (this.disposed) return;
-    const clamped = Math.max(30, Math.min(300, Math.round(bpm)));
-    this.bank.updateActivePattern((p) => ({ ...p, bpm: clamped }));
-    // The worker's `stepIntervalTicks` reads pattern.bpm fresh
-    // every pump, so an in-flight pattern adopts the new BPM
-    // at the next unscheduled step. No manual reset.
-  }
-
   setLength(length: PatternLength): void {
     if (this.disposed) return;
     this.bank.updateActivePattern((p) => {
@@ -360,6 +360,7 @@ export class SequencerController {
     this.client.startSequencer(
       this.snapshotBank(),
       this.snapshotClock(),
+      this.snapshotMetronome(),
       this.groupState.get() === 'paused',
     );
 
@@ -370,6 +371,9 @@ export class SequencerController {
       this.postBankSnapshot(),
     );
     this.offChain = this.bank.chain.subscribe(() => this.postBankSnapshot());
+    this.offMetronome = this.metronome.bpm.subscribe(() =>
+      this.postMetronomeSnapshot(),
+    );
     this.offGroupState = this.groupState.subscribe((s) => {
       this.client.setSequencerPaused(s === 'paused');
     });
@@ -418,10 +422,20 @@ export class SequencerController {
     };
   }
 
+  private snapshotMetronome(): SequencerMetronomeSnapshot {
+    return { bpm: this.metronome.bpm.get() };
+  }
+
   private postBankSnapshot(): void {
     if (this.disposed) return;
     if (!this._transport.get().isPlaying) return;
     this.client.updateSequencerBank(this.snapshotBank());
+  }
+
+  private postMetronomeSnapshot(): void {
+    if (this.disposed) return;
+    if (!this._transport.get().isPlaying) return;
+    this.client.updateSequencerMetronome(this.snapshotMetronome());
   }
 
   private unsubscribeFromBankAndGroup(): void {
@@ -431,6 +445,8 @@ export class SequencerController {
     this.offIndex = null;
     this.offChain?.();
     this.offChain = null;
+    this.offMetronome?.();
+    this.offMetronome = null;
     this.offGroupState?.();
     this.offGroupState = null;
     this.offStepFired?.();

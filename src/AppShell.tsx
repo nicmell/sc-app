@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { ClockPanel } from '@/ui/ClockPanel';
 import { DebugLog } from '@/ui/DebugLog';
 import { DirtPanel } from '@/ui/DirtPanel';
@@ -8,6 +8,7 @@ import { OscConsole } from '@/ui/OscConsole';
 import { RecordingPanel } from '@/ui/RecordingPanel';
 import { ScopeList } from '@/ui/ScopeList';
 import { SequencerPanel } from '@/ui/SequencerPanel';
+import { StrudelController } from '@/strudel/StrudelController';
 import { SynthsPanel } from '@/ui/SynthsPanel';
 import { ToastContainer, useToasts } from '@/ui/Toast';
 import { SessionProvider, type ConnectionStatus } from '@/session/SessionContext';
@@ -28,6 +29,8 @@ import type { ClockInfo } from '@/clock/clockClient';
 import type { DirtSample } from '@/session/sessionBootstrap';
 import { GroupController } from '@/server/GroupController';
 import { IdAllocator } from '@/server/IdAllocator';
+import { MetronomeController } from '@/metronome/MetronomeController';
+import { MetronomePanel } from '@/ui/MetronomePanel';
 import { ScopeManager } from '@/scope/ScopeManager';
 import { PatternBank } from '@/sequencer/PatternBank';
 import { SequencerController } from '@/sequencer/SequencerController';
@@ -37,6 +40,10 @@ import { SynthManager } from '@/synth/SynthManager';
 import { WorkerClient } from '@/server/WorkerClient';
 import { createStore, type Store } from '@/util/reactiveStore';
 import { parseStatus, type ScsynthStatus } from '@/server/serverInfo';
+
+const StrudelPanel = lazy(() =>
+  import('@/ui/StrudelPanel').then((m) => ({ default: m.StrudelPanel })),
+);
 
 /** Offset from `parentGroupId` to the synth-ID allocator base.
  *
@@ -81,6 +88,12 @@ interface DashboardResources {
    *  scheduling. Fresh per `setupDashboard`; pattern data lives
    *  on `bank` (below), which survives re-init. */
   sequencer: SequencerController;
+  /** Strudel REPL — custom defaultOutput that routes every Hap
+   *  through DirtClient.playAtTimetag() over the existing bridge.
+   *  The StrudelPanel (lazy-loaded) mounts @strudel/codemirror's
+   *  StrudelMirror and passes controller.defaultOutput to it.
+   *  No bridge changes; uses the same /dirt route as the sequencer. */
+  strudel: StrudelController;
   /** Phase 27c — 8-slot pattern bank with localStorage
    *  persistence. Long-lived: created at initial connect (loads
    *  from localStorage), disposed by `handleDisconnect` (which
@@ -88,6 +101,10 @@ interface DashboardResources {
    *  `bank.activePattern` and forwards mutations through
    *  `bank.updateActivePattern(...)`. */
   bank: PatternBank;
+  /** Centralized BPM (single source of truth across the app —
+   *  sequencer worker pump + Strudel REPL Cyclist both read from
+   *  it). Long-lived; loads/saves to its own localStorage key. */
+  metronome: MetronomeController;
   /** Phase 29 — bridge-managed session id (uuid stored per-tab
    *  in `sessionStorage`). Used by handleDisconnect to fire
    *  `DELETE /api/session/:id` and by the WS URL builder. */
@@ -176,11 +193,13 @@ function DisabledPanels() {
   // we transition between live and disabled states.
   const titles = [
     'Clock',
+    'Metronome',
     'Synths',
     'Scopes',
     'Recordings',
     'Dirt',
     'Sequencer',
+    'Strudel',
     'OSC Console',
   ];
   return (
@@ -245,6 +264,7 @@ function DashboardPanels({ resources }: { resources: DashboardResources }) {
   return (
     <>
       <ClockPanel clock={resources.clock} group={resources.group} />
+      <MetronomePanel controller={resources.metronome} />
       <SynthsPanel manager={resources.synthManager} />
       <ScopeList manager={resources.scopeManager} />
       <RecordingPanel
@@ -259,6 +279,20 @@ function DashboardPanels({ resources }: { resources: DashboardResources }) {
         dirtClient={resources.dirtClient}
         clockReady={clockState === 'running'}
       />
+      <Suspense
+        fallback={
+          <section className="panel" aria-disabled="true">
+            <header>Strudel</header>
+            <p className="empty">loading…</p>
+          </section>
+        }
+      >
+        <StrudelPanel
+          controller={resources.strudel}
+          metronome={resources.metronome}
+          clockReady={clockState === 'running'}
+        />
+      </Suspense>
       <OscConsole client={resources.client} />
       <Footer status={resources.status} version={resources.version} />
     </>
@@ -307,6 +341,7 @@ async function setupDashboard(
   dirtSamples: DirtSample[],
   scsynthVersion: ScsynthVersion | null,
   bank: PatternBank,
+  metronome: MetronomeController,
 ): Promise<DashboardResources> {
   // Phase 39a — the bridge owns the partitioning. parentGroupId
   // already encodes the bridge clientId AND session slot; synth
@@ -382,6 +417,21 @@ async function setupDashboard(
   dirtClient.setSampleBanks(dirtSamples);
   void dirtClient.probe();
 
+  // Strudel: phase-locked to the shared audio clock via `tick0Ms`,
+  // and gated on the parent group's pause state (same contract as
+  // the sequencer's worker pump). The clock adapter is a getter
+  // so the controller reads the live `tick0Ms` rather than capturing
+  // null at construction time.
+  const strudel = new StrudelController({
+    dirtClient,
+    clock: {
+      get tick0Ms() {
+        return clock.tick0Ms;
+      },
+    },
+    groupState: group.state,
+  });
+
   // Phase 27a/c: step sequencer. Owns transport + wake loop;
   // pattern state lives on the long-lived `bank`. Reads
   // tick0Ms/tickRate live from `clock` so BPM changes mid-pattern
@@ -406,6 +456,7 @@ async function setupDashboard(
       },
     },
     bank,
+    metronome,
     // Phase 30: when the user pauses the parent group, the shared
     // clock keeps ticking but we don't want the sequencer to emit
     // `/dirt/play`. Phase 32 pushed the pump into the worker;
@@ -446,8 +497,10 @@ async function setupDashboard(
     version: scsynthVersion,
     errorBus,
     dirtClient,
+    strudel,
     sequencer,
     bank,
+    metronome,
   };
 }
 
@@ -466,14 +519,18 @@ async function teardownServerState(resources: DashboardResources): Promise<void>
   } catch (err) {
     console.warn('[sc:app] errorBus.dispose failed', err);
   }
-  // Sequencer first, then dirtClient — sequencer.dispose() stops
-  // playback (cancels pending playhead timers) and the wake loop;
-  // it must finish before the dirtClient teardown nulls its
+  // Sequencer and Strudel first, then dirtClient — both must stop
+  // emitting /dirt/play before the dirtClient teardown nulls its
   // reply listener.
   try {
     resources.sequencer.dispose();
   } catch (err) {
     console.warn('[sc:app] sequencer.dispose failed', err);
+  }
+  try {
+    resources.strudel.dispose();
+  } catch (err) {
+    console.warn('[sc:app] strudel.dispose failed', err);
   }
   try {
     resources.dirtClient.dispose();
@@ -620,6 +677,10 @@ export function AppShell() {
     // untouched (no save happens because nothing has mutated
     // it yet).
     const bank = new PatternBank();
+    // The centralized metronome follows the same lifecycle as the
+    // bank — long-lived, persisted to its own localStorage key,
+    // disposed by handleDisconnect (flushes a pending save).
+    const metronome = new MetronomeController();
 
     // Wire disconnection handler *before* the async bring-up so
     // a mid-bring-up WebSocket error still unwinds cleanly.
@@ -633,9 +694,15 @@ export function AppShell() {
         showToast(`Connection lost: ${message}`, 'error');
         // Flush any pending pattern saves before the bank is
         // dropped — the user may have been editing right up
-        // to the WS death.
+        // to the WS death. Same applies to the metronome's
+        // debounced save.
         try {
           bank.dispose();
+        } catch {
+          /* best effort */
+        }
+        try {
+          metronome.dispose();
         } catch {
           /* best effort */
         }
@@ -681,6 +748,7 @@ export function AppShell() {
         resolvedInfo.dirtSamples,
         resolvedInfo.scsynthVersion,
         bank,
+        metronome,
       );
     } catch (err) {
       console.error('[sc:app] dashboard bring-up failed', err);
@@ -725,11 +793,16 @@ export function AppShell() {
       // group). Each step is best-effort.
       await teardownServerState(current);
       // dispose() flushes a final save — important if a mutation
-      // happened in the last 500 ms.
+      // happened in the last 500 ms. Same for metronome.
       try {
         current.bank.dispose();
       } catch (err) {
         console.warn('[sc:app] bank.dispose failed', err);
+      }
+      try {
+        current.metronome.dispose();
+      } catch (err) {
+        console.warn('[sc:app] metronome.dispose failed', err);
       }
       current.client.dispose();
       clientRef.current = null;
@@ -770,7 +843,7 @@ export function AppShell() {
   // for the first 3 s of the session.
   useEffect(() => {
     if (!resources) return;
-    const { client, status: statusStore, bank } = resources;
+    const { client, status: statusStore, bank, metronome } = resources;
     const HEARTBEAT_INTERVAL_MS = 3000;
     const HEARTBEAT_TIMEOUT_MS = 2000;
     let cancelled = false;
@@ -814,6 +887,11 @@ export function AppShell() {
         );
         try {
           bank.dispose();
+        } catch {
+          /* best effort */
+        }
+        try {
+          metronome.dispose();
         } catch {
           /* best effort */
         }

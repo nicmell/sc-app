@@ -389,12 +389,14 @@ function sanitisePattern(x: unknown): Pattern {
   if (typeof x !== 'object' || x === null) return makeEmptyPattern();
   const o = x as Record<string, unknown>;
   const length = sanitiseLength(o.length);
-  const bpm = sanitiseBpm(o.bpm);
+  // o.bpm is intentionally ignored — BPM moved to MetronomeController.
+  // Old saved patterns may still carry a bpm field; harmless dead weight
+  // in storage until the next save round-trip drops it.
   const subdivision = sanitiseSubdivision(o.subdivision);
   const tracks = Array.isArray(o.tracks)
     ? (o.tracks as unknown[]).map((t) => sanitiseTrack(t, length))
     : [];
-  return { length, bpm, subdivision, tracks };
+  return { length, subdivision, tracks };
 }
 
 function sanitiseTrack(x: unknown, length: PatternLength): Track {
@@ -454,11 +456,6 @@ function sanitiseLength(x: unknown): PatternLength {
     return x as PatternLength;
   }
   return 16;
-}
-
-function sanitiseBpm(x: unknown): number {
-  if (typeof x !== 'number' || !Number.isFinite(x)) return 120;
-  return clamp(Math.round(x), 30, 300);
 }
 
 function sanitiseSubdivision(x: unknown): number {

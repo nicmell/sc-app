@@ -38,6 +38,7 @@ import type {
   OscReply,
   SequencerBankSnapshot,
   SequencerClockSnapshot,
+  SequencerMetronomeSnapshot,
   StepFired,
   WorkerToMain,
 } from './workerProtocol';
@@ -346,9 +347,16 @@ export class WorkerClient {
   startSequencer(
     bank: SequencerBankSnapshot,
     clock: SequencerClockSnapshot,
+    metronome: SequencerMetronomeSnapshot,
     isGroupPaused: boolean,
   ): void {
-    this.post({ type: 'sequencerStart', bank, clock, isGroupPaused });
+    this.post({
+      type: 'sequencerStart',
+      bank,
+      clock,
+      metronome,
+      isGroupPaused,
+    });
   }
 
   /** Stop the worker-side pump. Idempotent on the worker. */
@@ -367,6 +375,13 @@ export class WorkerClient {
    *  `ClockController.derived` fires (typically once per attach). */
   updateSequencerClock(clock: SequencerClockSnapshot): void {
     this.post({ type: 'sequencerClockUpdate', clock });
+  }
+
+  /** Replace the worker's metronome (BPM) snapshot. Called whenever
+   *  `MetronomeController.bpm` fires. The pump re-derives
+   *  `stepIntervalTicks` on its next iteration. */
+  updateSequencerMetronome(metronome: SequencerMetronomeSnapshot): void {
+    this.post({ type: 'sequencerMetronomeUpdate', metronome });
   }
 
   /** Update the worker's cached `isGroupPaused` flag. The worker

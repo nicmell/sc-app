@@ -7,9 +7,6 @@ import {
   type TransportState,
 } from '@/sequencer/types';
 
-const MIN_BPM = 60;
-const MAX_BPM = 240;
-
 interface TransportBarProps {
   controller: SequencerController;
   pattern: Pattern;
@@ -18,6 +15,9 @@ interface TransportBarProps {
   clockReady: boolean;
 }
 
+/** Toolbar above the track grid. BPM lives on the centralized
+ *  MetronomePanel above — this bar only exposes per-pattern controls
+ *  (length, add-track) plus the transport. */
 export function TransportBar({
   controller,
   pattern,
@@ -28,14 +28,6 @@ export function TransportBar({
     if (transport.isPlaying) controller.stop();
     else controller.play();
   }, [controller, transport.isPlaying]);
-
-  const onBpmChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const value = Number.parseInt(e.target.value, 10);
-      if (Number.isFinite(value)) controller.setBpm(value);
-    },
-    [controller],
-  );
 
   const onLengthChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -64,18 +56,6 @@ export function TransportBar({
       >
         {transport.isPlaying ? 'Stop' : 'Play'}
       </button>
-
-      <label>
-        <span>BPM</span>
-        <input
-          type="number"
-          min={MIN_BPM}
-          max={MAX_BPM}
-          step={1}
-          value={pattern.bpm}
-          onChange={onBpmChange}
-        />
-      </label>
 
       <label>
         <span>Length</span>

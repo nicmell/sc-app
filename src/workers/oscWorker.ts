@@ -46,6 +46,7 @@ import {
   handleSequencerBankUpdate,
   handleSequencerClockUpdate,
   handleSequencerDisconnect,
+  handleSequencerMetronomeUpdate,
   handleSequencerPauseUpdate,
   handleSequencerStart,
   handleSequencerStop,
@@ -330,6 +331,7 @@ setWorkerMessageHandler(async (msg: MainToWorker) => {
       handleSequencerStart({
         bank: msg.bank,
         clock: msg.clock,
+        metronome: msg.metronome,
         isGroupPaused: msg.isGroupPaused,
       });
       return;
@@ -347,6 +349,11 @@ setWorkerMessageHandler(async (msg: MainToWorker) => {
 
     case 'sequencerClockUpdate': {
       handleSequencerClockUpdate(msg.clock);
+      return;
+    }
+
+    case 'sequencerMetronomeUpdate': {
+      handleSequencerMetronomeUpdate(msg.metronome);
       return;
     }
 

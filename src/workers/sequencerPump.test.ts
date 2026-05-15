@@ -32,6 +32,7 @@ import {
 import type {
   SequencerBankSnapshot,
   SequencerClockSnapshot,
+  SequencerMetronomeSnapshot,
 } from '../server/workerProtocol';
 
 const TICK_RATE = 47;
@@ -57,19 +58,23 @@ function buildBank(pattern: Pattern, chain?: ChainState): SequencerBankSnapshot 
   };
 }
 
-/** Pattern at 120 BPM with one track (sample `bd`) and EVERY
- *  step active. Dense pattern so the sender fires once per
- *  step boundary; at BPM 120 / subdivision 4 / tickRate 47 the
- *  step interval is `(60/120/4) * 47 = 5.875` ticks ≈ 125 ms,
- *  i.e. 8 sender calls per wall-clock second. The "single kick"
- *  variant (only step 0 active) made sender fire every
- *  pattern.length × stepInterval = 2 s, which trips up
- *  short-window timing assertions. */
+function buildMetronome(bpm = 120): SequencerMetronomeSnapshot {
+  return { bpm };
+}
+
+/** Pattern with one track (sample `bd`) and EVERY step active.
+ *  Dense pattern so the sender fires once per step boundary; at
+ *  BPM 120 / subdivision 4 / tickRate 47 the step interval is
+ *  `(60/120/4) * 47 = 5.875` ticks ≈ 125 ms, i.e. 8 sender calls
+ *  per wall-clock second. The "single kick" variant (only step 0
+ *  active) made sender fire every pattern.length × stepInterval
+ *  = 2 s, which trips up short-window timing assertions. BPM lives
+ *  on the metronome snapshot now, not the pattern. */
 function densePattern(sample = 'bd'): Pattern {
   const pattern = makeEmptyPattern(16);
   const track = makeEmptyTrack(16, sample);
   track.steps = track.steps.map(() => ({ active: true }));
-  return { ...pattern, bpm: 120, tracks: [track] };
+  return { ...pattern, tracks: [track] };
 }
 
 describe('sequencerPump', () => {
@@ -102,14 +107,21 @@ describe('sequencerPump', () => {
     handleSequencerStart({
       bank: buildBank(densePattern()),
       clock: buildClock(),
+      metronome: buildMetronome(),
       isGroupPaused: false,
     });
 
-    // The wake loop runs `pumpOnce` immediately on start. The
-    // first step is anchored at `nowTick + INITIAL_LOOKAHEAD_TICKS`
-    // which equals the horizon, so exactly one step fires this
+    // Start now quantizes nextStepTick to the next beat boundary
+    // (multiples of beatTicks since tick 0). At BPM 120 / subdivision
+    // 4 / tickRate 47 a beat is 4 × 5.875 = 23.5 ticks ≈ 500 ms, and
+    // we land on the next boundary after now+lookahead — for this
+    // setup ~300 ms ahead of start. No bytes go out on the first
     // pump.
-    expect(sentBytes).toHaveLength(1);
+    expect(sentBytes).toHaveLength(0);
+
+    // Advance past the boundary to flush the first scheduled step.
+    vi.advanceTimersByTime(600);
+    expect(sentBytes.length).toBeGreaterThan(0);
 
     const packet = decode(sentBytes[0]);
     expect(isBundle(packet)).toBe(true);
@@ -136,17 +148,16 @@ describe('sequencerPump', () => {
     handleSequencerStart({
       bank: buildBank(densePattern()),
       clock: buildClock(),
+      metronome: buildMetronome(),
       isGroupPaused: false,
     });
-    expect(sentBytes).toHaveLength(1);
+    expect(sentBytes).toHaveLength(0); // queued for beat boundary
 
-    // Advance ~1 s of wall time. At BPM 120 / subdivision 4 the
-    // step rate is 8 Hz, so we expect roughly 8 more bundles —
-    // exact count varies by ±1 depending on where the 5.875-tick
-    // step interval lands across 25-ms wake quanta. We bracket
-    // loosely: just confirm the wake loop is firing and
-    // emissions keep coming.
-    vi.advanceTimersByTime(1000);
+    // Advance ~1.5 s of wall time: ~300 ms to cross the
+    // quantization boundary, then ~1.2 s of steady-state pumping.
+    // At BPM 120 / subdivision 4 the step rate is 8 Hz, so the
+    // steady-state second alone is ≥ 5 bundles. Bracket loosely.
+    vi.advanceTimersByTime(1500);
     expect(sentBytes.length).toBeGreaterThanOrEqual(5);
   });
 
@@ -154,6 +165,7 @@ describe('sequencerPump', () => {
     handleSequencerStart({
       bank: buildBank(densePattern()),
       clock: buildClock(),
+      metronome: buildMetronome(),
       isGroupPaused: false,
     });
     const initialCount = sentBytes.length;
@@ -176,6 +188,7 @@ describe('sequencerPump', () => {
     handleSequencerStart({
       bank: buildBank(densePattern()),
       clock: buildClock(),
+      metronome: buildMetronome(),
       isGroupPaused: false,
     });
     handleSequencerStop();
@@ -188,6 +201,7 @@ describe('sequencerPump', () => {
     handleSequencerStart({
       bank: buildBank(densePattern()),
       clock: buildClock(),
+      metronome: buildMetronome(),
       isGroupPaused: false,
     });
     handleSequencerDisconnect();
@@ -204,6 +218,7 @@ describe('sequencerPump', () => {
     handleSequencerStart({
       bank: buildBank(densePattern()),
       clock,
+      metronome: buildMetronome(),
       isGroupPaused: false,
     });
     vi.advanceTimersByTime(WAKE_INTERVAL_MS * 10);
@@ -214,6 +229,7 @@ describe('sequencerPump', () => {
     handleSequencerStart({
       bank: buildBank(densePattern()),
       clock: buildClock(),
+      metronome: buildMetronome(),
       isGroupPaused: false,
     });
 
@@ -239,9 +255,15 @@ describe('sequencerPump', () => {
     handleSequencerStart({
       bank: buildBank(densePattern()),
       clock: buildClock(),
+      metronome: buildMetronome(),
       isGroupPaused: false,
     });
+    // Advance past the start-quantization boundary (~300 ms) so
+    // the pump is in steady-state before we test the bank-update
+    // handover.
+    vi.advanceTimersByTime(600);
     const initialCount = sentBytes.length;
+    expect(initialCount).toBeGreaterThan(0);
 
     // Replace the active pattern with one whose track sample
     // is `sn` instead of `bd`. The pump should adopt the new

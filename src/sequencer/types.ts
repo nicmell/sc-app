@@ -91,14 +91,16 @@ export interface Track {
 
 /** Top-level pattern structure. Editable via SequencerController
  *  methods (immutable update inside; UI just calls
- *  `controller.toggleStep(trackId, i)` etc.). */
+ *  `controller.toggleStep(trackId, i)` etc.).
+ *
+ *  BPM lives on the centralized `MetronomeController`, not on the
+ *  pattern. Older saved patterns may still carry a `bpm` field in
+ *  localStorage; PatternBank's sanitiser ignores it. */
 export interface Pattern {
   /** 8 / 16 / 32 (see `PATTERN_LENGTHS`). */
   length: PatternLength;
   /** Tracks in display order. New tracks append at the bottom. */
   tracks: Track[];
-  /** Beats per minute. 60..240; default 120. */
-  bpm: number;
   /** Steps per beat. Default 4 (= sixteenth notes in 4/4).
    *  Could become user-editable in a future phase. */
   subdivision: number;
@@ -181,7 +183,6 @@ export function makeEmptyPattern(length: PatternLength = 16): Pattern {
   return {
     length,
     tracks: [],
-    bpm: 120,
     subdivision: 4,
   };
 }

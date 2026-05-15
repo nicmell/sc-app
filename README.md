@@ -90,6 +90,27 @@ fork is currently mounted. Standalone launchers are also wired:
 `yarn superdirt-only` and `yarn strudeldirt-only`, both expect an
 externally-running `scsynth`.
 
+### Strudel REPL panel
+
+Once connected, the dashboard includes a **Strudel** live-coding
+panel powered by [Strudel](https://strudel.cc) — a JavaScript
+reimplementation of TidalCycles. Write mini-notation patterns and
+click **Run** (or press `Ctrl+Enter`). Pattern output is routed
+through the same OSC bridge as the step sequencer — no extra
+WebSocket or bridge configuration needed.
+
+```
+s("bd hh*2 sd hh")
+note("c3 eb3 g3 bb3").s("piano").slow(2)
+```
+
+The panel lazy-loads on first use so the ~450 KB Strudel runtime
+never adds to the initial page load.
+
+> **Note:** the Strudel panel includes AGPL-3.0-licensed code from
+> `@strudel/core`, `@strudel/web`, `@strudel/codemirror`, and
+> related packages.
+
 ## Deployment
 
 - **Raspberry Pi 5 (headless)** — see

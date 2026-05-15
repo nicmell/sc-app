@@ -38,6 +38,7 @@ import {
 import type {
   SequencerBankSnapshot,
   SequencerClockSnapshot,
+  SequencerMetronomeSnapshot,
   WorkerToMain,
 } from '../server/workerProtocol';
 
@@ -71,6 +72,7 @@ type Sender = (bytes: Uint8Array) => void;
 interface SequencerWorkerState {
   bank: SequencerBankSnapshot | null;
   clock: SequencerClockSnapshot | null;
+  metronome: SequencerMetronomeSnapshot | null;
   isGroupPaused: boolean;
   running: boolean;
   /** Monotonic step counter. `% pattern.length` gives the
@@ -96,6 +98,7 @@ interface SequencerWorkerState {
 const state: SequencerWorkerState = {
   bank: null,
   clock: null,
+  metronome: null,
   isGroupPaused: false,
   running: false,
   nextStepIndex: 0,
@@ -123,10 +126,12 @@ function postToMain(msg: WorkerToMain): void {
 export function handleSequencerStart(args: {
   bank: SequencerBankSnapshot;
   clock: SequencerClockSnapshot;
+  metronome: SequencerMetronomeSnapshot;
   isGroupPaused: boolean;
 }): void {
   state.bank = args.bank;
   state.clock = args.clock;
+  state.metronome = args.metronome;
   state.isGroupPaused = args.isGroupPaused;
   state.running = true;
   state.wasPausedLastPump = false;
@@ -144,7 +149,33 @@ export function handleSequencerStart(args: {
   }
   const nowTick = ((Date.now() - tick0Ms) * args.clock.tickRate) / 1000;
   state.nextStepIndex = 0;
-  state.nextStepTick = nowTick + INITIAL_LOOKAHEAD_TICKS;
+
+  // Phase-lock step 0 to a beat boundary in audio time
+  // (multiples of beatTicks since tick 0). Two sequencer sessions
+  // started at the same BPM end up beat-aligned, and the Strudel
+  // panel's beats also line up (Tidal's 4-beats-per-cycle convention
+  // matches the sequencer's `subdivision` steps-per-beat). Quantizing
+  // to a *beat* rather than a *pattern* keeps Play responsive: max
+  // wait is `60/bpm` seconds (≈ 500 ms at 120 BPM, 1 s at 60 BPM,
+  // 250 ms at 240 BPM) rather than a full pattern (≈ 2 s @ 16 steps
+  // / 120 BPM / subdivision 4).
+  //
+  // The boundary is at least INITIAL_LOOKAHEAD_TICKS ahead so the
+  // first OSC bundle has time to traverse worker → bridge → UDP →
+  // SuperDirt → schedule queue.
+  const pattern = args.bank.slots[args.bank.activeIndex];
+  if (pattern) {
+    const intervalTicks = stepIntervalTicks(
+      pattern,
+      args.metronome.bpm,
+      args.clock.tickRate,
+    );
+    const beatTicks = intervalTicks * pattern.subdivision;
+    const minStart = nowTick + INITIAL_LOOKAHEAD_TICKS;
+    state.nextStepTick = Math.ceil(minStart / beatTicks) * beatTicks;
+  } else {
+    state.nextStepTick = nowTick + INITIAL_LOOKAHEAD_TICKS;
+  }
 
   startWakeLoop();
 }
@@ -172,6 +203,15 @@ export function handleSequencerClockUpdate(clock: SequencerClockSnapshot): void 
   // mid-session tickRate change isn't a supported scenario.
 }
 
+export function handleSequencerMetronomeUpdate(
+  metronome: SequencerMetronomeSnapshot,
+): void {
+  state.metronome = metronome;
+  // The pump's `stepIntervalTicks` reads metronome.bpm fresh every
+  // iteration, so an in-flight pattern adopts the new BPM at the
+  // next un-scheduled step. No manual re-anchor.
+}
+
 export function handleSequencerPauseUpdate(isGroupPaused: boolean): void {
   state.isGroupPaused = isGroupPaused;
 }
@@ -184,6 +224,7 @@ export function handleSequencerDisconnect(): void {
   cancelPendingPlayheadTimers();
   state.bank = null;
   state.clock = null;
+  state.metronome = null;
   state.isGroupPaused = false;
   state.running = false;
   state.wasPausedLastPump = false;
@@ -212,12 +253,13 @@ function cancelPendingPlayheadTimers(): void {
 
 function pumpOnce(): void {
   if (!state.running) return;
-  if (!state.bank || !state.clock) return;
+  if (!state.bank || !state.clock || !state.metronome) return;
   if (state.clock.tick0Ms === null) return;
   if (!sender) return;
 
   const tick0Ms = state.clock.tick0Ms;
   const tickRate = state.clock.tickRate;
+  const bpm = state.metronome.bpm;
 
   const pattern = state.bank.slots[state.bank.activeIndex];
   if (!pattern) return;
@@ -243,7 +285,7 @@ function pumpOnce(): void {
   const nowMs = Date.now();
   const nowTick = ((nowMs - tick0Ms) * tickRate) / 1000;
   const horizon = nowTick + LOOKAHEAD_HORIZON_TICKS;
-  const intervalTicks = stepIntervalTicks(pattern, tickRate);
+  const intervalTicks = stepIntervalTicks(pattern, bpm, tickRate);
 
   while (state.nextStepTick <= horizon) {
     const stepIndex = state.nextStepIndex % pattern.length;
@@ -290,8 +332,12 @@ function pumpOnce(): void {
   }
 }
 
-function stepIntervalTicks(pattern: Pattern, tickRate: number): number {
-  return (60 / pattern.bpm / pattern.subdivision) * tickRate;
+function stepIntervalTicks(
+  pattern: Pattern,
+  bpm: number,
+  tickRate: number,
+): number {
+  return (60 / bpm / pattern.subdivision) * tickRate;
 }
 
 function eventForTrack(

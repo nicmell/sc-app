@@ -131,6 +131,15 @@ export interface SequencerBankSnapshot {
   chain: ChainState;
 }
 
+/** Centralized metronome state shipped to the pump. Driven by
+ *  `MetronomeController` in main; re-posted via
+ *  `sequencerMetronomeUpdate` on every BPM change so the pump's
+ *  `stepIntervalTicks` derivation picks up the new tempo at the
+ *  next pump iteration. */
+export interface SequencerMetronomeSnapshot {
+  bpm: number;
+}
+
 /** Phase 32 — what the worker-side sequencer pump needs to know
  *  about the audio clock. Re-posted whenever `ClockController`'s
  *  `derived` store fires (typically once per attach; again after
@@ -179,11 +188,16 @@ export type MainToWorker =
       type: 'sequencerStart';
       bank: SequencerBankSnapshot;
       clock: SequencerClockSnapshot;
+      metronome: SequencerMetronomeSnapshot;
       isGroupPaused: boolean;
     }
   | { type: 'sequencerStop' }
   | { type: 'sequencerBankUpdate'; bank: SequencerBankSnapshot }
   | { type: 'sequencerClockUpdate'; clock: SequencerClockSnapshot }
+  | {
+      type: 'sequencerMetronomeUpdate';
+      metronome: SequencerMetronomeSnapshot;
+    }
   | { type: 'sequencerPauseUpdate'; isGroupPaused: boolean }
   | { type: 'clockWatchdogStart'; tickIntervalMs: number }
   | { type: 'clockWatchdogStop' };
